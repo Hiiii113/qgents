@@ -15,9 +15,7 @@ import java.util.UUID;
 @Mapper
 public interface UserMapper extends BaseMapper<UserEntity> {
 
-    /**
-     * 锁定用户行，用作该用户通知序号分配的跨实例串行化锚点。
-     */
+    /** 锁定用户行，用作该用户通知序号分配的跨实例串行化锚点。 */
     @Select("SELECT id, email, display_name, avatar_url, avatar_object_key, password_hash, password_algorithm, "
             + "status, created_at, updated_at "
             + "FROM users WHERE id = #{userId} FOR UPDATE")

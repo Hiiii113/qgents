@@ -2,6 +2,7 @@ package qg.qgent.user.storage;
 
 import com.aliyun.oss.HttpMethod;
 import com.aliyun.oss.OSS;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -20,47 +21,21 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * 用户头像对象存储直传服务：复用阿里云 OSS 直传能力（预签名 PUT），但头像对象走独立命名空间
- * {@code avatars/{userId}/...}，并在确认后返回**长期稳定、公共读**的头像 URL（由
- * {@code aliyun.oss.public-base-url} 拼接，不依赖项目鉴权）。与项目附件（{@link AttachmentStorageStrategy}）
- * 相互独立——附件是项目私有的短期预签名地址，头像需要跨项目公共可读。
- * <p>
- * OSS 未启用（{@code aliyun.oss.enabled=false}，本地/CI）时不创建 OSS 客户端，本服务方法统一抛
- * {@code 501 AVATAR_STORAGE_NOT_CONFIGURED}，由 {@code qg.qgent.user.controller.AvatarController} 映射为
- * 「头像上传暂不可用」。对象键完全由服务端生成，不使用客户端文件名，避免路径穿越/覆盖他人头像/向
- * 公共读前缀写入非图片内容。
- */
+/** 签发用户头像 OSS 上传地址、确认上传并删除旧对象。 */
 @Component
+@RequiredArgsConstructor
 public class AvatarStorageService {
 
-    /**
-     * 头像对象大小上限（字节），前端应同步限制图片体积。
-     */
+    /** 头像对象大小上限（字节），前端应同步限制图片体积。 */
     static final long MAX_SIZE_BYTES = 5 * 1024 * 1024;
 
-    /**
-     * 允许的头像扩展名白名单。
-     */
+    /** 允许的头像扩展名白名单。 */
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
 
     private final ObjectProvider<OSS> ossProvider;
     private final AliyunOssProperties properties;
 
-    public AvatarStorageService(ObjectProvider<OSS> ossProvider, AliyunOssProperties properties) {
-        this.ossProvider = ossProvider;
-        this.properties = properties;
-    }
-
-    /**
-     * 为当前用户签发头像直传凭证：服务端生成 {@code avatars/{userId}/{uuid}.{ext}} 对象键并签发预签名 PUT；
-     * 校验媒体类型必须是图片、大小在上限内。OSS 未启用时抛 501。
-     *
-     * @param userId    当前用户 ID（对象键命名空间，用户只能写自己的头像）
-     * @param mediaType MIME 类型，必须为 image/ 开头
-     * @param sizeBytes 文件大小字节，必须为正且不超过上限
-     * @return 直传凭证（含服务端签发的对象键，客户端确认时原样回传）
-     */
+    /** 生成用户头像对象键并签发 OSS PUT 上传地址；图片最大 5 MB。 */
     public AvatarCredential createCredential(UUID userId, String mediaType, Long sizeBytes) {
         OSS oss = requireConfigured();
         requirePublicUrl(); // 缺公共读基础 URL 时先失败，避免客户端已经直传对象后才在 confirm 处报错
@@ -84,12 +59,7 @@ public class AvatarStorageService {
         return new AvatarCredential(objectKey, new UploadCredential(url.toString(), "PUT", Map.of(), expiry));
     }
 
-    /**
-     * 确认头像已上传，返回其长期公共读 URL。校验对象确已存在于 OSS（未上传返回 409）。
-     *
-     * @param objectKey 直传凭证签发的对象键
-     * @return 公共读长期稳定 URL
-     */
+    /** 确认头像已上传，返回其长期公共读 URL。校验对象确已存在于 OSS（未上传返回 409）。 */
     public String confirmAvatar(String objectKey) {
         requireConfigured();
         if (objectKey == null || objectKey.isBlank()) {
@@ -103,9 +73,7 @@ public class AvatarStorageService {
         return properties.getPublicBaseUrl().replaceAll("/+$", "") + "/" + objectKey;
     }
 
-    /**
-     * 尽力删除旧头像对象；OSS 未启用时 no-op。删除失败不抛出（不影响头像切换成功）。
-     */
+    /** 尽力删除旧头像对象；OSS 未启用时 no-op。删除失败不抛出（不影响头像切换成功）。 */
     public void deleteObject(String objectKey) {
         if (!properties.isEnabled() || properties.getBucketName().isBlank()
                 || objectKey == null || objectKey.isBlank()) {
@@ -126,10 +94,7 @@ public class AvatarStorageService {
         return ossProvider.getObject();
     }
 
-    /**
-     * 校验已配置公共读基础 URL；缺失时提前失败，提示通过环境变量
-     * {@code ALIYUN_OSS_PUBLIC_BASE_URL}（即 aliyun.oss.public-base-url）配置。
-     */
+    /** 检查头像公共访问地址是否已配置。 */
     private void requirePublicUrl() {
         if (properties.getPublicBaseUrl() == null || properties.getPublicBaseUrl().isBlank()) {
             throw new ApiException(HttpStatus.NOT_IMPLEMENTED, "AVATAR_PUBLIC_URL_NOT_CONFIGURED",
@@ -148,9 +113,7 @@ public class AvatarStorageService {
         return ext;
     }
 
-    /**
-     * 头像直传凭证：服务端签发的对象键与其对应预签名上传凭证。
-     */
+    /** 头像直传凭证：服务端签发的对象键与其对应预签名上传凭证。 */
     public record AvatarCredential(String objectKey, UploadCredential credential) {
     }
 }
