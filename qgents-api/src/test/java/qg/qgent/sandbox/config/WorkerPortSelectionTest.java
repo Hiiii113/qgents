@@ -13,7 +13,6 @@ import qg.qgent.sandbox.service.WorkerWorkspaceCodeWriter;
 import qg.qgent.sandbox.service.WorkerWorkspaceDiffAccess;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
 import qg.qgent.workspace.mapper.WorkspaceRepositoryMapper;
-import qg.qgent.workspace.service.DisabledWorkspaceDiffAccess;
 import qg.qgent.workspace.service.LocalGitDiffAccess;
 import qg.qgent.workspace.service.LocalWorkspaceCodeAccess;
 import qg.qgent.workspace.service.LocalWorkspaceCodeWriter;
@@ -27,7 +26,7 @@ import static org.mockito.Mockito.mock;
 
 /**
  * 验证 {@code app.worker.enabled} 开关在两个模式下选中的端口实现：
- * 关闭时用本地 Local*（DiffAccess 通过 @Primary 压制 Disabled*），
+ * 关闭时用本地 Local*，
  * 开启时用 Worker*。纯 Bean 装配检查，不启动完整 Spring Boot、不访问 DB/Redis。
  */
 class WorkerPortSelectionTest {
@@ -63,7 +62,6 @@ class WorkerPortSelectionTest {
     @Import({
             LocalWorkspaceCodeAccess.class, LocalWorkspaceCodeWriter.class,
             LocalGitDiffAccess.class,
-            DisabledWorkspaceDiffAccess.class,
             WorkerWorkspaceCodeAccess.class, WorkerWorkspaceCodeWriter.class,
             WorkerWorkspaceDiffAccess.class })
     static class Ports {

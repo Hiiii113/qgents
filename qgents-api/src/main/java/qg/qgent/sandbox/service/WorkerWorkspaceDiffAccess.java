@@ -2,7 +2,6 @@ package qg.qgent.sandbox.service;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import qg.qgent.sandbox.client.SandboxWorkerClient;
@@ -29,7 +28,6 @@ import java.util.UUID;
  */
 @Slf4j
 @Component
-@Primary
 @ConditionalOnProperty(name = "app.worker.enabled", havingValue = "true")
 public class WorkerWorkspaceDiffAccess implements WorkspaceDiffAccess {
 

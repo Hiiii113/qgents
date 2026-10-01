@@ -46,11 +46,4 @@ class GitDiffResultTest {
         assertThat(result.workingTreeHash()).isNull();
     }
 
-    @Test
-    void unavailableUsesReadyMessage() {
-        GitDiffResult result = GitDiffResult.unavailable();
-
-        assertThat(result.ok()).isFalse();
-        assertThat(result.error()).contains("not available");
-    }
 }

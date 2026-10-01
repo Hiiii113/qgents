@@ -2,7 +2,6 @@ package qg.qgent.workspace.service;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import qg.qgent.workspace.dto.ExecutionResult;
@@ -16,30 +15,8 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * {@link WorkspaceDiffAccess} 的真实本地实现：在工作区内的每个 Repository worktree 上执行
- * 只读 {@code git diff}，聚合后返回 {@link GitDiffResult}，供 Review Agent 审查 Coding 改动。
- * <p>
- * 复用已有能力，不重复设计 Git 服务：
- * <ul>
- *   <li>Workspace 根目录一律由 {@link WorkspaceService#resolve} 定位（app.workspace.base-dir/{storageKey}），
- *       本类不自行解析或拼接工作区路径；</li>
- *   <li>Repository worktree 由 {@link WorkspaceRepositoryMapper#selectByWorkspace} 读取（workspacePath 为
- *       相对 worktree 名），再基于工作区根目录解析，禁止越界；</li>
- *   <li>git 进程由同包 {@link SandboxProcessRunner} 启动，argv 由 {@link GitDiffCommandBuilder} 构造并校验
- *       base ref，本类不执行 commit/push/MR 等任何 Git 写操作；</li>
- *   <li>base 取 headCommit（非空）否则 baseCommit，二者均为真实 Git ref，经 rev-parse 解析为真实 SHA，
- *       不伪造 base/head commit。</li>
- * </ul>
- * 失败语义：Workspace 未就绪 / 无 worktree / 路径越界 / git 命令失败均返回
- * ok=false 与明确原因；Mapper 或文件系统异常向上传播，由 Review Agent 映射为 FAILED_INFRASTRUCTURE，
- * 不吞异常、不伪装成功。
- * <p>
- * {@code @Primary} 使本实现成为默认注入点；{@link DisabledWorkspaceDiffAccess} 保留用于单元测试 /
- * 未启用场景（需要时可用 {@code @Qualifier} 显式选择）。
- */
+/** 在工作区的各个仓库中执行 git diff，汇总实际修改和提交标识。 */
 @Component
-@Primary
 @ConditionalOnProperty(name = "app.worker.enabled", havingValue = "false", matchIfMissing = true)
 public class LocalGitDiffAccess implements WorkspaceDiffAccess {
 

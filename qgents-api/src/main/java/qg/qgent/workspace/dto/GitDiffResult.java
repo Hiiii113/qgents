@@ -26,7 +26,4 @@ public record GitDiffResult(boolean ok, String diff, String baseCommit, String h
         return new GitDiffResult(false, "", "", "", null, 0, 0, 0, error);
     }
 
-    public static GitDiffResult unavailable() {
-        return failure("git diff is not available until the git service is ready");
-    }
 }
