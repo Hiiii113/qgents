@@ -13,8 +13,8 @@ Qgents 是一个支持群聊和代码交付的 Agent 平台。普通消息只用
 
 ## Agent 实现
 
-- `runtime/AgentLoop` 管理模型调用、工具结果回传和轮次上限。
-- `runtime/AgentChatService` 管理聊天上下文、AgentRun、同步 subagent 和可选代码工作区。
+- `agent/runtime/AgentLoop` 管理模型调用、工具结果回传和轮次上限。
+- `agent/runtime/AgentChatService` 管理聊天上下文、AgentRun、同步 subagent 和可选代码工作区。
 - Spring AI 仅提供底层 `ChatModel` 及工具 schema，不负责 loop、阶段调度或自动执行工具；已移除 LangGraph4j。
 - `list_agents` / `call_agent` 提供委托，子 Agent 有独立输入，共享根运行的工作区。
 - 文件、开发命令、技能与历史查询工具沿用现有实现；工作区工具在准备完成后的下一轮开放。
@@ -43,6 +43,14 @@ Qgents/
 ├── Dockerfile.production         # 主后端镜像
 └── docker-compose.production.yml # 生产编排
 ```
+
+### Java 分包
+
+源码按业务组织，每个业务内部按需使用 `controller`、`service`、`dto`、`entity`、`mapper`、`config` 等子包。测试与被测代码保持相同包路径。
+
+- API：`agent`（loop、Agent 管理和模型工具）、`chat`（群组、消息、上下文）、`task`、`workspace`、`sandbox`（Worker 客户端）、`github`、`mergerequest`、`team`、`project`、`auth`、`user`、`attachment`、`skill`、`memory`、`notification`、`realtime`。
+- Worker：`sandbox`（容器和租约）、`workspace`（工作区及 Git 操作）、`tool`（文件和开发命令工具）。
+- `common`：跨业务的响应、异常、UUID、幂等处理和基础配置；业务代码放回所属业务包。
 
 ### 两个服务的职责边界
 

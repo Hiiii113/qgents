@@ -1,0 +1,140 @@
+package qg.qgent.agent.runtime;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.ToolResponseMessage;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.ai.support.ToolCallbacks;
+import org.springframework.ai.tool.annotation.Tool;
+
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+class AgentLoopTest {
+    private final ChatModel model = mock(ChatModel.class);
+
+    private AgentLoop loop(int rounds) {
+        when(model.getOptions()).thenReturn(OpenAiChatOptions.builder().model("test-model").build());
+        return new AgentLoop(model, new ObjectMapper(), rounds);
+    }
+
+    @Test
+    void textReplyFinishesWithoutExecutingTools() {
+        AgentLoop loop = loop(3);
+        when(model.call(any(Prompt.class))).thenReturn(reply("你好"));
+        Counter tools = new Counter();
+        AgentLoop.Result result = loop.run("通用 Agent", List.of(new UserMessage("你好")),
+                () -> Arrays.asList(ToolCallbacks.from(tools)), () -> false);
+        assertThat(result.success()).isTrue();
+        assertThat(result.text()).isEqualTo("你好");
+        assertThat(tools.calls).isZero();
+        verify(model, times(1)).call(any(Prompt.class));
+    }
+
+    @Test
+    void executesToolThenPassesResultBackToModel() {
+        AgentLoop loop = loop(3);
+        when(model.call(any(Prompt.class))).thenReturn(toolCall("count"), reply("完成"));
+        Counter tools = new Counter();
+        AgentLoop.Result result = loop.run("通用 Agent", List.of(new UserMessage("执行")),
+                () -> Arrays.asList(ToolCallbacks.from(tools)), () -> false);
+        assertThat(result.success()).isTrue();
+        assertThat(tools.calls).isEqualTo(1);
+        ArgumentCaptor<Prompt> requests = ArgumentCaptor.forClass(Prompt.class);
+        verify(model, times(2)).call(requests.capture());
+        assertThat(requests.getAllValues().get(1).getInstructions()).anySatisfy(message -> {
+            if (message instanceof ToolResponseMessage response) {
+                assertThat(response.getResponses().getFirst().id()).isEqualTo("call-1");
+                assertThat(response.getResponses().getFirst().responseData()).contains("1");
+            } else {
+                throw new AssertionError("需要工具结果消息");
+            }
+        });
+        assertThat(((OpenAiChatOptions) requests.getAllValues().getFirst().getOptions()).getToolChoice())
+                .isEqualTo("auto");
+    }
+
+    @Test
+    void repeatedToolCallsStopAtConfiguredLimit() {
+        AgentLoop loop = loop(2);
+        when(model.call(any(Prompt.class))).thenReturn(toolCall("count"));
+        Counter tools = new Counter();
+        AgentLoop.Result result = loop.run("通用 Agent", List.of(new UserMessage("执行")),
+                () -> Arrays.asList(ToolCallbacks.from(tools)), () -> false);
+        assertThat(result.success()).isFalse();
+        assertThat(result.text()).contains("最大调用轮次");
+        assertThat(tools.calls).isEqualTo(2);
+        verify(model, times(2)).call(any(Prompt.class));
+    }
+
+    @Test
+    void unknownToolReturnsErrorAndLetsModelRecover() {
+        AgentLoop loop = loop(3);
+        when(model.call(any(Prompt.class))).thenReturn(toolCall("missing"), reply("已修正"));
+        AgentLoop.Result result = loop.run("通用 Agent", List.of(new UserMessage("执行")), List::of, () -> false);
+        assertThat(result.success()).isTrue();
+        ArgumentCaptor<Prompt> requests = ArgumentCaptor.forClass(Prompt.class);
+        verify(model, times(2)).call(requests.capture());
+        ToolResponseMessage response = (ToolResponseMessage) requests.getAllValues().get(1).getInstructions().getLast();
+        assertThat(response.getResponses().getFirst().responseData()).contains("TOOL_NOT_FOUND");
+    }
+
+    private ChatResponse reply(String text) {
+        return new ChatResponse(List.of(new Generation(new AssistantMessage(text))));
+    }
+
+    @Test
+    void cancellationWhileWaitingForModelPreventsToolExecution() {
+        AgentLoop loop = loop(3);
+        AtomicBoolean cancelled = new AtomicBoolean();
+        when(model.call(any(Prompt.class))).thenAnswer(invocation -> {
+            cancelled.set(true);
+            return toolCall("count");
+        });
+        Counter tools = new Counter();
+        AgentLoop.Result result = loop.run("通用 Agent", List.of(new UserMessage("执行")),
+                () -> Arrays.asList(ToolCallbacks.from(tools)), cancelled::get);
+        assertThat(result.success()).isFalse();
+        assertThat(tools.calls).isZero();
+        verify(model).call(any(Prompt.class));
+    }
+
+    @Test
+    void cancellationBetweenToolsStopsTheRemainingBatch() {
+        AgentLoop loop = loop(3);
+        AssistantMessage batch = AssistantMessage.builder().content("")
+                .toolCalls(List.of(new AssistantMessage.ToolCall("call-1", "function", "count", "{}"),
+                        new AssistantMessage.ToolCall("call-2", "function", "count", "{}"))).build();
+        when(model.call(any(Prompt.class))).thenReturn(new ChatResponse(List.of(new Generation(batch))));
+        Counter tools = new Counter();
+        AgentLoop.Result result = loop.run("通用 Agent", List.of(new UserMessage("执行")),
+                () -> Arrays.asList(ToolCallbacks.from(tools)), () -> tools.calls > 0);
+        assertThat(result.success()).isFalse();
+        assertThat(tools.calls).isEqualTo(1);
+        verify(model).call(any(Prompt.class));
+    }
+
+    private ChatResponse toolCall(String name) {
+        AssistantMessage message = AssistantMessage.builder().content("")
+                .toolCalls(List.of(new AssistantMessage.ToolCall("call-1", "function", name, "{}"))).build();
+        return new ChatResponse(List.of(new Generation(message)));
+    }
+
+    public static class Counter {
+        int calls;
+        @Tool(name = "count", description = "计数")
+        public int count() { return ++calls; }
+    }
+}

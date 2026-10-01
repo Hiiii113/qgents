@@ -4,8 +4,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-import qg.qgent.sandboxworker.persistence.ToolExecutionLogMapper;
-import qg.qgent.sandboxworker.persistence.ToolExecutionMapper;
+import qg.qgent.sandboxworker.tool.mapper.ToolExecutionLogMapper;
+import qg.qgent.sandboxworker.tool.mapper.ToolExecutionMapper;
 
 /** 验证独立工作节点可以创建 Spring 应用上下文。 */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE, properties = "sandbox.runtime=fake")
