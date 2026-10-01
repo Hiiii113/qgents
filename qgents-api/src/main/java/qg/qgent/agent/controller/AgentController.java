@@ -18,18 +18,15 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-import qg.qgent.agent.dto.AgentAssignmentListItem;
 import qg.qgent.agent.dto.AgentCreateRequest;
 import qg.qgent.agent.dto.AgentResponse;
 import qg.qgent.agent.dto.AgentReviewRejectRequest;
-import qg.qgent.agent.dto.AgentRuntimeSummary;
 import qg.qgent.agent.dto.AgentUpdateRequest;
 import qg.qgent.agent.service.AgentService;
 import qg.qgent.agent.storage.AgentAvatarStorageService;
 import qg.qgent.auth.security.CurrentActorProvider;
 import qg.qgent.common.service.IdempotencyService;
 import qg.qgent.common.web.ApiResponse;
-import qg.qgent.common.web.PagedApiResponse;
 import qg.qgent.common.web.RequestIdFilter;
 import qg.qgent.user.dto.AvatarConfirmRequest;
 import qg.qgent.user.dto.AvatarConfirmResponse;
@@ -82,32 +79,6 @@ public class AgentController {
             @Parameter(description = "可选：项目 ID，仅校验「项目属于该团队 + 当前用户有项目访问权」") @RequestParam(required = false) UUID projectId,
             HttpServletRequest request) {
         return ApiResponse.ok(service.get(teamId, agentId, currentActor.currentUserId(), projectId),
-                (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
-    }
-
-    /**
-     * 契约 v1.8.0 §20（成员 B B04）：Agent 分配列表（项目群聊/工作流）。
-     */
-    @GetMapping("/projects/{projectId}/agents/{agentId}/assignments")
-    public PagedApiResponse<AgentAssignmentListItem> assignments(@PathVariable UUID projectId,
-            @PathVariable UUID agentId,
-            @AuthenticationPrincipal UUID userId,
-            @RequestParam(required = false) String type,
-            @RequestParam(required = false) String cursor,
-            @RequestParam(required = false) Integer limit,
-            HttpServletRequest request) {
-        return service.assignments(projectId, agentId, userId, type, cursor, limit,
-                (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
-    }
-
-    /**
-     * 契约 v1.8.0 §20（成员 B B06）：Agent 运行时摘要（runtime/usage/access）。
-     */
-    @GetMapping("/projects/{projectId}/agents/{agentId}/runtime")
-    public ApiResponse<AgentRuntimeSummary> runtime(@PathVariable UUID projectId, @PathVariable UUID agentId,
-            @AuthenticationPrincipal UUID userId,
-            HttpServletRequest request) {
-        return ApiResponse.ok(service.runtime(projectId, agentId, userId),
                 (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
     }
 

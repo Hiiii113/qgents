@@ -1,27 +1,17 @@
 package qg.qgent.agent.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import qg.qgent.agent.dto.AgentAssignmentListItem;
 import qg.qgent.agent.dto.AgentCreateRequest;
 import qg.qgent.agent.dto.AgentResponse;
-import qg.qgent.agent.dto.AgentRuntimeSummary;
 import qg.qgent.agent.dto.AgentUpdateRequest;
 import qg.qgent.agent.entity.AgentEntity;
-import qg.qgent.agent.entity.AgentRunEntity;
 import qg.qgent.agent.mapper.AgentMapper;
-import qg.qgent.agent.mapper.AgentRunMapper;
-import qg.qgent.chat.entity.ChatGroupEntity;
-import qg.qgent.chat.mapper.GroupAgentMapper;
-import qg.qgent.chat.mapper.ChatGroupMapper;
-import qg.qgent.common.dto.PageInfo;
 import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
-import qg.qgent.common.web.PagedApiResponse;
 import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.service.ProjectAccessService;
@@ -31,24 +21,15 @@ import qg.qgent.team.mapper.TeamMemberMapper;
 
 import java.net.URI;
 import java.net.URISyntaxException;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.function.Function;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 /**
  * Team-scoped Agent visibility, lifecycle and read operations.
  */
 @Service
 public class AgentService {
-    private static final int DEFAULT_LIMIT = 30;
-    private static final int MAX_LIMIT = 100;
-    private static final List<String> ACTIVE_RUN_STATUSES = List.of("RUNNING");
     /**
      * Prompt 敏感信息拦截模式：命中即拒绝保存，防止凭据/私钥/宿主机敏感信息进入 Agent 上下文。
      */
@@ -63,22 +44,15 @@ public class AgentService {
     private final AgentMapper agentMapper;
     private final TeamMemberMapper teamMemberMapper;
     private final ProjectAccessService projectAccess;
-    private final GroupAgentMapper groupAgentMapper;
-    private final ChatGroupMapper chatGroupMapper;
-    private final AgentRunMapper agentRuns;
     private final ProjectMapper projectMapper;
     private final TeamMapper teamMapper;
 
     public AgentService(AgentMapper agentMapper, TeamMemberMapper teamMemberMapper,
-                        ProjectAccessService projectAccess, GroupAgentMapper groupAgentMapper,
-                        ChatGroupMapper chatGroupMapper, AgentRunMapper agentRuns,
+                        ProjectAccessService projectAccess,
                         ProjectMapper projectMapper, TeamMapper teamMapper) {
         this.agentMapper = agentMapper;
         this.teamMemberMapper = teamMemberMapper;
         this.projectAccess = projectAccess;
-        this.groupAgentMapper = groupAgentMapper;
-        this.chatGroupMapper = chatGroupMapper;
-        this.agentRuns = agentRuns;
         this.projectMapper = projectMapper;
         this.teamMapper = teamMapper;
     }
@@ -125,68 +99,6 @@ public class AgentService {
             throw new ApiException(HttpStatus.NOT_FOUND, "AGENT_NOT_FOUND", "Agent 不存在或不可见");
         }
         return toResponse(agent, owner);
-    }
-
-    /**
-     * Agent 分配列表（契约 v1.8.0 §20，成员 B B04）。
-     * <p>
-     * CHAT_GROUP 数据源为 group_agents（Agent 参与的项目群聊，按项目隔离）；
-     * WORKFLOW 当前无数据源，返回空列表不伪造。
-     */
-    public PagedApiResponse<AgentAssignmentListItem> assignments(UUID projectId, UUID agentId, UUID actor,
-                                                                 String type, String cursor, Integer limit,
-                                                                 String requestId) {
-        projectAccess.requireProjectMember(projectId, actor);
-        requireAgent(agentId);
-        List<AgentAssignmentListItem> all = new ArrayList<>();
-        if (type == null || "CHAT_GROUP".equals(type)) {
-            List<UUID> groupIds = groupAgentMapper.selectGroupIdsByAgent(projectId, agentId);
-            if (!groupIds.isEmpty()) {
-                Map<UUID, ChatGroupEntity> groupById = chatGroupMapper
-                        .selectList(Wrappers.<ChatGroupEntity>lambdaQuery()
-                                .in(ChatGroupEntity::getId, groupIds))
-                        .stream().collect(Collectors.toMap(ChatGroupEntity::getId, Function.identity()));
-                groupIds.stream().map(groupById::get).filter(java.util.Objects::nonNull)
-                        .forEach(group -> all.add(new AgentAssignmentListItem("CHAT_GROUP",
-                                id(group.getId()), group.getName(),
-                                "ACTIVE")));
-            }
-        }
-        if (type == null || "WORKFLOW".equals(type)) {
-            // 团队工作流模板非本版本范围（接口文档 §14），无数据源，返回空列表
-        }
-        int size = clampLimit(limit);
-        int offset = decodeCursor(cursor);
-        boolean hasMore = offset + size < all.size();
-        List<AgentAssignmentListItem> page = all.stream().skip(offset).limit(size).toList();
-        String next = hasMore ? encodeCursor(offset + size) : null;
-        return new PagedApiResponse<>(page, new PageInfo(next, hasMore), requestId);
-    }
-
-    /**
-     * Agent 运行时摘要（契约 v1.8.0 §20，成员 B B06）。
-     */
-    public AgentRuntimeSummary runtime(UUID projectId, UUID agentId, UUID actor) {
-        projectAccess.requireProjectMember(projectId, actor);
-        requireAgent(agentId);
-        long activeRuns = agentRuns.selectCount(Wrappers.<AgentRunEntity>lambdaQuery()
-                .eq(AgentRunEntity::getProjectId, projectId)
-                .eq(AgentRunEntity::getAgentId, agentId)
-                .in(AgentRunEntity::getStatus, ACTIVE_RUN_STATUSES));
-        List<UUID> groupIds = groupAgentMapper.selectGroupIdsByAgent(projectId, agentId);
-        long assignableGroups = chatGroupMapper.selectCount(Wrappers.<ChatGroupEntity>lambdaQuery()
-                .eq(ChatGroupEntity::getProjectId, projectId));
-        return new AgentRuntimeSummary(activeRuns > 0 ? "RUNNING" : "IDLE", activeRuns, null,
-                new AgentRuntimeSummary.AssignmentUsage(
-                        new AgentRuntimeSummary.AssignmentCount(groupIds.size(), assignableGroups),
-                        new AgentRuntimeSummary.AssignmentCount(0, 0)),
-                "PROJECT", "PROJECT");
-    }
-
-    private void requireAgent(UUID agentId) {
-        if (agentMapper.selectById(agentId) == null) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "AGENT_NOT_FOUND", "Agent 不存在");
-        }
     }
 
     // ---------- 自定义 Agent 生命周期管理（契约 §11.1，接口补充 v2.0.3 §2-§6） ----------
@@ -534,28 +446,4 @@ public class AgentService {
         return response;
     }
 
-    private int clampLimit(Integer limit) {
-        int value = limit == null ? DEFAULT_LIMIT : limit;
-        return Math.min(Math.max(value, 1), MAX_LIMIT);
-    }
-
-    private int decodeCursor(String cursor) {
-        if (cursor == null || cursor.isBlank()) {
-            return 0;
-        }
-        try {
-            return Integer.parseInt(new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8));
-        } catch (Exception e) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "分页游标非法");
-        }
-    }
-
-    private String encodeCursor(int offset) {
-        return Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(Integer.toString(offset).getBytes(StandardCharsets.UTF_8));
-    }
-
-    private String id(UUID value) {
-        return value == null ? null : value.toString();
-    }
 }

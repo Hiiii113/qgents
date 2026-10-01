@@ -33,15 +33,5 @@ public interface GroupAgentMapper {
     @Select("SELECT agent_id FROM group_agents WHERE group_id = #{groupId}")
     List<UUID> selectAgentIds(@Param("groupId") UUID groupId);
 
-    /**
-     * 查询指定 Agent 参与的项目内项目群聊 ID 列表（Agent 分配列表数据源，按项目隔离）。
-     *
-     * @param projectId 项目 ID
-     * @param agentId   Agent ID
-     * @return 该项目内该 Agent 参与的项目群聊 ID 列表
-     */
-    @Select("SELECT ga.group_id FROM group_agents ga "
-            + "JOIN chat_groups rg ON rg.id = ga.group_id "
-            + "WHERE ga.agent_id = #{agentId} AND rg.project_id = #{projectId}")
-    List<UUID> selectGroupIdsByAgent(@Param("projectId") UUID projectId, @Param("agentId") UUID agentId);
+
 }
