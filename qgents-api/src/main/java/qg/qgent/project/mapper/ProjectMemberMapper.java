@@ -53,9 +53,7 @@ public interface ProjectMemberMapper extends BaseMapper<ProjectMemberEntity> {
     @Select("SELECT COUNT(*) FROM project_members WHERE project_id = #{projectId} AND role = 'PROJECT_ADMIN'")
     int countAdmins(@Param("projectId") UUID projectId);
 
-    /**
-     * 查询项目成员列表（含昵称、头像、邮箱），按加入时间排序（主群成员 = 项目成员）。
-     */
+    /** 查询项目成员列表（含昵称、头像、邮箱），按加入时间排序（默认群聊成员来自项目成员）。 */
     @Select("SELECT u.id AS user_id, u.display_name, u.avatar_url, u.email FROM project_members pm"
             + " JOIN users u ON u.id = pm.user_id WHERE pm.project_id = #{projectId} ORDER BY pm.joined_at")
     @Results({
@@ -66,9 +64,7 @@ public interface ProjectMemberMapper extends BaseMapper<ProjectMemberEntity> {
     })
     List<GroupMemberRow> selectMembers(@Param("projectId") UUID projectId);
 
-    /**
-     * 统计项目成员数（用作群详情 memberCount）。
-     */
+    /** 统计项目成员数（用作群详情 memberCount）。 */
     @Select("SELECT COUNT(*) FROM project_members WHERE project_id = #{projectId}")
     Long countMembers(@Param("projectId") UUID projectId);
 }

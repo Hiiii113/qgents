@@ -1,13 +1,10 @@
 package qg.qgent.project.service;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import qg.qgent.common.dto.PageInfo;
 import qg.qgent.common.dto.PageSlice;
@@ -38,8 +35,8 @@ import java.util.*;
 import java.util.function.Function;
 
 @Service
+@RequiredArgsConstructor
 public class ProjectService {
-    private static final Logger log = LoggerFactory.getLogger(ProjectService.class);
     private final ProjectMapper projectMapper;
     private final ProjectMemberMapper memberMapper;
     private final TeamMapper teamMapper;
@@ -49,30 +46,9 @@ public class ProjectService {
     private final NotificationService notificationService;
     private final EventService eventService;
 
-    public ProjectService(ProjectMapper projectMapper, ProjectMemberMapper memberMapper, TeamMapper teamMapper,
-                           TeamMemberMapper teamMemberMapper, ProjectAccessService access, ApplicationEventPublisher eventPublisher,
-                           NotificationService notificationService, EventService eventService) {
-        this.projectMapper = projectMapper;
-        this.memberMapper = memberMapper;
-        this.teamMapper = teamMapper;
-        this.teamMemberMapper = teamMemberMapper;
-        this.access = access;
-        this.eventPublisher = eventPublisher;
-        this.notificationService = notificationService;
-        this.eventService = eventService;
-    }
-
-    /**
-     * 创建项目并初始化项目成员关系。
-     *
-     * @param actor
-     * @param teamId
-     * @param request
-     * @return
-     */
+    /** 创建项目并初始化项目成员关系。 */
     @Transactional
     public ProjectResponse create(UUID actor, UUID teamId, ProjectCreateRequest request) {
-        // 查询到team
         TeamEntity team = requireTeamForUpdate(teamId);
         requireCanonicalTeamOwner(team, actor);
         ProjectEntity project = new ProjectEntity();
@@ -100,7 +76,7 @@ public class ProjectService {
     }
 
     public PageSlice<ProjectResponse> list(UUID actor, UUID teamId, String cursor, Integer limit) {
-        TeamEntity team = requireTeam(teamId);
+        requireTeam(teamId);
         requireTeamMember(teamId, actor);
         boolean teamOwner = access.isCanonicalTeamOwner(teamId, actor);
         int size = pageSize(limit);
@@ -109,33 +85,16 @@ public class ProjectService {
         List<ProjectMembershipView> rows = projectMapper.selectAccessiblePage(teamId, actor, teamOwner, anchor,
                 size + 1);
         return keysetPage(rows, size, scope, ProjectMembershipView::getId,
-                row -> response(row));
+                this::response);
     }
 
-    /**
-     * 获取某团队下当前用户可见的项目，按最后活跃时间倒序（项目最后活跃 = 其下所有群
-     * 最近消息时间的最大值；任何群都无消息时为 null，沉底显示，不兜底创建时间）。不分页，
-     * 供项目选择/工作台按最近活跃展示。
-     *
-     * @param actor   当前用户 ID
-     * @param teamId  团队 ID
-     * @return 项目视图列表，按最后活跃倒序
-     */
+    /** 按最近聊天时间返回可见项目；无消息的项目排在末尾，不分页。 */
     public List<ProjectResponse> listByLastActivity(UUID actor, UUID teamId) {
         requireTeam(teamId);
         requireTeamMember(teamId, actor);
         boolean teamOwner = access.isCanonicalTeamOwner(teamId, actor);
         return projectMapper.selectAccessibleByActivity(teamId, actor, teamOwner).stream()
-                .map(row -> {
-                    ProjectResponse response = new ProjectResponse(row.getId().toString(),
-                            row.getTeamId().toString(), row.getName(), row.getDescription(), row.getRole(),
-                            row.getStatus(), null);
-                    response.setMemberCount(memberMapper.countMembers(row.getId()));
-                    if (row.getLastActivityAt() != null) {
-                        response.setLastActivityAt(row.getLastActivityAt().toInstant(ZoneOffset.UTC).toString());
-                    }
-                    return response;
-                })
+                .map(this::response)
                 .toList();
     }
 
@@ -204,7 +163,7 @@ public class ProjectService {
         // 通知被加入项目的成员
         notificationService.notify(request.getUserId(), projectId, null, "PROJECT_ADDED",
                 "你被加入项目 " + project.getName(), null, projectId.toString());
-        // 团队级 SSE：新成员加入项目（前端 SSE 需求清单 ②）
+        // 告知团队在线客户端有新项目成员。
         eventService.publishTeamEvent(project.getTeamId(), "project.member.added", id(projectId),
                 Map.of("teamId", id(project.getTeamId()), "projectId", id(projectId)));
         return new ProjectMemberResponse(request.getUserId().toString(), "PROJECT_MEMBER");
@@ -326,10 +285,7 @@ public class ProjectService {
         return project;
     }
 
-    /**
-     * project_members 写操作统一先锁 Team、再锁 Project，并在锁内复核项目归属。
-     * 该顺序与团队成员删除一致，避免项目角色提升和团队移除互相穿透。
-     */
+    /** 先锁团队再锁项目，与团队成员删除保持相同顺序。 */
     private ProjectEntity lockTeamThenProject(UUID projectId) {
         ProjectEntity observed = projectMapper.selectById(projectId);
         if (observed == null) {
@@ -351,20 +307,19 @@ public class ProjectService {
 
     private ProjectResponse response(ProjectEntity project, String role) {
         ProjectResponse r = new ProjectResponse(project.getId().toString(), project.getTeamId().toString(),
-                project.getName(), project.getDescription(), role, project.getStatus(), null);
+                project.getName(), project.getDescription(), role, project.getStatus(),
+                memberMapper.countMembers(project.getId()));
         r.setAvatarUrl(project.getAvatarUrl());
-        return response(r);
+        return r;
     }
 
     private ProjectResponse response(ProjectMembershipView row) {
         ProjectResponse r = new ProjectResponse(row.getId().toString(), row.getTeamId().toString(), row.getName(),
-                row.getDescription(), row.getRole(), row.getStatus(), null);
+                row.getDescription(), row.getRole(), row.getStatus(), row.getMemberCount());
         r.setAvatarUrl(row.getAvatarUrl());
-        return response(r);
-    }
-
-    private ProjectResponse response(ProjectResponse r) {
-        r.setMemberCount(memberMapper.countMembers(UUID.fromString(r.getId())));
+        if (row.getLastActivityAt() != null) {
+            r.setLastActivityAt(row.getLastActivityAt().toInstant(ZoneOffset.UTC).toString());
+        }
         return r;
     }
 

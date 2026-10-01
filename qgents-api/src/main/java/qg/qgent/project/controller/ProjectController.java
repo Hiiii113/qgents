@@ -1,5 +1,6 @@
 package qg.qgent.project.controller;
 
+import lombok.RequiredArgsConstructor;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -29,29 +30,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * 项目与项目成员接口
- * 项目资料的创建、查询、修改、归档/恢复与项目成员管理。
- */
+/** 项目与项目成员接口 项目资料的创建、查询、修改、归档/恢复与项目成员管理。 */
 @RestController
 @RequestMapping("/api/v1")
+@RequiredArgsConstructor
 public class ProjectController {
     private final ProjectService projects;
     private final IdempotencyService idempotency;
     private final ProjectAccessService access;
     private final ProjectAvatarStorageService avatarStorage;
 
-    public ProjectController(ProjectService projects, IdempotencyService idempotency, ProjectAccessService access,
-                             ProjectAvatarStorageService avatarStorage) {
-        this.projects = projects;
-        this.idempotency = idempotency;
-        this.access = access;
-        this.avatarStorage = avatarStorage;
-    }
-
-    /**
-     * 契约 §5.2：创建项目，创建者自动成为 PROJECT_ADMIN。
-     */
+    /** 创建项目，创建者自动成为 PROJECT_ADMIN。 */
     @PostMapping("/teams/{teamId}/projects")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<ProjectResponse> create(@AuthenticationPrincipal UUID actor, @PathVariable UUID teamId,
@@ -63,9 +52,7 @@ public class ProjectController {
         return ok(value, request);
     }
 
-    /**
-     * 契约 §5.2：分页获取当前用户可见的项目。
-     */
+    /** 分页获取当前用户可见的项目。 */
     @GetMapping("/teams/{teamId}/projects")
     public PagedApiResponse<ProjectResponse> list(@AuthenticationPrincipal UUID actor, @PathVariable UUID teamId,
                                                   @RequestParam(required = false) String cursor, @RequestParam(required = false) Integer limit,
@@ -73,11 +60,7 @@ public class ProjectController {
         return page(projects.list(actor, teamId, cursor, limit), request);
     }
 
-    /**
-     * 契约 v2.0.6 补充：获取某团队下当前用户可见的项目，按最后活跃时间倒序（项目最后活跃 =
-     * 其下所有群最近消息/创建时间的最大值，无群时以项目创建时间兜底）。不分页，供项目选择/工作台
-     * 按最近活跃展示。
-     */
+    /** 按最近聊天时间返回可见项目，不分页；无消息的项目排在末尾。 */
     @GetMapping("/teams/{teamId}/projects/by-last-activity")
     public ApiResponse<List<ProjectResponse>> listByLastActivity(@AuthenticationPrincipal UUID actor,
                                                                  @PathVariable UUID teamId,
@@ -85,18 +68,14 @@ public class ProjectController {
         return ok(projects.listByLastActivity(actor, teamId), request);
     }
 
-    /**
-     * 契约 §5.2：获取项目资料。
-     */
+    /** 获取项目资料。 */
     @GetMapping("/projects/{projectId}")
     public ApiResponse<ProjectResponse> get(@AuthenticationPrincipal UUID actor, @PathVariable UUID projectId,
                                             HttpServletRequest request) {
         return ok(projects.get(actor, projectId), request);
     }
 
-    /**
-     * 契约 §5.2：修改项目资料（Project Admin 或 Team Owner）。
-     */
+    /** 修改项目资料（Project Admin 或 Team Owner）。 */
     @PatchMapping("/projects/{projectId}")
     public ApiResponse<ProjectResponse> update(@AuthenticationPrincipal UUID actor, @PathVariable UUID projectId,
                                                @RequestHeader(value = "Idempotency-Key", required = false) String key,
@@ -107,9 +86,7 @@ public class ProjectController {
         return ok(value, request);
     }
 
-    /**
-     * 契约 v2.0.6 补充：签发项目头像直传凭证（项目成员；对象键 projects/{projectId}/{uuid}.{ext}）。
-     */
+    /** 签发项目头像直传凭证（项目成员；对象键 projects/{projectId}/{uuid}.{ext}）。 */
     @PostMapping("/projects/{projectId}/avatar/credential")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<AvatarCredentialResponse> avatarCredential(@PathVariable UUID projectId,
@@ -124,10 +101,7 @@ public class ProjectController {
                 credential.credential().getHeaders(), credential.credential().getExpiresAt()), request);
     }
 
-    /**
-     * 契约 v2.0.6 补充：确认项目头像上传并返回公共读 URL（不写任何字段；
-     * 前端把 avatarUrl 随 PATCH /projects/{projectId} 提交）。
-     */
+    /** 确认上传并返回头像 URL；客户端再通过修改项目接口保存 avatarUrl。 */
     @PostMapping("/projects/{projectId}/avatar/confirm")
     public ApiResponse<AvatarConfirmResponse> avatarConfirm(@PathVariable UUID projectId,
                                                             @AuthenticationPrincipal UUID actor,
@@ -138,9 +112,7 @@ public class ProjectController {
         return ok(new AvatarConfirmResponse(avatarUrl), request);
     }
 
-    /**
-     * 契约 §5.2：归档项目。
-     */
+    /** 归档项目。 */
     @PostMapping("/projects/{projectId}/archive")
     public ApiResponse<ProjectResponse> archive(@AuthenticationPrincipal UUID actor, @PathVariable UUID projectId,
                                                 @RequestHeader(value = "Idempotency-Key", required = false) String key, HttpServletRequest request) {
@@ -150,9 +122,7 @@ public class ProjectController {
         return ok(value, request);
     }
 
-    /**
-     * 契约 §5.2：恢复已归档项目。
-     */
+    /** 恢复已归档项目。 */
     @PostMapping("/projects/{projectId}/restore")
     public ApiResponse<ProjectResponse> restore(@AuthenticationPrincipal UUID actor, @PathVariable UUID projectId,
                                                 @RequestHeader(value = "Idempotency-Key", required = false) String key, HttpServletRequest request) {
@@ -162,9 +132,7 @@ public class ProjectController {
         return ok(value, request);
     }
 
-    /**
-     * 契约 §5.2：分页获取项目成员与角色。
-     */
+    /** 分页获取项目成员与角色。 */
     @GetMapping("/projects/{projectId}/members")
     public PagedApiResponse<ProjectMemberResponse> members(@AuthenticationPrincipal UUID actor,
                                                            @PathVariable UUID projectId, @RequestParam(required = false) String cursor,
@@ -172,9 +140,7 @@ public class ProjectController {
         return page(projects.members(actor, projectId, cursor, limit), request);
     }
 
-    /**
-     * 契约 §5.2：将团队现有成员加入项目（初始 PROJECT_MEMBER）。
-     */
+    /** 将团队现有成员加入项目（初始 PROJECT_MEMBER）。 */
     @PostMapping("/projects/{projectId}/members")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<ProjectMemberResponse> addMember(@AuthenticationPrincipal UUID actor,
@@ -186,9 +152,7 @@ public class ProjectController {
         return ok(value, request);
     }
 
-    /**
-     * 契约 §5.2：调整项目成员角色（保护最后一名 Project Admin）。
-     */
+    /** 调整项目成员角色（管理员设置后不可降级）。 */
     @PatchMapping("/projects/{projectId}/members/{userId}")
     public ApiResponse<ProjectMemberResponse> updateMember(@AuthenticationPrincipal UUID actor,
                                                            @PathVariable UUID projectId, @PathVariable UUID userId,
@@ -201,9 +165,7 @@ public class ProjectController {
         return ok(value, request);
     }
 
-    /**
-     * 契约 §5.2：移除项目成员。
-     */
+    /** 移除项目成员。 */
     @DeleteMapping("/projects/{projectId}/members/{userId}")
     public ApiResponse<ProjectMemberResponse> removeMember(@AuthenticationPrincipal UUID actor,
                                                            @PathVariable UUID projectId, @PathVariable UUID userId,

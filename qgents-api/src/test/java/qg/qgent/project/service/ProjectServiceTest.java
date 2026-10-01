@@ -1,9 +1,17 @@
 package qg.qgent.project.service;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.context.ApplicationEventPublisher;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.project.dto.ProjectCreateRequest;
+import qg.qgent.project.dto.ProjectUpdateRequest;
+import qg.qgent.project.entity.ProjectEntity;
+import qg.qgent.project.mapper.view.ProjectMembershipView;
+import qg.qgent.team.entity.TeamMemberEntity;
+import java.util.List;
+import java.time.LocalDateTime;
 import qg.qgent.project.event.ProjectCreatedEvent;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.mapper.ProjectMemberMapper;
@@ -19,6 +27,72 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class ProjectServiceTest {
+    private final ProjectMapper projects = mock(ProjectMapper.class);
+    private final ProjectMemberMapper projectMembers = mock(ProjectMemberMapper.class);
+    private final TeamMapper teams = mock(TeamMapper.class);
+    private final TeamMemberMapper teamMembers = mock(TeamMemberMapper.class);
+    private final ProjectAccessService access = mock(ProjectAccessService.class);
+    private final ProjectService service = new ProjectService(projects, projectMembers, teams, teamMembers,
+            access, mock(ApplicationEventPublisher.class), mock(NotificationService.class), mock(EventService.class));
+
+    @Test
+    void activityListReturnsAvatarAndMemberCountWithoutExtraQueries() {
+        UUID actor = UUID.randomUUID(), teamId = UUID.randomUUID();
+        TeamEntity team = new TeamEntity();
+        team.setStatus("ACTIVE");
+        when(teams.selectById(teamId)).thenReturn(team);
+        when(teamMembers.selectByTeamAndUser(teamId, actor)).thenReturn(new TeamMemberEntity());
+        ProjectMembershipView row = new ProjectMembershipView();
+        row.setId(UUID.randomUUID());
+        row.setTeamId(teamId);
+        row.setAvatarUrl("https://assets.example/avatar.png");
+        row.setMemberCount(3L);
+        row.setLastActivityAt(LocalDateTime.of(2026, 10, 1, 10, 0));
+        when(projects.selectAccessibleByActivity(teamId, actor, false)).thenReturn(List.of(row));
+
+        var response = service.listByLastActivity(actor, teamId).getFirst();
+
+        assertThat(response.getAvatarUrl()).isEqualTo(row.getAvatarUrl());
+        assertThat(response.getMemberCount()).isEqualTo(3L);
+        assertThat(response.getLastActivityAt()).isEqualTo("2026-10-01T10:00:00Z");
+        verifyNoInteractions(projectMembers);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"unchanged", "clear", "replace", "archive", "restore"})
+    void projectChangesPreserveReplaceOrClearAvatar(String operation) {
+        UUID actor = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setTeamId(UUID.randomUUID());
+        project.setName("项目");
+        project.setStatus("restore".equals(operation) ? "ARCHIVED" : "ACTIVE");
+        project.setAvatarUrl("https://assets.example/original.png");
+        when(projects.selectByIdForUpdate(project.getId())).thenReturn(project);
+        String expectedAvatar = project.getAvatarUrl();
+        qg.qgent.project.dto.ProjectResponse result;
+        if ("archive".equals(operation)) {
+            result = service.archive(actor, project.getId());
+        } else if ("restore".equals(operation)) {
+            result = service.restore(actor, project.getId());
+        } else {
+            ProjectUpdateRequest request = new ProjectUpdateRequest();
+            request.setName("更新名称");
+            if ("clear".equals(operation)) {
+                request.setAvatarUrl(" ");
+                expectedAvatar = null;
+            } else if ("replace".equals(operation)) {
+                request.setAvatarUrl(" https://assets.example/new.png ");
+                expectedAvatar = "https://assets.example/new.png";
+            }
+            result = service.update(actor, project.getId(), request);
+        }
+
+        assertThat(result.getAvatarUrl()).isEqualTo(expectedAvatar);
+        assertThat(project.getAvatarUrl()).isEqualTo(expectedAvatar);
+        verify(projects).updateById(project);
+    }
+
     @Test
     void creationInitializesProjectAndChatWithoutRepositoryInputsOrExternalCalls() {
         UUID owner = UUID.randomUUID(), teamId = UUID.randomUUID();

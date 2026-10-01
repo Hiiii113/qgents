@@ -1,5 +1,6 @@
 package qg.qgent.project.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -15,23 +16,14 @@ import qg.qgent.team.mapper.TeamMemberMapper;
 
 import java.util.UUID;
 
-/**
- * 服务端项目访问边界，不信任客户端提交的角色或用户标识。
- */
+/** 服务端项目访问边界，不信任客户端提交的角色或用户标识。 */
 @Service
+@RequiredArgsConstructor
 public class ProjectAccessService {
     private final ProjectMapper projectMapper;
     private final ProjectMemberMapper projectMemberMapper;
     private final TeamMapper teamMapper;
     private final TeamMemberMapper teamMemberMapper;
-
-    public ProjectAccessService(ProjectMapper projectMapper, ProjectMemberMapper projectMemberMapper,
-                                TeamMapper teamMapper, TeamMemberMapper teamMemberMapper) {
-        this.projectMapper = projectMapper;
-        this.projectMemberMapper = projectMemberMapper;
-        this.teamMapper = teamMapper;
-        this.teamMemberMapper = teamMemberMapper;
-    }
 
     public String requireProjectMember(UUID projectId, UUID userId) {
         ProjectEntity project = requireProject(projectId, false);
@@ -42,16 +34,12 @@ public class ProjectAccessService {
         requireAdmin(requireProject(projectId, false), userId);
     }
 
-    /**
-     * 归档项目必须仍可授权恢复，因此该入口允许读取 ARCHIVED 项目。
-     */
+    /** 归档项目必须仍可授权恢复，因此该入口允许读取 ARCHIVED 项目。 */
     public void requireProjectAdminAnyState(UUID projectId, UUID userId) {
         requireAdmin(requireProject(projectId, true), userId);
     }
 
-    /**
-     * 对已加锁项目执行不限状态的 Admin 校验，供状态错误前的防泄漏授权使用。
-     */
+    /** 对已加锁项目执行不限状态的 Admin 校验，供状态错误前的防泄漏授权使用。 */
     public void requireProjectAdminAnyState(ProjectEntity project, UUID userId) {
         requireAdmin(project, userId);
     }
@@ -82,9 +70,7 @@ public class ProjectAccessService {
         throw new ApiException(HttpStatus.FORBIDDEN, "PROJECT_ADMIN_REQUIRED", "需要项目 Admin 权限");
     }
 
-    /**
-     * 同时核对 teams.owner_user_id 与成员角色，额外 TEAM_OWNER 不能获得兜底权限。
-     */
+    /** 同时核对 teams.owner_user_id 与成员角色，额外 TEAM_OWNER 不能获得兜底权限。 */
     public boolean isCanonicalTeamOwner(UUID teamId, UUID userId) {
         TeamEntity team = teamMapper.selectById(teamId);
         if (team == null || !userId.equals(team.getOwnerUserId())) {
@@ -94,9 +80,7 @@ public class ProjectAccessService {
         return member != null && "TEAM_OWNER".equals(member.getRole());
     }
 
-    /**
-     * 判断当前用户是否为项目 Admin（含 canonical Team Owner 兜底）；供能力派生使用。
-     */
+    /** 判断当前用户是否为项目 Admin（含 canonical Team Owner 兜底）；供能力派生使用。 */
     public boolean isProjectAdmin(UUID projectId, UUID userId) {
         try {
             requireProjectAdmin(projectId, userId);
@@ -106,9 +90,7 @@ public class ProjectAccessService {
         }
     }
 
-    /**
-     * 校验调用者为团队成员（团队不存在或非成员返回 404，防枚举）。
-     */
+    /** 校验调用者为团队成员（团队不存在或非成员返回 404，防枚举）。 */
     public void requireTeamMember(UUID teamId, UUID userId) {
         if (teamMemberMapper.selectByTeamAndUser(teamId, userId) == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "TEAM_RESOURCE_NOT_FOUND", "团队资源不存在或不可见");

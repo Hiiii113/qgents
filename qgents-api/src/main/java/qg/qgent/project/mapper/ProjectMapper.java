@@ -12,16 +12,18 @@ import java.util.UUID;
 
 @Mapper
 public interface ProjectMapper extends BaseMapper<ProjectEntity> {
-    @Select("SELECT id, team_id, created_by, name, description, status FROM projects WHERE id = #{projectId} FOR UPDATE")
-    @Results({
+    @Select("SELECT id, team_id, created_by, name, description, avatar_url, status FROM projects WHERE id = #{projectId} FOR UPDATE")
+    @Results(id = "project", value = {
             @Result(column = "id", property = "id", typeHandler = UuidBinaryTypeHandler.class),
             @Result(column = "team_id", property = "teamId", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "created_by", property = "createdBy", typeHandler = UuidBinaryTypeHandler.class)
+            @Result(column = "created_by", property = "createdBy", typeHandler = UuidBinaryTypeHandler.class),
+            @Result(column = "avatar_url", property = "avatarUrl")
     })
     ProjectEntity selectByIdForUpdate(@Param("projectId") UUID projectId);
 
     @Select({"<script>",
             "SELECT p.id, p.team_id, p.name, p.description, p.avatar_url, p.status,",
+            "(SELECT COUNT(*) FROM project_members mc WHERE mc.project_id = p.id) AS member_count,",
             "CASE WHEN #{teamOwner} THEN 'PROJECT_ADMIN' ELSE pm.role END AS role",
             "FROM projects p LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = #{userId}",
             "WHERE p.team_id = #{teamId}",
@@ -29,22 +31,20 @@ public interface ProjectMapper extends BaseMapper<ProjectEntity> {
             "<if test='anchor != null'>AND p.id &gt; #{anchor}</if>",
             "ORDER BY p.id LIMIT #{limit}",
             "</script>"})
-    @Results({
+    @Results(id = "membership", value = {
             @Result(column = "id", property = "id", typeHandler = UuidBinaryTypeHandler.class),
             @Result(column = "team_id", property = "teamId", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "avatar_url", property = "avatarUrl")
+            @Result(column = "avatar_url", property = "avatarUrl"),
+            @Result(column = "member_count", property = "memberCount"),
+            @Result(column = "last_activity_at", property = "lastActivityAt")
     })
     List<ProjectMembershipView> selectAccessiblePage(@Param("teamId") UUID teamId,
                                                      @Param("userId") UUID userId, @Param("teamOwner") boolean teamOwner,
                                                      @Param("anchor") UUID anchor, @Param("limit") int limit);
 
-    @Select("SELECT id, team_id, created_by, name, description, status FROM projects "
+    @Select("SELECT id, team_id, created_by, name, description, avatar_url, status FROM projects "
             + "WHERE team_id = #{teamId} ORDER BY id FOR UPDATE")
-    @Results({
-            @Result(column = "id", property = "id", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "team_id", property = "teamId", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "created_by", property = "createdBy", typeHandler = UuidBinaryTypeHandler.class)
-    })
+    @ResultMap("project")
     List<ProjectEntity> selectByTeamForUpdate(@Param("teamId") UUID teamId);
 
     @Select("SELECT DISTINCT p.id, p.team_id, p.name, p.description, p.avatar_url, p.status, "
@@ -56,25 +56,13 @@ public interface ProjectMapper extends BaseMapper<ProjectEntity> {
             + "WHERE p.status = 'ACTIVE' AND t.status = 'ACTIVE' "
             + "AND ((t.owner_user_id = #{userId} AND tom.role = 'TEAM_OWNER') "
             + "OR pm.user_id IS NOT NULL) ORDER BY p.id")
-    @Results({
-            @Result(column = "id", property = "id", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "team_id", property = "teamId", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "avatar_url", property = "avatarUrl")
-    })
+    @ResultMap("membership")
     List<ProjectMembershipView> selectAccessibleByUser(@Param("userId") UUID userId);
 
-    /**
-     * 查询某团队下当前用户可见的项目（含最后活跃时间），按最后活跃倒序。
-     * 最后活跃 = 该项目下所有群最近消息时间的最大值；任何群都无消息时为 null（沉底），
-     * 不兜底创建时间——避免新创建的无活跃项目被「伪造」成最新活跃而排首位。
-     *
-     * @param teamId    团队 ID
-     * @param userId    当前用户 ID
-     * @param teamOwner 当前用户是否为该团队 canonical Owner（Owner 可见团队全部项目）
-     * @return 项目视图列表（含 lastActivityAt），按最后活跃倒序
-     */
+    /** 按项目群聊最近消息时间倒序查询；无消息时为空。 */
     @Select({"<script>",
             "SELECT p.id, p.team_id, p.name, p.description, p.avatar_url, p.status, ",
+            "(SELECT COUNT(*) FROM project_members mc WHERE mc.project_id = p.id) AS member_count,",
             "CASE WHEN #{teamOwner} THEN 'PROJECT_ADMIN' ELSE pm.role END AS role, ",
             "(SELECT MAX(rg.last_message_at) FROM chat_groups rg ",
             "  WHERE rg.project_id = p.id) AS last_activity_at ",
@@ -83,12 +71,7 @@ public interface ProjectMapper extends BaseMapper<ProjectEntity> {
             "<if test='teamOwner == false'>AND pm.user_id IS NOT NULL</if> ",
             "ORDER BY last_activity_at DESC, p.id",
             "</script>"})
-    @Results({
-            @Result(column = "id", property = "id", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "team_id", property = "teamId", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "avatar_url", property = "avatarUrl"),
-            @Result(column = "last_activity_at", property = "lastActivityAt")
-    })
+    @ResultMap("membership")
     List<ProjectMembershipView> selectAccessibleByActivity(@Param("teamId") UUID teamId,
                                                            @Param("userId") UUID userId,
                                                            @Param("teamOwner") boolean teamOwner);

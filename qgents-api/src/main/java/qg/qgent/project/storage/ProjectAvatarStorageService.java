@@ -1,5 +1,6 @@
 package qg.qgent.project.storage;
 
+import lombok.RequiredArgsConstructor;
 import com.aliyun.oss.HttpMethod;
 import com.aliyun.oss.OSS;
 import org.springframework.beans.factory.ObjectProvider;
@@ -20,20 +21,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * 项目头像对象存储直传服务：复用阿里云 OSS 直传能力，头像对象走独立命名空间
- * {@code projects/{projectId}/{uuid}.{ext}}，确认后返回**长期稳定、公共读**的头像 URL。
- * 与用户/团队/Agent 头像相互独立——项目头像不写任何用户字段。
- * <p>
- * OSS 未启用时统一抛 501；对象键由服务端生成，confirm 校验对象键属于当前项目前缀，
- * 防止覆盖他人/他项目头像。
- */
+/** 签发项目头像 OSS 上传凭证，确认对象存在后返回公共 URL。 */
 @Component
+@RequiredArgsConstructor
 public class ProjectAvatarStorageService {
 
-    /**
-     * 头像对象大小上限（字节）。
-     */
+    /** 头像对象大小上限（字节）。 */
     static final long MAX_SIZE_BYTES = 5 * 1024 * 1024;
 
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
@@ -41,19 +34,7 @@ public class ProjectAvatarStorageService {
     private final ObjectProvider<OSS> ossProvider;
     private final AliyunOssProperties properties;
 
-    public ProjectAvatarStorageService(ObjectProvider<OSS> ossProvider, AliyunOssProperties properties) {
-        this.ossProvider = ossProvider;
-        this.properties = properties;
-    }
-
-    /**
-     * 为项目签发头像直传凭证：对象键 {@code projects/{projectId}/{uuid}.{ext}}，预签名 PUT。
-     *
-     * @param projectId 项目 ID（对象键命名空间）
-     * @param mediaType MIME 类型，必须为 image/ 开头
-     * @param sizeBytes 文件大小字节，必须为正且不超过上限
-     * @return 直传凭证（含服务端签发的对象键，确认时原样回传）
-     */
+    /** 为项目签发头像直传凭证：对象键 {@code projects/{projectId}/{uuid}.{ext}}，预签名 PUT。 */
     public ProjectAvatarCredential createCredential(UUID projectId, String mediaType, Long sizeBytes) {
         OSS oss = requireConfigured();
         requirePublicUrl();
@@ -77,15 +58,9 @@ public class ProjectAvatarStorageService {
         return new ProjectAvatarCredential(objectKey, new UploadCredential(url.toString(), "PUT", Map.of(), expiry));
     }
 
-    /**
-     * 确认项目头像已上传并返回长期公共读 URL；校验对象存在且属于该项目命名空间。
-     *
-     * @param projectId 项目 ID（前缀校验）
-     * @param objectKey 直传凭证签发的对象键
-     * @return 公共读长期稳定 URL
-     */
+    /** 确认项目头像已上传并返回长期公共读 URL；校验对象存在且属于该项目命名空间。 */
     public String confirmAvatar(UUID projectId, String objectKey) {
-        requireConfigured();
+        OSS oss = requireConfigured();
         if (objectKey == null || objectKey.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "AVATAR_OBJECT_KEY_REQUIRED", "缺少头像对象键");
         }
@@ -94,7 +69,7 @@ public class ProjectAvatarStorageService {
             throw new ApiException(HttpStatus.FORBIDDEN, "AVATAR_OBJECT_KEY_FORBIDDEN",
                     "头像对象键不属于当前项目");
         }
-        if (!ossProvider.getObject().doesObjectExist(properties.getBucketName(), objectKey)) {
+        if (!oss.doesObjectExist(properties.getBucketName(), objectKey)) {
             throw new ApiException(HttpStatus.CONFLICT, "AVATAR_NOT_UPLOADED",
                     "头像尚未上传到对象存储，请先上传再确认");
         }
@@ -127,9 +102,7 @@ public class ProjectAvatarStorageService {
         return ext;
     }
 
-    /**
-     * 项目头像直传凭证：服务端签发的对象键与其对应预签名上传凭证。
-     */
+    /** 项目头像直传凭证：服务端签发的对象键与其对应预签名上传凭证。 */
     public record ProjectAvatarCredential(String objectKey, UploadCredential credential) {
     }
 }
