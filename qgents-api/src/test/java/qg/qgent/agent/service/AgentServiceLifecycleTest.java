@@ -332,33 +332,6 @@ class AgentServiceLifecycleTest {
     }
 
     @Test
-    void unpublishIsDisallowedForPublishedTeamAgent() {
-        member(teamId, creator);
-        AgentEntity agent = agent(agentId(), teamId, creator, "TEAM", "ACTIVE", false);
-        when(agents.selectById(agent.getId())).thenReturn(agent);
-
-        ApiException error = assertThrows(ApiException.class,
-                () -> service.unpublish(creator, teamId, agent.getId()));
-
-        // v2.0.6：已发布（TEAM）不可收回为私有，只能归档
-        assertEquals("AGENT_UNPUBLISH_DISALLOWED", error.code());
-        verify(agents, never()).updateById(any(AgentEntity.class));
-    }
-
-    @Test
-    void unpublishIsDisallowedForPrivateAgent() {
-        member(teamId, creator);
-        AgentEntity agent = agent(agentId(), teamId, creator, "PRIVATE", "ACTIVE", false);
-        when(agents.selectById(agent.getId())).thenReturn(agent);
-
-        ApiException error = assertThrows(ApiException.class,
-                () -> service.unpublish(creator, teamId, agent.getId()));
-
-        // v2.0.6：unpublish 整体废弃（TEAM 不可回私有），任何可见性都返回 409
-        assertEquals("AGENT_UNPUBLISH_DISALLOWED", error.code());
-    }
-
-    @Test
     void archiveArchivesActiveAgent() {
         member(teamId, creator);
         AgentEntity agent = agent(agentId(), teamId, creator, "TEAM", "ACTIVE", false);

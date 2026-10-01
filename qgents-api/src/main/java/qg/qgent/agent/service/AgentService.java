@@ -333,19 +333,6 @@ public class AgentService {
     }
 
     /**
-     * 收回发布已废弃：TEAM Agent 无论由 Team Owner 直接发布还是审核批准，均不可再变回 PRIVATE（只能归档）。
-     * 保留端点返回 409 明确语义，避免客户端误以为可自由切换。
-     */
-    @Transactional
-    public AgentResponse unpublish(UUID actor, UUID teamId, UUID agentId) {
-        requireTeamMember(teamId, actor);
-        AgentEntity agent = requireAgentInTeam(teamId, agentId);
-        requireNotDefault(agent);
-        throw new ApiException(HttpStatus.CONFLICT, "AGENT_UNPUBLISH_DISALLOWED",
-                "已发布的团队 Agent 不可收回为私有，只能归档（archive）");
-    }
-
-    /**
      * 归档 Agent：PRIVATE/TEAM + ACTIVE → ARCHIVED。仅创建者或 Team Owner 可归档。
      * 归档后不能启动新 AgentRun；已运行的 loop 和历史记录保留。
      */

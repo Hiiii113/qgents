@@ -25,7 +25,7 @@ class NotificationServiceTest {
         String mrId = UUID.randomUUID().toString();
         doThrow(new DuplicateKeyException("duplicate MR status"))
                 .when(mapper).insert(any(NotificationEntity.class));
-        NotificationService service = new NotificationService(mapper, events);
+        NotificationService service = new NotificationService(mapper, events, mock(PushNotificationService.class));
 
         service.notifyMrStatus(recipient, UUID.randomUUID(), null, "MR 状态更新：1", "OPEN", mrId, "OPEN");
 
@@ -37,7 +37,7 @@ class NotificationServiceTest {
     void changedMrStatusCreatesNotification() {
         UUID recipient = UUID.randomUUID();
         String mrId = UUID.randomUUID().toString();
-        NotificationService service = new NotificationService(mapper, events);
+        NotificationService service = new NotificationService(mapper, events, mock(PushNotificationService.class));
 
         service.notifyMrStatus(recipient, UUID.randomUUID(), null, "MR 状态更新：1", "MERGED", mrId, "MERGED");
 

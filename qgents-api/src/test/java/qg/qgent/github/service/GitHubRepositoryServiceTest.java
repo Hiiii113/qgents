@@ -106,7 +106,7 @@ class GitHubRepositoryServiceTest {
         // lenient：仅解绑相关测试触发活动任务占用查询，默认无占用
         lenient().when(taskMapper.countActiveTasksUsingRepository(any(UUID.class))).thenReturn(0);
         service = new GitHubRepositoryService(installationMapper, repositoryMapper, projectRepositoryMapper,
-                projectMapper, projectMemberMapper, teamMemberMapper, taskMapper, gitHubClient,
+                projectMapper, projectMemberMapper, teamMemberMapper, taskMapper, gitHubClient, githubOAuthService, githubOAuthClient,
                 Clock.fixed(Instant.parse("2026-08-10T12:00:00Z"), ZoneOffset.UTC), transactionManager);
     }
 
@@ -389,7 +389,7 @@ class GitHubRepositoryServiceTest {
         UUID otherTeamId = UUID.randomUUID();
 
         when(gitHubClient.verifyInstallationState("mock_state")).thenReturn(myTeamId);
-        when(gitHubClient.getInstallation(providerInstallationId)).thenReturn(new qg.qgent.github.client.GitHubInstallationDetails(providerInstallationId, "qgents", "Organization"));
+        when(gitHubClient.getInstallation(providerInstallationId)).thenReturn(new qg.qgent.github.client.GitHubInstallationDetails(providerInstallationId, "qgents", "Organization", null));
         when(gitHubClient.listRepositories(providerInstallationId)).thenReturn(java.util.List.of());
 
         // 其他团队的 ACTIVE 安装且仍存在 AUTHORIZED 仓库：视为活跃占用，拒绝接管
@@ -418,7 +418,7 @@ class GitHubRepositoryServiceTest {
         when(gitHubClient.verifyInstallationState("mock_state")).thenReturn(myTeamId);
         when(gitHubClient.getInstallation(providerInstallationId))
                 .thenReturn(new qg.qgent.github.client.GitHubInstallationDetails(
-                        providerInstallationId, "qgents", "Organization"));
+                        providerInstallationId, "qgents", "Organization", null));
         when(gitHubClient.listRepositories(providerInstallationId)).thenReturn(java.util.List.of(
                 new qg.qgent.github.client.GitHubRepositoryDetails(100L, "qgents", "repo1", "main", "PRIVATE", false)));
 
@@ -448,7 +448,7 @@ class GitHubRepositoryServiceTest {
         UUID myTeamId = UUID.randomUUID();
         
         when(gitHubClient.verifyInstallationState("mock_state")).thenReturn(myTeamId);
-        when(gitHubClient.getInstallation(providerInstallationId)).thenReturn(new qg.qgent.github.client.GitHubInstallationDetails(providerInstallationId, "qgents", "Organization"));
+        when(gitHubClient.getInstallation(providerInstallationId)).thenReturn(new qg.qgent.github.client.GitHubInstallationDetails(providerInstallationId, "qgents", "Organization", null));
         
         // Return 1 repository from GitHub
         when(gitHubClient.listRepositories(providerInstallationId)).thenReturn(java.util.List.of(
@@ -529,7 +529,7 @@ class GitHubRepositoryServiceTest {
         UUID myTeamId = UUID.randomUUID();
         
         when(gitHubClient.verifyInstallationState("mock_state")).thenReturn(myTeamId);
-        when(gitHubClient.getInstallation(providerInstallationId)).thenReturn(new qg.qgent.github.client.GitHubInstallationDetails(providerInstallationId, "qgents", "Organization"));
+        when(gitHubClient.getInstallation(providerInstallationId)).thenReturn(new qg.qgent.github.client.GitHubInstallationDetails(providerInstallationId, "qgents", "Organization", null));
         when(gitHubClient.listRepositories(providerInstallationId)).thenReturn(java.util.List.of(
             new qg.qgent.github.client.GitHubRepositoryDetails(100L, "qgents", "repo1", "main", "PRIVATE", false)
         ));
@@ -559,7 +559,7 @@ class GitHubRepositoryServiceTest {
         when(gitHubClient.verifyInstallationState("mock_state")).thenReturn(teamId);
         when(gitHubClient.getInstallation(providerInstallationId))
                 .thenReturn(new qg.qgent.github.client.GitHubInstallationDetails(
-                        providerInstallationId, "qgents", "Organization"));
+                        providerInstallationId, "qgents", "Organization", null));
         when(gitHubClient.listRepositories(providerInstallationId)).thenReturn(java.util.List.of(
                 new qg.qgent.github.client.GitHubRepositoryDetails(100L, "qgents", "repo1", "main", "PRIVATE", false)));
         when(installationMapper.selectByProviderInstallationIdForUpdate(anyLong())).thenReturn(null);
@@ -595,7 +595,7 @@ class GitHubRepositoryServiceTest {
                 .thenReturn(new GitHubInstallationState(teamId, GitHubClient.WEB));
         when(gitHubClient.getInstallation(providerInstallationId))
                 .thenReturn(new qg.qgent.github.client.GitHubInstallationDetails(
-                        providerInstallationId, "qgents", "Organization"));
+                        providerInstallationId, "qgents", "Organization", null));
         when(gitHubClient.listRepositories(providerInstallationId)).thenReturn(java.util.List.of(
                 new qg.qgent.github.client.GitHubRepositoryDetails(100L, "qgents", "repo1", "main", "PRIVATE", false)));
         when(installationMapper.selectByProviderInstallationIdForUpdate(anyLong())).thenReturn(null);
@@ -618,7 +618,7 @@ class GitHubRepositoryServiceTest {
         when(gitHubClient.verifyInstallationState("mock_state")).thenReturn(teamId);
         when(gitHubClient.getInstallation(providerInstallationId))
                 .thenReturn(new qg.qgent.github.client.GitHubInstallationDetails(
-                        providerInstallationId, "qgents", "Organization"));
+                        providerInstallationId, "qgents", "Organization", null));
         when(gitHubClient.listRepositories(providerInstallationId)).thenReturn(java.util.List.of(
                 new qg.qgent.github.client.GitHubRepositoryDetails(100L, "qgents", "empty-repository", null,
                         "PRIVATE", false)));
@@ -640,7 +640,7 @@ class GitHubRepositoryServiceTest {
         when(gitHubClient.verifyInstallationState("mock_state")).thenReturn(teamId);
         when(gitHubClient.getInstallation(providerInstallationId))
                 .thenReturn(new qg.qgent.github.client.GitHubInstallationDetails(
-                        providerInstallationId, "qgents", "Organization"));
+                        providerInstallationId, "qgents", "Organization", null));
         when(gitHubClient.listRepositories(providerInstallationId)).thenReturn(java.util.List.of(
                 new qg.qgent.github.client.GitHubRepositoryDetails(100L, "qgents", "repo1", "main", "PRIVATE", false)));
 
@@ -669,7 +669,7 @@ class GitHubRepositoryServiceTest {
         when(gitHubClient.verifyInstallationState("mock_state")).thenReturn(teamId);
         when(gitHubClient.getInstallation(providerInstallationId))
                 .thenReturn(new qg.qgent.github.client.GitHubInstallationDetails(
-                        providerInstallationId, "qgents", "Organization"));
+                        providerInstallationId, "qgents", "Organization", null));
         when(gitHubClient.listRepositories(providerInstallationId)).thenReturn(java.util.List.of(
                 new qg.qgent.github.client.GitHubRepositoryDetails(100L, "qgents", "repo1", "main", "PRIVATE", false)));
 
@@ -1042,7 +1042,7 @@ class GitHubRepositoryServiceTest {
     }
 
     @Test
-    void rejectsPersonalRepositoryCreationBeforeCallingGitHubApp() {
+    void rejectsPersonalRepositoryCreationWithoutUserAuthorizationBeforeCallingGitHubApp() {
         UUID teamId = UUID.randomUUID();
         when(teamMemberMapper.selectCount(any(Wrapper.class))).thenReturn(1L);
 
@@ -1058,12 +1058,14 @@ class GitHubRepositoryServiceTest {
 
         ProjectRepositoryCreateRequest request = new ProjectRepositoryCreateRequest();
         request.setName("personal-repo");
+        when(githubOAuthService.requirePersonalCredential(actorId)).thenThrow(
+                new ApiException(HttpStatus.CONFLICT, "GITHUB_OAUTH_REQUIRED", "请先关联个人 GitHub 账号"));
 
         ApiException exception = assertThrows(ApiException.class,
                 () -> service.createRemoteRepository(actorId, teamId, request));
 
-        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, exception.status());
-        assertEquals("GITHUB_PERSONAL_REPOSITORY_CREATION_NOT_SUPPORTED", exception.code());
+        assertEquals(HttpStatus.CONFLICT, exception.status());
+        assertEquals("GITHUB_OAUTH_REQUIRED", exception.code());
         verify(gitHubClient, never()).createRepository(anyLong(), anyString(), anyString(),
                 any(GitHubRepositoryCreateRequest.class));
     }

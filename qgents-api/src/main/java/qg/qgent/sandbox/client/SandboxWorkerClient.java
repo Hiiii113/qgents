@@ -98,16 +98,6 @@ public class SandboxWorkerClient {
     }
 
     /**
-     * 移除 Workspace 独立仓库，不删除共享 Git Store。
-     */
-    public void deleteWorkspace(UUID workspaceId) {
-        execute(() -> {
-            client.delete().uri(WORKSPACES, workspaceId).retrieve().toBodilessEntity();
-            return null;
-        });
-    }
-
-    /**
      * 同步受控 Git Store
      */
     public WorkerGitStoreSyncResponse syncGitStore(UUID repositoryId, WorkerGitStoreSyncRequest request) {

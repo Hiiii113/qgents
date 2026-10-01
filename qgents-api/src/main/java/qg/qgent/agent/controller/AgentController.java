@@ -181,20 +181,6 @@ public class AgentController {
     }
 
     /**
-     * 契约 §11.1：收回发布已废弃——TEAM Agent 无论直接发布还是审核批准均不可回私有，
-     * 返回 409 AGENT_UNPUBLISH_DISALLOWED（保留端点兼容旧客户端，仅能归档）。
-     */
-    @PostMapping("/teams/{teamId}/agents/{agentId}/unpublish")
-    public ApiResponse<AgentResponse> unpublish(@AuthenticationPrincipal UUID actor, @PathVariable UUID teamId,
-            @PathVariable UUID agentId,
-            @RequestHeader(value = "Idempotency-Key", required = false) String key, HttpServletRequest request) {
-        AgentResponse result = idempotency.execute(actor, "POST:/teams/{teamId}/agents/{agentId}/unpublish", key,
-                Map.of("teamId", teamId, "agentId", agentId), 200, AgentResponse.class,
-                () -> service.unpublish(actor, teamId, agentId));
-        return ApiResponse.ok(result, (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
-    }
-
-    /**
      * 契约 §11.1（接口补充 v2.0.3 §6）：归档 Agent（创建者或 Team Owner，PRIVATE/TEAM+ACTIVE → ARCHIVED）。
      */
     @PostMapping("/teams/{teamId}/agents/{agentId}/archive")

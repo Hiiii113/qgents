@@ -53,39 +53,6 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
                                              @Param("limit") int limit);
 
     /**
-     * 批量查询项目下每个群的最新一条消息摘要（群列表 latestMessage 用，避免逐群 N+1）。
-     * <p>
-     * senderName 通过 LEFT JOIN users/agents 取 {@code COALESCE(display_name, name)}，
-     * SYSTEM 消息两者为空则 senderName 为 null；text 取 content JSON 的 {@code $.text}，
-     * CODE/IMAGE/FILE/SYSTEM 等类型取不到时为 null。
-     *
-     * @param projectId 项目 ID
-     * @return 每群最新一条消息的摘要行；无消息的群不在结果中
-     */
-    @Select("SELECT m.requirement_group_id, "
-            + "COALESCE(u.display_name, a.name) AS sender_name, "
-            + "JSON_UNQUOTE(JSON_EXTRACT(m.content, '$.text')) AS text, "
-            + "m.message_type, m.created_at "
-            + "FROM messages m "
-            + "LEFT JOIN users u ON u.id = m.author_user_id "
-            + "LEFT JOIN agents a ON a.id = m.agent_id "
-            + "INNER JOIN (SELECT requirement_group_id, MAX(sequence_no) AS max_seq "
-            + "            FROM messages "
-            + "            WHERE requirement_group_id IN "
-            + "                (SELECT id FROM requirement_groups WHERE project_id = #{projectId}) "
-            + "            GROUP BY requirement_group_id) t "
-            + "ON t.requirement_group_id = m.requirement_group_id AND t.max_seq = m.sequence_no")
-    @Results({
-            @Result(column = "requirement_group_id", property = "requirementGroupId",
-                    typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "sender_name", property = "senderName"),
-            @Result(column = "text", property = "text"),
-            @Result(column = "message_type", property = "messageType"),
-            @Result(column = "created_at", property = "createdAt")
-    })
-    List<GroupLatestMessageRow> selectLatestByProject(@Param("projectId") UUID projectId);
-
-    /**
      * 批量查询指定群的最新一条消息摘要。调用方必须先完成项目与群成员权限校验。
      *
      * @param groupIds 已确认可见的群 ID
@@ -183,28 +150,6 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
                                                @Param("userId") UUID userId);
 
     /**
-     * 兼容旧调用方的项目级未读统计；新业务代码应优先传入已校验的群 ID 集合。
-     */
-    @Deprecated
-    @Select({"<script>",
-            "SELECT m.requirement_group_id, COUNT(*) AS unread ",
-            "FROM messages m ",
-            "INNER JOIN requirement_groups g ON g.id = m.requirement_group_id ",
-            "LEFT JOIN group_read_state r ON r.user_id = #{userId} ",
-            "AND r.group_id = m.requirement_group_id ",
-            "WHERE g.project_id = #{projectId} ",
-            "AND m.sequence_no &gt; COALESCE(r.last_read_sequence_no, 0) ",
-            "AND m.author_user_id &lt;&gt; #{userId} ",
-            "GROUP BY m.requirement_group_id",
-            "</script>"})
-    @Results({
-            @Result(column = "requirement_group_id", property = "groupId",
-                    typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "unread", property = "unread")
-    })
-    List<GroupUnreadRow> countUnreadByProject(@Param("projectId") UUID projectId, @Param("userId") UUID userId);
-
-    /**
      * 统计当前用户在指定可见群中「@ 我」的未读消息数（排除本人消息）。
      * mentions 为 JSON 数组（如 {@code [{"type":"USER","id":"..."}]}），用 JSON_CONTAINS 匹配
      * {@code {"type":"USER","id":当前用户}}；未读 = sequence_no 大于已读游标。
@@ -238,31 +183,6 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
     List<GroupUnreadRow> countMentionUnreadByGroupIds(@Param("groupIds") List<UUID> groupIds,
                                                       @Param("userId") UUID userId,
                                                       @Param("userIdText") String userIdText);
-
-    /**
-     * 兼容旧调用方的项目级「@ 我」未读统计；新业务代码应优先传入已校验的群 ID 集合。
-     */
-    @Deprecated
-    @Select({"<script>",
-            "SELECT m.requirement_group_id, COUNT(*) AS unread ",
-            "FROM messages m ",
-            "INNER JOIN requirement_groups g ON g.id = m.requirement_group_id ",
-            "LEFT JOIN group_read_state r ON r.user_id = #{userId} ",
-            "AND r.group_id = m.requirement_group_id ",
-            "WHERE g.project_id = #{projectId} ",
-            "AND m.sequence_no &gt; COALESCE(r.last_read_sequence_no, 0) ",
-            "AND m.author_user_id &lt;&gt; #{userId} ",
-            "AND JSON_CONTAINS(m.mentions, JSON_OBJECT('type', 'USER', 'id', #{userIdText})) ",
-            "GROUP BY m.requirement_group_id",
-            "</script>"})
-    @Results({
-            @Result(column = "requirement_group_id", property = "groupId",
-                    typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "unread", property = "unread")
-    })
-    List<GroupUnreadRow> countMentionUnreadByProject(@Param("projectId") UUID projectId,
-                                                     @Param("userId") UUID userId,
-                                                     @Param("userIdText") String userIdText);
 
     /**
      * 解散团队时按群范围逐层删除不再被任何消息引用的叶子消息。

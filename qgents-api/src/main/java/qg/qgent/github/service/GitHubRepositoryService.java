@@ -81,7 +81,6 @@ public class GitHubRepositoryService {
     private final Clock clock;
     private final TransactionTemplate required;
 
-    @org.springframework.beans.factory.annotation.Autowired
     public GitHubRepositoryService(GitHubInstallationMapper installationMapper, GitHubRepositoryMapper repositoryMapper,
                                    ProjectRepositoryMapper projectRepositoryMapper,
                                    ProjectMapper projectMapper, ProjectMemberMapper projectMemberMapper,
@@ -102,17 +101,6 @@ public class GitHubRepositoryService {
         this.clock = clock;
         this.required = new TransactionTemplate(transactionManager);
         this.required.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
-    }
-
-    /** 兼容单元测试及旧调用方的构造器；生产 Bean 使用带 OAuth 依赖的构造器。 */
-    public GitHubRepositoryService(GitHubInstallationMapper installationMapper, GitHubRepositoryMapper repositoryMapper,
-                                   ProjectRepositoryMapper projectRepositoryMapper,
-                                   ProjectMapper projectMapper, ProjectMemberMapper projectMemberMapper,
-                                   TeamMemberMapper teamMemberMapper, TaskMapper taskMapper,
-                                   GitHubAppClient gitHubClient, Clock clock,
-                                   PlatformTransactionManager transactionManager) {
-        this(installationMapper, repositoryMapper, projectRepositoryMapper, projectMapper, projectMemberMapper,
-                teamMemberMapper, taskMapper, gitHubClient, null, null, clock, transactionManager);
     }
 
     /**
@@ -343,11 +331,6 @@ public class GitHubRepositoryService {
         String personalAccessToken = null;
         GitHubRepositoryDetails created;
         if ("USER".equalsIgnoreCase(installation.getAccountType())) {
-            if (githubOAuthService == null || githubOAuthClient == null) {
-                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY,
-                        "GITHUB_PERSONAL_REPOSITORY_CREATION_NOT_SUPPORTED",
-                        "个人仓库创建需要接入 GitHub OAuth");
-            }
             GitHubOAuthService.PersonalCredential credential = githubOAuthService.requirePersonalCredential(actorId);
             if (installation.getAccountLogin() == null
                     || !installation.getAccountLogin().equalsIgnoreCase(credential.githubLogin())) {
@@ -452,7 +435,7 @@ public class GitHubRepositoryService {
 
     private void cleanupCreatedPersonalRepository(String accessToken, GitHubRepositoryDetails created) {
         if (created == null || created.getOwnerLogin() == null || created.getName() == null
-                || accessToken == null || accessToken.isBlank() || githubOAuthClient == null) {
+                || accessToken == null || accessToken.isBlank()) {
             return;
         }
         try {
@@ -508,7 +491,7 @@ public class GitHubRepositoryService {
             gitHubClient.deleteRepository(installation.getProviderInstallationId(), repository.getOwnerLogin(),
                     repository.getName());
         } else {
-            if (githubOAuthService == null || githubOAuthClient == null || creation.actorId() == null) {
+            if (creation.actorId() == null) {
                 throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "GITHUB_OAUTH_NOT_CONFIGURED",
                         "无法解析个人 GitHub 授权以执行补偿删除");
             }
@@ -1233,10 +1216,6 @@ public class GitHubRepositoryService {
                 repository.getInstallationId(), repository.getProviderRepositoryId(),
                 fullName, githubUrl, binding.getDefaultBranch(), binding.getDisplayName(),
                 repository.getAuthorizationStatus(), repository.getSyncedAt(), binding.getBoundAt());
-    }
-
-    private String blankToDefault(String value, String fallback) {
-        return value == null || value.isBlank() ? fallback : value;
     }
 
     private GitHubBranchDetails findExistingBranch(GitHubAppClient client, long installationId, String owner,

@@ -94,18 +94,6 @@ public class ProjectAccessService {
         return member != null && "TEAM_OWNER".equals(member.getRole());
     }
 
-    public boolean isOwnerOrAdmin(UUID creatorId, UUID projectId, UUID userId) {
-        if (creatorId != null && creatorId.equals(userId)) {
-            return true;
-        }
-        try {
-            requireProjectAdmin(projectId, userId);
-            return true;
-        } catch (ApiException e) {
-            return false;
-        }
-    }
-
     /**
      * 判断当前用户是否为项目 Admin（含 canonical Team Owner 兜底）；供能力派生使用。
      */

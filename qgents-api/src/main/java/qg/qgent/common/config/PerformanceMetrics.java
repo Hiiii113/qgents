@@ -34,15 +34,6 @@ public class PerformanceMetrics {
         }
     }
 
-    public void recordDuration(String metric, long durationNanos, String operation, String outcome) {
-        Timer.builder(metric)
-                .tag("operation", safe(operation))
-                .tag("outcome", safe(outcome))
-                .publishPercentiles(0.5, 0.95, 0.99)
-                .register(registry)
-                .record(durationNanos, java.util.concurrent.TimeUnit.NANOSECONDS);
-    }
-
     public void increment(String metric, String operation, String outcome) {
         Counter.builder(metric)
                 .tag("operation", safe(operation))

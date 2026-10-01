@@ -503,36 +503,6 @@ public class GroupService {
     }
 
     /**
-     * 校验用户可见的需求群 ID 列表（任务中心等按群过滤用）：用户是群成员的需求群
-     * （含创建者兜底）；PROJECT_MAIN 主群单独由项目成员可见性覆盖，不在此列表。
-     *
-     * @param projectId 项目 ID
-     * @param userId    用户 ID
-     * @return 用户可见的需求群 ID 列表
-     */
-    public List<UUID> visibleRequirementGroupIds(UUID projectId, UUID userId) {
-        return groupMemberMapper.selectGroupIdsByUser(projectId, userId);
-    }
-
-    /**
-     * 用户在该项目全部可见群 ID（任务中心按群过滤）：项目全部 PROJECT_MAIN 主群
-     * （主群恒对项目成员可见）+ 用户已加入的 REQUIREMENT 需求群。
-     *
-     * @param projectId 项目 ID
-     * @param userId    用户 ID
-     * @return 可见群 ID 列表
-     */
-    public List<UUID> visibleGroupIds(UUID projectId, UUID userId) {
-        List<UUID> result = new ArrayList<>();
-        groupMapper.selectList(Wrappers.<RequirementGroupEntity>lambdaQuery()
-                        .eq(RequirementGroupEntity::getProjectId, projectId)
-                        .eq(RequirementGroupEntity::getGroupType, "PROJECT_MAIN"))
-                .forEach(group -> result.add(group.getId()));
-        result.addAll(groupMemberMapper.selectGroupIdsByUser(projectId, userId));
-        return result;
-    }
-
-    /**
      * 群管理权限：群创建者或 Project Admin，否则 403 FORBIDDEN（与归档权限一致）。
      */
     private void requireGroupAdmin(UUID projectId, RequirementGroupEntity group, UUID actor) {

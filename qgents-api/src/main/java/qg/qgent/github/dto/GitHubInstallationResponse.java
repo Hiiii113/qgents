@@ -52,11 +52,4 @@ public class GitHubInstallationResponse {
      */
     private LocalDateTime metadataSyncedAt;
 
-    /** 兼容新增仓库访问范围字段前的调用方，旧响应默认范围未知。 */
-    public GitHubInstallationResponse(UUID id, long providerInstallationId, String accountLogin,
-                                      String accountType, String status, LocalDateTime installedAt,
-                                      LocalDateTime metadataSyncedAt) {
-        this(id, providerInstallationId, accountLogin, accountType, status, null, installedAt,
-                metadataSyncedAt);
-    }
 }

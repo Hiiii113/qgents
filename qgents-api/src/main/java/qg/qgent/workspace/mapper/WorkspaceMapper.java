@@ -56,21 +56,4 @@ public interface WorkspaceMapper extends BaseMapper<WorkspaceEntity> {
     int releaseWriteLease(@Param("projectId") UUID projectId, @Param("workspaceId") UUID workspaceId,
                           @Param("taskId") UUID taskId, @Param("token") String token);
 
-    /**
-     * Recovery 专用的无令牌清理：只允许清理已进入终态 Task 的残留租约，或已经过期的租约。
-     * <p>
-     * 恢复线程无法持有原执行器内存中的 token，因此不能调用普通 release。Task 状态条件
-     * 防止恢复线程误清理仍在运行的 Task；taskId 条件防止清理后来者租约。
-     */
-    @Update("update workspaces set write_lease_task_id=null, write_lease_token=null, "
-            + "write_lease_expires_at=null, updated_at=UTC_TIMESTAMP(6) "
-            + "where id=#{workspaceId} and project_id=#{projectId} and write_lease_task_id=#{taskId} "
-            + "and (write_lease_expires_at <= UTC_TIMESTAMP(6) or exists ("
-            + "select 1 from tasks t where t.id=#{taskId} and t.project_id=#{projectId} "
-            + "and t.status in ('SUCCEEDED','FAILED','CANCELLED') "
-            + "and not exists (select 1 from agent_runs r where r.task_id=t.id "
-            + "and r.status in ('RUNNING')))))")
-    int releaseWriteLeaseForTerminalTask(@Param("projectId") UUID projectId,
-                                         @Param("workspaceId") UUID workspaceId,
-                                         @Param("taskId") UUID taskId);
 }

@@ -1,7 +1,6 @@
 package qg.qgent.notification.service;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -20,13 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * 通知中心业务（A 联调约定 §1）。
- * <p>
- * 通知按用户维度持久化：由 Task/编排、Diff、MR 等事件触发 {@link #notify} 写入，
- * 用户通过列表与已读接口读取；SSE 只负责实时提醒，不承担历史列表与已读状态。
- * 已读标记为幂等操作，重复标记不影响结果。
- */
+/** 通知持久化、已读状态和实时推送。 */
 @Slf4j
 @Service
 public class NotificationService {
@@ -35,17 +28,11 @@ public class NotificationService {
     private final EventService eventService;
     private final PushNotificationService pushNotificationService;
 
-    @Autowired
     public NotificationService(NotificationMapper notificationMapper, EventService eventService,
                                PushNotificationService pushNotificationService) {
         this.notificationMapper = notificationMapper;
         this.eventService = eventService;
         this.pushNotificationService = pushNotificationService;
-    }
-
-    /** 保留直接构造测试与旧调用的兼容重载。 */
-    public NotificationService(NotificationMapper notificationMapper, EventService eventService) {
-        this(notificationMapper, eventService, null);
     }
 
     /**
@@ -143,36 +130,7 @@ public class NotificationService {
         // 通知级 SSE：新通知信号（前端 SSE 需求清单 ③），事件名 notification.created
         eventService.publishNotification(recipientUserId, entity.getId(), "notification.created",
                 Map.of("notificationId", id(entity.getId()), "kind", kind));
-        if (pushNotificationService != null) {
-            pushNotificationService.enqueue(entity);
-        }
-    }
-
-    /**
-     * 任务从 FAILED 恢复编排后撤销失败通知（失败补偿）。
-     * <p>
-     * 任务可能因质量循环耗尽 / 基础设施失败短暂进入 FAILED 并发 TASK_FAILED 通知，
-     * 随后被用户重试或恢复器续跑成功继续执行。此时铃铛里的「任务失败」已与真实状态矛盾，
-     * 应直接删除该任务已写入的 TASK_FAILED 通知，并向受影响用户广播 {@code notification.removed}
-     * 刷新信号（WebSocket scope=notification 收到即刷新；SSE 客户端识别该事件名刷新通知列表）。
-     * 通知级 SSE 投递记录（notification_events）保留——游标式增量事件删除会破坏用户游标连续性。
-     *
-     * @param taskId 已恢复编排的任务 ID（resource_id 存储形态）
-     */
-    @Transactional
-    public void clearTaskFailedNotifications(String taskId) {
-        if (taskId == null || taskId.isBlank()) {
-            return;
-        }
-        List<UUID> recipients = notificationMapper.selectRecipientsByResourceAndKind(taskId, "TASK_FAILED");
-        int removed = notificationMapper.deleteByResourceAndKind(taskId, "TASK_FAILED");
-        if (removed > 0) {
-            log.info("task failed notification cleared for resumed task, taskId={} removed={}", taskId, removed);
-        }
-        for (UUID recipient : recipients) {
-            eventService.publishNotification(recipient, null, "notification.removed",
-                    Map.of("resourceId", taskId, "kind", "TASK_FAILED"));
-        }
+        pushNotificationService.enqueue(entity);
     }
 
     private NotificationResponse toResponse(NotificationEntity n) {

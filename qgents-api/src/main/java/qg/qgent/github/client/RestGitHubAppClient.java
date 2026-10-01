@@ -337,19 +337,6 @@ public class RestGitHubAppClient implements GitHubAppClient {
                 "GitHub API is unavailable or rejected the integration credentials");
     }
 
-    private String extractProviderMessage(String body) {
-        if (body == null || body.isBlank()) {
-            return null;
-        }
-        java.util.regex.Matcher matcher = java.util.regex.Pattern
-                .compile("\\\"message\\\"\\s*:\\s*\\\"((?:\\\\.|[^\\\"])*)\\\"")
-                .matcher(body);
-        if (!matcher.find()) {
-            return null;
-        }
-        return matcher.group(1).replace("\\n", " ").replace("\\\"", "\\\"").trim();
-    }
-
     private record InstallationResponse(long id, AccountResponse account,
                                         @JsonProperty("repository_selection") String repositorySelection) {
     }

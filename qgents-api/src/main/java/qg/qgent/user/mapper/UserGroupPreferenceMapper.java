@@ -1,6 +1,5 @@
 package qg.qgent.user.mapper;
 
-import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -9,7 +8,6 @@ import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 
 import qg.qgent.common.persistence.typehandler.UuidBinaryTypeHandler;
-import qg.qgent.user.entity.UserGroupPreferenceEntity;
 
 import java.util.List;
 import java.util.UUID;
@@ -18,7 +16,7 @@ import java.util.UUID;
  * 用户 × 群置顶偏好数据访问（表 user_group_preference）。
  */
 @Mapper
-public interface UserGroupPreferenceMapper extends BaseMapper<UserGroupPreferenceEntity> {
+public interface UserGroupPreferenceMapper {
 
     /**
      * 设置 / 取消某用户对某群的置顶状态。

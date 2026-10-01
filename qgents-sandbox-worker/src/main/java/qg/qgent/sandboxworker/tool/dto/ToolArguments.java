@@ -2,8 +2,6 @@ package qg.qgent.sandboxworker.tool.dto;
 
 import qg.qgent.sandboxworker.common.web.WorkerException;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 
 import static org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY;
@@ -47,21 +45,6 @@ public final class ToolArguments {
             throw invalid(name);
         }
         return result;
-    }
-
-    public static List<String> strings(Map<String, Object> arguments, String name, int maxItems, int maxLength) {
-        Object value = arguments.get(name);
-        if (!(value instanceof List<?> values) || values.isEmpty() || values.size() > maxItems) {
-            throw invalid(name);
-        }
-        List<String> result = new ArrayList<>();
-        for (Object item : values) {
-            if (!(item instanceof String text) || text.isBlank() || text.length() > maxLength) {
-                throw invalid(name);
-            }
-            result.add(text);
-        }
-        return List.copyOf(result);
     }
 
     private static WorkerException invalid(String name) {
