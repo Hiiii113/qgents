@@ -1,6 +1,11 @@
 package qg.qgent.attachment.service;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import java.nio.file.Path;
+import qg.qgent.attachment.dto.AttachmentCreateRequest;
+import qg.qgent.attachment.dto.AttachmentUploadCredentialResponse;
+import qg.qgent.attachment.storage.LocalAttachmentStorage;
 import org.springframework.http.HttpStatus;
 
 import qg.qgent.attachment.dto.AttachmentPreviewUrlResponse;
@@ -176,21 +181,6 @@ class AttachmentServiceTest {
     }
 
     @Test
-    void previewContentReturns501WhenStorageUnsupported() {
-        UUID projectId = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
-        when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "x.txt", "text/plain", "READY"));
-        when(storage.loadContent(any(), any(), any())).thenThrow(new UnsupportedOperationException());
-
-        assertThatThrownBy(() -> service.previewContent(UUID.randomUUID(), projectId, attachmentId))
-                .isInstanceOf(ApiException.class)
-                .satisfies(e -> {
-                    assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_CONTENT_UNSUPPORTED");
-                    assertThat(((ApiException) e).status().value()).isEqualTo(501);
-                });
-    }
-
-    @Test
     void uploadBytesStoresPendingAttachmentBytes() {
         UUID projectId = UUID.randomUUID();
         UUID actor = UUID.randomUUID();
@@ -272,6 +262,37 @@ class AttachmentServiceTest {
         assertPreviewType("script.sh", "application/x-sh", "CODE");
         assertPreviewType("readme.md", "text/markdown", "TEXT");
         assertPreviewType("data.bin", "application/octet-stream", "UNSUPPORTED");
+    }
+
+    @Test
+    void localUploadLifecycleRequiresStoredFileBeforeConfirmation(@TempDir Path root) {
+        LocalAttachmentStorage local = new LocalAttachmentStorage(root.toString(), 900);
+        AttachmentService localService = new AttachmentService(mapper, local, access, tokens, 1024, 900);
+        UUID actor = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        AttachmentCreateRequest body = new AttachmentCreateRequest();
+        body.setFileName("notes.txt");
+        body.setContentType("text/plain");
+        body.setSizeBytes(5L);
+        when(mapper.insert(any(AttachmentEntity.class))).thenAnswer(invocation -> {
+            AttachmentEntity entity = invocation.getArgument(0);
+            when(mapper.selectById(entity.getId())).thenReturn(entity);
+            return 1;
+        });
+
+        AttachmentUploadCredentialResponse credential = localService.createCredential(actor, projectId, body);
+        UUID id = UUID.fromString(credential.getAttachmentId());
+        assertThat(credential.getUploadUrl()).isEqualTo("/api/v1/projects/" + projectId + "/attachments/" + id);
+        assertThatThrownBy(() -> localService.confirmUpload(actor, projectId, id))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_NOT_UPLOADED"));
+
+        byte[] data = "hello".getBytes(StandardCharsets.UTF_8);
+        localService.uploadBytes(actor, projectId, id, new ByteArrayInputStream(data), "text/plain");
+        assertThat(localService.confirmUpload(actor, projectId, id).getStatus()).isEqualTo("READY");
+        assertThat(localService.previewContent(actor, projectId, id).bytes()).isEqualTo(data);
+        assertThat(localService.messagePreview(projectId, id.toString()).getPreviewType()).isEqualTo("TEXT");
+        assertThat(localService.previewUrl(actor, projectId, id).getDownloadUrl()).isNull();
     }
 
     private void assertPreviewType(String fileName, String mediaType, String expected) {

@@ -5,7 +5,6 @@ import com.aliyun.oss.OSS;
 import com.aliyun.oss.model.OSSObject;
 import com.aliyun.oss.model.ObjectMetadata;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import qg.qgent.attachment.config.AliyunOssProperties;
@@ -17,18 +16,9 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Date;
 import java.util.Map;
-import java.util.UUID;
 
-/**
- * 阿里云 OSS 附件存储策略（真实存储，@Primary）。
- * <p>
- * 仅在 aliyun.oss.enabled=true 时生效：上传走后端代理——凭证 {@code uploadUrl} 指向代理端点，
- * 客户端把文件字节 PUT 到后端，由 {@link #storeBytes} 写入 OSS 桶（浏览器不直传 OSS，规避跨域预检）；
- * 下载签发预签名 GET URL，确认上传通过 doesObjectExist 校验。AccessKey 由环境变量注入
- * （见 {@link AliyunOssProperties}），本类不接触密钥明文。
- */
+/** 后端接收附件并写入 OSS，下载可使用预签名 URL。 */
 @Component
-@Primary
 @ConditionalOnProperty(prefix = "aliyun.oss", name = "enabled", havingValue = "true")
 public class AliyunOssAttachmentStorage implements AttachmentStorageStrategy {
 
@@ -41,13 +31,7 @@ public class AliyunOssAttachmentStorage implements AttachmentStorageStrategy {
     }
 
     @Override
-    public String name() {
-        return "ALIYUN_OSS_PRESIGNED";
-    }
-
-    @Override
-    public UploadCredential createCredential(UUID attachmentId, String objectKey, String fileName, String mediaType,
-                                             Long sizeBytes) {
+    public UploadCredential createCredential(String objectKey, String mediaType) {
         LocalDateTime expiry = LocalDateTime.now(ZoneOffset.UTC).plusSeconds(properties.getPresignExpirySeconds());
         // 代理上传：uploadUrl 指向后端代理端点（相对路径，前端按 API base origin 解析），
         // 字节经 storeBytes 写入 OSS。Content-Type 透传给前端便于回传（代理端点不强依赖该头）。

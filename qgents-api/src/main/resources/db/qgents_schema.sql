@@ -191,20 +191,16 @@ CREATE TABLE IF NOT EXISTS
     attachments (
         id BINARY(16) PRIMARY KEY COMMENT '附件UUIDv7',
         project_id BINARY(16) NOT NULL COMMENT '附件所属项目ID，用于上传前权限隔离',
-        message_id BINARY(16) NULL COMMENT '发送消息后绑定的消息ID，上传阶段为空',
         uploaded_by BINARY(16) NOT NULL COMMENT '上传用户ID',
         object_key VARCHAR(512) NOT NULL COMMENT '对象存储内部键，不含临时访问凭证',
         file_name VARCHAR(512) NOT NULL COMMENT '原始文件名',
         media_type VARCHAR(255) NULL COMMENT 'MIME媒体类型',
         size_bytes BIGINT UNSIGNED NULL COMMENT '文件大小，单位字节',
-        status VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT '附件状态枚举：PENDING/READY/FAILED/DELETED',
-        metadata JSON NULL COMMENT '附件扩展JSON，如图片宽高和内容哈希',
+        status VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT '附件上传状态：PENDING/READY',
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '上传记录创建时间（UTC）',
         UNIQUE KEY uk_attachment_object (object_key),
-        KEY idx_attachment_message (message_id, created_at),
         KEY idx_attachment_user (uploaded_by),
         CONSTRAINT fk_attachment_project FOREIGN KEY (project_id) REFERENCES projects (id),
-        CONSTRAINT fk_attachment_message FOREIGN KEY (message_id) REFERENCES messages (id) ON DELETE SET NULL,
         CONSTRAINT fk_attachment_user FOREIGN KEY (uploaded_by) REFERENCES users (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '消息文件、图片和Diff附件元数据';
 

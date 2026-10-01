@@ -32,12 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * 附件直传凭证与生命周期接口
- * <p>
- * 流程：签发直传凭证 → 客户端直接上传到对象存储 → 确认上传置 READY → 按需签发临时下载地址。
- * 所有接口不返回对象存储长期密钥。
- */
+/** 附件上传、确认、下载和预览入口。 */
 @RestController
 @RequestMapping("/api/v1")
 public class AttachmentController {
@@ -53,10 +48,7 @@ public class AttachmentController {
         this.objectMapper = objectMapper;
     }
 
-    /**
-     * 契约 §7：创建对象存储直传凭证。
-     */
-    @Operation(summary = "创建附件直传凭证", description = "返回当前项目附件的短期直传地址；前端将文件直接上传后再确认附件。")
+    @Operation(summary = "创建附件上传记录", description = "返回后端 PUT 上传地址；上传完成后调用确认接口。")
     @PostMapping("/projects/{projectId}/attachments")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<?> createCredential(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
@@ -64,10 +56,7 @@ public class AttachmentController {
         return ok(attachmentService.createCredential(userId, projectId, body), request);
     }
 
-    /**
-     * 契约 §7：客户端上传到对象存储后确认附件：服务端校验对象存在并置 READY。
-     */
-    @Operation(summary = "确认附件上传完成", description = "客户端将文件上传到对象存储后调用，服务端校验对象存在并置 READY。")
+    @Operation(summary = "确认附件上传完成", description = "客户端上传文件后调用，服务端检查文件存在并置 READY。")
     @PostMapping("/projects/{projectId}/attachments/{attachmentId}/confirm")
     public ApiResponse<?> confirm(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
                                   @PathVariable UUID attachmentId, HttpServletRequest request) {
@@ -75,12 +64,6 @@ public class AttachmentController {
         return ok(data, request);
     }
 
-    /**
-     * 契约 §7：服务端代理接收上传——客户端把文件字节 PUT 到后端，由服务端写入当前存储策略（OSS / 本地磁盘）。
-     * <p>
-     * 鉴权（JWT）与幂等（Idempotency-Key，/api/v1/projects/** 写接口强制）由安全链承担；
-     * 请求体为原始文件字节，Content-Type 可选。响应 204，随后客户端照常调用 confirm 置 READY。
-     */
     @Operation(summary = "代理上传附件字节", description = "客户端把文件字节 PUT 到后端，服务端写入当前存储策略（OSS/本地磁盘）；响应 204，随后调用 confirm 置 READY。")
     @PutMapping("/projects/{projectId}/attachments/{attachmentId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
@@ -91,9 +74,6 @@ public class AttachmentController {
         attachmentService.uploadBytes(userId, projectId, attachmentId, request.getInputStream(), contentType);
     }
 
-    /**
-     * 契约 §7：为已上传附件签发临时下载（预签名 GET）地址。
-     */
     @Operation(summary = "获取附件临时下载地址", description = "返回短期有效的预签名 GET 地址，客户端据此下载/预览文件；过期需重新签发。")
     @GetMapping("/projects/{projectId}/attachments/{attachmentId}/download-url")
     public ApiResponse<?> downloadUrl(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
@@ -102,13 +82,6 @@ public class AttachmentController {
         return ok(data, request);
     }
 
-    /**
-     * 契约 §4：获取附件内联预览元数据与短期签名预览地址。
-     * <p>
-     * 返回的 previewUrl 为带短期 access token 的相对路径，浏览器/系统查看器直接使用，无需任何请求头；
-     * token 只进 URL，不得写入日志、异常或 SSE 事件。downloadUrl 在本地存储回退时为 null，
-     * 此时前端可用 previewUrl 完成下载。
-     */
     @Operation(summary = "获取附件预览元数据与签名预览地址", description = "返回预览类型与短期签名预览地址（带 token），前端可直接交给 img/iframe/系统查看器打开。")
     @GetMapping("/projects/{projectId}/attachments/{attachmentId}/preview-url")
     public ApiResponse<?> previewUrl(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
@@ -116,14 +89,6 @@ public class AttachmentController {
         return ok(attachmentService.previewUrl(userId, projectId, attachmentId), request);
     }
 
-    /**
-     * 契约 §5：附件内联内容代理（inline + Range + 双通道鉴权）。
-     * <p>
-     * 同时支持 {@code Authorization: Bearer} 头与 {@code ?token=} 查询参数，二选一即可；浏览器
-     * &lt;img&gt;/新标签页/iframe 用 query token，App/原生下载器用 Authorization 头。无任一有效凭证
-     * 返回 401；token 有效但非项目成员由服务层返回 403。文本/代码默认返回 UTF-8 纯文本，
-     * {@code ?raw=1} 时原样返回原始 mediaType 字节。支持标准 HTTP Range 分段（PDF 分页、大文件流式）。
-     */
     @Operation(summary = "获取附件内联预览内容（双通道鉴权 + Range）", description = "内联返回附件字节，浏览器/系统查看器直接展示；支持 Authorization 头或 ?token= 双通道鉴权与 HTTP Range 分段。")
     @GetMapping("/projects/{projectId}/attachments/{attachmentId}/preview")
     public ResponseEntity<byte[]> preview(@PathVariable UUID projectId, @PathVariable UUID attachmentId,
@@ -146,6 +111,7 @@ public class AttachmentController {
                 .filename(pc.fileName() == null || pc.fileName().isBlank() ? "preview" : pc.fileName(),
                         StandardCharsets.UTF_8)
                 .build();
+        ResponseEntity.BodyBuilder response = ResponseEntity.ok();
         if (rangeHeader != null && !rangeHeader.isBlank()) {
             long[] range = parseRange(rangeHeader, data.length);
             if (range == null) {
@@ -153,16 +119,11 @@ public class AttachmentController {
             }
             int start = (int) range[0];
             int end = (int) range[1];
-            byte[] slice = Arrays.copyOfRange(data, start, end + 1);
-            return ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
-                    .header(HttpHeaders.CONTENT_RANGE, "bytes " + start + "-" + end + "/" + data.length)
-                    .header(HttpHeaders.ACCEPT_RANGES, "bytes")
-                    .header(HttpHeaders.CONTENT_DISPOSITION, cd.toString())
-                    .contentType(MediaType.parseMediaType(contentType))
-                    .contentLength(slice.length)
-                    .body(slice);
+            response = ResponseEntity.status(HttpStatus.PARTIAL_CONTENT)
+                    .header(HttpHeaders.CONTENT_RANGE, "bytes " + start + "-" + end + "/" + data.length);
+            data = Arrays.copyOfRange(data, start, end + 1);
         }
-        return ResponseEntity.ok()
+        return response
                 .header(HttpHeaders.ACCEPT_RANGES, "bytes")
                 .header(HttpHeaders.CONTENT_DISPOSITION, cd.toString())
                 .contentType(MediaType.parseMediaType(contentType))
@@ -170,9 +131,6 @@ public class AttachmentController {
                 .body(data);
     }
 
-    /**
-     * 按预览类型解析响应 Content-Type：文本/代码默认 UTF-8 纯文本；raw=1 或非文本类型返回原 mediaType。
-     */
     private String resolvePreviewContentType(String previewType, String mediaType, Integer raw) {
         if ("TEXT".equals(previewType) || "CODE".equals(previewType)) {
             if (raw != null && raw == 1 && mediaType != null && !mediaType.isBlank()) {
@@ -183,11 +141,7 @@ public class AttachmentController {
         return mediaType == null || mediaType.isBlank() ? "application/octet-stream" : mediaType;
     }
 
-    /**
-     * 解析标准 Range 头（仅支持单段 bytes=start-end / start- / -suffix）。
-     *
-     * @return {start, end}；头部缺失或非法（越界/格式错误/多段）返回 null，由调用方按 416 处理。
-     */
+    // 单段 Range：start-end、start-、-suffix；不合法时返回 416。
     private long[] parseRange(String header, int total) {
         if (!header.startsWith("bytes=")) {
             return null;
@@ -227,9 +181,6 @@ public class AttachmentController {
         }
     }
 
-    /**
-     * 构建 416 Range Not Satisfiable 响应：携带 {@code Content-Range: bytes *&#47;<size>} 与统一错误体。
-     */
     private ResponseEntity<byte[]> rangeNotSatisfiable(long total, HttpServletRequest request) {
         Map<String, Object> body = Map.of(
                 "error", Map.of("code", "ATTACHMENT_RANGE_INVALID",
@@ -248,12 +199,6 @@ public class AttachmentController {
                 .body(json);
     }
 
-    /**
-     * 鉴权后流式返回附件内容（内容下载代理，稳定展示地址）。
-     * <p>
-     * 每次请求都做项目成员与附件归属校验，图片走 inline 渲染，其余走 attachment 下载；
-     * content.url 可直接填本路径（项目内稳定、长期有效）。
-     */
     @Operation(summary = "获取附件内容（鉴权下载代理）", description = "鉴权后流式返回附件内容，图片 inline 展示、文件可下载；作为 content.url 的稳定地址。")
     @GetMapping("/projects/{projectId}/attachments/{attachmentId}/content")
     public ResponseEntity<InputStreamResource> content(@AuthenticationPrincipal UUID userId,

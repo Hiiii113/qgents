@@ -16,13 +16,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * 本地磁盘附件存储单测：凭证代理路径、字节落盘/回读/存在性、对象键路径逃逸防护。
  */
-class LocalSignedAttachmentStorageTest {
+class LocalAttachmentStorageTest {
 
     @TempDir
     Path root;
 
-    private LocalSignedAttachmentStorage storage() {
-        return new LocalSignedAttachmentStorage(root.toString(), 900);
+    private LocalAttachmentStorage storage() {
+        return new LocalAttachmentStorage(root.toString(), 900);
     }
 
     @Test
@@ -31,7 +31,7 @@ class LocalSignedAttachmentStorageTest {
         UUID attachmentId = UUID.randomUUID();
         String objectKey = "projects/" + projectId + "/attachments/" + attachmentId;
 
-        UploadCredential credential = storage().createCredential(attachmentId, objectKey, "a.png", "image/png", 10L);
+        UploadCredential credential = storage().createCredential(objectKey, "image/png");
 
         assertThat(credential.getUploadUrl()).isEqualTo("/api/v1/" + objectKey);
         assertThat(credential.getMethod()).isEqualTo("PUT");
@@ -41,7 +41,7 @@ class LocalSignedAttachmentStorageTest {
 
     @Test
     void storesAndLoadsBytesAndChecksExistence() throws Exception {
-        LocalSignedAttachmentStorage storage = storage();
+        LocalAttachmentStorage storage = storage();
         UUID projectId = UUID.randomUUID();
         UUID attachmentId = UUID.randomUUID();
         String objectKey = "projects/" + projectId + "/attachments/" + attachmentId;
@@ -60,7 +60,7 @@ class LocalSignedAttachmentStorageTest {
 
     @Test
     void rejectsPathTraversalObjectKey() {
-        LocalSignedAttachmentStorage storage = storage();
+        LocalAttachmentStorage storage = storage();
         assertThatThrownBy(() -> storage.storeBytes("../evil.txt", new ByteArrayInputStream(new byte[0]), null))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> storage.loadContent("../../etc/passwd", null, null))
