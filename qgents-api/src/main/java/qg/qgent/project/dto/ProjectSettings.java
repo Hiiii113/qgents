@@ -6,7 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * 项目设置：需求群规则开关（成员B 后端接口补充清单 §二）。
+ * 项目设置：项目群聊规则开关（成员B 后端接口补充清单 §二）。
  * <p>
  * GET /projects/{projectId}/settings 返回完整设置（默认值兜底）；
  * PATCH 支持部分更新（空字段不覆盖）。
@@ -17,9 +17,9 @@ import lombok.NoArgsConstructor;
 public class ProjectSettings {
 
     /**
-     * 允许成员创建需求群；关闭后仅 Project Admin 可建。
+     * 允许成员创建项目群聊；关闭后仅 Project Admin 可建。
      */
-    @Schema(description = "允许成员创建需求群；关闭后仅 Project Admin 可建", defaultValue = "true")
+    @Schema(description = "允许成员创建项目群聊；关闭后仅 Project Admin 可建", defaultValue = "true")
     private boolean allowCreateGroup = true;
 
     /**
@@ -35,8 +35,8 @@ public class ProjectSettings {
     private boolean allowAgentTrigger = true;
 
     /**
-     * 新成员自动加入所有需求群。
+     * 新成员自动加入所有项目群聊。
      */
-    @Schema(description = "新成员自动加入所有需求群", defaultValue = "false")
+    @Schema(description = "新成员自动加入所有项目群聊", defaultValue = "false")
     private boolean autoJoinAllGroups = false;
 }

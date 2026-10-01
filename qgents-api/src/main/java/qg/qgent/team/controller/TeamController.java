@@ -119,7 +119,7 @@ public class TeamController {
     }
 
     /**
-     * 契约 §5.1：Team Owner 解散团队：级联删除团队下所有项目、需求群、消息与成员关系（不可恢复）。
+     * 契约 §5.1：Team Owner 解散团队：级联删除团队下所有项目、项目群聊、消息与成员关系（不可恢复）。
      * 仅 Team Owner 可调用，其他角色返回 403；同一 Idempotency-Key 重试幂等。
      */
     @DeleteMapping("/{teamId}")

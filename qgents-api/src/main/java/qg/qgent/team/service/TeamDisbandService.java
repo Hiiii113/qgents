@@ -11,9 +11,9 @@ import qg.qgent.agent.mapper.AgentMapper;
 import qg.qgent.agent.mapper.AgentRunMapper;
 import qg.qgent.attachment.entity.AttachmentEntity;
 import qg.qgent.attachment.mapper.AttachmentMapper;
-import qg.qgent.chat.entity.RequirementGroupEntity;
+import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.mapper.MessageMapper;
-import qg.qgent.chat.mapper.RequirementGroupMapper;
+import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.github.entity.GitHubInstallationEntity;
 import qg.qgent.github.entity.GitHubRepositoryEntity;
 import qg.qgent.github.mapper.GitHubInstallationMapper;
@@ -53,7 +53,7 @@ public class TeamDisbandService {
     private final ProjectMapper projectMapper;
     private final NotificationMapper notificationMapper;
     private final EventMapper eventMapper;
-    private final RequirementGroupMapper requirementGroupMapper;
+    private final ChatGroupMapper chatGroupMapper;
     private final MessageMapper messageMapper;
     private final MemoryMapper memoryMapper;
     private final ProjectRepositoryMapper projectRepositoryMapper;
@@ -105,13 +105,13 @@ public class TeamDisbandService {
      * merge_request 子表、agent_run 子表等）不在此重复删除。
      */
     private void deleteProject(UUID projectId) {
-        // 引用 requirement_groups 且无级联的行须在 requirement_groups 删除前清理
+        // 引用 chat_groups 且无级联的行须在 chat_groups 删除前清理
         notificationMapper.delete(Wrappers.<NotificationEntity>lambdaQuery()
                 .eq(NotificationEntity::getProjectId, projectId));
         eventMapper.delete(Wrappers.<EventEntity>lambdaQuery().eq(EventEntity::getProjectId, projectId));
 
-        List<UUID> groupIds = requirementGroupMapper.selectList(Wrappers.<RequirementGroupEntity>lambdaQuery()
-                        .eq(RequirementGroupEntity::getProjectId, projectId)).stream().map(RequirementGroupEntity::getId)
+        List<UUID> groupIds = chatGroupMapper.selectList(Wrappers.<ChatGroupEntity>lambdaQuery()
+                        .eq(ChatGroupEntity::getProjectId, projectId)).stream().map(ChatGroupEntity::getId)
                 .toList();
         // memory_message_sources 由 memories 外键级联删除
         memoryMapper.delete(Wrappers.<MemoryEntity>lambdaQuery().eq(MemoryEntity::getProjectId, projectId));
@@ -130,7 +130,7 @@ public class TeamDisbandService {
         taskMapper.delete(Wrappers.<TaskEntity>lambdaQuery().eq(TaskEntity::getProjectId, projectId));
 
         // messages 引用 agents（agents 在团队级 deleteTeam 最后删除）；tasks.trigger_message_id
-        // 经 fk_task_message 引用 messages，须先删 tasks 再删 messages；亦须在 requirement_groups 之前。
+        // 经 fk_task_message 引用 messages，须先删 tasks 再删 messages；亦须在 chat_groups 之前。
         // messages 自引用外键 fk_msg_reply（reply_to_message_id -> id）且无级联、回复链可多级，
         // 同样须逐层删除不再被引用的叶子消息直至清空。
         if (!groupIds.isEmpty()) {
@@ -144,10 +144,10 @@ public class TeamDisbandService {
         skillMapper.delete(Wrappers.<SkillEntity>lambdaQuery().eq(SkillEntity::getProjectId, projectId));
         attachmentMapper.delete(Wrappers.<AttachmentEntity>lambdaQuery().eq(AttachmentEntity::getProjectId, projectId));
 
-        // requirement_groups 引用 project；rgr/group_agents 由 requirement_groups 外键级联，
+        // chat_groups 引用 project；rgr/group_agents 由 chat_groups 外键级联，
         // 须在 messages/events/notifications/tasks 之后删除
-        requirementGroupMapper.delete(Wrappers.<RequirementGroupEntity>lambdaQuery()
-                .eq(RequirementGroupEntity::getProjectId, projectId));
+        chatGroupMapper.delete(Wrappers.<ChatGroupEntity>lambdaQuery()
+                .eq(ChatGroupEntity::getProjectId, projectId));
 
         // project 级联 project_members/project_repositories
         projectMapper.deleteById(projectId);

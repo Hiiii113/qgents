@@ -6,9 +6,9 @@ import org.springframework.http.HttpStatus;
 
 import qg.qgent.chat.dto.ContextRepository;
 import qg.qgent.chat.dto.ContextSkill;
-import qg.qgent.chat.entity.RequirementGroupEntity;
+import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.mapper.MessageMapper;
-import qg.qgent.chat.mapper.RequirementGroupMapper;
+import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.github.entity.GitHubRepositoryEntity;
 import qg.qgent.github.mapper.GitHubRepositoryMapper;
@@ -33,11 +33,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 群上下文必须遵循需求群成员可见性，不能绕过消息接口的访问校验。
+ * 群上下文必须遵循项目群聊成员可见性，不能绕过消息接口的访问校验。
  */
 class ContextServiceTest {
 
-    private final RequirementGroupMapper groups = mock(RequirementGroupMapper.class);
+    private final ChatGroupMapper groups = mock(ChatGroupMapper.class);
     private final MessageMapper messages = mock(MessageMapper.class);
     private final SkillMapper skills = mock(SkillMapper.class);
     private final MemoryMapper memories = mock(MemoryMapper.class);
@@ -54,7 +54,7 @@ class ContextServiceTest {
 
     @Test
     void buildForGroupRejectsNonMemberBeforeReadingContent() {
-        doThrow(new ApiException(HttpStatus.FORBIDDEN, "GROUP_MEMBER_REQUIRED", "你不是该需求群成员，无法访问"))
+        doThrow(new ApiException(HttpStatus.FORBIDDEN, "GROUP_MEMBER_REQUIRED", "你不是该项目群聊成员，无法访问"))
                 .when(groupService).requireGroupMember(projectId, groupId, actor);
 
         assertThatThrownBy(() -> service.buildForGroup(actor, projectId, groupId, 20))
@@ -66,10 +66,10 @@ class ContextServiceTest {
 
     @Test
     void buildForGroupUsesSkillCatalogWithoutReadingSkillBodies() {
-        RequirementGroupEntity group = new RequirementGroupEntity();
+        ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setProjectId(projectId);
-        group.setName("需求群");
+        group.setName("项目群聊");
         when(groups.selectById(groupId)).thenReturn(group);
         when(messages.selectList(any())).thenReturn(List.of());
         when(skills.listPublishedCatalog(projectId, actor))
@@ -84,10 +84,10 @@ class ContextServiceTest {
 
     @Test
     void buildForGroupResolvesRepositoryManifestForAgentContext() {
-        RequirementGroupEntity group = new RequirementGroupEntity();
+        ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setProjectId(projectId);
-        group.setName("需求群");
+        group.setName("项目群聊");
         UUID bindingId = UUID.randomUUID();
         UUID githubId = UUID.randomUUID();
         ProjectRepositoryEntity binding = new ProjectRepositoryEntity();
@@ -121,7 +121,7 @@ class ContextServiceTest {
 
     @Test
     void chatHistorySearchRejectsNonMemberBeforeReadingMessages() {
-        doThrow(new ApiException(HttpStatus.FORBIDDEN, "GROUP_MEMBER_REQUIRED", "你不是该需求群成员，无法访问"))
+        doThrow(new ApiException(HttpStatus.FORBIDDEN, "GROUP_MEMBER_REQUIRED", "你不是该项目群聊成员，无法访问"))
                 .when(groupService).requireGroupMember(projectId, groupId, actor);
 
         assertThatThrownBy(() -> service.searchChatHistory(actor, projectId, groupId, "登录", 20))

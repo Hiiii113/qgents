@@ -25,7 +25,7 @@ public class ProjectEntity {
     private String avatarUrl;
 
     /**
-     * 项目设置 JSON：需求群规则开关（allowCreateGroup/autoArchiveGroup/allowAgentTrigger/autoJoinAllGroups）；
+     * 项目设置 JSON：项目群聊规则开关（allowCreateGroup/autoArchiveGroup/allowAgentTrigger/autoJoinAllGroups）；
      * 空或缺失时使用默认值。
      */
     @TableField(typeHandler = JacksonTypeHandler.class)

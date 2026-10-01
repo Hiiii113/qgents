@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 项目设置（需求群规则开关）读写（成员B 后端接口补充清单 §二）。
+ * 项目设置（项目群聊规则开关）读写（成员B 后端接口补充清单 §二）。
  * <p>
  * GET 项目成员可读（默认值兜底）；PATCH 仅 Project Admin（部分更新，未传字段不覆盖）。
  * 设置持久化在 projects.settings（JSON 列）。

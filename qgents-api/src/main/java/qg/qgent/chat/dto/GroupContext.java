@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * 群聊上下文（点3：聊天上下文管理）。
  * <p>
- * 将需求群的历史消息、需求、关联仓库、已发布 Skill 目录与已批准 Memory 组装为 Agent 输入上下文，
+ * 将项目群聊的历史消息、需求、关联仓库、已发布 Skill 目录与已批准 Memory 组装为 Agent 输入上下文，
  * 供 Agent 编排系统（后端1）在创建 Task / 运行 Agent 时作为 prompt 输入。
  */
 @Data
@@ -19,9 +19,9 @@ import java.util.List;
 public class GroupContext {
 
     /**
-     * 需求群 ID。
+     * 项目群聊 ID。
      */
-    @Schema(description = "需求群 ID")
+    @Schema(description = "项目群聊 ID")
     private String groupId;
 
     /**
@@ -31,9 +31,9 @@ public class GroupContext {
     private String projectId;
 
     /**
-     * 需求群标题（需求名称）。
+     * 项目群聊标题（需求名称）。
      */
-    @Schema(description = "需求群标题")
+    @Schema(description = "项目群聊标题")
     private String requirementTitle;
 
     /**
@@ -43,9 +43,9 @@ public class GroupContext {
     private String requirementDescription;
 
     /**
-     * 项目当前 ACTIVE 的仓库绑定 ID 列表；所有需求群共享项目仓库范围。
+     * 项目当前 ACTIVE 的仓库绑定 ID 列表；所有项目群聊共享项目仓库范围。
      */
-    @Schema(description = "项目当前 ACTIVE 的仓库绑定 ID 列表，所有需求群共享")
+    @Schema(description = "项目当前 ACTIVE 的仓库绑定 ID 列表，所有项目群聊共享")
     private List<String> repositoryIds;
 
     /**

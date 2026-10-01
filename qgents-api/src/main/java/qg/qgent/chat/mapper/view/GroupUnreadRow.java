@@ -14,7 +14,7 @@ import java.util.UUID;
 public class GroupUnreadRow {
 
     /**
-     * 所属需求群 ID。
+     * 所属项目群聊 ID。
      */
     private UUID groupId;
 

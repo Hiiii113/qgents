@@ -13,7 +13,7 @@ import java.util.List;
 public class TaskResponse {
     private String id;
     private String projectId;
-    private String requirementGroupId;
+    private String groupId;
     private String triggerMessageId;
     private String title;
     private String displayCode;

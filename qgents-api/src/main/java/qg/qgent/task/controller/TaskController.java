@@ -53,7 +53,7 @@ public class TaskController {
         access.requireProjectMember(projectId, actor);
         return ok(tasks.selectList(Wrappers.<TaskEntity>lambdaQuery()
                 .eq(TaskEntity::getProjectId, projectId)
-                .eq(groupId != null, TaskEntity::getRequirementGroupId, groupId)
+                .eq(groupId != null, TaskEntity::getGroupId, groupId)
                 .orderByDesc(TaskEntity::getCreatedAt).last("LIMIT 100")), request);
     }
 

@@ -57,8 +57,8 @@ public class AgentRuntimeSummary {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class AssignmentUsage {
-        @Schema(description = "需求群分配用量")
-        private AssignmentCount requirementGroups;
+        @Schema(description = "项目群聊分配用量")
+        private AssignmentCount chatGroups;
         @Schema(description = "工作流分配用量（当前无数据源，均为 0）")
         private AssignmentCount workflows;
     }

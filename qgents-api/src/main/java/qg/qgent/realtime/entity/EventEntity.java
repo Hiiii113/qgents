@@ -26,9 +26,9 @@ public class EventEntity {
      */
     private UUID projectId;
     /**
-     * 可选关联需求群ID。
+     * 可选关联项目群聊ID。
      */
-    private UUID requirementGroupId;
+    private UUID groupId;
     /**
      * 项目内单调递增事件序号，作为 SSE 游标。
      */

@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Test;
 
 import qg.qgent.agent.service.DefaultAgentProvisioner;
 import qg.qgent.auth.service.TokenService;
-import qg.qgent.chat.mapper.GroupMemberMapper;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.common.web.PersistedApiException;
 import qg.qgent.mergerequest.mapper.MergeRequestMapper;
@@ -68,7 +67,6 @@ class TeamServiceTest {
     private final TeamMemberMapper memberMapper = mock(TeamMemberMapper.class);
     private final TeamInvitationMapper invitationMapper = mock(TeamInvitationMapper.class);
     private final ProjectMemberMapper projectMemberMapper = mock(ProjectMemberMapper.class);
-    private final GroupMemberMapper groupMemberMapper = mock(GroupMemberMapper.class);
     private final ProjectMapper projectMapper = mock(ProjectMapper.class);
     private final UserMapper userMapper = mock(UserMapper.class);
     private final TeamDisbandService teamDisbandService = mock(TeamDisbandService.class);
@@ -80,7 +78,7 @@ class TeamServiceTest {
     private final TeamService service = new TeamService(teamMapper, memberMapper, invitationMapper,
             projectMemberMapper, projectMapper, userMapper, mock(TokenService.class),
             mock(TeamInvitationMailer.class), teamDisbandService, notificationService,
-            mock(EventService.class), eventMapper, taskMapper, mergeRequestMapper, defaultAgents, groupMemberMapper);
+            mock(EventService.class), eventMapper, taskMapper, mergeRequestMapper, defaultAgents);
 
     @Test
     void createAddsCreatorAsOwner() {
@@ -243,8 +241,6 @@ class TeamServiceTest {
 
         service.removeMember(owner, teamId, targetUser);
 
-        verify(groupMemberMapper).deleteByProjectAndUser(firstProjectId, targetUser);
-        verify(groupMemberMapper).deleteByProjectAndUser(secondProjectId, targetUser);
         verify(projectMemberMapper).deleteByTeamAndUser(teamId, targetUser);
     }
 
@@ -314,7 +310,7 @@ class TeamServiceTest {
         TeamService localService = new TeamService(teamMapper, memberMapper, invitationMapper, projectMemberMapper,
                 projectMapper, userMapper, tokens, mock(TeamInvitationMailer.class), mock(TeamDisbandService.class),
                 mock(NotificationService.class), mock(EventService.class), eventMapper, taskMapper, mergeRequestMapper,
-                defaultAgents, groupMemberMapper);
+                defaultAgents);
         when(userMapper.selectById(actor)).thenReturn(user);
         when(tokens.hash("raw-token")).thenReturn(new byte[] { 1 });
         when(invitationMapper.selectOne(any())).thenReturn(invitation);
@@ -362,7 +358,7 @@ class TeamServiceTest {
         TeamService localService = new TeamService(teamMapper, memberMapper, invitationMapper, projectMemberMapper,
                 projectMapper, userMapper, tokens, mock(TeamInvitationMailer.class), mock(TeamDisbandService.class),
                 mock(NotificationService.class), mock(EventService.class), eventMapper, taskMapper, mergeRequestMapper,
-                defaultAgents, groupMemberMapper);
+                defaultAgents);
         TeamMemberInviteRequest request = new TeamMemberInviteRequest();
         request.setEmail("new@example.com");
         request.setRole("TEAM_MEMBER");

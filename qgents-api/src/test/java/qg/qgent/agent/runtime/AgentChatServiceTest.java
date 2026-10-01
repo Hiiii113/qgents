@@ -91,7 +91,7 @@ class AgentChatServiceTest {
         task = new TaskEntity();
         task.setId(taskId);
         task.setProjectId(projectId);
-        task.setRequirementGroupId(groupId);
+        task.setGroupId(groupId);
         task.setWorkspaceId(workspaceId);
         task.setRequirement("修改代码");
         task.setStatus("PENDING");

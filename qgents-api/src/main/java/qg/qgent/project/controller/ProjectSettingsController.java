@@ -20,12 +20,12 @@ import qg.qgent.project.service.ProjectSettingsService;
 import java.util.UUID;
 
 /**
- * 项目设置接口（成员B 后端接口补充清单 §二：需求群规则开关）。
+ * 项目设置接口（成员B 后端接口补充清单 §二：项目群聊规则开关）。
  * GET 项目成员可读；PATCH 仅 Project Admin（部分更新）。
  */
 @RestController
 @RequestMapping("/api/v1")
-@Tag(name = "项目设置", description = "项目级需求群规则开关配置")
+@Tag(name = "项目设置", description = "项目级项目群聊规则开关配置")
 public class ProjectSettingsController {
 
     private final ProjectSettingsService projectSettings;

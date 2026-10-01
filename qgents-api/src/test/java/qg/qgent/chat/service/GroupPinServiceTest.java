@@ -1,4 +1,5 @@
 package qg.qgent.chat.service;
+import static org.mockito.Mockito.doThrow;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -7,13 +8,11 @@ import org.springframework.http.HttpStatus;
 import qg.qgent.agent.mapper.AgentMapper;
 import qg.qgent.chat.dto.GroupPinResponse;
 import qg.qgent.chat.dto.GroupResponse;
-import qg.qgent.chat.entity.RequirementGroupEntity;
+import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.mapper.GroupAgentMapper;
-import qg.qgent.chat.mapper.GroupMemberMapper;
 import qg.qgent.chat.mapper.GroupReadStateMapper;
 import qg.qgent.chat.mapper.MessageMapper;
-import qg.qgent.chat.mapper.RequirementGroupMapper;
-import qg.qgent.chat.mapper.RequirementGroupRepositoryMapper;
+import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.mapper.ProjectMemberMapper;
@@ -41,12 +40,10 @@ import static org.mockito.Mockito.when;
  */
 class GroupPinServiceTest {
 
-    private final RequirementGroupMapper groupMapper = mock(RequirementGroupMapper.class);
-    private final RequirementGroupRepositoryMapper groupRepoMapper = mock(RequirementGroupRepositoryMapper.class);
+    private final ChatGroupMapper groupMapper = mock(ChatGroupMapper.class);
     private final ProjectMemberMapper projectMemberMapper = mock(ProjectMemberMapper.class);
     private final ProjectMapper projectMapper = mock(ProjectMapper.class);
     private final GroupAgentMapper groupAgentMapper = mock(GroupAgentMapper.class);
-    private final GroupMemberMapper groupMemberMapper = mock(GroupMemberMapper.class);
     private final AgentMapper agentMapper = mock(AgentMapper.class);
     private final UserMapper userMapper = mock(UserMapper.class);
     private final MessageMapper messageMapper = mock(MessageMapper.class);
@@ -55,8 +52,8 @@ class GroupPinServiceTest {
     private final ProjectAccessService access = mock(ProjectAccessService.class);
     private final EventService eventService = mock(EventService.class);
 
-    private final GroupService service = new GroupService(groupMapper, groupRepoMapper, projectMemberMapper,
-            projectMapper, groupAgentMapper, groupMemberMapper, agentMapper, userMapper,
+    private final GroupService service = new GroupService(groupMapper, projectMemberMapper,
+            projectMapper, groupAgentMapper, agentMapper, userMapper,
             messageMapper, groupReadStateMapper, userGroupPreferenceMapper, access, eventService);
 
     private final UUID projectId = UUID.randomUUID();
@@ -64,28 +61,24 @@ class GroupPinServiceTest {
     private final UUID memberA = UUID.randomUUID();
     private final UUID groupId = UUID.randomUUID();
 
-    private RequirementGroupEntity requirementGroup() {
-        RequirementGroupEntity group = new RequirementGroupEntity();
+    private ChatGroupEntity projectChat() {
+        ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setProjectId(projectId);
         group.setCreatedBy(creator);
-        group.setGroupType("REQUIREMENT");
-        group.setStatus("ACTIVE");
         return group;
     }
 
     @BeforeEach
     void stubDefaults() {
-        when(groupMapper.selectById(groupId)).thenReturn(requirementGroup());
-        when(groupMemberMapper.countMember(groupId, creator)).thenReturn(1);
+        when(groupMapper.selectById(groupId)).thenReturn(projectChat());
         when(projectMemberMapper.countMembers(projectId)).thenReturn(0L);
         when(groupAgentMapper.selectAgentIds(any())).thenReturn(List.of());
-        when(groupRepoMapper.selectRepositoryIds(any())).thenReturn(List.of());
     }
 
     @Test
     void listMarksPinnedGroups() {
-        when(groupMapper.listVisibleByProject(projectId, memberA)).thenReturn(List.of(requirementGroup()));
+        when(groupMapper.listByProject(projectId)).thenReturn(List.of(projectChat()));
         when(messageMapper.selectLatestByGroupIds(List.of(groupId))).thenReturn(List.of());
         when(messageMapper.countUnreadByGroupIds(List.of(groupId), memberA)).thenReturn(List.of());
         when(messageMapper.countMentionUnreadByGroupIds(List.of(groupId), memberA, memberA.toString())).thenReturn(List.of());
@@ -100,7 +93,7 @@ class GroupPinServiceTest {
 
     @Test
     void listDefaultsUnpinnedGroupsToFalse() {
-        when(groupMapper.listVisibleByProject(projectId, memberA)).thenReturn(List.of(requirementGroup()));
+        when(groupMapper.listByProject(projectId)).thenReturn(List.of(projectChat()));
         when(messageMapper.selectLatestByGroupIds(List.of(groupId))).thenReturn(List.of());
         when(messageMapper.countUnreadByGroupIds(List.of(groupId), memberA)).thenReturn(List.of());
         when(messageMapper.countMentionUnreadByGroupIds(List.of(groupId), memberA, memberA.toString())).thenReturn(List.of());
@@ -133,8 +126,8 @@ class GroupPinServiceTest {
 
     @Test
     void setPinnedRequiresProjectMember() {
-        // 非项目成员：requireGroupMember 抛 403 GROUP_MEMBER_REQUIRED（默认 mock 未 stub countMember）
-        when(groupMemberMapper.countMember(groupId, memberA)).thenReturn(0);
+        doThrow(new ApiException(HttpStatus.FORBIDDEN, "PROJECT_MEMBER_REQUIRED", "需要项目成员身份"))
+                .when(access).requireProjectMember(projectId, memberA);
 
         ApiException error = assertThrows(ApiException.class,
                 () -> service.setPinned(memberA, projectId, groupId, true));

@@ -18,11 +18,11 @@ import qg.qgent.chat.dto.Mention;
 import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.dto.MessageSendRequest;
 import qg.qgent.chat.entity.MessageEntity;
-import qg.qgent.chat.entity.RequirementGroupEntity;
+import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.mapper.GroupAgentMapper;
 import qg.qgent.chat.mapper.MessageMapper;
-import qg.qgent.chat.mapper.RequirementGroupMapper;
+import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.dto.PageInfo;
 import qg.qgent.common.dto.PageSlice;
 import qg.qgent.common.util.UuidV7;
@@ -52,7 +52,7 @@ public class MessageService {
     private static final String CURSOR_PREFIX = "cursor_";
 
     private final MessageMapper messageMapper;
-    private final RequirementGroupMapper groupMapper;
+    private final ChatGroupMapper groupMapper;
     private final GroupAgentMapper groupAgentMapper;
     private final UserMapper userMapper;
     private final AgentMapper agentMapper;
@@ -65,7 +65,7 @@ public class MessageService {
     private final AttachmentService attachmentService;
     private final ApplicationEventPublisher eventPublisher;
 
-    public MessageService(MessageMapper messageMapper, RequirementGroupMapper groupMapper,
+    public MessageService(MessageMapper messageMapper, ChatGroupMapper groupMapper,
                           GroupAgentMapper groupAgentMapper, UserMapper userMapper, AgentMapper agentMapper,
                           ProjectMapper projectMapper, ProjectAccessService access, GroupService groupService,
                           ObjectMapper mapper,
@@ -94,15 +94,15 @@ public class MessageService {
      *
      * @param actor     当前用户 ID
      * @param projectId 项目 ID
-     * @param groupId   需求群 ID
+     * @param groupId   项目群聊 ID
      * @param body      发送请求
      * @return 消息视图
      */
     @Transactional
     public MessageResponse send(UUID actor, UUID projectId, UUID groupId, MessageSendRequest body) {
-        // 群成员可见性（契约 2026-08-17 严格收紧）：主群=项目成员，需求群=群成员
+        // 群成员可见性（契约 2026-08-17 严格收紧）：主群=项目成员，项目群聊=群成员
         groupService.requireGroupMember(projectId, groupId, actor);
-        RequirementGroupEntity group = lockGroup(groupId);
+        ChatGroupEntity group = lockGroup(groupId);
         if (group == null || !group.getProjectId().equals(projectId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
         }
@@ -277,14 +277,14 @@ public class MessageService {
      * Agent 不是登录用户，不执行项目成员校验；服务端校验其 Team 归属与启用状态。
      * 与用户消息共用 sequence 单调递增与 client_message_id 幂等逻辑，响应 senderType=AGENT。
      *
-     * @param groupId 需求群 ID
+     * @param groupId 项目群聊 ID
      * @param agentId Agent ID
      * @param body    发送请求
      * @return 消息视图
      */
     @Transactional
     public MessageResponse sendAsAgent(UUID groupId, UUID agentId, MessageSendRequest body) {
-        RequirementGroupEntity group = lockGroup(groupId);
+        ChatGroupEntity group = lockGroup(groupId);
         if (group == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在");
         }
@@ -308,9 +308,9 @@ public class MessageService {
         return response;
     }
 
-    private RequirementGroupEntity lockGroup(UUID groupId) {
-        return groupMapper.selectOne(Wrappers.<RequirementGroupEntity>lambdaQuery()
-                .eq(RequirementGroupEntity::getId, groupId)
+    private ChatGroupEntity lockGroup(UUID groupId) {
+        return groupMapper.selectOne(Wrappers.<ChatGroupEntity>lambdaQuery()
+                .eq(ChatGroupEntity::getId, groupId)
                 .last("FOR UPDATE"));
     }
 
@@ -334,7 +334,7 @@ public class MessageService {
         }
         if (body.getReplyToId() != null) {
             MessageEntity reply = messageMapper.selectById(body.getReplyToId());
-            if (reply == null || !reply.getRequirementGroupId().equals(groupId)) {
+            if (reply == null || !reply.getGroupId().equals(groupId)) {
                 throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "REPLY_MESSAGE_NOT_FOUND",
                         "被回复的消息不存在");
             }
@@ -342,7 +342,7 @@ public class MessageService {
 
         MessageEntity message = new MessageEntity();
         message.setId(UuidV7.next());
-        message.setRequirementGroupId(groupId);
+        message.setGroupId(groupId);
         message.setSequenceNo(messageMapper.nextSequence(groupId));
         message.setAuthorUserId(authorUserId);
         message.setAgentId(agentId);
@@ -365,9 +365,9 @@ public class MessageService {
             }
             throw new ApiException(HttpStatus.CONFLICT, "MESSAGE_SEND_CONFLICT", "消息发送冲突，请重试");
         }
-        groupMapper.update(null, Wrappers.<RequirementGroupEntity>lambdaUpdate()
-                .set(RequirementGroupEntity::getLastMessageAt, LocalDateTime.now(ZoneOffset.UTC))
-                .eq(RequirementGroupEntity::getId, groupId));
+        groupMapper.update(null, Wrappers.<ChatGroupEntity>lambdaUpdate()
+                .set(ChatGroupEntity::getLastMessageAt, LocalDateTime.now(ZoneOffset.UTC))
+                .eq(ChatGroupEntity::getId, groupId));
         // Agent 首次回群后自动成为群参与者（群成员 = 真实用户 + Agent 混合），并推送成员变化事件
         if (agentId != null) {
             if (groupAgentMapper.insertAgent(groupId, agentId) > 0) {
@@ -403,22 +403,22 @@ public class MessageService {
      *
      * @param actor     当前用户 ID
      * @param projectId 项目 ID
-     * @param groupId   需求群 ID
+     * @param groupId   项目群聊 ID
      * @param cursor    上一页游标，可为空
      * @param limit     每页数量（自动收敛到 1..100）
      * @return 消息分页结果
      */
     public PageSlice<MessageResponse> list(UUID actor, UUID projectId, UUID groupId, String cursor, int limit) {
-        // 群成员可见性（契约 2026-08-17 严格收紧）：主群=项目成员，需求群=群成员
+        // 群成员可见性（契约 2026-08-17 严格收紧）：主群=项目成员，项目群聊=群成员
         groupService.requireGroupMember(projectId, groupId, actor);
-        RequirementGroupEntity group = groupMapper.selectById(groupId);
+        ChatGroupEntity group = groupMapper.selectById(groupId);
         if (group == null || !group.getProjectId().equals(projectId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
         }
         Long cursorSequence = decodeCursor(cursor);
         int pageSize = Math.min(Math.max(limit, 1), 100);
         List<MessageEntity> rows = messageMapper.selectList(Wrappers.<MessageEntity>lambdaQuery()
-                .eq(MessageEntity::getRequirementGroupId, groupId)
+                .eq(MessageEntity::getGroupId, groupId)
                 .lt(cursorSequence != null, MessageEntity::getSequenceNo, cursorSequence)
                 .orderByDesc(MessageEntity::getSequenceNo)
                 .last("limit " + (pageSize + 1)));
@@ -442,7 +442,7 @@ public class MessageService {
     public PageSlice<MessageResponse> listAfterSequence(UUID actor, UUID projectId, UUID groupId,
                                                          long afterSequence, int limit) {
         groupService.requireGroupMember(projectId, groupId, actor);
-        RequirementGroupEntity group = groupMapper.selectById(groupId);
+        ChatGroupEntity group = groupMapper.selectById(groupId);
         if (group == null || !group.getProjectId().equals(projectId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
         }
@@ -470,19 +470,19 @@ public class MessageService {
      *
      * @param actor     当前用户 ID
      * @param projectId 项目 ID
-     * @param groupId   需求群 ID
+     * @param groupId   项目群聊 ID
      * @param messageId 目标消息 ID
      * @return 消息视图（含发送者名称）
      */
     public MessageResponse getMessage(UUID actor, UUID projectId, UUID groupId, UUID messageId) {
-        // 群成员可见性（契约 2026-08-17 严格收紧）：主群=项目成员，需求群=群成员
+        // 群成员可见性（契约 2026-08-17 严格收紧）：主群=项目成员，项目群聊=群成员
         groupService.requireGroupMember(projectId, groupId, actor);
-        RequirementGroupEntity group = groupMapper.selectById(groupId);
+        ChatGroupEntity group = groupMapper.selectById(groupId);
         if (group == null || !group.getProjectId().equals(projectId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
         }
         MessageEntity message = messageMapper.selectById(messageId);
-        if (message == null || !groupId.equals(message.getRequirementGroupId())) {
+        if (message == null || !groupId.equals(message.getGroupId())) {
             throw new ApiException(HttpStatus.NOT_FOUND, "MESSAGE_NOT_FOUND", "消息不存在或不属于该群");
         }
         MessageResponse response = toResponse(message);
@@ -492,7 +492,7 @@ public class MessageService {
 
     private MessageEntity findByClientMessageId(UUID groupId, String clientMessageId) {
         return messageMapper.selectOne(Wrappers.<MessageEntity>lambdaQuery()
-                .eq(MessageEntity::getRequirementGroupId, groupId)
+                .eq(MessageEntity::getGroupId, groupId)
                 .eq(MessageEntity::getClientMessageId, clientMessageId));
     }
 
@@ -606,7 +606,7 @@ public class MessageService {
         String replyText = "QUOTE".equals(m.getMessageType())
                 && content.get("replyText") instanceof String text && !text.isBlank()
                 ? text : null;
-        return new MessageResponse(m.getId().toString(), m.getRequirementGroupId().toString(), m.getSequenceNo(),
+        return new MessageResponse(m.getId().toString(), m.getGroupId().toString(), m.getSequenceNo(),
                 m.getMessageType(), content, senderId, senderType, senderName,
                 m.getReplyToMessageId() == null ? null : m.getReplyToMessageId().toString(), replyText, mentions,
                 iso(m.getCreatedAt()));

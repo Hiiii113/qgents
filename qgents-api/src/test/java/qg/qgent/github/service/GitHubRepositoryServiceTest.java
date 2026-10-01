@@ -446,23 +446,23 @@ class GitHubRepositoryServiceTest {
     void syncInstallationRevokesMissingRepositories() {
         long providerInstallationId = 12345L;
         UUID myTeamId = UUID.randomUUID();
-        
+
         when(gitHubClient.verifyInstallationState("mock_state")).thenReturn(myTeamId);
         when(gitHubClient.getInstallation(providerInstallationId)).thenReturn(new qg.qgent.github.client.GitHubInstallationDetails(providerInstallationId, "qgents", "Organization", null));
-        
+
         // Return 1 repository from GitHub
         when(gitHubClient.listRepositories(providerInstallationId)).thenReturn(java.util.List.of(
             new qg.qgent.github.client.GitHubRepositoryDetails(100L, "qgents", "repo1", "main", "PRIVATE", false)
         ));
-        
+
         GitHubInstallationEntity existingInstallation = new GitHubInstallationEntity();
         existingInstallation.setId(installationId);
         existingInstallation.setTeamId(myTeamId);
         existingInstallation.setProviderInstallationId(providerInstallationId);
         existingInstallation.setStatus("ACTIVE"); // 只有 ACTIVE 安装才继续落库同步
-        
+
         when(installationMapper.selectByProviderInstallationIdForUpdate(anyLong())).thenReturn(existingInstallation);
-        
+
         // Return 2 repositories from Database
         GitHubRepositoryEntity repo1 = new GitHubRepositoryEntity();
         repo1.setId(UUID.randomUUID());
@@ -475,15 +475,15 @@ class GitHubRepositoryServiceTest {
         repo2.setInstallationId(installationId);
         repo2.setProviderRepositoryId(200L); // Missing from GitHub
         repo2.setAuthorizationStatus("AUTHORIZED");
-        
+
         when(repositoryMapper.selectList(any(Wrapper.class))).thenReturn(java.util.List.of(repo1, repo2));
-        
+
         service.handleInstallationCallback(providerInstallationId, "mock_state");
-        
+
         // Verify repo2 is revoked
         ArgumentCaptor<GitHubRepositoryEntity> captor = ArgumentCaptor.forClass(GitHubRepositoryEntity.class);
         verify(repositoryMapper, org.mockito.Mockito.times(2)).updateById(captor.capture());
-        
+
         GitHubRepositoryEntity revokedRepo = captor.getAllValues().stream()
                 .filter(r -> "REVOKED".equals(r.getAuthorizationStatus()))
                 .findFirst().orElseThrow();
@@ -527,17 +527,17 @@ class GitHubRepositoryServiceTest {
     void handleInstallationCallbackPerformsSyncAndReturnsTeamId() {
         long providerInstallationId = 12345L;
         UUID myTeamId = UUID.randomUUID();
-        
+
         when(gitHubClient.verifyInstallationState("mock_state")).thenReturn(myTeamId);
         when(gitHubClient.getInstallation(providerInstallationId)).thenReturn(new qg.qgent.github.client.GitHubInstallationDetails(providerInstallationId, "qgents", "Organization", null));
         when(gitHubClient.listRepositories(providerInstallationId)).thenReturn(java.util.List.of(
             new qg.qgent.github.client.GitHubRepositoryDetails(100L, "qgents", "repo1", "main", "PRIVATE", false)
         ));
-        
+
         when(installationMapper.selectByProviderInstallationIdForUpdate(anyLong())).thenReturn(null);
-        
+
         UUID returnedTeamId = service.handleInstallationCallback(providerInstallationId, "mock_state");
-        
+
         assertEquals(myTeamId, returnedTeamId);
         verify(installationMapper).insert(any(GitHubInstallationEntity.class));
         verify(repositoryMapper).insert(any(GitHubRepositoryEntity.class));
@@ -896,7 +896,7 @@ class GitHubRepositoryServiceTest {
     @Test
     void listProjectRepositoriesReturnsMappedRepositories() {
         UUID projectId = UUID.randomUUID();
-        
+
         ProjectEntity project = new ProjectEntity();
         project.setId(projectId);
         project.setTeamId(UUID.randomUUID());

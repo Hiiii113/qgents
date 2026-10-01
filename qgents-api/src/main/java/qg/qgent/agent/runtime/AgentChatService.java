@@ -110,7 +110,7 @@ public class AgentChatService {
     public void startTask(UUID projectId, UUID taskId, UUID actor, UUID agentId, String instruction) {
         TaskEntity task = tasks.require(projectId, taskId, actor);
         if ("CANCELLED".equals(task.getStatus()) || "CANCELLING".equals(task.getStatus())) return;
-        MessageSentEvent event = new MessageSentEvent(actor, projectId, task.getRequirementGroupId(),
+        MessageSentEvent event = new MessageSentEvent(actor, projectId, task.getGroupId(),
                 task.getTriggerMessageId(), List.of());
         WorkContext work = new WorkContext(event);
         work.task = tasks.response(task);
@@ -319,7 +319,7 @@ public class AgentChatService {
                     .stream().map(ProjectRepositoryEntity::getId).toList();
             if (repositoryIds.isEmpty()) return Map.of("ok", false, "error", "项目没有可用的代码仓库");
             TaskCreateRequest request = new TaskCreateRequest();
-            request.setRequirementGroupId(work.event.groupId());
+            request.setGroupId(work.event.groupId());
             request.setTriggerMessageId(work.event.messageId());
             request.setTitle(title);
             request.setRequirement(requirement);
@@ -333,7 +333,7 @@ public class AgentChatService {
         public Map<String, Object> listTasks() {
             List<TaskEntity> existing = taskMapper.selectList(Wrappers.<TaskEntity>lambdaQuery()
                     .eq(TaskEntity::getProjectId, work.event.projectId())
-                    .eq(TaskEntity::getRequirementGroupId, work.event.groupId())
+                    .eq(TaskEntity::getGroupId, work.event.groupId())
                     .orderByDesc(TaskEntity::getCreatedAt).last("LIMIT 20"));
             return Map.of("ok", true, "tasks", existing.stream().map(task -> Map.of(
                     "id", task.getId().toString(), "title", task.getTitle(), "status", task.getStatus())).toList());
@@ -344,7 +344,7 @@ public class AgentChatService {
             if (work.task != null) return Map.of("ok", false, "error", "本次运行已经关联工作任务");
             TaskEntity task = taskMapper.selectById(UUID.fromString(taskId));
             if (task == null || !work.event.projectId().equals(task.getProjectId())
-                    || !work.event.groupId().equals(task.getRequirementGroupId()) || task.getWorkspaceId() == null) {
+                    || !work.event.groupId().equals(task.getGroupId()) || task.getWorkspaceId() == null) {
                 return Map.of("ok", false, "error", "任务不存在或没有可用工作区");
             }
             work.task = tasks.response(task);

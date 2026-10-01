@@ -16,8 +16,8 @@ import java.util.UUID;
 @Data
 public class TaskCreateRequest {
     @NotNull
-    @Schema(description = "Active REQUIREMENT group identifier", requiredMode = Schema.RequiredMode.REQUIRED)
-    private UUID requirementGroupId;
+    @Schema(description = "项目群聊 ID", requiredMode = Schema.RequiredMode.REQUIRED)
+    private UUID groupId;
 
     @Schema(description = "Optional triggering message identifier")
     private UUID triggerMessageId;

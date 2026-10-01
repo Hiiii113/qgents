@@ -10,7 +10,7 @@ import qg.qgent.agent.entity.AgentEntity;
 import qg.qgent.agent.mapper.AgentMapper;
 import qg.qgent.agent.mapper.AgentRunMapper;
 import qg.qgent.chat.mapper.GroupAgentMapper;
-import qg.qgent.chat.mapper.RequirementGroupMapper;
+import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.service.ProjectAccessService;
@@ -38,12 +38,12 @@ class AgentServiceLifecycleTest {
     private final TeamMemberMapper teamMembers = mock(TeamMemberMapper.class);
     private final ProjectAccessService projectAccess = mock(ProjectAccessService.class);
     private final GroupAgentMapper groupAgents = mock(GroupAgentMapper.class);
-    private final RequirementGroupMapper requirementGroups = mock(RequirementGroupMapper.class);
+    private final ChatGroupMapper chatGroups = mock(ChatGroupMapper.class);
     private final AgentRunMapper agentRuns = mock(AgentRunMapper.class);
     private final ProjectMapper projects = mock(ProjectMapper.class);
     private final TeamMapper teams = mock(TeamMapper.class);
     private final AgentService service = new AgentService(agents, teamMembers, projectAccess, groupAgents,
-            requirementGroups, agentRuns, projects, teams);
+            chatGroups, agentRuns, projects, teams);
 
     private final UUID teamId = UUID.randomUUID();
     private final UUID creator = UUID.randomUUID();

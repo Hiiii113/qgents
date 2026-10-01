@@ -125,7 +125,7 @@ public class MergeRequestService {
         } else {
             mergeRequests.updateById(record);
         }
-        events.publish(projectId, task.getRequirementGroupId(), "merge-request.updated", record.getId().toString(),
+        events.publish(projectId, task.getGroupId(), "merge-request.updated", record.getId().toString(),
                 Map.of("mergeRequestId", record.getId(), "taskId", taskId, "status", record.getStatus(), "url", record.getHtmlUrl()));
         return record;
     }

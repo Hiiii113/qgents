@@ -84,7 +84,7 @@ public class AgentController {
     }
 
     /**
-     * 契约 v1.8.0 §20（成员 B B04）：Agent 分配列表（需求群/工作流）。
+     * 契约 v1.8.0 §20（成员 B B04）：Agent 分配列表（项目群聊/工作流）。
      */
     @GetMapping("/projects/{projectId}/agents/{agentId}/assignments")
     public PagedApiResponse<AgentAssignmentListItem> assignments(@PathVariable UUID projectId,

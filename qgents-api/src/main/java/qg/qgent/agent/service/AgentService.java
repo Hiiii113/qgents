@@ -15,9 +15,9 @@ import qg.qgent.agent.entity.AgentEntity;
 import qg.qgent.agent.entity.AgentRunEntity;
 import qg.qgent.agent.mapper.AgentMapper;
 import qg.qgent.agent.mapper.AgentRunMapper;
-import qg.qgent.chat.entity.RequirementGroupEntity;
+import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.mapper.GroupAgentMapper;
-import qg.qgent.chat.mapper.RequirementGroupMapper;
+import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.dto.PageInfo;
 import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
@@ -64,20 +64,20 @@ public class AgentService {
     private final TeamMemberMapper teamMemberMapper;
     private final ProjectAccessService projectAccess;
     private final GroupAgentMapper groupAgentMapper;
-    private final RequirementGroupMapper requirementGroupMapper;
+    private final ChatGroupMapper chatGroupMapper;
     private final AgentRunMapper agentRuns;
     private final ProjectMapper projectMapper;
     private final TeamMapper teamMapper;
 
     public AgentService(AgentMapper agentMapper, TeamMemberMapper teamMemberMapper,
                         ProjectAccessService projectAccess, GroupAgentMapper groupAgentMapper,
-                        RequirementGroupMapper requirementGroupMapper, AgentRunMapper agentRuns,
+                        ChatGroupMapper chatGroupMapper, AgentRunMapper agentRuns,
                         ProjectMapper projectMapper, TeamMapper teamMapper) {
         this.agentMapper = agentMapper;
         this.teamMemberMapper = teamMemberMapper;
         this.projectAccess = projectAccess;
         this.groupAgentMapper = groupAgentMapper;
-        this.requirementGroupMapper = requirementGroupMapper;
+        this.chatGroupMapper = chatGroupMapper;
         this.agentRuns = agentRuns;
         this.projectMapper = projectMapper;
         this.teamMapper = teamMapper;
@@ -130,7 +130,7 @@ public class AgentService {
     /**
      * Agent 分配列表（契约 v1.8.0 §20，成员 B B04）。
      * <p>
-     * REQUIREMENT_GROUP 数据源为 group_agents（Agent 参与的需求群，按项目隔离）；
+     * CHAT_GROUP 数据源为 group_agents（Agent 参与的项目群聊，按项目隔离）；
      * WORKFLOW 当前无数据源，返回空列表不伪造。
      */
     public PagedApiResponse<AgentAssignmentListItem> assignments(UUID projectId, UUID agentId, UUID actor,
@@ -139,17 +139,17 @@ public class AgentService {
         projectAccess.requireProjectMember(projectId, actor);
         requireAgent(agentId);
         List<AgentAssignmentListItem> all = new ArrayList<>();
-        if (type == null || "REQUIREMENT_GROUP".equals(type)) {
+        if (type == null || "CHAT_GROUP".equals(type)) {
             List<UUID> groupIds = groupAgentMapper.selectGroupIdsByAgent(projectId, agentId);
             if (!groupIds.isEmpty()) {
-                Map<UUID, RequirementGroupEntity> groupById = requirementGroupMapper
-                        .selectList(Wrappers.<RequirementGroupEntity>lambdaQuery()
-                                .in(RequirementGroupEntity::getId, groupIds))
-                        .stream().collect(Collectors.toMap(RequirementGroupEntity::getId, Function.identity()));
+                Map<UUID, ChatGroupEntity> groupById = chatGroupMapper
+                        .selectList(Wrappers.<ChatGroupEntity>lambdaQuery()
+                                .in(ChatGroupEntity::getId, groupIds))
+                        .stream().collect(Collectors.toMap(ChatGroupEntity::getId, Function.identity()));
                 groupIds.stream().map(groupById::get).filter(java.util.Objects::nonNull)
-                        .forEach(group -> all.add(new AgentAssignmentListItem("REQUIREMENT_GROUP",
+                        .forEach(group -> all.add(new AgentAssignmentListItem("CHAT_GROUP",
                                 id(group.getId()), group.getName(),
-                                "ACTIVE".equals(group.getStatus()) ? "ACTIVE" : "INACTIVE")));
+                                "ACTIVE")));
             }
         }
         if (type == null || "WORKFLOW".equals(type)) {
@@ -174,9 +174,8 @@ public class AgentService {
                 .eq(AgentRunEntity::getAgentId, agentId)
                 .in(AgentRunEntity::getStatus, ACTIVE_RUN_STATUSES));
         List<UUID> groupIds = groupAgentMapper.selectGroupIdsByAgent(projectId, agentId);
-        long assignableGroups = requirementGroupMapper.selectCount(Wrappers.<RequirementGroupEntity>lambdaQuery()
-                .eq(RequirementGroupEntity::getProjectId, projectId)
-                .eq(RequirementGroupEntity::getStatus, "ACTIVE"));
+        long assignableGroups = chatGroupMapper.selectCount(Wrappers.<ChatGroupEntity>lambdaQuery()
+                .eq(ChatGroupEntity::getProjectId, projectId));
         return new AgentRuntimeSummary(activeRuns > 0 ? "RUNNING" : "IDLE", activeRuns, null,
                 new AgentRuntimeSummary.AssignmentUsage(
                         new AgentRuntimeSummary.AssignmentCount(groupIds.size(), assignableGroups),

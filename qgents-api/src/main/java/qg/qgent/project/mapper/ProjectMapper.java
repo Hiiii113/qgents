@@ -76,7 +76,7 @@ public interface ProjectMapper extends BaseMapper<ProjectEntity> {
     @Select({"<script>",
             "SELECT p.id, p.team_id, p.name, p.description, p.avatar_url, p.status, ",
             "CASE WHEN #{teamOwner} THEN 'PROJECT_ADMIN' ELSE pm.role END AS role, ",
-            "(SELECT MAX(rg.last_message_at) FROM requirement_groups rg ",
+            "(SELECT MAX(rg.last_message_at) FROM chat_groups rg ",
             "  WHERE rg.project_id = p.id) AS last_activity_at ",
             "FROM projects p LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = #{userId} ",
             "WHERE p.team_id = #{teamId} ",

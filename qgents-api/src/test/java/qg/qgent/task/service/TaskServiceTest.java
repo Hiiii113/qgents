@@ -43,7 +43,7 @@ class TaskServiceTest {
         when(repositories.selectById(repositoryId)).thenReturn(repository);
         when(worktrees.selectByWorkspace(any())).thenReturn(List.of());
         TaskCreateRequest request = new TaskCreateRequest();
-        request.setRequirementGroupId(UUID.randomUUID());
+        request.setGroupId(UUID.randomUUID());
         request.setTitle(" 修改代码 ");
         request.setRequirement(" 需求 ");
         request.setRepositoryIds(List.of(repositoryId));

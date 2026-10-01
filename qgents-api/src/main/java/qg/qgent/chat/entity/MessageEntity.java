@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
- * 需求群有序消息实体，对应表 messages（契约 §7 消息收发）。
+ * 项目群聊有序消息实体，对应表 messages（契约 §7 消息收发）。
  * <p>
  * sequence_no 在群内单调递增（服务端在持有群行锁时计算），客户端可通过 client_message_id 幂等重试。
  */
@@ -24,12 +24,12 @@ public class MessageEntity {
     private UUID id;
 
     /**
-     * 所属需求群 ID（UUIDv7，BINARY(16)）。
+     * 所属项目群聊 ID（UUIDv7，BINARY(16)）。
      */
-    private UUID requirementGroupId;
+    private UUID groupId;
 
     /**
-     * 群内单调递增消息序号（BIGINT），(requirement_group_id, sequence_no) 唯一。
+     * 群内单调递增消息序号（BIGINT），(group_id, sequence_no) 唯一。
      */
     private Long sequenceNo;
 

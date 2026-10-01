@@ -57,13 +57,13 @@ class GitCredentialServiceTest {
     @Test
     void testGenerateGrant() {
         String grantId = service.generateGrant(TEAM, PROJECT, 123L, "owner/repo", "feat/xxx", HEAD);
-        
+
         assertNotNull(grantId);
         assertFalse(grantId.isBlank());
-        
+
         ArgumentCaptor<GitCredentialGrant> captor = ArgumentCaptor.forClass(GitCredentialGrant.class);
         verify(credentialGrantMapper, times(1)).insert(captor.capture());
-        
+
         GitCredentialGrant saved = captor.getValue();
         assertEquals(TEAM, saved.getTeamId());
         assertEquals(123L, saved.getInstallationId());
@@ -76,10 +76,10 @@ class GitCredentialServiceTest {
     @Test
     void exchangeGrantSuccess() {
         String grantId = UUID.randomUUID().toString();
-        
+
         when(credentialGrantMapper.exchangeGrant(anyString(), eq(HEAD), eq("owner/repo"), eq("main"),
                 eq(GitCredentialPurpose.PUSH), any())).thenReturn(1);
-        
+
         GitCredentialGrant grant = new GitCredentialGrant();
         grant.setInstallationId(12345L);
         grant.setTeamId(TEAM);
@@ -101,7 +101,7 @@ class GitCredentialServiceTest {
 
         qg.qgent.project.entity.ProjectRepositoryEntity projectRepo = new qg.qgent.project.entity.ProjectRepositoryEntity();
         when(projectRepositoryMapper.selectOne(any())).thenReturn(projectRepo);
-        
+
         when(githubAppClient.createInstallationToken(12345L)).thenReturn("ghs_token");
 
         String token = service.exchangeGrant(grantId, HEAD, "owner/repo", "main", GitCredentialPurpose.PUSH);
@@ -111,10 +111,10 @@ class GitCredentialServiceTest {
     @Test
     void testExchangeGrantFailure_UsedOrExpired() {
         String grantId = UUID.randomUUID().toString();
-        
+
         when(credentialGrantMapper.exchangeGrant(anyString(), eq("head"), eq("owner/repo"), eq("main"),
                 eq(GitCredentialPurpose.PUSH), any(LocalDateTime.class))).thenReturn(0);
-        
+
         ApiException exception = assertThrows(ApiException.class,
                 () -> service.exchangeGrant(grantId, "head", "owner/repo", "main", GitCredentialPurpose.PUSH));
         assertEquals(HttpStatus.FORBIDDEN, exception.status());
@@ -124,7 +124,7 @@ class GitCredentialServiceTest {
         String grantId = UUID.randomUUID().toString();
         when(credentialGrantMapper.exchangeGrant(anyString(), eq(HEAD), eq("owner/repo"), eq("main"),
                 eq(GitCredentialPurpose.PUSH), any())).thenReturn(1);
-        
+
         GitCredentialGrant grant = new GitCredentialGrant();
         grant.setInstallationId(12345L);
         grant.setTeamId(TEAM);
@@ -180,7 +180,7 @@ class GitCredentialServiceTest {
         String grantId = UUID.randomUUID().toString();
         when(credentialGrantMapper.exchangeGrant(anyString(), eq(HEAD), eq("owner/repo"), eq("main"),
                 eq(GitCredentialPurpose.PUSH), any())).thenReturn(1);
-        
+
         GitCredentialGrant grant = new GitCredentialGrant();
         grant.setInstallationId(12345L);
         grant.setTeamId(TEAM);
@@ -202,7 +202,7 @@ class GitCredentialServiceTest {
 
         qg.qgent.project.entity.ProjectRepositoryEntity projectRepo = new qg.qgent.project.entity.ProjectRepositoryEntity();
         when(projectRepositoryMapper.selectOne(any())).thenReturn(projectRepo);
-        
+
         when(githubAppClient.createInstallationToken(12345L)).thenThrow(new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "TOKEN_ERROR", "Token fails"));
 
         ApiException exception = assertThrows(ApiException.class,

@@ -15,10 +15,10 @@ import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.dto.MessageSendRequest;
 import qg.qgent.chat.entity.MessageEntity;
-import qg.qgent.chat.entity.RequirementGroupEntity;
+import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.mapper.GroupAgentMapper;
 import qg.qgent.chat.mapper.MessageMapper;
-import qg.qgent.chat.mapper.RequirementGroupMapper;
+import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.project.entity.ProjectEntity;
@@ -49,9 +49,9 @@ class MessageServiceTest {
     }
 
     private static void initializeMybatisMetadata() {
-        if (TableInfoHelper.getTableInfo(RequirementGroupEntity.class) == null) {
+        if (TableInfoHelper.getTableInfo(ChatGroupEntity.class) == null) {
             TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "MessageServiceTest"),
-                    RequirementGroupEntity.class);
+                    ChatGroupEntity.class);
         }
         if (TableInfoHelper.getTableInfo(MessageEntity.class) == null) {
             TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "MessageServiceTest"),
@@ -62,8 +62,8 @@ class MessageServiceTest {
     @Test
     void textMessageRejectsSerializedQuoteEnvelopeInsteadOfPersistingWrongType() {
         MessageMapper messages = mock(MessageMapper.class);
-        RequirementGroupMapper groups = mock(RequirementGroupMapper.class);
-        RequirementGroupEntity group = new RequirementGroupEntity();
+        ChatGroupMapper groups = mock(ChatGroupMapper.class);
+        ChatGroupEntity group = new ChatGroupEntity();
         UUID groupId = UUID.randomUUID();
         group.setId(groupId);
         group.setProjectId(UUID.randomUUID());
@@ -94,14 +94,14 @@ class MessageServiceTest {
         UUID groupId = UUID.randomUUID();
         UUID agentId = UUID.randomUUID();
         UUID teamId = UUID.randomUUID();
-        RequirementGroupEntity group = new RequirementGroupEntity();
+        ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setProjectId(projectId);
         ProjectEntity project = new ProjectEntity();
         project.setId(projectId);
         project.setTeamId(teamId);
         MessageMapper messages = mock(MessageMapper.class);
-        RequirementGroupMapper groups = mock(RequirementGroupMapper.class);
+        ChatGroupMapper groups = mock(ChatGroupMapper.class);
         GroupAgentMapper groupAgents = mock(GroupAgentMapper.class);
         AgentMapper agents = mock(AgentMapper.class);
         ProjectMapper projects = mock(ProjectMapper.class);
@@ -143,7 +143,7 @@ class MessageServiceTest {
         UUID groupId = UUID.randomUUID();
         UUID agentId = UUID.randomUUID();
         UUID teamId = UUID.randomUUID();
-        RequirementGroupEntity group = new RequirementGroupEntity();
+        ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setProjectId(projectId);
         ProjectEntity project = new ProjectEntity();
@@ -155,7 +155,7 @@ class MessageServiceTest {
         agent.setName("编排助手");
         agent.setStatus("ACTIVE");
         MessageMapper messages = mock(MessageMapper.class);
-        RequirementGroupMapper groups = mock(RequirementGroupMapper.class);
+        ChatGroupMapper groups = mock(ChatGroupMapper.class);
         GroupAgentMapper groupAgents = mock(GroupAgentMapper.class);
         AgentMapper agents = mock(AgentMapper.class);
         ProjectMapper projects = mock(ProjectMapper.class);
@@ -190,11 +190,11 @@ class MessageServiceTest {
         UUID projectId = UUID.randomUUID();
         UUID groupId = UUID.randomUUID();
         UUID actor = UUID.randomUUID();
-        RequirementGroupEntity group = new RequirementGroupEntity();
+        ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setProjectId(projectId);
         MessageMapper messages = mock(MessageMapper.class);
-        RequirementGroupMapper groups = mock(RequirementGroupMapper.class);
+        ChatGroupMapper groups = mock(ChatGroupMapper.class);
         when(groups.selectOne(any())).thenReturn(group);
         when(messages.nextSequence(groupId)).thenReturn(1L);
         AtomicReference<MessageEntity> stored = new AtomicReference<>();
@@ -225,8 +225,8 @@ class MessageServiceTest {
     @Test
     void quoteMessageEchoesTopLevelReplyText() {
         MessageMapper messages = mock(MessageMapper.class);
-        RequirementGroupMapper groups = mock(RequirementGroupMapper.class);
-        RequirementGroupEntity group = new RequirementGroupEntity();
+        ChatGroupMapper groups = mock(ChatGroupMapper.class);
+        ChatGroupEntity group = new ChatGroupEntity();
         UUID groupId = UUID.randomUUID();
         UUID agentId = UUID.randomUUID();
         UUID teamId = UUID.randomUUID();
@@ -267,7 +267,7 @@ class MessageServiceTest {
         request.setReplyText("这里回复正文");
         request.setReplyToId(UUID.randomUUID());
         MessageEntity quoted = new MessageEntity();
-        quoted.setRequirementGroupId(groupId);
+        quoted.setGroupId(groupId);
         when(messages.selectById(request.getReplyToId())).thenReturn(quoted);
 
         MessageResponse response = service.sendAsAgent(groupId, agentId, request);
@@ -284,8 +284,8 @@ class MessageServiceTest {
     @Test
     void quoteMessageWithoutReplyTextKeepsEchoEmpty() {
         MessageMapper messages = mock(MessageMapper.class);
-        RequirementGroupMapper groups = mock(RequirementGroupMapper.class);
-        RequirementGroupEntity group = new RequirementGroupEntity();
+        ChatGroupMapper groups = mock(ChatGroupMapper.class);
+        ChatGroupEntity group = new ChatGroupEntity();
         UUID groupId = UUID.randomUUID();
         UUID agentId = UUID.randomUUID();
         UUID teamId = UUID.randomUUID();
@@ -336,9 +336,9 @@ class MessageServiceTest {
         UUID groupId = UUID.randomUUID();
         UUID actor = UUID.randomUUID();
         MessageMapper messages = mock(MessageMapper.class);
-        RequirementGroupMapper groups = mock(RequirementGroupMapper.class);
+        ChatGroupMapper groups = mock(ChatGroupMapper.class);
         GroupService groupService = mock(GroupService.class);
-        RequirementGroupEntity group = new RequirementGroupEntity();
+        ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setProjectId(projectId);
         when(groups.selectById(groupId)).thenReturn(group);
@@ -364,11 +364,11 @@ class MessageServiceTest {
     void incrementalMessagesRejectNegativeCursorBeforeQuery() {
         UUID projectId = UUID.randomUUID();
         UUID groupId = UUID.randomUUID();
-        RequirementGroupEntity group = new RequirementGroupEntity();
+        ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setProjectId(projectId);
         MessageMapper messages = mock(MessageMapper.class);
-        RequirementGroupMapper groups = mock(RequirementGroupMapper.class);
+        ChatGroupMapper groups = mock(ChatGroupMapper.class);
         when(groups.selectById(groupId)).thenReturn(group);
         MessageService service = new MessageService(messages, groups, mock(GroupAgentMapper.class),
                 mock(UserMapper.class), mock(AgentMapper.class), mock(ProjectMapper.class),
@@ -385,7 +385,7 @@ class MessageServiceTest {
     private MessageEntity message(UUID groupId, long sequence, String text) {
         MessageEntity entity = new MessageEntity();
         entity.setId(UUID.randomUUID());
-        entity.setRequirementGroupId(groupId);
+        entity.setGroupId(groupId);
         entity.setSequenceNo(sequence);
         entity.setMessageType("TEXT");
         entity.setContent("{\"text\":\"" + text + "\"}");

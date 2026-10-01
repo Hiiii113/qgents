@@ -14,9 +14,9 @@ import lombok.NoArgsConstructor;
 public class GroupPinResponse {
 
     /**
-     * 需求群 ID。
+     * 项目群聊 ID。
      */
-    @Schema(description = "需求群 ID")
+    @Schema(description = "项目群聊 ID")
     private String groupId;
 
     /**

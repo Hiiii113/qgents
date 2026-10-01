@@ -43,7 +43,7 @@ public class TaskService {
 
     @Transactional
     public TaskResponse create(UUID projectId, UUID actor, TaskCreateRequest request) {
-        groups.requireGroupMember(projectId,request.getRequirementGroupId(),actor);
+        groups.requireGroupMember(projectId,request.getGroupId(),actor);
         projects.selectByIdForUpdate(projectId);
         List<UUID> repositoryIds = request.getRepositoryIds();
         if (repositoryIds == null || repositoryIds.isEmpty()) {
@@ -71,7 +71,7 @@ public class TaskService {
         TaskEntity task = new TaskEntity();
         task.setId(UuidV7.next());
         task.setProjectId(projectId);
-        task.setRequirementGroupId(request.getRequirementGroupId());
+        task.setGroupId(request.getGroupId());
         task.setTriggerMessageId(request.getTriggerMessageId());
         task.setWorkspaceId(workspace.getId());
         task.setTitle(request.getTitle().trim());
@@ -97,7 +97,7 @@ public class TaskService {
         access.requireProjectMember(projectId,actor);
         TaskEntity task = tasks.selectById(taskId);
         if (task == null || !projectId.equals(task.getProjectId())) throw new ApiException(HttpStatus.NOT_FOUND,"TASK_NOT_FOUND","任务不存在");
-        groups.requireGroupMember(projectId,task.getRequirementGroupId(),actor);
+        groups.requireGroupMember(projectId,task.getGroupId(),actor);
         return task;
     }
 
@@ -123,7 +123,7 @@ public class TaskService {
         TaskResponse response = new TaskResponse();
         response.setId(task.getId().toString());
         response.setProjectId(task.getProjectId().toString());
-        response.setRequirementGroupId(task.getRequirementGroupId().toString());
+        response.setGroupId(task.getGroupId().toString());
         response.setTitle(task.getTitle());
         response.setDisplayCode(task.getDisplayCode());
         response.setRequirement(task.getRequirement());
@@ -139,7 +139,7 @@ public class TaskService {
     }
 
     private void publish(TaskEntity task) {
-        events.publish(task.getProjectId(),task.getRequirementGroupId(),"task.updated",task.getId().toString(),
+        events.publish(task.getProjectId(),task.getGroupId(),"task.updated",task.getId().toString(),
                 Map.of("taskId",task.getId(),"workspaceId",task.getWorkspaceId(),"status",task.getStatus()));
     }
 }

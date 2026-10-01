@@ -19,7 +19,7 @@ public interface GroupReadStateMapper {
      * 天然满足幂等（重复调用无副作用）。调用方需已校验项目/群归属。
      *
      * @param userId 用户 ID
-     * @param groupId 需求群 ID
+     * @param groupId 项目群聊 ID
      * @param seq 目标已读游标（群内消息序号）
      */
     @Insert("INSERT INTO group_read_state (user_id, group_id, last_read_sequence_no) "

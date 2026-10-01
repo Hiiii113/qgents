@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * 当前需求群的历史聊天检索工具。
+ * 当前项目群聊的历史聊天检索工具。
  * <p>
  * 本工具不接触 Skill 或 Memory；每个实例仅服务一条 AgentRun，调用预算不跨运行继承。
  */
@@ -43,9 +43,9 @@ public class ChatHistorySearchTool {
     }
 
     /**
-     * 按关键词搜索当前需求群较早的聊天记录。
+     * 按关键词搜索当前项目群聊较早的聊天记录。
      */
-    @Tool(name = "search_chat_history", description = "仅在当前需求群的历史聊天记录中按关键字检索；"
+    @Tool(name = "search_chat_history", description = "仅在当前项目群聊的历史聊天记录中按关键字检索；"
             + "当最近消息窗口缺少所需讨论时调用。query 必填，每个 AgentRun 的调用次数有限")
     public Map<String, Object> searchChatHistory(
             @ToolParam(description = "从任务或讨论中提取的非空检索关键字") String query,
@@ -55,7 +55,7 @@ public class ChatHistorySearchTool {
             return error(result, "search_chat_history 需要非空 query，请使用具体关键字定位历史讨论");
         }
         if (groupId == null) {
-            return error(result, "search_chat_history 当前 Task 未关联需求群，无法检索聊天记录");
+            return error(result, "search_chat_history 当前 Task 未关联项目群聊，无法检索聊天记录");
         }
         if (searchesUsed >= maxSearches) {
             return error(result, "search_chat_history 检索预算已用尽（已调用 " + searchesUsed + "/" + maxSearches

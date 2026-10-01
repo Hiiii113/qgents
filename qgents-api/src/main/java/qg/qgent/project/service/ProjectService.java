@@ -9,7 +9,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import qg.qgent.chat.mapper.GroupMemberMapper;
 import qg.qgent.common.dto.PageInfo;
 import qg.qgent.common.dto.PageSlice;
 import qg.qgent.common.util.UuidV7;
@@ -53,13 +52,11 @@ public class ProjectService {
     private final NotificationService notificationService;
     private final EventService eventService;
     private final GitHubRepositoryService githubRepositoryService;
-    private final GroupMemberMapper groupMemberMapper;
 
     public ProjectService(ProjectMapper projectMapper, ProjectMemberMapper memberMapper, TeamMapper teamMapper,
                            TeamMemberMapper teamMemberMapper, ProjectAccessService access, ApplicationEventPublisher eventPublisher,
                            NotificationService notificationService, EventService eventService,
-                           GitHubRepositoryService githubRepositoryService, ProjectRepositoryMapper projectRepositoryMapper,
-                           GroupMemberMapper groupMemberMapper) {
+                           GitHubRepositoryService githubRepositoryService, ProjectRepositoryMapper projectRepositoryMapper) {
         this.projectMapper = projectMapper;
         this.memberMapper = memberMapper;
         this.teamMapper = teamMapper;
@@ -70,7 +67,6 @@ public class ProjectService {
         this.eventService = eventService;
         this.githubRepositoryService = githubRepositoryService;
         this.projectRepositoryMapper = projectRepositoryMapper;
-        this.groupMemberMapper = groupMemberMapper;
     }
 
     /**
@@ -120,7 +116,7 @@ public class ProjectService {
             // 创建项目时一并绑定 GitHub 授权仓库（前端额外清单 §四；repositoryIds 为 github_repositories.id）
             githubRepositoryService.bindRepositoriesOnCreate(actor, teamId, project.getId(), request.getRepositoryIds());
         }
-        // 触发自动创建唯一 PROJECT_MAIN 群（契约 §7），监听方为 GroupService
+
         eventPublisher.publishEvent(new ProjectCreatedEvent(project.getId(), project.getName(), actor));
         // 项目创建动态事件：供「团队最近动态」聚合展示，与项目同事务落库
         eventService.publish(project.getId(), null, "project.created", project.getId().toString(),
@@ -327,7 +323,6 @@ public class ProjectService {
         if ("PROJECT_ADMIN".equals(target.getRole())) {
             throw new ApiException(HttpStatus.FORBIDDEN, "PROJECT_ADMIN_CANNOT_REMOVE_MANAGER", "项目管理员不可被移除");
         }
-        groupMemberMapper.deleteByProjectAndUser(projectId, userId);
         memberMapper.deleteByProjectAndUser(projectId, userId);
         return new ProjectMemberResponse(userId.toString(), target.getRole());
     }

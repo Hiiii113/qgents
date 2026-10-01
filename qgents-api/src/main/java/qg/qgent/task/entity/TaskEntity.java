@@ -14,7 +14,7 @@ public class TaskEntity {
     @TableId(type = IdType.INPUT)
     private UUID id;
     private UUID projectId;
-    private UUID requirementGroupId;
+    private UUID groupId;
     private UUID triggerMessageId;
     private UUID workspaceId;
     private String title;

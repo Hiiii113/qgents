@@ -12,9 +12,9 @@ import lombok.NoArgsConstructor;
 public class ProjectSettingsUpdateRequest {
 
     /**
-     * 允许成员创建需求群；关闭后仅 Project Admin 可建。
+     * 允许成员创建项目群聊；关闭后仅 Project Admin 可建。
      */
-    @Schema(description = "允许成员创建需求群")
+    @Schema(description = "允许成员创建项目群聊")
     private Boolean allowCreateGroup;
 
     /**
@@ -30,8 +30,8 @@ public class ProjectSettingsUpdateRequest {
     private Boolean allowAgentTrigger;
 
     /**
-     * 新成员自动加入所有需求群。
+     * 新成员自动加入所有项目群聊。
      */
-    @Schema(description = "新成员自动加入所有需求群")
+    @Schema(description = "新成员自动加入所有项目群聊")
     private Boolean autoJoinAllGroups;
 }

@@ -13,9 +13,9 @@ import qg.qgent.agent.mapper.AgentRunMapper;
 import qg.qgent.attachment.entity.AttachmentEntity;
 import qg.qgent.attachment.mapper.AttachmentMapper;
 import qg.qgent.chat.entity.MessageEntity;
-import qg.qgent.chat.entity.RequirementGroupEntity;
+import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.mapper.MessageMapper;
-import qg.qgent.chat.mapper.RequirementGroupMapper;
+import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.persistence.typehandler.UuidBinaryTypeHandler;
 import qg.qgent.github.entity.GitHubInstallationEntity;
 import qg.qgent.github.entity.GitHubRepositoryEntity;
@@ -64,7 +64,7 @@ class TeamDisbandServiceTest {
         configuration.getTypeHandlerRegistry().register(UuidBinaryTypeHandler.class);
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(configuration, "");
         for (Class<?> entity : List.of(ProjectEntity.class, NotificationEntity.class, EventEntity.class,
-                RequirementGroupEntity.class, MessageEntity.class,
+                ChatGroupEntity.class, MessageEntity.class,
                 MemoryEntity.class, ProjectRepositoryEntity.class, MergeRequestEntity.class, AgentRunEntity.class,
                 TaskEntity.class, WorkspaceEntity.class,
                 SkillEntity.class, AttachmentEntity.class, GitHubRepositoryEntity.class,
@@ -76,7 +76,7 @@ class TeamDisbandServiceTest {
     private final ProjectMapper projectMapper = mock(ProjectMapper.class);
     private final NotificationMapper notificationMapper = mock(NotificationMapper.class);
     private final EventMapper eventMapper = mock(EventMapper.class);
-    private final RequirementGroupMapper requirementGroupMapper = mock(RequirementGroupMapper.class);
+    private final ChatGroupMapper chatGroupMapper = mock(ChatGroupMapper.class);
     private final MessageMapper messageMapper = mock(MessageMapper.class);
     private final MemoryMapper memoryMapper = mock(MemoryMapper.class);
     private final ProjectRepositoryMapper projectRepositoryMapper = mock(ProjectRepositoryMapper.class);
@@ -91,7 +91,7 @@ class TeamDisbandServiceTest {
     private final AgentMapper agentMapper = mock(AgentMapper.class);
     private final TeamMapper teamMapper = mock(TeamMapper.class);
     private final TeamDisbandService service = new TeamDisbandService(projectMapper, notificationMapper,
-            eventMapper, requirementGroupMapper, messageMapper, memoryMapper,
+            eventMapper, chatGroupMapper, messageMapper, memoryMapper,
             projectRepositoryMapper, mergeRequestMapper, agentRuns, taskMapper,
             workspaceMapper, skillMapper, attachmentMapper, githubRepositoryMapper,
             githubInstallationMapper, agentMapper, teamMapper);
@@ -108,10 +108,10 @@ class TeamDisbandServiceTest {
         project.setTeamId(teamId);
         when(projectMapper.selectList(any())).thenReturn(List.of(project));
 
-        RequirementGroupEntity group = new RequirementGroupEntity();
+        ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setProjectId(projectId);
-        when(requirementGroupMapper.selectList(any())).thenReturn(List.of(group));
+        when(chatGroupMapper.selectList(any())).thenReturn(List.of(group));
 
         ProjectRepositoryEntity repo = new ProjectRepositoryEntity();
         repo.setId(repoId);
@@ -129,7 +129,7 @@ class TeamDisbandServiceTest {
         // github_repositories 引用 github_installations（fk_ghr_install 无级联），必须先删镜像再删安装记录。
         var order = inOrder(notificationMapper, eventMapper, messageMapper,
                 memoryMapper, mergeRequestMapper, agentRuns, taskMapper,
-                workspaceMapper, skillMapper, attachmentMapper, requirementGroupMapper, projectMapper,
+                workspaceMapper, skillMapper, attachmentMapper, chatGroupMapper, projectMapper,
                 githubRepositoryMapper, githubInstallationMapper, agentMapper, teamMapper);
         order.verify(notificationMapper).delete(any());
         order.verify(eventMapper).delete(any());
@@ -141,7 +141,7 @@ class TeamDisbandServiceTest {
         order.verify(workspaceMapper).delete(any());
         order.verify(skillMapper).delete(any());
         order.verify(attachmentMapper).delete(any());
-        order.verify(requirementGroupMapper).delete(any());
+        order.verify(chatGroupMapper).delete(any());
         order.verify(projectMapper).deleteById(projectId);
         order.verify(githubRepositoryMapper).delete(any());
         order.verify(githubInstallationMapper).delete(any());

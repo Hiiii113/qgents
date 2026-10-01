@@ -53,7 +53,7 @@ public class FixedAccountAuthIntegrationTest {
         // 1. 设置固定测试账号
         String fixedEmail = "dev_fixed_user@qgents.com";
         String rawPassword = "password123456";
-        
+
         // 读取私钥，并动态推导出公钥，用于给密码加密
         String pem = new String(privateKeyResource.getInputStream().readAllBytes(), StandardCharsets.US_ASCII)
                 .replace("-----BEGIN PRIVATE KEY-----", "")
@@ -97,7 +97,7 @@ public class FixedAccountAuthIntegrationTest {
                 .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(registerReq)))
                 .build();
         httpClient.send(registerRequest, HttpResponse.BodyHandlers.ofString());
-        
+
         // 3. 执行登录获取 Token
         LoginRequest loginReq = new LoginRequest();
         loginReq.setEmail(fixedEmail);
@@ -112,10 +112,10 @@ public class FixedAccountAuthIntegrationTest {
 
         HttpResponse<String> loginResponse = httpClient.send(loginRequest, HttpResponse.BodyHandlers.ofString());
         Assertions.assertEquals(200, loginResponse.statusCode(), "固定账号登录失败");
-        
+
         JsonNode loginRoot = objectMapper.readTree(loginResponse.body());
         AuthTokensResponse loginTokens = objectMapper.treeToValue(loginRoot.get("data"), AuthTokensResponse.class);
-        
+
         // 4. 为该固定账号检查并创建团队
         byte[] userIdBytes = jdbcTemplate.queryForObject("SELECT id FROM users WHERE email = ?", byte[].class, fixedEmail);
         Assertions.assertNotNull(userIdBytes, "用户应该存在");
@@ -130,13 +130,13 @@ public class FixedAccountAuthIntegrationTest {
             java.nio.ByteBuffer.wrap(teamIdBytes)
                     .putLong(newTeamUuid.getMostSignificantBits())
                     .putLong(newTeamUuid.getLeastSignificantBits());
-                    
-            jdbcTemplate.update("INSERT INTO teams (id, owner_user_id, name) VALUES (?, ?, ?)", 
+
+            jdbcTemplate.update("INSERT INTO teams (id, owner_user_id, name) VALUES (?, ?, ?)",
                     teamIdBytes, userIdBytes, "Fixed Dev Team");
-            jdbcTemplate.update("INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)", 
+            jdbcTemplate.update("INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)",
                     teamIdBytes, userIdBytes, "TEAM_OWNER");
         }
-        
+
         // 还原 UUID 以打印
         java.nio.ByteBuffer bb = java.nio.ByteBuffer.wrap(teamIdBytes);
         UUID teamUuid = new UUID(bb.getLong(), bb.getLong());

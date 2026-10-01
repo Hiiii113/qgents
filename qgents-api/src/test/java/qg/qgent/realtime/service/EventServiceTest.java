@@ -9,8 +9,7 @@ import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import qg.qgent.chat.mapper.GroupMemberMapper;
-import qg.qgent.chat.mapper.RequirementGroupMapper;
+import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.entity.NotificationEventEntity;
 import qg.qgent.notification.mapper.NotificationEventMapper;
@@ -182,22 +181,21 @@ class EventServiceTest {
         return new EventService(events, mock(ProjectAccessService.class), mock(NotificationEventMapper.class),
                 mock(TeamEventMapper.class), mock(RealtimeHub.class),
                 mock(ProjectMemberMapper.class), mock(TeamMemberMapper.class),
-                mock(RequirementGroupMapper.class), mock(GroupMemberMapper.class), projects);
+                mock(ChatGroupMapper.class), projects);
     }
 
     private EventService productionService(EventMapper events, ProjectMapper projects,
                                            PlatformTransactionManager transactions) {
         return new EventService(events, mock(ProjectAccessService.class), mock(NotificationEventMapper.class),
                 mock(TeamEventMapper.class), mock(RealtimeHub.class),
-                mock(ProjectMemberMapper.class), mock(TeamMemberMapper.class), mock(RequirementGroupMapper.class),
-                mock(GroupMemberMapper.class), projects, null, null, transactions, null);
+                mock(ProjectMemberMapper.class), mock(TeamMemberMapper.class), mock(ChatGroupMapper.class), projects, null, null, transactions, null);
     }
 
     private EventService fullService(EventMapper events, NotificationEventMapper notifications,
                                      TeamEventMapper teams, UserMapper users, TeamMapper teamRows) {
         return new EventService(events, mock(ProjectAccessService.class), notifications, teams,
                 mock(RealtimeHub.class), mock(ProjectMemberMapper.class),
-                mock(TeamMemberMapper.class), mock(RequirementGroupMapper.class), mock(GroupMemberMapper.class),
+                mock(TeamMemberMapper.class), mock(ChatGroupMapper.class),
                 mock(ProjectMapper.class), users, teamRows);
     }
 
@@ -209,7 +207,7 @@ class EventServiceTest {
         EventService service = new EventService(events, access, mock(NotificationEventMapper.class),
                 mock(TeamEventMapper.class), mock(RealtimeHub.class),
                 mock(ProjectMemberMapper.class), mock(TeamMemberMapper.class),
-                mock(RequirementGroupMapper.class), mock(GroupMemberMapper.class), mock(ProjectMapper.class),
+                mock(ChatGroupMapper.class), mock(ProjectMapper.class),
                 mock(UserMapper.class), mock(TeamMapper.class), null, null);
 
         // 把活跃连接计数压到上限，验证新连接被拒绝（429），不会无限堆积泵线程。
@@ -237,7 +235,7 @@ class EventServiceTest {
         EventService service = new EventService(events, access, mock(NotificationEventMapper.class),
                 mock(TeamEventMapper.class), mock(RealtimeHub.class),
                 mock(ProjectMemberMapper.class), mock(TeamMemberMapper.class),
-                mock(RequirementGroupMapper.class), mock(GroupMemberMapper.class), mock(ProjectMapper.class),
+                mock(ChatGroupMapper.class), mock(ProjectMapper.class),
                 mock(UserMapper.class), mock(TeamMapper.class), null, null);
         when(events.maxSequence(projectId)).thenReturn(1L);
 

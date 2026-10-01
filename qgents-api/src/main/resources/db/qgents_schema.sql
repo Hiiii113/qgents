@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS
         name VARCHAR(255) NOT NULL COMMENT '项目名称',
         description TEXT NULL COMMENT '项目说明',
         avatar_url TEXT NULL COMMENT '项目头像URL（OSS 公共读长期地址，可为空）',
-        settings JSON NULL COMMENT '项目设置：需求群规则开关（allowCreateGroup/autoArchiveGroup/allowAgentTrigger/autoJoinAllGroups）',
+        settings JSON NULL COMMENT '项目设置：项目群聊规则开关（allowCreateGroup/autoArchiveGroup/allowAgentTrigger/autoJoinAllGroups）',
         status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE' COMMENT '项目状态枚举：ACTIVE/ARCHIVED',
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
         updated_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',
@@ -223,51 +223,26 @@ CREATE TABLE IF NOT EXISTS
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目与GitHub仓库绑定';
 
 CREATE TABLE IF NOT EXISTS
-    requirement_groups (
-        id BINARY(16) PRIMARY KEY COMMENT '需求群UUIDv7',
+    chat_groups (
+        id BINARY(16) PRIMARY KEY COMMENT '项目群聊UUIDv7',
         project_id BINARY(16) NOT NULL COMMENT '所属项目ID',
         created_by BINARY(16) NOT NULL COMMENT '创建用户ID',
         name VARCHAR(255) NOT NULL COMMENT '群聊名称',
         description TEXT NULL COMMENT '群聊目标和需求背景说明',
-        group_type VARCHAR(32) NOT NULL DEFAULT 'REQUIREMENT' COMMENT '群类型：PROJECT_MAIN/REQUIREMENT',
-        status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE' COMMENT '群状态枚举：ACTIVE/ARCHIVED',
-        project_main_project_id BINARY(16)
-            GENERATED ALWAYS AS (
-                CASE
-                    WHEN group_type = 'PROJECT_MAIN' THEN project_id
-                    ELSE NULL
-                END
-            ) STORED COMMENT 'PROJECT_MAIN uniqueness key; NULL for requirement groups',
         last_message_at DATETIME (6) NULL COMMENT '最近消息时间（UTC）',
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
         updated_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',
-        KEY idx_rg_project (project_id, status, last_message_at),
+        UNIQUE KEY uk_chat_project (project_id),
         KEY idx_rg_creator (created_by),
-        UNIQUE KEY uk_rg_project_main (project_main_project_id),
         CONSTRAINT fk_rg_project FOREIGN KEY (project_id) REFERENCES projects (id),
-        CONSTRAINT fk_rg_creator FOREIGN KEY (created_by) REFERENCES users (id),
-        CONSTRAINT chk_rg_group_type
-            CHECK (group_type IN ('PROJECT_MAIN', 'REQUIREMENT')),
-        CONSTRAINT chk_rg_status
-            CHECK (status IN ('ACTIVE', 'ARCHIVED')),
-        CONSTRAINT chk_rg_project_main_active
-            CHECK (group_type <> 'PROJECT_MAIN' OR status = 'ACTIVE')
+        CONSTRAINT fk_rg_creator FOREIGN KEY (created_by) REFERENCES users (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目需求讨论与协作上下文群';
 
-CREATE TABLE IF NOT EXISTS
-    requirement_group_repositories (
-        requirement_group_id BINARY(16) NOT NULL COMMENT '需求群ID',
-        project_repository_id BINARY(16) NOT NULL COMMENT '关联的项目仓库绑定ID',
-        PRIMARY KEY (requirement_group_id, project_repository_id),
-        KEY idx_rgr_repo (project_repository_id),
-        CONSTRAINT fk_rgr_group FOREIGN KEY (requirement_group_id) REFERENCES requirement_groups (id) ON DELETE CASCADE,
-        CONSTRAINT fk_rgr_repo FOREIGN KEY (project_repository_id) REFERENCES project_repositories (id)
-    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '需求群与多个项目仓库关联';
 
 CREATE TABLE IF NOT EXISTS
     messages (
         id BINARY(16) PRIMARY KEY COMMENT '消息UUIDv7',
-        requirement_group_id BINARY(16) NOT NULL COMMENT '所属需求群ID',
+        group_id BINARY(16) NOT NULL COMMENT '所属项目群聊ID',
         sequence_no BIGINT UNSIGNED NOT NULL COMMENT '群内单调递增消息序号',
         author_user_id BINARY(16) NULL COMMENT '用户作者ID；Agent/系统消息时为空',
         agent_id BINARY(16) NULL COMMENT 'Agent 作者ID；用户/系统消息时为空',
@@ -277,12 +252,12 @@ CREATE TABLE IF NOT EXISTS
         mentions JSON NULL COMMENT '提及对象JSON数组，元素含type(USER/AGENT)和id',
         reply_to_message_id BINARY(16) NULL COMMENT '回复或引用的原消息ID',
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '发送时间（UTC）',
-        UNIQUE KEY uk_msg_seq (requirement_group_id, sequence_no),
-        UNIQUE KEY uk_msg_client (requirement_group_id, client_message_id),
+        UNIQUE KEY uk_msg_seq (group_id, sequence_no),
+        UNIQUE KEY uk_msg_client (group_id, client_message_id),
         KEY idx_msg_user (author_user_id),
         KEY idx_msg_agent (agent_id),
         KEY idx_msg_reply (reply_to_message_id),
-        CONSTRAINT fk_msg_group FOREIGN KEY (requirement_group_id) REFERENCES requirement_groups (id),
+        CONSTRAINT fk_msg_group FOREIGN KEY (group_id) REFERENCES chat_groups (id),
         CONSTRAINT fk_msg_user FOREIGN KEY (author_user_id) REFERENCES users (id),
         CONSTRAINT fk_msg_reply FOREIGN KEY (reply_to_message_id) REFERENCES messages (id),
         CONSTRAINT chk_message_sender CHECK (
@@ -296,7 +271,7 @@ CREATE TABLE IF NOT EXISTS
                 AND NOT (author_user_id IS NOT NULL AND agent_id IS NOT NULL)
             )
         )
-    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '需求群有序消息，提及在MVP内以JSON保存';
+    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目群聊有序消息，提及在MVP内以JSON保存';
 
 CREATE TABLE IF NOT EXISTS
     attachments (
@@ -476,27 +451,18 @@ CREATE TABLE IF NOT EXISTS agent_runs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent loop 根运行及 subagent 运行';
 
 CREATE TABLE IF NOT EXISTS group_agents (
-    requirement_group_id BINARY(16) NOT NULL,
+    group_id BINARY(16) NOT NULL,
     agent_id BINARY(16) NOT NULL,
     joined_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    PRIMARY KEY (requirement_group_id, agent_id),
+    PRIMARY KEY (group_id, agent_id),
     KEY idx_ga_agent(agent_id),
-    CONSTRAINT fk_ga_group FOREIGN KEY(requirement_group_id) REFERENCES requirement_groups(id) ON DELETE CASCADE,
+    CONSTRAINT fk_ga_group FOREIGN KEY(group_id) REFERENCES chat_groups(id) ON DELETE CASCADE,
     CONSTRAINT fk_ga_agent FOREIGN KEY(agent_id) REFERENCES agents(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='群聊 Agent 参与者（Agent 首次回群时自动加入）';
 
-CREATE TABLE IF NOT EXISTS group_members (
-    requirement_group_id BINARY(16) NOT NULL COMMENT '需求群ID',
-    user_id BINARY(16) NOT NULL COMMENT '项目成员用户ID',
-    joined_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '加入时间（UTC）',
-    PRIMARY KEY (requirement_group_id, user_id),
-    KEY idx_gm_user (user_id),
-    CONSTRAINT fk_gm_group FOREIGN KEY (requirement_group_id) REFERENCES requirement_groups (id) ON DELETE CASCADE,
-    CONSTRAINT fk_gm_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='需求群显式成员（用户）；PROJECT_MAIN 主群不写入，成员恒为全部项目成员';
 
 CREATE TABLE IF NOT EXISTS tasks (
-    id BINARY(16) PRIMARY KEY, project_id BINARY(16) NOT NULL, requirement_group_id BINARY(16) NOT NULL,
+    id BINARY(16) PRIMARY KEY, project_id BINARY(16) NOT NULL, group_id BINARY(16) NOT NULL,
     trigger_message_id BINARY(16) NULL, workspace_id BINARY(16) NOT NULL,
     title VARCHAR(255) NOT NULL, display_code VARCHAR(32) NOT NULL COMMENT '项目内唯一展示编号，如 T-1024，创建后不可变',
     requirement TEXT NOT NULL,
@@ -506,9 +472,9 @@ CREATE TABLE IF NOT EXISTS tasks (
     UNIQUE KEY uk_task_display_code(project_id,display_code),
     KEY idx_task_trigger_message(trigger_message_id),
     KEY idx_task_project(project_id,status), KEY idx_task_project_workspace_updated(project_id,workspace_id,updated_at,id),
-    KEY idx_task_group(requirement_group_id), KEY idx_task_workspace(workspace_id),
+    KEY idx_task_group(group_id), KEY idx_task_workspace(workspace_id),
     CONSTRAINT fk_task_project FOREIGN KEY(project_id) REFERENCES projects(id),
-    CONSTRAINT fk_task_group FOREIGN KEY(requirement_group_id) REFERENCES requirement_groups(id),
+    CONSTRAINT fk_task_group FOREIGN KEY(group_id) REFERENCES chat_groups(id),
     CONSTRAINT fk_task_message FOREIGN KEY(trigger_message_id) REFERENCES messages(id),
     CONSTRAINT fk_task_creator FOREIGN KEY(created_by) REFERENCES users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='User-visible requirement execution';
@@ -568,7 +534,7 @@ CREATE TABLE IF NOT EXISTS
     events (
         id BINARY(16) PRIMARY KEY COMMENT '事件UUIDv7',
         project_id BINARY(16) NOT NULL COMMENT '所属项目ID',
-        requirement_group_id BINARY(16) NULL COMMENT '可选关联需求群ID',
+        group_id BINARY(16) NULL COMMENT '可选关联项目群聊ID',
         sequence_no BIGINT UNSIGNED NOT NULL COMMENT '项目内单调递增事件序号，作为SSE游标',
         event_type VARCHAR(64) NOT NULL COMMENT '事件类型，如task.updated/merge-request.updated',
         resource_id VARCHAR(128) NULL COMMENT '关联资源ID字符串，如agentRunId',
@@ -577,7 +543,7 @@ CREATE TABLE IF NOT EXISTS
         UNIQUE KEY uk_event_seq (project_id, sequence_no),
         KEY idx_event_type (event_type, created_at),
         CONSTRAINT fk_event_project FOREIGN KEY (project_id) REFERENCES projects (id),
-        CONSTRAINT fk_event_group FOREIGN KEY (requirement_group_id) REFERENCES requirement_groups (id)
+        CONSTRAINT fk_event_group FOREIGN KEY (group_id) REFERENCES chat_groups (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目级实时事件存储，至少保留24小时';
 
 -- 全新整库初始化时上方 merge_requests 建表不包含该列，由本 ALTER 补齐；
@@ -606,7 +572,7 @@ CREATE TABLE IF NOT EXISTS
         id BINARY(16) PRIMARY KEY COMMENT '通知UUIDv7',
         recipient_user_id BINARY(16) NOT NULL COMMENT '接收通知的用户ID',
         project_id BINARY(16) NULL COMMENT '关联项目ID；系统级通知为空',
-        requirement_group_id BINARY(16) NULL COMMENT '关联需求群ID；非群通知为空',
+        group_id BINARY(16) NULL COMMENT '关联项目群聊ID；非群通知为空',
         kind VARCHAR(64) NOT NULL COMMENT '通知类型：MESSAGE_MENTION/MR_PENDING/INVITED/TEAM_JOINED/PROJECT_ADDED',
         title VARCHAR(255) NOT NULL COMMENT '一行通知标题',
         description TEXT NULL COMMENT '通知描述正文',
@@ -617,11 +583,11 @@ CREATE TABLE IF NOT EXISTS
         read_at DATETIME (6) NULL COMMENT '已读时间（UTC），未读为空',
         KEY idx_notif_user (recipient_user_id, is_read, created_at),
         KEY idx_notif_project (project_id),
-        KEY idx_notif_group (requirement_group_id),
+        KEY idx_notif_group (group_id),
         UNIQUE KEY uk_notif_recipient_dedupe (recipient_user_id, dedupe_key),
         CONSTRAINT fk_notif_user FOREIGN KEY (recipient_user_id) REFERENCES users (id) ON DELETE CASCADE,
         CONSTRAINT fk_notif_project FOREIGN KEY (project_id) REFERENCES projects (id),
-        CONSTRAINT fk_notif_group FOREIGN KEY (requirement_group_id) REFERENCES requirement_groups (id)
+        CONSTRAINT fk_notif_group FOREIGN KEY (group_id) REFERENCES chat_groups (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '用户通知中心';
 
 -- GitHub Webhook 投递幂等记录：以 X-GitHub-Delivery 唯一防重，只存 body 摘要不存 Secret。
@@ -714,19 +680,19 @@ CREATE TABLE IF NOT EXISTS team_events (
 CREATE TABLE IF NOT EXISTS
     group_read_state (
         user_id BINARY(16) NOT NULL COMMENT '用户ID',
-        group_id BINARY(16) NOT NULL COMMENT '需求群ID',
+        group_id BINARY(16) NOT NULL COMMENT '项目群聊ID',
         last_read_sequence_no BIGINT UNSIGNED NULL COMMENT '已读游标（群内消息序号，NULL 视为 0）',
         updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',
         PRIMARY KEY (user_id, group_id),
         KEY idx_grs_group (group_id),
-        CONSTRAINT fk_grs_group FOREIGN KEY (group_id) REFERENCES requirement_groups (id)
+        CONSTRAINT fk_grs_group FOREIGN KEY (group_id) REFERENCES chat_groups (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '群成员已读游标（未读数=最新sequence-游标，排除本人）';
 
 -- 全新整库初始化时上方 users 建表已含该列，此处仅服务已存在的库；已存在该列的库自动跳过。
 CREATE TABLE IF NOT EXISTS
     user_group_preference (
         user_id BINARY(16) NOT NULL COMMENT '用户ID',
-        group_id BINARY(16) NOT NULL COMMENT '需求群ID',
+        group_id BINARY(16) NOT NULL COMMENT '项目群聊ID',
         pinned TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否置顶（0/1）',
         updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',
         PRIMARY KEY (user_id, group_id),

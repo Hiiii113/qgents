@@ -6,7 +6,7 @@ import qg.qgent.agent.runtime.AgentChatService;
 import qg.qgent.chat.dto.Mention;
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.mapper.MessageMapper;
-import qg.qgent.chat.mapper.RequirementGroupMapper;
+import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.chat.service.MessageService;
 
 import java.util.List;
@@ -19,7 +19,7 @@ class MessageSentListenerTest {
     private final AgentChatService agents = mock(AgentChatService.class);
     private final MessageService messageService = mock(MessageService.class);
     private final MessageSentListener listener = new MessageSentListener(messages,
-            mock(RequirementGroupMapper.class), agents, messageService);
+            mock(ChatGroupMapper.class), agents, messageService);
 
     @Test
     void ordinaryMessagesDoNotStartAgents() {

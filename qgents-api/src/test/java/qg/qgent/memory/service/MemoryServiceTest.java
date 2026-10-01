@@ -4,9 +4,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 
 import qg.qgent.chat.entity.MessageEntity;
-import qg.qgent.chat.entity.RequirementGroupEntity;
+import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.mapper.MessageMapper;
-import qg.qgent.chat.mapper.RequirementGroupMapper;
+import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.memory.dto.MemoryDraftRequest;
 import qg.qgent.memory.entity.MemoryEntity;
@@ -38,7 +38,7 @@ class MemoryServiceTest {
     private final MemoryMapper memories = mock(MemoryMapper.class);
     private final MemoryMessageSourceMapper sources = mock(MemoryMessageSourceMapper.class);
     private final MessageMapper messages = mock(MessageMapper.class);
-    private final RequirementGroupMapper groups = mock(RequirementGroupMapper.class);
+    private final ChatGroupMapper groups = mock(ChatGroupMapper.class);
     private final ProjectMapper projects = mock(ProjectMapper.class);
     private final ProjectAccessService access = mock(ProjectAccessService.class);
     private final UserMapper users = mock(UserMapper.class);
@@ -66,7 +66,7 @@ class MemoryServiceTest {
         UUID groupId = UUID.randomUUID();
         UUID memoryId = UUID.randomUUID();
 
-        RequirementGroupEntity group = new RequirementGroupEntity();
+        ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setProjectId(projectId);
         when(groups.selectById(groupId)).thenReturn(group);
@@ -109,7 +109,7 @@ class MemoryServiceTest {
         UUID actor = UUID.randomUUID();
         UUID groupId = UUID.randomUUID();
 
-        RequirementGroupEntity foreign = new RequirementGroupEntity();
+        ChatGroupEntity foreign = new ChatGroupEntity();
         foreign.setId(groupId);
         foreign.setProjectId(UUID.randomUUID());
         when(groups.selectById(groupId)).thenReturn(foreign);
@@ -130,7 +130,7 @@ class MemoryServiceTest {
         UUID actor = UUID.randomUUID();
         UUID groupId = UUID.randomUUID();
 
-        RequirementGroupEntity group = new RequirementGroupEntity();
+        ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setProjectId(projectId);
         when(groups.selectById(groupId)).thenReturn(group);
@@ -227,7 +227,7 @@ class MemoryServiceTest {
     private MessageEntity message(UUID id, UUID groupId, Long seq, String content) {
         MessageEntity value = new MessageEntity();
         value.setId(id);
-        value.setRequirementGroupId(groupId);
+        value.setGroupId(groupId);
         value.setSequenceNo(seq);
         value.setMessageType("TEXT");
         value.setContent(content);

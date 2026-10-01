@@ -77,7 +77,7 @@ public class NotificationService {
      *
      * @param recipientUserId 接收通知的用户 ID
      * @param projectId       关联项目 ID，可为空
-     * @param groupId         来源需求群 ID，可为空
+     * @param groupId         来源项目群聊 ID，可为空
      * @param kind            通知类型枚举（见 {@link NotificationEntity}）
      * @param title           一行标题
      * @param description     补充说明，可为空
@@ -109,7 +109,7 @@ public class NotificationService {
         entity.setId(UuidV7.next());
         entity.setRecipientUserId(recipientUserId);
         entity.setProjectId(projectId);
-        entity.setRequirementGroupId(groupId);
+        entity.setGroupId(groupId);
         entity.setKind(kind);
         entity.setTitle(title);
         entity.setDescription(description);
@@ -135,7 +135,7 @@ public class NotificationService {
 
     private NotificationResponse toResponse(NotificationEntity n) {
         return new NotificationResponse(n.getId().toString(), n.getKind(), n.getTitle(), n.getDescription(),
-                n.getIsRead(), iso(n.getCreatedAt()), id(n.getProjectId()), id(n.getRequirementGroupId()),
+                n.getIsRead(), iso(n.getCreatedAt()), id(n.getProjectId()), id(n.getGroupId()),
                 n.getResourceId());
     }
 

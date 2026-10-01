@@ -11,9 +11,9 @@ import qg.qgent.chat.dto.ContextRepository;
 import qg.qgent.chat.dto.ContextSkill;
 import qg.qgent.chat.dto.GroupContext;
 import qg.qgent.chat.entity.MessageEntity;
-import qg.qgent.chat.entity.RequirementGroupEntity;
+import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.mapper.MessageMapper;
-import qg.qgent.chat.mapper.RequirementGroupMapper;
+import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.github.entity.GitHubRepositoryEntity;
 import qg.qgent.github.mapper.GitHubRepositoryMapper;
@@ -32,7 +32,7 @@ import java.util.UUID;
 /**
  * 群聊上下文组装（点3：聊天上下文管理）。
  * <p>
- * 把需求群的历史消息、需求、关联仓库、已发布 Skill 目录与已批准 Memory 组装为 Agent 输入上下文，
+ * 把项目群聊的历史消息、需求、关联仓库、已发布 Skill 目录与已批准 Memory 组装为 Agent 输入上下文，
  * 供 Agent loop 作为 prompt 输入。
  */
 @Service
@@ -40,7 +40,7 @@ public class ContextService {
     private static final int DEFAULT_MESSAGE_LIMIT = 50;
     private static final int MAX_MESSAGE_LIMIT = 200;
 
-    private final RequirementGroupMapper groupMapper;
+    private final ChatGroupMapper groupMapper;
     private final MessageMapper messageMapper;
     private final SkillMapper skillMapper;
     private final MemoryMapper memoryMapper;
@@ -50,7 +50,7 @@ public class ContextService {
     private final GroupService groupService;
     private final ObjectMapper mapper;
 
-    public ContextService(RequirementGroupMapper groupMapper, MessageMapper messageMapper, SkillMapper skillMapper,
+    public ContextService(ChatGroupMapper groupMapper, MessageMapper messageMapper, SkillMapper skillMapper,
                           MemoryMapper memoryMapper, ProjectAccessService access,
                           GroupService groupService, ObjectMapper mapper, ProjectRepositoryMapper projectRepositoryMapper,
                           GitHubRepositoryMapper githubRepositoryMapper) {
@@ -66,17 +66,17 @@ public class ContextService {
     }
 
     /**
-     * 组装需求群的 Agent 输入上下文。
+     * 组装项目群聊的 Agent 输入上下文。
      *
      * @param actor     当前用户 ID
      * @param projectId 项目 ID
-     * @param groupId   需求群 ID
+     * @param groupId   项目群聊 ID
      * @param limit     近期消息条数（默认 50，上限 200）
      * @return 群聊上下文
      */
     public GroupContext buildForGroup(UUID actor, UUID projectId, UUID groupId, Integer limit) {
         groupService.requireGroupMember(projectId, groupId, actor);
-        RequirementGroupEntity group = groupMapper.selectById(groupId);
+        ChatGroupEntity group = groupMapper.selectById(groupId);
         if (group == null || !group.getProjectId().equals(projectId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
         }
@@ -85,7 +85,7 @@ public class ContextService {
 
         // 近期消息：取最新 N 条后反转成旧→新，便于 Agent 理解对话脉络
         List<MessageEntity> newest = messageMapper.selectList(Wrappers.<MessageEntity>lambdaQuery()
-                .eq(MessageEntity::getRequirementGroupId, groupId)
+                .eq(MessageEntity::getGroupId, groupId)
                 .orderByDesc(MessageEntity::getSequenceNo)
                 .last("limit " + messageLimit));
         Collections.reverse(newest);
@@ -146,7 +146,7 @@ public class ContextService {
     }
 
     /**
-     * 在指定需求群内按关键字检索历史聊天记录。Skill 与 Memory 不属于聊天检索范围。
+     * 在指定项目群聊内按关键字检索历史聊天记录。Skill 与 Memory 不属于聊天检索范围。
      */
     public List<ContextMessage> searchChatHistory(UUID actor, UUID projectId, UUID groupId, String query,
                                                    Integer limit) {

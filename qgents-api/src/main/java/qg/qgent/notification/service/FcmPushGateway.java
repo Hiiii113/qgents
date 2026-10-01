@@ -48,7 +48,7 @@ public class FcmPushGateway implements PushGateway {
             data.put("notificationId", notification.getId().toString());
             data.put("kind", notification.getKind());
             put(data, "projectId", notification.getProjectId());
-            put(data, "groupId", notification.getRequirementGroupId());
+            put(data, "groupId", notification.getGroupId());
             if (notification.getResourceId() != null) data.put("resourceId", notification.getResourceId());
             message.put("data", data);
             // Android 熄屏时应由系统以高优先级唤醒；iOS 是否展示由 App 的 APNs 配置决定。

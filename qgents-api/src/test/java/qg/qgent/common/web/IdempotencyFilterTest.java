@@ -123,7 +123,7 @@ class IdempotencyFilterTest {
         existing.setResponseStatus(204);
         existing.setResponseBodyRedacted(Map.of());
         existing.setRequestHash(MessageDigest.getInstance("SHA-256").digest(new byte[0]));
-        
+
         when(mockService.find(any(), anyString(), eq("key-123"))).thenReturn(existing);
 
         FilterChain chain = mock(FilterChain.class);

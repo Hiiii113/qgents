@@ -5,24 +5,18 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/**
- * Agent 分配列表项（契约 v1.8.0 §20，成员 B B04）。
- * <p>
- * type=REQUIREMENT_GROUP 时 resourceId 为需求群 ID；type=WORKFLOW 当前无数据源，返回空列表。
- */
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class AgentAssignmentListItem {
 
-    /**
-     * 分配类型：REQUIREMENT_GROUP / WORKFLOW。
-     */
-    @Schema(description = "分配类型：REQUIREMENT_GROUP / WORKFLOW")
+
+    @Schema(description = "分配类型：CHAT_GROUP")
     private String type;
 
     /**
-     * 资源 ID（需求群 ID）。
+     * 资源 ID（项目群聊 ID）。
      */
     @Schema(description = "资源 ID")
     private String resourceId;

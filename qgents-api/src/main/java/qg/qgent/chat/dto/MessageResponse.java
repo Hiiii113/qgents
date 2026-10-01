@@ -23,9 +23,9 @@ public class MessageResponse {
     private String id;
 
     /**
-     * 所属需求群 ID。
+     * 所属项目群聊 ID。
      */
-    @Schema(description = "所属需求群 ID")
+    @Schema(description = "所属项目群聊 ID")
     private String groupId;
 
     /**

@@ -54,9 +54,9 @@ public class NotificationResponse {
     private String projectId;
 
     /**
-     * 来源需求群 ID，可为空。
+     * 来源项目群聊 ID，可为空。
      */
-    @Schema(description = "来源需求群 ID")
+    @Schema(description = "来源项目群聊 ID")
     private String groupId;
 
     /**

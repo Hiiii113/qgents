@@ -284,7 +284,7 @@ class SandboxSessionManagerTest {
     void acquireFailsWhenProjectRepositoryNotBound() {
         mockDependenciesForAcquire();
         when(projectRepositoryMapper.selectById(REPO)).thenReturn(null);
-        
+
         assertThrows(qg.qgent.common.web.ApiException.class, () -> enabledManager().acquire(TASK, PROJECT, WORKSPACE));
     }
 
@@ -304,22 +304,22 @@ class SandboxSessionManagerTest {
         verify(client, never()).syncGitStore(any(), any());
         verify(client, never()).provisionWorkspace(any(), any());
     }
-    
+
     @Test
     void acquireFailsWhenGitHubRepositoryNotFound() {
         mockDependenciesForAcquire();
         when(gitHubRepositoryMapper.selectById(any())).thenReturn(null);
-        
+
         assertThrows(qg.qgent.common.web.ApiException.class, () -> enabledManager().acquire(TASK, PROJECT, WORKSPACE));
     }
-    
+
     @Test
     void acquireFailsWhenGitHubInstallationNotActive() {
         mockDependenciesForAcquire();
         GitHubInstallationEntity inactive = new GitHubInstallationEntity();
         inactive.setStatus("SUSPENDED");
         when(installationMapper.selectById(any())).thenReturn(inactive);
-        
+
         assertThrows(qg.qgent.common.web.ApiException.class, () -> enabledManager().acquire(TASK, PROJECT, WORKSPACE));
     }
 
@@ -330,14 +330,14 @@ class SandboxSessionManagerTest {
         WorkspaceRepositoryEntity noBase = repository();
         noBase.setBaseCommit(null);
         when(repositoryMapper.selectByWorkspace(WORKSPACE)).thenReturn(List.of(noBase));
-        
+
         ProjectRepositoryEntity binding = new ProjectRepositoryEntity();
         binding.setId(REPO);
         binding.setRepositoryId(UUID.randomUUID());
         binding.setDefaultBranch("main");
         binding.setStatus("ACTIVE");
         when(projectRepositoryMapper.selectById(REPO)).thenReturn(binding);
-        
+
         GitHubRepositoryEntity ghRepo = new GitHubRepositoryEntity();
         ghRepo.setId(binding.getRepositoryId());
         ghRepo.setInstallationId(UUID.randomUUID());
@@ -352,7 +352,7 @@ class SandboxSessionManagerTest {
         installation.setStatus("ACTIVE");
         installation.setTeamId(UUID.randomUUID());
         when(installationMapper.selectById(ghRepo.getInstallationId())).thenReturn(installation);
-        
+
         when(githubAppClient.getBranch(eq(12345L), eq("owner"), eq("repo"), eq("main")))
                 .thenReturn(new qg.qgent.github.client.GitHubBranchDetails("main", "b".repeat(40)));
         when(client.syncGitStore(any(), any())).thenReturn(syncResponse(REPO, "main", "b".repeat(40)));
@@ -362,7 +362,7 @@ class SandboxSessionManagerTest {
         when(client.provisionWorkspace(any(), any())).thenReturn(provisioned);
 
         SandboxSession session = enabledManager().acquire(TASK, PROJECT, WORKSPACE); // note: acquire uses TASK, PROJECT, WORKSPACE in some tests. Wait, does it?
-        
+
         verify(githubAppClient).getBranch(12345L, "owner", "repo", "main");
         verify(credentialService).generateGrant(any(UUID.class), any(UUID.class), eq(12345L), eq("owner/repo"), eq("main"), eq("b".repeat(40)), eq(qg.qgent.github.entity.GitCredentialPurpose.FETCH));
         assertEquals("workspaces/" + WORKSPACE, session.storageKey());

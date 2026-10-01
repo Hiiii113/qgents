@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 
 import qg.qgent.chat.mapper.MessageMapper;
-import qg.qgent.chat.mapper.RequirementGroupMapper;
+import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.memory.dto.MemoryCreateRequest;
 import qg.qgent.memory.dto.MemoryResponse;
@@ -43,7 +43,7 @@ class SkillMemoryAdminAutoPublishTest {
     private final MemoryMapper memoryMapper = mock(MemoryMapper.class);
     private final MemoryMessageSourceMapper sourceMapper = mock(MemoryMessageSourceMapper.class);
     private final MessageMapper messageMapper = mock(MessageMapper.class);
-    private final RequirementGroupMapper groupMapper = mock(RequirementGroupMapper.class);
+    private final ChatGroupMapper groupMapper = mock(ChatGroupMapper.class);
     private final ProjectMapper projectMapper = mock(ProjectMapper.class);
     private final ProjectAccessService access = mock(ProjectAccessService.class);
     private final UserMapper userMapper = mock(UserMapper.class);

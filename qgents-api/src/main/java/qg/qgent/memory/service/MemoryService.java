@@ -11,9 +11,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import qg.qgent.chat.entity.MessageEntity;
-import qg.qgent.chat.entity.RequirementGroupEntity;
+import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.mapper.MessageMapper;
-import qg.qgent.chat.mapper.RequirementGroupMapper;
+import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.memory.dto.MemoryCreateRequest;
@@ -57,7 +57,7 @@ public class MemoryService {
     private final MemoryMapper memoryMapper;
     private final MemoryMessageSourceMapper sourceMapper;
     private final MessageMapper messageMapper;
-    private final RequirementGroupMapper requirementGroupMapper;
+    private final ChatGroupMapper chatGroupMapper;
     private final ProjectMapper projectMapper;
     private final ProjectAccessService access;
     private final UserMapper userMapper;
@@ -68,14 +68,14 @@ public class MemoryService {
 
     @Autowired
     public MemoryService(MemoryMapper memoryMapper, MemoryMessageSourceMapper sourceMapper,
-                         MessageMapper messageMapper, RequirementGroupMapper requirementGroupMapper,
+                         MessageMapper messageMapper, ChatGroupMapper chatGroupMapper,
                          ProjectMapper projectMapper, ProjectAccessService access, UserMapper userMapper,
                          ChatClient.Builder chatClientBuilder, ObjectMapper mapper, EventService eventService,
                          @Value("${app.agent.context.max-approved-memory-chars:12000}") int maxApprovedMemoryChars) {
         this.memoryMapper = memoryMapper;
         this.sourceMapper = sourceMapper;
         this.messageMapper = messageMapper;
-        this.requirementGroupMapper = requirementGroupMapper;
+        this.chatGroupMapper = chatGroupMapper;
         this.projectMapper = projectMapper;
         this.access = access;
         this.userMapper = userMapper;
@@ -89,10 +89,10 @@ public class MemoryService {
      * 供不启动 Spring 上下文的单元测试使用，采用生产默认预算。
      */
     public MemoryService(MemoryMapper memoryMapper, MemoryMessageSourceMapper sourceMapper,
-                         MessageMapper messageMapper, RequirementGroupMapper requirementGroupMapper,
+                         MessageMapper messageMapper, ChatGroupMapper chatGroupMapper,
                          ProjectMapper projectMapper, ProjectAccessService access, UserMapper userMapper,
                          ChatClient.Builder chatClientBuilder, ObjectMapper mapper, EventService eventService) {
-        this(memoryMapper, sourceMapper, messageMapper, requirementGroupMapper, projectMapper, access, userMapper,
+        this(memoryMapper, sourceMapper, messageMapper, chatGroupMapper, projectMapper, access, userMapper,
                 chatClientBuilder, mapper, eventService, 12000);
     }
 
@@ -204,16 +204,16 @@ public class MemoryService {
     @Transactional
     public MemoryResponse createAiDraft(UUID actor, UUID projectId, MemoryDraftRequest request) {
         access.requireProjectMember(projectId, actor);
-        RequirementGroupEntity group = requirementGroupMapper.selectById(request.getGroupId());
+        ChatGroupEntity group = chatGroupMapper.selectById(request.getGroupId());
         if (group == null || !group.getProjectId().equals(projectId)) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "GROUP_NOT_IN_PROJECT",
-                    "需求群不存在或不属于该项目");
+                    "项目群聊不存在或不属于该项目");
         }
 
         // 自动检索：按群内 sequence 倒序取最近 N 条，再还原为时间正序便于 AI 理解对话脉络
         List<MessageEntity> recent = new ArrayList<>(messageMapper.selectList(
                 Wrappers.<MessageEntity>lambdaQuery()
-                        .eq(MessageEntity::getRequirementGroupId, request.getGroupId())
+                        .eq(MessageEntity::getGroupId, request.getGroupId())
                         .orderByDesc(MessageEntity::getSequenceNo)
                         .last("LIMIT " + RECENT_MESSAGE_LIMIT)));
         recent.sort(Comparator.comparing(MessageEntity::getSequenceNo,
@@ -221,7 +221,7 @@ public class MemoryService {
         // 空群不消耗 LLM：群内没有任何消息时直接拒绝，避免空上下文生成无意义草稿浪费 token
         if (recent.isEmpty()) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "GROUP_NO_MESSAGES",
-                    "该需求群暂无消息，无需沉淀");
+                    "该项目群聊暂无消息，无需沉淀");
         }
 
         StringBuilder transcript = new StringBuilder();
@@ -464,7 +464,7 @@ public class MemoryService {
                     MessageEntity message = messageMapper.selectById(messageId);
                     MemorySourceRef ref = new MemorySourceRef();
                     ref.setMessageId(messageId);
-                    ref.setGroupId(message == null ? null : message.getRequirementGroupId());
+                    ref.setGroupId(message == null ? null : message.getGroupId());
                     return ref;
                 }).toList();
         String source = sources.isEmpty() ? "MANUAL" : "MESSAGE";

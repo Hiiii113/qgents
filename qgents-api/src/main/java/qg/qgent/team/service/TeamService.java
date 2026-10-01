@@ -9,7 +9,6 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import qg.qgent.agent.service.DefaultAgentProvisioner;
 import qg.qgent.auth.service.TokenService;
-import qg.qgent.chat.mapper.GroupMemberMapper;
 import qg.qgent.common.dto.PageInfo;
 import qg.qgent.common.dto.PageSlice;
 import qg.qgent.common.util.UuidV7;
@@ -84,7 +83,6 @@ public class TeamService {
     private final TaskMapper taskMapper;
     private final MergeRequestMapper mergeRequestMapper;
     private final DefaultAgentProvisioner defaultAgents;
-    private final GroupMemberMapper groupMemberMapper;
 
     public TeamService(TeamMapper teamMapper, TeamMemberMapper memberMapper,
                        TeamInvitationMapper invitationMapper, ProjectMemberMapper projectMemberMapper, ProjectMapper projectMapper,
@@ -92,7 +90,7 @@ public class TeamService {
                        TeamDisbandService teamDisbandService, NotificationService notificationService,
                         EventService eventService,
                         EventMapper eventMapper, TaskMapper taskMapper, MergeRequestMapper mergeRequestMapper,
-                        DefaultAgentProvisioner defaultAgents, GroupMemberMapper groupMemberMapper) {
+                        DefaultAgentProvisioner defaultAgents) {
         this.teamMapper = teamMapper;
         this.memberMapper = memberMapper;
         this.invitationMapper = invitationMapper;
@@ -108,7 +106,6 @@ public class TeamService {
         this.taskMapper = taskMapper;
         this.mergeRequestMapper = mergeRequestMapper;
         this.defaultAgents = defaultAgents;
-        this.groupMemberMapper = groupMemberMapper;
     }
 
     /**
@@ -562,7 +559,6 @@ public class TeamService {
                     && projectMemberMapper.countAdmins(project.getId()) <= 1) {
                 throw conflict("LAST_PROJECT_ADMIN_REQUIRED", "该成员是项目最后一名 Project Admin");
             }
-            groupMemberMapper.deleteByProjectAndUser(project.getId(), userId);
         }
         // 移除团队成员在项目中
         projectMemberMapper.deleteByTeamAndUser(teamId, userId);
@@ -575,7 +571,7 @@ public class TeamService {
     }
 
     /**
-     * 解散团队：仅 Team Owner 可调用，级联删除团队下所有项目、需求群、消息、成员关系
+     * 解散团队：仅 Team Owner 可调用，级联删除团队下所有项目、项目群聊、消息、成员关系
      * 等数据（不可恢复）。与成员管理接口不同，本操作是团队生命周期终态，允许把
      * canonical Owner 所在的整个团队一并移除；删除在单事务内完成，失败整体回滚。
      *

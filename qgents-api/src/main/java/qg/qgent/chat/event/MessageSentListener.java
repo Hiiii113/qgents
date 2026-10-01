@@ -10,9 +10,9 @@ import org.springframework.transaction.event.TransactionalEventListener;
 import qg.qgent.agent.runtime.AgentChatService;
 import qg.qgent.chat.dto.Mention;
 import qg.qgent.chat.entity.MessageEntity;
-import qg.qgent.chat.entity.RequirementGroupEntity;
+import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.mapper.MessageMapper;
-import qg.qgent.chat.mapper.RequirementGroupMapper;
+import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.chat.service.MessageService;
 
 import java.util.List;
@@ -26,11 +26,11 @@ public class MessageSentListener {
     private static final Logger log = LoggerFactory.getLogger(MessageSentListener.class);
 
     private final MessageMapper messageMapper;
-    private final RequirementGroupMapper groupMapper;
+    private final ChatGroupMapper groupMapper;
     private final AgentChatService agentChatService;
     private final MessageService messageService;
 
-    public MessageSentListener(MessageMapper messageMapper, RequirementGroupMapper groupMapper,
+    public MessageSentListener(MessageMapper messageMapper, ChatGroupMapper groupMapper,
                                AgentChatService agentChatService, MessageService messageService) {
         this.messageMapper = messageMapper;
         this.groupMapper = groupMapper;
@@ -54,7 +54,7 @@ public class MessageSentListener {
             boolean hasAgent = mentions.stream().anyMatch(m -> "AGENT".equals(m.getType()));
             boolean hasUser = mentions.stream().anyMatch(m -> "USER".equals(m.getType()));
             if (hasUser) {
-                RequirementGroupEntity group = groupMapper.selectById(event.groupId());
+                ChatGroupEntity group = groupMapper.selectById(event.groupId());
                 messageService.notifyMentionedUsersAfterCommit(event,
                         group == null ? "群聊" : group.getName(),
                         messageService.extractTextPreview(message));

@@ -30,9 +30,9 @@ public class NotificationEntity {
     private UUID projectId;
 
     /**
-     * 关联需求群 ID（BINARY(16)）；非群来源的通知为空。
+     * 关联项目群聊 ID（BINARY(16)）；非群来源的通知为空。
      */
-    private UUID requirementGroupId;
+    private UUID groupId;
 
     /**
      * 通知类型：MESSAGE_MENTION/MR_PENDING/INVITED/TEAM_JOINED/PROJECT_ADDED。

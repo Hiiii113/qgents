@@ -18,9 +18,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import qg.qgent.chat.entity.RequirementGroupEntity;
-import qg.qgent.chat.mapper.GroupMemberMapper;
-import qg.qgent.chat.mapper.RequirementGroupMapper;
+import qg.qgent.chat.entity.ChatGroupEntity;
+import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.config.MdcTaskDecorator;
 import qg.qgent.common.config.PerformanceMetrics;
 import qg.qgent.common.util.UuidV7;
@@ -109,8 +108,7 @@ public class EventService {
     private final RealtimeHub realtimeHub;
     private final ProjectMemberMapper projectMemberMapper;
     private final TeamMemberMapper teamMemberMapper;
-    private final RequirementGroupMapper groupMapper;
-    private final GroupMemberMapper groupMemberMapper;
+    private final ChatGroupMapper groupMapper;
     private final ProjectMapper projectMapper;
     private final UserMapper userMapper;
     private final TeamMapper teamMapper;
@@ -125,7 +123,7 @@ public class EventService {
                         NotificationEventMapper notificationEventMapper, TeamEventMapper teamEventMapper,
                         RealtimeHub realtimeHub,
                         ProjectMemberMapper projectMemberMapper, TeamMemberMapper teamMemberMapper,
-                        RequirementGroupMapper groupMapper, GroupMemberMapper groupMemberMapper,
+                        ChatGroupMapper groupMapper,
                         ProjectMapper projectMapper, UserMapper userMapper, TeamMapper teamMapper,
                         PlatformTransactionManager transactionManager, PerformanceMetrics metrics) {
         this.eventMapper = eventMapper;
@@ -136,7 +134,6 @@ public class EventService {
         this.projectMemberMapper = projectMemberMapper;
         this.teamMemberMapper = teamMemberMapper;
         this.groupMapper = groupMapper;
-        this.groupMemberMapper = groupMemberMapper;
         this.projectMapper = projectMapper;
         this.userMapper = userMapper;
         this.teamMapper = teamMapper;
@@ -170,10 +167,10 @@ public class EventService {
                         NotificationEventMapper notificationEventMapper, TeamEventMapper teamEventMapper,
                         RealtimeHub realtimeHub,
                         ProjectMemberMapper projectMemberMapper, TeamMemberMapper teamMemberMapper,
-                        RequirementGroupMapper groupMapper, GroupMemberMapper groupMemberMapper,
+                        ChatGroupMapper groupMapper,
                         ProjectMapper projectMapper) {
         this(eventMapper, projectAccess, notificationEventMapper, teamEventMapper, realtimeHub,
-                projectMemberMapper, teamMemberMapper, groupMapper, groupMemberMapper, projectMapper,
+                projectMemberMapper, teamMemberMapper, groupMapper, projectMapper,
                 null, null, null, null);
     }
 
@@ -182,10 +179,10 @@ public class EventService {
                         NotificationEventMapper notificationEventMapper, TeamEventMapper teamEventMapper,
                         RealtimeHub realtimeHub,
                         ProjectMemberMapper projectMemberMapper, TeamMemberMapper teamMemberMapper,
-                        RequirementGroupMapper groupMapper, GroupMemberMapper groupMemberMapper,
+                        ChatGroupMapper groupMapper,
                         ProjectMapper projectMapper, UserMapper userMapper, TeamMapper teamMapper) {
         this(eventMapper, projectAccess, notificationEventMapper, teamEventMapper, realtimeHub,
-                projectMemberMapper, teamMemberMapper, groupMapper, groupMemberMapper, projectMapper,
+                projectMemberMapper, teamMemberMapper, groupMapper, projectMapper,
                 userMapper, teamMapper, null, null);
     }
 
@@ -198,7 +195,7 @@ public class EventService {
      * 回滚 AgentRun、Task 等关键业务写入，造成任务状态与运行记录不一致。
      *
      * @param projectId  所属项目ID（调用方应已校验项目成员身份）
-     * @param groupId    可选关联需求群ID，可为 null
+     * @param groupId    可选关联项目群聊ID，可为 null
      * @param eventType  事件类型，如 task.updated / merge-request.updated
      * @param resourceId 关联资源ID字符串，如 agentRunId，可为 null
      * @param payload    脱敏事件载荷 JSON
@@ -292,7 +289,7 @@ public class EventService {
         EventEntity event = new EventEntity();
         event.setId(UuidV7.next());
         event.setProjectId(request.projectId);
-        event.setRequirementGroupId(request.groupId);
+        event.setGroupId(request.groupId);
         // 并发安全：先持有项目行锁，把同项目事件写入串行化；再以锁定读取当前已提交的
         // 最大序号 + 1。缺少项目行锁时，REPEATABLE READ 的普通快照 MAX 会读到旧值，
         // 多个并发发布撞 uk_event_seq 唯一键 → 整体 500（群成员多选邀请等场景）。
@@ -305,8 +302,8 @@ public class EventService {
         eventMapper.insert(event);
         // 推送目标（契约 2026-08-17 群成员可见性收紧）：
         //   groupId 为空（项目级事件）→ 本项目全部成员；
-        //   groupId 为主群 → 本项目全部成员（主群不写入 group_members）；
-        //   groupId 为需求群 → 仅该群显式成员。
+
+        //   groupId 为项目群聊 → 仅该群显式成员。
         return new PendingFan(broadcastMembers(request.projectId, request.groupId));
     }
 
@@ -347,19 +344,9 @@ public class EventService {
         projectMapper.selectByIdForUpdate(projectId);
     }
 
-    /**
-     * 计算事件广播成员集合：项目级事件与 PROJECT_MAIN 主群事件广播全部项目成员；
-     * REQUIREMENT 需求群事件仅广播群显式成员（group_members）。
-     */
+
     private Set<UUID> broadcastMembers(UUID projectId, UUID groupId) {
-        if (groupId == null) {
-            return projectMembers(projectId);
-        }
-        RequirementGroupEntity group = groupMapper.selectById(groupId);
-        if (group != null && "PROJECT_MAIN".equals(group.getGroupType())) {
-            return projectMembers(projectId);
-        }
-        return new java.util.HashSet<>(groupMemberMapper.selectUserIds(groupId));
+        return projectMembers(projectId);
     }
 
     private Set<UUID> projectMembers(UUID projectId) {
@@ -618,13 +605,11 @@ public class EventService {
             log.info("SSE completed, projectId={}, cursor={}", projectId, cursor);
         });
 
-        // 群成员可见性（契约 2026-08-17 严格收紧）：SSE 仅推送用户可见群（主群 + 已加入需求群）的事件
+        // 群成员可见性（契约 2026-08-17 严格收紧）：SSE 仅推送用户可见群（主群 + 已加入项目群聊）的事件
         Set<UUID> visibleGroups = new HashSet<>();
-        groupMapper.selectList(Wrappers.<RequirementGroupEntity>lambdaQuery()
-                        .eq(RequirementGroupEntity::getProjectId, projectId)
-                        .eq(RequirementGroupEntity::getGroupType, "PROJECT_MAIN"))
+        groupMapper.selectList(Wrappers.<ChatGroupEntity>lambdaQuery()
+                        .eq(ChatGroupEntity::getProjectId, projectId))
                 .forEach(group -> visibleGroups.add(group.getId()));
-        visibleGroups.addAll(groupMemberMapper.selectGroupIdsByUser(projectId, userId));
 
         executor.execute(() -> pump(emitter, projectId, cursor, visibleGroups, connectionClosed));
         return emitter;
@@ -648,8 +633,8 @@ public class EventService {
                 }
                 for (EventEntity event : events) {
                     cursor = event.getSequenceNo();
-                    if (event.getRequirementGroupId() == null
-                            || visibleGroups.contains(event.getRequirementGroupId())) {
+                    if (event.getGroupId() == null
+                            || visibleGroups.contains(event.getGroupId())) {
                         if (!send(emitter, SseEmitter.event()
                                 .id(String.valueOf(event.getSequenceNo()))
                                 .name(event.getEventType())
@@ -737,7 +722,7 @@ public class EventService {
      * @param userIds      目标用户 ID 集（项目成员 / 团队成员 / 通知接收人）
      * @param scope        作用域：project / team / notification
      * @param projectId    项目 ID（scope=project 时非空）
-     * @param groupId      关联需求群 ID（可为 null）
+     * @param groupId      关联项目群聊 ID（可为 null）
      * @param teamId       团队 ID（scope=team 时非空）
      * @param recipientUserId 通知接收人 ID（scope=notification 时非空）
      * @param resourceId   关联资源 ID（可为 null）

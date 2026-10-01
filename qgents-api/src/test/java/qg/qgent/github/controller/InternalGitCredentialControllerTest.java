@@ -52,7 +52,7 @@ class InternalGitCredentialControllerTest {
         ApiException exception = assertThrows(ApiException.class, () -> controller.exchange("Bearer wrong", req));
         assertEquals(HttpStatus.FORBIDDEN, exception.status());
     }
-    
+
     @Test
     void testExchangeMissingAuth() {
         InternalGitCredentialController.ExchangeRequest req = new InternalGitCredentialController.ExchangeRequest();

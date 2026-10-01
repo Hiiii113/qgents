@@ -15,9 +15,9 @@ import java.util.UUID;
 public class GroupLatestMessageRow {
 
     /**
-     * 所属需求群 ID。
+     * 所属项目群聊 ID。
      */
-    private UUID requirementGroupId;
+    private UUID groupId;
 
     /**
      * 最新消息发送者昵称（用户 displayName 或 Agent name）；SYSTEM 消息为空。

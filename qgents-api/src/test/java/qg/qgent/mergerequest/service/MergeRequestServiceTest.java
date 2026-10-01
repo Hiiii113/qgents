@@ -60,7 +60,7 @@ class MergeRequestServiceTest {
         TaskEntity task = new TaskEntity();
         task.setId(taskId);
         task.setProjectId(projectId);
-        task.setRequirementGroupId(UUID.randomUUID());
+        task.setGroupId(UUID.randomUUID());
         task.setWorkspaceId(workspaceId);
         when(tasks.selectById(taskId)).thenReturn(task);
         ProjectRepositoryEntity repository = new ProjectRepositoryEntity();

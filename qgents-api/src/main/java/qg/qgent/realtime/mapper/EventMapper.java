@@ -44,13 +44,13 @@ public interface EventMapper extends BaseMapper<EventEntity> {
     /**
      * 拉取项目内序号大于游标的事件，按序号升序，用于 SSE 增量推送。
      */
-    @Select("SELECT id, project_id, requirement_group_id, sequence_no, event_type, resource_id, payload, created_at "
+    @Select("SELECT id, project_id, group_id, sequence_no, event_type, resource_id, payload, created_at "
             + "FROM events WHERE project_id = #{projectId} AND sequence_no > #{after} "
             + "ORDER BY sequence_no ASC LIMIT #{limit}")
     @Results({
             @Result(column = "id", property = "id", typeHandler = UuidBinaryTypeHandler.class),
             @Result(column = "project_id", property = "projectId", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "requirement_group_id", property = "requirementGroupId",
+            @Result(column = "group_id", property = "groupId",
                     typeHandler = UuidBinaryTypeHandler.class),
             @Result(column = "sequence_no", property = "sequenceNo"),
             @Result(column = "event_type", property = "eventType"),
@@ -75,7 +75,7 @@ public interface EventMapper extends BaseMapper<EventEntity> {
      * @return 该团队事件页（按 id 倒序）
      */
     @Select({"<script>",
-            "SELECT e.id, e.project_id, e.requirement_group_id, e.sequence_no, e.event_type, e.resource_id, e.payload, e.created_at",
+            "SELECT e.id, e.project_id, e.group_id, e.sequence_no, e.event_type, e.resource_id, e.payload, e.created_at",
             "FROM events e JOIN projects p ON e.project_id = p.id",
             "WHERE p.team_id = #{teamId}",
             "<if test='anchor != null'>AND e.id &lt; #{anchor}</if>",
@@ -85,7 +85,7 @@ public interface EventMapper extends BaseMapper<EventEntity> {
     @Results({
             @Result(column = "id", property = "id", typeHandler = UuidBinaryTypeHandler.class),
             @Result(column = "project_id", property = "projectId", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "requirement_group_id", property = "requirementGroupId",
+            @Result(column = "group_id", property = "groupId",
                     typeHandler = UuidBinaryTypeHandler.class),
             @Result(column = "sequence_no", property = "sequenceNo"),
             @Result(column = "event_type", property = "eventType"),

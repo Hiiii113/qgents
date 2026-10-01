@@ -1,0 +1,19 @@
+package qg.qgent.chat.entity;
+import com.baomidou.mybatisplus.annotation.*;
+import lombok.Data;
+import java.time.LocalDateTime;
+import java.util.UUID;
+/** 每个项目的唯一默认群聊，成员来自项目。 */
+@Data
+@TableName("chat_groups")
+public class ChatGroupEntity {
+    @TableId(type = IdType.INPUT)
+    private UUID id;
+    private UUID projectId;
+    private UUID createdBy;
+    private String name;
+    private String description;
+    private LocalDateTime lastMessageAt;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+}

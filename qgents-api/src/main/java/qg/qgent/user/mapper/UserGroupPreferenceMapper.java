@@ -25,7 +25,7 @@ public interface UserGroupPreferenceMapper {
      * 幂等覆盖：重复设置相同值无副作用。调用方需已校验项目/群归属。
      *
      * @param userId  用户 ID
-     * @param groupId 需求群 ID
+     * @param groupId 项目群聊 ID
      * @param pinned  是否置顶
      */
     @Insert("INSERT INTO user_group_preference (user_id, group_id, pinned) "

@@ -15,10 +15,10 @@ import lombok.Data;
 public class MemoryDraftRequest {
 
     /**
-     * 取最近聊天的需求群 ID（前端当前打开的群）。
+     * 取最近聊天的项目群聊 ID（前端当前打开的群）。
      */
     @NotNull
-    @Schema(description = "取最近聊天的需求群 ID（前端当前打开的群）", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "取最近聊天的项目群聊 ID（前端当前打开的群）", requiredMode = Schema.RequiredMode.REQUIRED)
     private java.util.UUID groupId;
 
     /**

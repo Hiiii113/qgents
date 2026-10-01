@@ -5,7 +5,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import qg.qgent.chat.mapper.GroupMemberMapper;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.github.client.GitHubRepositoryDetails;
 import qg.qgent.github.entity.GitHubInstallationEntity;
@@ -47,7 +46,6 @@ import static org.mockito.Mockito.when;
 class ProjectServiceTest {
     private final ProjectMapper projects = mock(ProjectMapper.class);
     private final ProjectMemberMapper members = mock(ProjectMemberMapper.class);
-    private final GroupMemberMapper groupMembers = mock(GroupMemberMapper.class);
     private final TeamMapper teams = mock(TeamMapper.class);
     private final TeamMemberMapper teamMembers = mock(TeamMemberMapper.class);
     private final ProjectAccessService access = mock(ProjectAccessService.class);
@@ -57,7 +55,7 @@ class ProjectServiceTest {
     private final GitHubRepositoryService githubRepositoryService = mock(GitHubRepositoryService.class);
     private final ProjectRepositoryMapper projectRepositories = mock(ProjectRepositoryMapper.class);
     private final ProjectService service = new ProjectService(projects, members, teams, teamMembers, access,
-            eventPublisher, notificationService, eventService, githubRepositoryService, projectRepositories, groupMembers);
+            eventPublisher, notificationService, eventService, githubRepositoryService, projectRepositories);
 
     @Test
     void createAddsCreatorAdminAndUniqueInitialMembers() {
@@ -238,7 +236,6 @@ class ProjectServiceTest {
                 () -> service.removeMember(admin, projectId, admin));
 
         assertEquals("PROJECT_ADMIN_CANNOT_REMOVE_MANAGER", error.code());
-        verify(groupMembers, never()).deleteByProjectAndUser(projectId, admin);
         verify(members, never()).deleteByProjectAndUser(projectId, admin);
     }
 
@@ -257,7 +254,6 @@ class ProjectServiceTest {
 
         service.removeMember(actor, projectId, userId);
 
-        verify(groupMembers).deleteByProjectAndUser(projectId, userId);
         verify(members).deleteByProjectAndUser(projectId, userId);
     }
 

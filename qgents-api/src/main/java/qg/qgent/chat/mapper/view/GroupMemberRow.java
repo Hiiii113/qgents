@@ -10,7 +10,7 @@ import java.util.UUID;
  * <p>
  * 作为 {@code ProjectMemberMapper.selectMembers} / {@code GroupMemberMapper.selectMembersWithUsers}
  * 的映射结果，由 Service 转换为 {@link GroupMemberResponse}。email 仅在群成员管理场景
- * （需求群显式成员）填充；项目成员列表查询不查 email 时为 null。
+ * （项目群聊显式成员）填充；项目成员列表查询不查 email 时为 null。
  */
 @Data
 public class GroupMemberRow {

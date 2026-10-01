@@ -14,7 +14,7 @@ import java.util.Map;
  * @param type     事件类型，如 message.created / task.updated（对应 SSE 的 eventType）
  * @param scope    作用域：project / team / notification
  * @param projectId 项目 ID（scope=project 时非空，否则 null）
- * @param groupId  关联需求群 ID（可为 null）
+ * @param groupId  关联项目群聊 ID（可为 null）
  * @param teamId   团队 ID（scope=team 时非空，否则 null）
  * @param recipientUserId 接收通知的用户 ID（scope=notification 时非空，否则 null）
  * @param resourceId 关联资源 ID 字符串（如 messageId/taskId），可为 null
@@ -38,7 +38,7 @@ public record RealtimeFrame(
      * @param type          事件类型，对应 SSE eventType
      * @param scope         作用域：project / team / notification
      * @param projectId     项目 ID（可为 null）
-     * @param groupId       需求群 ID（可为 null）
+     * @param groupId       项目群聊 ID（可为 null）
      * @param teamId        团队 ID（可为 null）
      * @param recipientUserId 接收通知的用户 ID（可为 null）
      * @param resourceId    关联资源 ID（可为 null）
