@@ -20,9 +20,9 @@ public class WorkerSandbox {
     private UUID id;
 
     /**
-     * Sandbox 所属 Task 编号；
+     * Sandbox 所属 AgentRun 编号；
      */
-    private UUID taskId;
+    private UUID agentRunId;
 
     /**
      * Sandbox 使用的持久 Workspace 存储标识。

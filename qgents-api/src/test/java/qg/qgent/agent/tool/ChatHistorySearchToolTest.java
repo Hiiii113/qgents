@@ -35,7 +35,8 @@ class ChatHistorySearchToolTest {
 
         Map<String, Object> result = tool.searchChatHistory("登录", 50);
 
-        assertThat(ToolCallbacks.from(tool)[0].getToolDefinition().name()).isEqualTo("search_chat_history");
+        assertThat(ToolCallbacks.from(tool)).extracting(callback -> callback.getToolDefinition().name())
+                .contains("search_chat_history", "read_chat_message");
         assertThat(result).containsEntry("ok", true).containsEntry("budget", "used 1/10");
         assertThat((List<?>) result.get("messages")).hasSize(10);
         @SuppressWarnings("unchecked")

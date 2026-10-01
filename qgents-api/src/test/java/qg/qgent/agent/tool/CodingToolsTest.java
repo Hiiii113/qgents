@@ -73,6 +73,19 @@ class CodingToolsTest {
     }
 
     @Test
+    void switchingWorkspaceDoesNotReuseAnotherRepositoriesFileHash() {
+        var selected = new java.util.concurrent.atomic.AtomicReference<>(workspaceId);
+        var tools = new CodingTools(selected::get, codeAccess, writer, mock(DevelopmentCommandPort.class));
+        when(codeAccess.readFile(workspaceId, "src/X.java"))
+                .thenReturn(WorkspaceFileReadResult.ok("src/X.java", "old content", HASH));
+        tools.readFile("src/X.java");
+        selected.set(UUID.randomUUID());
+        assertThat(tools.applyPatch("src/X.java", null, "patch"))
+                .containsEntry("ok", false).containsEntry("errorCode", "TOOL_ARGUMENT_INVALID");
+        verify(writer, never()).patchFile(any(), any(), any(), any());
+    }
+
+    @Test
     void developmentCommandUsesOnlyCommandIdAndDoesNotReturnRawOutput() {
         DevelopmentCommandPort commands = mock(DevelopmentCommandPort.class);
         when(commands.run(workspaceId, "repo-1", DevelopmentCommandId.MAVEN_TEST))

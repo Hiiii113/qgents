@@ -1,5 +1,4 @@
 package qg.qgent.sandbox.service;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import qg.qgent.agent.service.AgentWorkerExecutionService;
 import qg.qgent.sandbox.client.SandboxWorkerClient;
@@ -8,7 +7,6 @@ import qg.qgent.workspace.service.WorkspaceCommands;
 import java.time.Duration;
 import java.util.*;
 @Service
-@ConditionalOnProperty(name = "app.worker.enabled", havingValue = "true")
 public class WorkerWorkspaceCommands extends AbstractWorkerToolPort implements WorkspaceCommands {
     public WorkerWorkspaceCommands(SandboxWorkerClient client, SandboxSessionManager sessions,
                                    SandboxWorkerProperties properties, AgentWorkerExecutionService executions) {

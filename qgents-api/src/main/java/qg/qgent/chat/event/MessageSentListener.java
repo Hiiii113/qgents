@@ -62,7 +62,7 @@ public class MessageSentListener {
             if (hasAgent && message != null) {
                 for (UUID agentId : mentions.stream().filter(m -> "AGENT".equals(m.getType()))
                         .map(Mention::getId).distinct().toList()) {
-                    agentChatService.replyToMention(event, agentId, message.getContent());
+                    agentChatService.replyToMention(event, agentId, messageService.agentInstruction(message));
                 }
             }
         } catch (RuntimeException e) {

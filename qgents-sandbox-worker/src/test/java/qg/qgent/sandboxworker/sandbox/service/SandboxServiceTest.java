@@ -81,7 +81,7 @@ class SandboxServiceTest {
         SandboxResponse response = service().create(request);
 
         assertEquals(request.getWorkspaceStorageKey(), response.getWorkspaceStorageKey());
-        assertEquals(request.getTaskId(), response.getTaskId());
+        assertEquals(request.getAgentRunId(), response.getAgentRunId());
         assertEquals(request.getImageProfile(), response.getImageProfile());
     }
 
@@ -93,7 +93,7 @@ class SandboxServiceTest {
 
         CreateSandboxRequest conflict = request();
         conflict.setSandboxId(request.getSandboxId());
-        conflict.setTaskId(UUID.randomUUID());
+        conflict.setAgentRunId(UUID.randomUUID());
 
         var exception = assertThrows(qg.qgent.sandboxworker.common.web.WorkerException.class,
                 () -> service.create(conflict));
@@ -104,8 +104,8 @@ class SandboxServiceTest {
     private CreateSandboxRequest request() {
         CreateSandboxRequest request = new CreateSandboxRequest();
         request.setSandboxId(UUID.randomUUID());
-        request.setTaskId(UUID.randomUUID());
-        request.setTaskId(UUID.randomUUID());
+        request.setAgentRunId(UUID.randomUUID());
+        request.setAgentRunId(UUID.randomUUID());
         request.setWorkspaceStorageKey("workspaces/" + UUID.randomUUID());
         request.setImageProfile("dev-tools");
         return request;

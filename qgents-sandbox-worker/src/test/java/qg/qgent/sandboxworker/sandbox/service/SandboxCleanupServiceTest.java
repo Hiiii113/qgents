@@ -46,7 +46,7 @@ class SandboxCleanupServiceTest {
     private CreateSandboxRequest request() {
         CreateSandboxRequest request = new CreateSandboxRequest();
         request.setSandboxId(UUID.randomUUID());
-        request.setTaskId(UUID.randomUUID());
+        request.setAgentRunId(UUID.randomUUID());
         request.setWorkspaceStorageKey("workspaces/" + UUID.randomUUID());
         request.setImageProfile("dev-tools");
         return request;

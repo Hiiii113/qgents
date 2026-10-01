@@ -5,14 +5,14 @@ import qg.qgent.workspace.dto.WorkspaceFileReadResult;
 import java.util.List;
 import java.util.UUID;
 
-/** 工作区代码读取：文件列表、文本与哈希、关键字检索。按 Worker 开关选择本地或远程实现。 */
+/** 工作区代码读取：文件列表、文本与哈希、关键字检索。通过 Worker 在沙箱工作区中执行。 */
 public interface WorkspaceCodeAccess {
 
     /**
      * 列出 Workspace 中所有代码文件（相对路径，已排除 .git、target 等目录）。
      *
      * @param workspaceId 目标 Workspace。
-     * @return 排序后的相对路径列表；目录不存在或不可用时返回空列表。
+     * @return 排序后的相对路径列表；Worker 或沙箱不可用时抛出异常。
      */
     List<String> listFiles(UUID workspaceId);
 
@@ -31,7 +31,7 @@ public interface WorkspaceCodeAccess {
      *
      * @param workspaceId 目标 Workspace。
      * @param query       检索关键字。
-     * @return 命中的相对路径列表；目录不可用或查询为空时返回空列表。
+     * @return 命中的相对路径列表；查询为空时返回空列表，Worker 或沙箱不可用时抛出异常。
      */
     List<String> searchCode(UUID workspaceId, String query);
 }

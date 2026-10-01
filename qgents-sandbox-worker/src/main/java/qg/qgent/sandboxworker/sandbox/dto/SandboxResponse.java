@@ -16,7 +16,7 @@ import java.util.UUID;
 @AllArgsConstructor
 public class SandboxResponse {
     private UUID id;
-    private UUID taskId;
+    private UUID agentRunId;
     /**
      * Sandbox 使用的持久 Workspace 存储标识。
      */

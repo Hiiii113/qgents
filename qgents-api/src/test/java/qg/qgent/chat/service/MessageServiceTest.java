@@ -6,14 +6,19 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DuplicateKeyException;
 
 import qg.qgent.agent.entity.AgentEntity;
 import qg.qgent.agent.mapper.AgentMapper;
 import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.dto.MessageSendRequest;
+import qg.qgent.chat.dto.Mention;
+import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.mapper.GroupAgentMapper;
@@ -57,35 +62,6 @@ class MessageServiceTest {
             TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "MessageServiceTest"),
                     MessageEntity.class);
         }
-    }
-
-    @Test
-    void textMessageRejectsSerializedQuoteEnvelopeInsteadOfPersistingWrongType() {
-        MessageMapper messages = mock(MessageMapper.class);
-        ChatGroupMapper groups = mock(ChatGroupMapper.class);
-        ChatGroupEntity group = new ChatGroupEntity();
-        UUID groupId = UUID.randomUUID();
-        group.setId(groupId);
-        group.setProjectId(UUID.randomUUID());
-        when(groups.selectOne(any())).thenReturn(group);
-        MessageService service = new MessageService(messages, groups, mock(GroupAgentMapper.class),
-                mock(UserMapper.class), mock(AgentMapper.class), mock(ProjectMapper.class),
-                mock(ProjectAccessService.class), mock(GroupService.class), new ObjectMapper(),
-                mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
-                mock(ApplicationEventPublisher.class));
-
-        MessageSendRequest request = new MessageSendRequest();
-        request.setType("TEXT");
-        request.setContent(Map.of("text", "@编排助手 {\"replyText\":\"继续修改\","
-                + "\"quotedText\":\"原消息\",\"quotedMessageId\":\"01abc\"}"));
-
-        assertThatThrownBy(() -> service.send(UUID.randomUUID(), group.getProjectId(), groupId, request))
-                .isInstanceOfSatisfying(ApiException.class,
-                        error -> {
-                            assertThat(error.code()).isEqualTo("QUOTE_MESSAGE_REQUIRED");
-                            assertThat(error.getMessage()).contains("type=QUOTE");
-                        });
-        verify(messages, never()).insert(any(MessageEntity.class));
     }
 
     @Test
@@ -185,8 +161,9 @@ class MessageServiceTest {
         verify(groupAgents).insertAgent(groupId, agentId);
     }
 
-    @Test
-    void userMessageWithSameClientMessageIdIsWrittenOnlyOnce() {
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void userMessageRetryDoesNotRepeatAgentOrUserMentionEvents(boolean originallyMentioned) {
         UUID projectId = UUID.randomUUID();
         UUID groupId = UUID.randomUUID();
         UUID actor = UUID.randomUUID();
@@ -204,26 +181,84 @@ class MessageServiceTest {
             return 1;
         });
         when(messages.selectById(any())).thenAnswer(invocation -> stored.get());
+        ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
         MessageService service = new MessageService(messages, groups, mock(GroupAgentMapper.class),
                 mock(UserMapper.class), mock(AgentMapper.class), mock(ProjectMapper.class),
                 mock(ProjectAccessService.class), mock(GroupService.class), new ObjectMapper(),
                 mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
-                mock(ApplicationEventPublisher.class));
+                publisher);
         MessageSendRequest request = new MessageSendRequest();
         request.setType("TEXT");
         request.setContent(Map.of("text", "@编排助手 补齐邮箱登录功能"));
-        request.setMentions(List.of());
+        Mention agent = new Mention();
+        agent.setType("AGENT");
+        agent.setId(UUID.randomUUID());
+        Mention user = new Mention();
+        user.setType("USER");
+        user.setId(UUID.randomUUID());
+        request.setMentions(originallyMentioned ? List.of(agent, user) : List.of());
         request.setClientMessageId("message-" + UUID.randomUUID());
 
         MessageResponse first = service.send(actor, projectId, groupId, request);
         MessageResponse second = service.send(actor, projectId, groupId, request);
+        request.setMentions(List.of(agent));
+        MessageResponse changedRetry = service.send(actor, projectId, groupId, request);
 
         assertThat(second.getId()).isEqualTo(first.getId());
+        assertThat(changedRetry.getId()).isEqualTo(first.getId());
         verify(messages, times(1)).insert(any(MessageEntity.class));
+        if (!originallyMentioned) {
+            verifyNoInteractions(publisher);
+            return;
+        }
+        ArgumentCaptor<MessageSentEvent> event = ArgumentCaptor.forClass(MessageSentEvent.class);
+        verify(publisher).publishEvent(event.capture());
+        assertThat(event.getValue().messageId()).isEqualTo(UUID.fromString(first.getId()));
+        assertThat(event.getValue().mentions()).containsExactly(agent, user);
+        verifyNoMoreInteractions(publisher);
     }
 
     @Test
-    void quoteMessageEchoesTopLevelReplyText() {
+    void duplicateInsertReturnsExistingMessageWithoutMentionEvent() {
+        UUID projectId = UUID.randomUUID();
+        UUID groupId = UUID.randomUUID();
+        ChatGroupEntity group = new ChatGroupEntity();
+        group.setId(groupId);
+        group.setProjectId(projectId);
+        MessageEntity existing = new MessageEntity();
+        existing.setId(UUID.randomUUID());
+        existing.setGroupId(groupId);
+        existing.setSequenceNo(1L);
+        existing.setMessageType("TEXT");
+        existing.setContent("{\"text\":\"原消息\"}");
+        MessageMapper messages = mock(MessageMapper.class);
+        ChatGroupMapper groups = mock(ChatGroupMapper.class);
+        ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
+        when(groups.selectOne(any())).thenReturn(group);
+        when(messages.selectOne(any())).thenReturn(null, existing);
+        when(messages.nextSequence(groupId)).thenReturn(2L);
+        when(messages.insert(any(MessageEntity.class))).thenThrow(new DuplicateKeyException("duplicate"));
+        MessageService service = new MessageService(messages, groups, mock(GroupAgentMapper.class),
+                mock(UserMapper.class), mock(AgentMapper.class), mock(ProjectMapper.class),
+                mock(ProjectAccessService.class), mock(GroupService.class), new ObjectMapper(),
+                mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class), publisher);
+        MessageSendRequest request = new MessageSendRequest();
+        request.setType("TEXT");
+        request.setContent(Map.of("text", "重试"));
+        request.setClientMessageId("duplicate-message");
+        Mention agent = new Mention();
+        agent.setType("AGENT");
+        agent.setId(UUID.randomUUID());
+        request.setMentions(List.of(agent));
+
+        MessageResponse response = service.send(UUID.randomUUID(), projectId, groupId, request);
+
+        assertThat(response.getId()).isEqualTo(existing.getId().toString());
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void replyStoresOnlyTextAndOriginalMessageId() {
         MessageMapper messages = mock(MessageMapper.class);
         ChatGroupMapper groups = mock(ChatGroupMapper.class);
         ChatGroupEntity group = new ChatGroupEntity();
@@ -259,12 +294,8 @@ class MessageServiceTest {
                 mock(ApplicationEventPublisher.class));
 
         MessageSendRequest request = new MessageSendRequest();
-        request.setType("QUOTE");
-        request.setContent(new java.util.LinkedHashMap<>(Map.of(
-                "quotedMessageId", UUID.randomUUID().toString(),
-                "quotedText", "密码存储怎么没加密",
-                "quotedSenderName", "张同学")));
-        request.setReplyText("这里回复正文");
+        request.setType("TEXT");
+        request.setContent(Map.of("text", "这里回复正文"));
         request.setReplyToId(UUID.randomUUID());
         MessageEntity quoted = new MessageEntity();
         quoted.setGroupId(groupId);
@@ -275,14 +306,15 @@ class MessageServiceTest {
         ArgumentCaptor<MessageEntity> captured = ArgumentCaptor.forClass(MessageEntity.class);
         verify(messages).insert(captured.capture());
         String storedContent = captured.getValue().getContent();
-        assertThat(storedContent).contains("replyText");
-        assertThat(response.getType()).isEqualTo("QUOTE");
-        assertThat(response.getReplyText()).isEqualTo("这里回复正文");
-        assertThat(response.getContent()).containsEntry("replyText", "这里回复正文");
+        assertThat(storedContent).isEqualTo("{\"text\":\"这里回复正文\"}");
+        assertThat(response.getType()).isEqualTo("TEXT");
+        assertThat(response.getReplyToId()).isEqualTo(request.getReplyToId().toString());
+        assertThat(response.getContent()).containsOnlyKeys("text");
+
     }
 
     @Test
-    void quoteMessageWithoutReplyTextKeepsEchoEmpty() {
+    void plainJsonTextIsNotInterpretedAsAnExecutionEnvelope() {
         MessageMapper messages = mock(MessageMapper.class);
         ChatGroupMapper groups = mock(ChatGroupMapper.class);
         ChatGroupEntity group = new ChatGroupEntity();
@@ -318,16 +350,13 @@ class MessageServiceTest {
                 mock(ApplicationEventPublisher.class));
 
         MessageSendRequest request = new MessageSendRequest();
-        request.setType("QUOTE");
-        request.setContent(new java.util.LinkedHashMap<>(Map.of(
-                "quotedMessageId", UUID.randomUUID().toString(),
-                "quotedText", "纯引用不带回复",
-                "quotedSenderName", "李同学")));
+        request.setType("TEXT");
+        request.setContent(Map.of("text", "{\"quotedMessageId\":\"example\",\"quotedText\":\"text\",\"replyText\":\"reply\"}"));
 
         MessageResponse response = service.sendAsAgent(groupId, agentId, request);
 
-        assertThat(response.getReplyText()).isNull();
-        assertThat(response.getContent()).doesNotContainKey("replyText");
+        assertThat(response.getContent()).isEqualTo(request.getContent());
+        assertThat(response.getReplyToId()).isNull();
     }
 
     @Test

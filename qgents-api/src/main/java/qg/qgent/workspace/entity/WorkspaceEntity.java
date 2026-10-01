@@ -8,47 +8,27 @@ import lombok.Data;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-/**
- * Persistent project-scoped development workspace; the Agent manages files and repositories below this root.
- */
+/** 项目中的持久化工作目录，目录内的文件和仓库由 Agent 管理。 */
 @Data
 @TableName("workspaces")
 public class WorkspaceEntity {
-    /**
-     * UUIDv7 workspace identifier.
-     */
+    /** 工作区 ID。 */
     @TableId(type = IdType.INPUT)
     private UUID id;
-    /**
-     * Owning project isolation boundary.
-     */
+    /** 所属项目。 */
     private UUID projectId;
-    /**
-     * Opaque storage key; never exposes a host path to clients.
-     */
+    /** 工作区存储相对路径。 */
     private String storageKey;
-    /**
-     * Lifecycle state: PROVISIONING/READY/LEASED/ARCHIVED/FAILED.
-     */
+    /** 准备状态：创建时为 PROVISIONING，Worker 准备完成后为 READY。 */
     private String status;
-    /**
-     * 当前持有 Workspace 写入租约的 Task。仅用于跨后端实例互斥，不代表 Workspace 的归属关系。
-     */
-    private UUID writeLeaseTaskId;
-    /**
-     * 租约随机令牌；释放与续租必须同时匹配 Task 和令牌，避免过期执行器释放后来者的租约。
-     */
+    /** 当前持有写入租约的根 AgentRun，不代表工作区的归属。 */
+    private UUID writeLeaseAgentRunId;
+    /** 续租和释放时匹配的随机令牌。 */
     private String writeLeaseToken;
-    /**
-     * 写入租约过期时间（UTC）。进程崩溃后允许新的执行器接管，但正常执行会在每次 Worker 工具调用前续租。
-     */
+    /** 租约过期时间（UTC）；每次 Worker 工具调用前续租。 */
     private LocalDateTime writeLeaseExpiresAt;
-    /**
-     * UTC creation time.
-     */
+    /** 创建时间（UTC）。 */
     private LocalDateTime createdAt;
-    /**
-     * UTC last-update time.
-     */
+    /** 更新时间（UTC）。 */
     private LocalDateTime updatedAt;
 }

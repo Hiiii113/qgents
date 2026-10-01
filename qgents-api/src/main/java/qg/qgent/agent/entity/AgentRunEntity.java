@@ -8,7 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-/** 一次聊天 Agent 执行；子执行通过 parentRunId 关联，不强制创建工作任务。 */
+/** 一次聊天 Agent 执行；子执行通过 parentRunId 关联，关联触发消息和实际工作区。 */
 @Data
 @TableName("agent_runs")
 public class AgentRunEntity {
@@ -19,7 +19,7 @@ public class AgentRunEntity {
     private UUID triggerMessageId;
     private UUID agentId;
     private UUID parentRunId;
-    private UUID taskId;
+    private UUID workspaceId;
     private UUID createdBy;
     private String status;
     private String instruction;

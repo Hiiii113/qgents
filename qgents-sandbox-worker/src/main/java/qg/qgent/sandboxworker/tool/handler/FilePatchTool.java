@@ -40,7 +40,7 @@ import static org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY;
 public class FilePatchTool implements SandboxTool {
     private static final int MAX_PATCH_LENGTH = 1024 * 1024;
     /**
-     * 目标文件大小上限，与主后端 {@code LocalWorkspaceCodeWriter.MAX_WRITE_BYTES} 一致。
+     * 目标文件大小上限，与其他文件修改工具一致。
      * 超过该上限时拒绝打补丁并提示改用整文件写入，避免对超大文件整读整写拖过执行
      * 超时后被误判为基础设施失败。
      */

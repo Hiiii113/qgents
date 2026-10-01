@@ -47,8 +47,7 @@ import java.util.stream.Collectors;
 @Service
 public class MessageService {
     private static final Logger log = LoggerFactory.getLogger(MessageService.class);
-    private static final Set<String> PUBLIC_TYPES = Set.of("TEXT", "CODE", "IMAGE", "FILE",
-            "QUOTE");
+    private static final Set<String> PUBLIC_TYPES = Set.of("TEXT", "CODE", "IMAGE", "FILE");
     private static final String CURSOR_PREFIX = "cursor_";
 
     private final MessageMapper messageMapper;
@@ -108,12 +107,6 @@ public class MessageService {
         }
         MessageResponse response = doSend(projectId, groupId, actor, null, body);
         enrichAttachmentPreview(response, projectId);
-        // @Agent 建任务 / @ 用户通知从发送事务移出：消息落库提交后由 MessageSentListener 异步执行，
-        // 缩短群行锁持有时间，消息发出与卡片回群不再等待建任务/写通知。
-        if (body.getMentions() != null && !body.getMentions().isEmpty()) {
-            eventPublisher.publishEvent(new MessageSentEvent(actor, projectId, groupId,
-                    response.getId() == null ? null : UUID.fromString(response.getId()), body.getMentions()));
-        }
         return response;
     }
 
@@ -167,7 +160,7 @@ public class MessageService {
         }
     }
 
-    /** 从消息 content 提取展示文本（TEXT 取 text；QUOTE 取 quotedText；其余返回空）。 */
+    /** 从消息 content 提取展示文本（TEXT 取 text；其余返回空）。 */
     private String messageText(Map<String, Object> content) {
         if (content == null || content.isEmpty()) {
             return "";
@@ -176,11 +169,14 @@ public class MessageService {
         if (text instanceof String s && !s.isBlank()) {
             return truncate(s);
         }
-        Object quoted = content.get("quotedText");
-        if (quoted instanceof String s && !s.isBlank()) {
-            return truncate(s);
-        }
         return "";
+    }
+
+    /** Agent 接收完整正文，避免把消息协议对象当成任务标题或需求。 */
+    public String agentInstruction(MessageEntity message) {
+        Map<String, Object> content = readJson(message.getContent(), new TypeReference<Map<String, Object>>() { });
+        Object text = content.get("text");
+        return text instanceof String value ? value : message.getContent();
     }
 
     /**
@@ -348,7 +344,7 @@ public class MessageService {
         message.setAgentId(agentId);
         message.setClientMessageId(clientMessageId);
         message.setMessageType(type);
-        message.setContent(writeJson(storedContent(body, type)));
+        message.setContent(writeJson(body.getContent()));
         message.setMentions(writeJson(mentions));
         message.setReplyToMessageId(body.getReplyToId());
         // 显式使用 UTC：不依赖数据库 DEFAULT CURRENT_TIMESTAMP（其取 MySQL 服务器时区，可能为本地时间）
@@ -379,23 +375,16 @@ public class MessageService {
         eventService.publish(projectId, groupId, "message.created", id(message.getId()),
                 Map.of("projectId", id(projectId), "groupId", id(groupId), "messageId", id(message.getId()),
                         "sequence", message.getSequenceNo()));
+        // 仅新建用户消息触发提及处理；幂等返回不重复通知或启动 Agent。
+        if (authorUserId != null && !mentions.isEmpty()) {
+            eventPublisher.publishEvent(new MessageSentEvent(authorUserId, projectId, groupId,
+                    message.getId(), mentions));
+        }
         return toResponse(messageMapper.selectById(message.getId()));
     }
 
     private String id(UUID value) {
         return value == null ? null : value.toString();
-    }
-
-    /**
-     * 落库前构造 content：QUOTE 消息把请求顶层 replyText（契约 §1.4）并入 content，
-     * 使 replyText 随消息持久化并在 GET/发送响应中原样回显；其余类型原样存储。
-     */
-    private Map<String, Object> storedContent(MessageSendRequest body, String type) {
-        Map<String, Object> content = body.getContent() == null ? new java.util.LinkedHashMap<>() : new java.util.LinkedHashMap<>(body.getContent());
-        if ("QUOTE".equals(type) && body.getReplyText() != null && !body.getReplyText().isBlank()) {
-            content.put("replyText", body.getReplyText());
-        }
-        return content;
     }
 
     /**
@@ -514,12 +503,6 @@ public class MessageService {
         switch (type) {
             case "TEXT" -> {
                 requireField(content, "text", "文本消息缺少 text 字段");
-                rejectSerializedQuoteEnvelope(content);
-            }
-            // QUOTE 引用消息：content 为引用摘要（quotedMessageId/quotedText/quotedSenderName），无 text 字段
-            case "QUOTE" -> {
-                requireField(content, "quotedMessageId", "引用消息缺少 quotedMessageId 字段");
-                requireField(content, "quotedText", "引用消息缺少 quotedText 字段");
             }
             case "CODE" -> {
                 requireField(content, "language", "代码消息缺少 language 字段");
@@ -535,37 +518,6 @@ public class MessageService {
         Object value = content.get(field);
         if (!(value instanceof String s) || s.isBlank()) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "MESSAGE_CONTENT_INVALID", message);
-        }
-    }
-
-    /**
-     * 防止客户端把 QUOTE 请求对象 JSON 拼进普通 TEXT 后落库为绿色文本气泡。
-     * <p>
-     * 这里只拦截具有完整引用协议特征的文本，不尝试把普通 JSON 文本自动转换成 QUOTE，
-     * 避免改变用户正常聊天语义。正确做法是重新发送 type=QUOTE 并填写 replyToId。
-     */
-    private void rejectSerializedQuoteEnvelope(Map<String, Object> content) {
-        Object raw = content.get("text");
-        if (!(raw instanceof String text) || text.isBlank()) {
-            return;
-        }
-        int start = text.indexOf('{');
-        if (start < 0 || start >= text.length() - 1) {
-            return;
-        }
-        try {
-            var node = mapper.readTree(text.substring(start));
-            if (node != null && node.isObject()
-                    && node.hasNonNull("quotedMessageId")
-                    && node.hasNonNull("quotedText")
-                    && node.hasNonNull("replyText")) {
-                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "QUOTE_MESSAGE_REQUIRED",
-                        "引用消息必须使用 type=QUOTE，并通过 replyToId 指定被引用消息");
-            }
-        } catch (ApiException e) {
-            throw e;
-        } catch (Exception ignored) {
-            // 普通文本可能包含不完整 JSON，按 TEXT 正常处理。
         }
     }
 
@@ -602,13 +554,9 @@ public class MessageService {
             senderType = "SYSTEM";
             senderId = null;
         }
-        // QUOTE 消息：从 content 提取 replyText 顶层回显（契约 §1.4，与发送请求体同构）
-        String replyText = "QUOTE".equals(m.getMessageType())
-                && content.get("replyText") instanceof String text && !text.isBlank()
-                ? text : null;
         return new MessageResponse(m.getId().toString(), m.getGroupId().toString(), m.getSequenceNo(),
                 m.getMessageType(), content, senderId, senderType, senderName,
-                m.getReplyToMessageId() == null ? null : m.getReplyToMessageId().toString(), replyText, mentions,
+                m.getReplyToMessageId() == null ? null : m.getReplyToMessageId().toString(), mentions,
                 iso(m.getCreatedAt()));
     }
 

@@ -26,7 +26,7 @@ class AgentWorkerExecutionServiceTest {
         AgentRunEntity run = new AgentRunEntity();
         run.setId(runId);
         run.setProjectId(UUID.randomUUID());
-        run.setTaskId(UUID.randomUUID());
+        run.setWorkspaceId(UUID.randomUUID());
         when(runs.selectById(runId)).thenReturn(run);
 
         WorkerToolExecution execution = new WorkerToolExecution();
@@ -43,6 +43,7 @@ class AgentWorkerExecutionServiceTest {
                 ArgumentCaptor.forClass(AgentWorkerExecutionEntity.class);
         verify(executions).insert(captured.capture());
         assertEquals(runId, captured.getValue().getAgentRunId());
+        assertEquals(run.getWorkspaceId(), captured.getValue().getWorkspaceId());
         assertEquals("FILE_PATCH_FAILED", captured.getValue().getFailureCode());
         assertFalse(captured.getValue().getFailureReason().contains("secret"));
         assertFalse(captured.getValue().getFailureReason().contains("C:\\Users"));
@@ -57,7 +58,6 @@ class AgentWorkerExecutionServiceTest {
         AgentRunEntity run = new AgentRunEntity();
         run.setId(runId);
         run.setProjectId(UUID.randomUUID());
-        run.setTaskId(UUID.randomUUID());
         when(runs.selectById(runId)).thenReturn(run);
 
         WorkerToolExecution execution = new WorkerToolExecution();

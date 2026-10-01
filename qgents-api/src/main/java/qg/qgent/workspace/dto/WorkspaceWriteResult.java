@@ -19,7 +19,7 @@ public class WorkspaceWriteResult {
      */
     private String error;
     /**
-     * 写入端返回的稳定失败码。本地实现通常为 null；Worker 实现用于避免依赖错误文本分类。
+     * Worker 返回的失败码，用于区分工具错误与服务不可用。
      */
     private String failureCode;
     /**
@@ -27,7 +27,7 @@ public class WorkspaceWriteResult {
      */
     private boolean infrastructureFailure;
     /**
-     * 写入后文件内容的 SHA-256（小写 hex）；仅 ok=true 时有意义，Worker 透传、本地自算。
+     * 写入后文件内容的 SHA-256（小写 hex）；仅 ok=true 时有意义，由 Worker 返回。
      */
     private String newSha256;
     /**

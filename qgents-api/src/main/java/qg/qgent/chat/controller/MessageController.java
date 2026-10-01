@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.dto.MessageSendRequest;
 import qg.qgent.chat.service.MessageService;
+import qg.qgent.agent.service.AgentRunService;
 import qg.qgent.common.dto.PageSlice;
 import qg.qgent.common.web.ApiResponse;
 import qg.qgent.common.web.PagedApiResponse;
@@ -25,13 +26,15 @@ import java.util.UUID;
 public class MessageController {
 
     private final MessageService messageService;
+    private final AgentRunService agentRuns;
 
-    public MessageController(MessageService messageService) {
+    public MessageController(MessageService messageService, AgentRunService agentRuns) {
         this.messageService = messageService;
+        this.agentRuns = agentRuns;
     }
 
     /**
-     * 契约 §7：发送文本、代码块、图片、文件或引用消息。
+     * 发送消息；回复通过 replyToId 指向原消息。
      */
     @PostMapping("/projects/{projectId}/groups/{groupId}/messages")
     @ResponseStatus(HttpStatus.CREATED)
@@ -41,7 +44,7 @@ public class MessageController {
     }
 
     /**
-     * 契约 §7：游标分页拉取群消息（新消息在前）。
+     * 分页查询群消息，新消息在前。
      */
     @GetMapping("/projects/{projectId}/groups/{groupId}/messages")
     public PagedApiResponse<MessageResponse> list(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
@@ -69,15 +72,20 @@ public class MessageController {
                 (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
     }
 
-    /**
-     * 契约「群聊@提及-后端接口补充」§六：按消息 ID 拉取单条群消息（通知跳转精确定位，
-     * 目标消息不在当前分页窗口时前端调用后合并进列表再滚动高亮）。
-     */
+    /** 按 ID 查询群消息，供通知定位或读取分页之外的消息使用。 */
     @GetMapping("/projects/{projectId}/groups/{groupId}/messages/{messageId}")
     public ApiResponse<?> getMessage(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
                                      @PathVariable UUID groupId, @PathVariable UUID messageId,
                                      HttpServletRequest request) {
         return ok(messageService.getMessage(userId, projectId, groupId, messageId), request);
+    }
+
+    /** 停止指定消息启动的 Agent 执行，发送者或项目管理员可操作。 */
+    @PostMapping("/projects/{projectId}/groups/{groupId}/messages/{messageId}/cancel-agent")
+    public ApiResponse<?> cancelAgent(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
+                                      @PathVariable UUID groupId, @PathVariable UUID messageId,
+                                      HttpServletRequest request) {
+        return ok(java.util.Map.of("cancelledRuns", agentRuns.cancel(userId, projectId, groupId, messageId)), request);
     }
 
     private ApiResponse<?> ok(Object data, HttpServletRequest request) {

@@ -55,7 +55,7 @@ public class ChatHistorySearchTool {
             return error(result, "search_chat_history 需要非空 query，请使用具体关键字定位历史讨论");
         }
         if (groupId == null) {
-            return error(result, "search_chat_history 当前 Task 未关联项目群聊，无法检索聊天记录");
+            return error(result, "search_chat_history 当前运行未关联项目群聊，无法检索聊天记录");
         }
         if (searchesUsed >= maxSearches) {
             return error(result, "search_chat_history 检索预算已用尽（已调用 " + searchesUsed + "/" + maxSearches
@@ -86,12 +86,18 @@ public class ChatHistorySearchTool {
                 break;
             }
             Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", message.getId());
             item.put("sequence", message.getSequence());
             item.put("senderType", message.getSenderType());
             item.put("text", excerpt(message.getText()));
             formatted.add(item);
         }
         return formatted;
+    }
+
+    @Tool(name = "read_chat_message", description = "按消息 ID 读取当前群消息全文及 replyToId；用于展开搜索命中或读取回复的原消息，不需要沙箱")
+    public ContextMessage readChatMessage(@ToolParam(description = "消息 UUID，来自上下文、搜索结果或 replyToId") String messageId) {
+        return contextService.readChatMessage(actor, projectId, groupId, UUID.fromString(messageId));
     }
 
     private String excerpt(String text) {

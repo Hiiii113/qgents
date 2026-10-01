@@ -118,7 +118,7 @@ public class EventService {
         this.teamMapper = teamMapper;
         this.eventTransaction = transactionManager == null ? null : new TransactionTemplate(transactionManager);
         if (this.eventTransaction != null) {
-            // 事件不能加入已经写入 AgentRun/Task 的业务事务。死锁重试必须从完整的新事务开始。
+            // 事件不能加入已经写入 AgentRun 的业务事务。死锁重试必须从完整的新事务开始。
             this.eventTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         }
         this.metrics = metrics;
@@ -168,7 +168,7 @@ public class EventService {
                         Map<String, Object> payload) {
         EventRequest request = new EventRequest(projectId, groupId, eventType, resourceId, payload);
         // 业务事实提交后才允许事件落库。这样 events 的行锁、外键检查或重试耗尽都不会把
-        // AgentRun/Task 等已经完成的业务写入标记为 rollback-only。
+        // AgentRun 等已经完成的业务写入标记为 rollback-only。
         if (TransactionSynchronizationManager.isActualTransactionActive()
                 && TransactionSynchronizationManager.isSynchronizationActive()) {
             enqueueAfterCommit(request);

@@ -49,7 +49,7 @@ public class MessageEntity {
     private String clientMessageId;
 
     /**
-     * 消息类型枚举：TEXT/CODE/IMAGE/FILE/SYSTEM/QUOTE。
+     * 消息类型枚举：TEXT/CODE/IMAGE/FILE/SYSTEM。
      */
     private String messageType;
 

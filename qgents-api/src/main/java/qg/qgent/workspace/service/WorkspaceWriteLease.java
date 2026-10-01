@@ -1,34 +1,21 @@
 package qg.qgent.workspace.service;
 
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+
 import java.util.UUID;
 
-/**
- * 一次已领取的 Workspace 写入租约。令牌只在服务端内存和数据库中流转，绝不进入 API、日志或 Agent 上下文。
- */
+/** 一次写入租约的持有者信息和服务端令牌。 */
+@RequiredArgsConstructor(access = AccessLevel.PACKAGE)
 public final class WorkspaceWriteLease {
+    @Getter
     private final UUID projectId;
+    @Getter
     private final UUID workspaceId;
-    private final UUID taskId;
+    @Getter
+    private final UUID agentRunId;
     private final String token;
-
-    WorkspaceWriteLease(UUID projectId, UUID workspaceId, UUID taskId, String token) {
-        this.projectId = projectId;
-        this.workspaceId = workspaceId;
-        this.taskId = taskId;
-        this.token = token;
-    }
-
-    public UUID getProjectId() {
-        return projectId;
-    }
-
-    public UUID getWorkspaceId() {
-        return workspaceId;
-    }
-
-    public UUID getTaskId() {
-        return taskId;
-    }
 
     String token() {
         return token;

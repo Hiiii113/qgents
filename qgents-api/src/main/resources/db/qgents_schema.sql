@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS
         author_user_id BINARY(16) NULL COMMENT '用户作者ID；Agent/系统消息时为空',
         agent_id BINARY(16) NULL COMMENT 'Agent 作者ID；用户/系统消息时为空',
         client_message_id VARCHAR(128) NULL COMMENT '客户端生成的消息幂等ID',
-        message_type VARCHAR(32) NOT NULL DEFAULT 'TEXT' COMMENT '消息类型枚举：TEXT/CODE/IMAGE/FILE/SYSTEM/QUOTE',
+        message_type VARCHAR(32) NOT NULL DEFAULT 'TEXT' COMMENT '消息类型枚举：TEXT/CODE/IMAGE/FILE/SYSTEM',
         content JSON NOT NULL COMMENT '按消息类型校验的结构化内容JSON',
         mentions JSON NULL COMMENT '提及对象JSON数组，元素含type(USER/AGENT)和id',
         reply_to_message_id BINARY(16) NULL COMMENT '回复或引用的原消息ID',
@@ -309,7 +309,7 @@ CREATE TABLE IF NOT EXISTS agents (
     CONSTRAINT ck_agent_visibility CHECK(visibility IN ('TEAM','PENDING','PRIVATE'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Team-scoped assignable Agent identities';
 
--- 聊天 Agent 执行记录；普通问答不需要 Task，子 Agent 关联父运行。
+-- 聊天 Agent 执行记录；关联触发消息与工作区，子 Agent 关联父运行。
 CREATE TABLE IF NOT EXISTS agent_runs (
     id BINARY(16) PRIMARY KEY,
     project_id BINARY(16) NOT NULL,
@@ -317,7 +317,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     trigger_message_id BINARY(16) NULL,
     agent_id BINARY(16) NOT NULL,
     parent_run_id BINARY(16) NULL,
-    task_id BINARY(16) NULL,
+    workspace_id BINARY(16) NULL COMMENT '本轮最近使用的工作区',
     created_by BINARY(16) NOT NULL,
     status VARCHAR(16) NOT NULL,
     instruction TEXT NOT NULL,
@@ -327,7 +327,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     finished_at DATETIME(6) NULL,
     KEY idx_agent_run_group (group_id, created_at),
     KEY idx_agent_run_parent (parent_run_id),
-    KEY idx_agent_run_task (task_id)
+    KEY idx_agent_run_message (trigger_message_id, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent loop 根运行及 subagent 运行';
 
 CREATE TABLE IF NOT EXISTS group_agents (
@@ -341,28 +341,11 @@ CREATE TABLE IF NOT EXISTS group_agents (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='群聊 Agent 参与者（Agent 首次回群时自动加入）';
 
 
-CREATE TABLE IF NOT EXISTS tasks (
-    id BINARY(16) PRIMARY KEY, project_id BINARY(16) NOT NULL, group_id BINARY(16) NOT NULL,
-    trigger_message_id BINARY(16) NULL, workspace_id BINARY(16) NOT NULL,
-    title VARCHAR(255) NOT NULL, display_code VARCHAR(32) NOT NULL COMMENT '项目内唯一展示编号，如 T-1024，创建后不可变',
-    requirement TEXT NOT NULL,
-    status VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/RUNNING/SUCCEEDED/FAILED/CANCELLING/CANCELLED', created_by BINARY(16) NOT NULL,
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-    UNIQUE KEY uk_task_display_code(project_id,display_code),
-    KEY idx_task_trigger_message(trigger_message_id),
-    KEY idx_task_project(project_id,status), KEY idx_task_project_workspace_updated(project_id,workspace_id,updated_at,id),
-    KEY idx_task_group(group_id), KEY idx_task_workspace(workspace_id),
-    CONSTRAINT fk_task_project FOREIGN KEY(project_id) REFERENCES projects(id),
-    CONSTRAINT fk_task_group FOREIGN KEY(group_id) REFERENCES chat_groups(id),
-    CONSTRAINT fk_task_message FOREIGN KEY(trigger_message_id) REFERENCES messages(id),
-    CONSTRAINT fk_task_creator FOREIGN KEY(created_by) REFERENCES users(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='User-visible requirement execution';
 
 CREATE TABLE IF NOT EXISTS workspaces (
     id BINARY(16) PRIMARY KEY, project_id BINARY(16) NOT NULL,
     storage_key VARCHAR(512) NOT NULL COMMENT 'Opaque storage key, not a host path', status VARCHAR(32) NOT NULL DEFAULT 'PROVISIONING',
-    write_lease_task_id BINARY(16) NULL COMMENT 'Current Workspace write lease owner Task',
+    write_lease_agent_run_id BINARY(16) NULL COMMENT '当前工作区写入租约所属根 AgentRun',
     write_lease_token VARCHAR(64) NULL COMMENT 'Opaque write lease fencing token',
     write_lease_expires_at DATETIME(6) NULL COMMENT 'UTC write lease expiry',
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6), updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
@@ -372,13 +355,10 @@ CREATE TABLE IF NOT EXISTS workspaces (
     CONSTRAINT fk_workspace_project FOREIGN KEY(project_id) REFERENCES projects(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Persistent project development workspace';
 
-ALTER TABLE tasks ADD CONSTRAINT fk_task_workspace FOREIGN KEY(workspace_id) REFERENCES workspaces(id);
-
-
 CREATE TABLE IF NOT EXISTS agent_worker_executions (
     execution_id BINARY(16) PRIMARY KEY COMMENT 'Worker 工具执行ID',
     project_id BINARY(16) NOT NULL COMMENT '所属项目ID，用于隔离查询',
-    task_id BINARY(16) NULL COMMENT '所属任务ID',
+    workspace_id BINARY(16) NULL COMMENT '本次工具实际使用的工作区',
     agent_run_id BINARY(16) NOT NULL COMMENT '所属 Agent 运行ID',
     sandbox_id BINARY(16) NULL COMMENT 'Worker Sandbox ID',
     tool_name VARCHAR(64) NULL COMMENT 'Worker 工具名称',
@@ -391,9 +371,7 @@ CREATE TABLE IF NOT EXISTS agent_worker_executions (
     finished_at DATETIME(6) NULL COMMENT 'Worker 完成时间（UTC）',
     updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     KEY idx_run_worker_execution_run (project_id, agent_run_id, created_at),
-    KEY idx_run_worker_execution_task (task_id, created_at),
     CONSTRAINT fk_run_worker_execution_project FOREIGN KEY (project_id) REFERENCES projects (id),
-    CONSTRAINT fk_run_worker_execution_task FOREIGN KEY (task_id) REFERENCES tasks (id),
     CONSTRAINT fk_run_worker_execution_run FOREIGN KEY (agent_run_id) REFERENCES agent_runs (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='AgentRun 与 Worker 工具执行的脱敏诊断关联';
 
@@ -427,7 +405,7 @@ CREATE TABLE IF NOT EXISTS
         kind VARCHAR(64) NOT NULL COMMENT '通知类型：MESSAGE_MENTION/INVITED/TEAM_JOINED/PROJECT_ADDED',
         title VARCHAR(255) NOT NULL COMMENT '一行通知标题',
         description TEXT NULL COMMENT '通知描述正文',
-        resource_id VARCHAR(128) NULL COMMENT '关联资源ID字符串，如taskId',
+        resource_id VARCHAR(128) NULL COMMENT '关联资源ID字符串，如messageId',
         is_read TINYINT (1) NOT NULL DEFAULT 0 COMMENT '是否已读：0未读1已读',
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '产生时间（UTC）',
         read_at DATETIME (6) NULL COMMENT '已读时间（UTC），未读为空',
@@ -483,7 +461,7 @@ CREATE TABLE IF NOT EXISTS notification_events (
     recipient_user_id BINARY(16) NOT NULL COMMENT '接收通知的用户ID',
     sequence_no BIGINT NOT NULL COMMENT '用户内单调递增事件序号（SSE 游标）',
     notification_id BINARY(16) NULL COMMENT '关联通知ID',
-    kind VARCHAR(32) NULL COMMENT '通知类型（TASK_COMPLETED/INVITED 等）',
+    kind VARCHAR(32) NULL COMMENT '通知类型（MENTIONED/INVITED 等）',
     payload JSON NULL COMMENT '脱敏事件载荷',
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '产生时间（UTC）',
     UNIQUE KEY uk_ne_recipient_seq (recipient_user_id, sequence_no),
@@ -527,6 +505,7 @@ CREATE TABLE IF NOT EXISTS
         KEY idx_ugp_group (group_id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '用户×群置顶偏好（跨设备同步）';
 
+-- 团队 App 连接和项目仓库导入；不绑定 Workspace。
 CREATE TABLE IF NOT EXISTS github_installations (
     id BINARY(16) PRIMARY KEY,
     team_id BINARY(16) NOT NULL,

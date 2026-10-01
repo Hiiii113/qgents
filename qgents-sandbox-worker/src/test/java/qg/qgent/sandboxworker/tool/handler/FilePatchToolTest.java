@@ -196,7 +196,7 @@ class FilePatchToolTest {
 
     @Test
     void rejectsTargetFileLargerThan256KbBeforeApplyingPatch() throws Exception {
-        // 与主后端 LocalWorkspaceCodeWriter 的 256KB 上限一致：超限目标拒绝打补丁并保持原文件不变，
+        // 按文件修改工具的 256KB 上限：超限目标拒绝打补丁并保持原文件不变，
         // 避免整读整写超大文件拖过执行超时后被误判为基础设施失败。
         Path file = repository.resolve("large.txt");
         String content = "line\n".repeat(60_000);

@@ -22,7 +22,7 @@ public class CommandRunTool implements SandboxTool {
         try {
             Path root = context.getLocalWorkspace().toRealPath();
             Path target = root.resolve(directory).normalize().toRealPath();
-            if (!target.startsWith(root)) throw new IllegalArgumentException("工作目录超出当前 Task 工作区");
+            if (!target.startsWith(root)) throw new IllegalArgumentException("工作目录超出当前 AgentRun 工作区");
             containerDirectory = "/workspace" + (target.equals(root)?"":"/"+root.relativize(target).toString().replace('\\','/'));
         } catch (java.io.IOException e) { throw new IllegalArgumentException("工作目录不存在", e); }
         CommandExecutionResult result = executor.execute(context.getSandbox(), containerDirectory, command, context.getTimeout(), context.getEnvironment());

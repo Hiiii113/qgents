@@ -107,6 +107,14 @@ public class ContextService {
                 .toList();
     }
 
+    public ContextMessage readChatMessage(UUID actor, UUID projectId, UUID groupId, UUID messageId) {
+        groupService.requireGroupMember(projectId, groupId, actor);
+        MessageEntity message = messageMapper.selectById(messageId);
+        if (message == null || !groupId.equals(message.getGroupId()))
+            throw new ApiException(HttpStatus.NOT_FOUND, "MESSAGE_NOT_FOUND", "消息不存在或无权访问");
+        return toContextMessage(message);
+    }
+
     /**
      * 读取一条当前项目内可见且已发布的 Skill 正文。调用方必须显式选择该 Skill。
      */
@@ -151,9 +159,12 @@ public class ContextService {
         if (attachmentId == null && ("IMAGE".equals(type) || "FILE".equals(type))) {
             attachmentId = attachmentIdFromUrl(stringField(content, "url"));
         }
-        return new ContextMessage(m.getSequenceNo(), type, senderType(m), senderId(m), text,
+        ContextMessage message = new ContextMessage(m.getSequenceNo(), type, senderType(m), senderId(m), text,
                 attachmentId, stringField(content, "name"),
                 stringField(content, "mediaType"));
+        message.setId(m.getId() == null ? null : m.getId().toString());
+        message.setReplyToId(m.getReplyToMessageId() == null ? null : m.getReplyToMessageId().toString());
+        return message;
     }
 
     /**

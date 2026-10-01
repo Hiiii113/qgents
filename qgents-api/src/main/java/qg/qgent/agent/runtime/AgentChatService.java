@@ -9,13 +9,13 @@ import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import qg.qgent.agent.entity.AgentEntity;
 import qg.qgent.agent.entity.AgentRunEntity;
 import qg.qgent.agent.mapper.AgentMapper;
 import qg.qgent.agent.mapper.AgentRunMapper;
+import qg.qgent.agent.service.AgentRunService;
 import qg.qgent.agent.tool.ActivateSkillTool;
 import qg.qgent.agent.tool.AttachmentMediaLoader;
 import qg.qgent.agent.tool.ChatHistorySearchTool;
@@ -23,6 +23,8 @@ import qg.qgent.agent.tool.CodingTools;
 import qg.qgent.agent.tool.GitHubTools;
 import qg.qgent.agent.tool.GitHubCapability;
 import qg.qgent.workspace.service.WorkspaceCommands;
+import qg.qgent.workspace.service.WorkspaceService;
+import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.chat.dto.GroupContext;
 import qg.qgent.chat.dto.MessageSendRequest;
 import qg.qgent.chat.event.MessageSentEvent;
@@ -33,11 +35,6 @@ import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.sandbox.dto.WorkerExecutionTraceContext;
 import qg.qgent.sandbox.service.SandboxSessionManager;
-import qg.qgent.task.dto.TaskCreateRequest;
-import qg.qgent.task.dto.TaskResponse;
-import qg.qgent.task.entity.TaskEntity;
-import qg.qgent.task.mapper.TaskMapper;
-import qg.qgent.task.service.TaskService;
 import qg.qgent.workspace.service.DevelopmentCommandPort;
 import qg.qgent.workspace.service.WorkspaceCodeAccess;
 import qg.qgent.workspace.service.WorkspaceCodeWriter;
@@ -50,19 +47,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/** @Agent 的唯一聊天入口。根与子 Agent 共用 loop，只有模型需要代码工作时才创建 Task。 */
+/** @Agent 的唯一聊天入口。根与子 Agent 共用 loop，代码工具首次调用时才准备执行环境。 */
 @Service
 public class AgentChatService {
     private final GitHubCapability github;
     private final WorkspaceCommands workspaceCommands;
+    private final WorkspaceService workspaces;
     private final AgentLoop loop;
     private final AgentMapper agents;
     private final AgentRunMapper runs;
     private final ProjectMapper projects;
     private final ContextService context;
     private final MessageService messages;
-    private final TaskService tasks;
-    private final TaskMapper taskMapper;
+    private final AgentRunService runService;
     private final SandboxSessionManager sessions;
     private final WorkspaceCodeAccess codeAccess;
     private final WorkspaceCodeWriter writer;
@@ -72,9 +69,9 @@ public class AgentChatService {
     private final int maxDepth;
     private final int maxSubagents;
 
-    public AgentChatService(GitHubCapability github, WorkspaceCommands workspaceCommands, AgentLoop loop, AgentMapper agents, AgentRunMapper runs, ProjectMapper projects,
+    public AgentChatService(GitHubCapability github, WorkspaceCommands workspaceCommands, WorkspaceService workspaces, AgentLoop loop, AgentMapper agents, AgentRunMapper runs, ProjectMapper projects,
                             ContextService context, MessageService messages,
-                            TaskService tasks, TaskMapper taskMapper,
+                            AgentRunService runService,
                             SandboxSessionManager sessions, WorkspaceCodeAccess codeAccess,
                             WorkspaceCodeWriter writer, AttachmentMediaLoader attachments,
                             DevelopmentCommandPort commands, ObjectMapper json,
@@ -82,14 +79,14 @@ public class AgentChatService {
                             @Value("${app.agent.max-subagents:8}") int maxSubagents) {
         this.github = github;
         this.workspaceCommands = workspaceCommands;
+        this.workspaces = workspaces;
         this.loop = loop;
         this.agents = agents;
         this.runs = runs;
         this.projects = projects;
         this.context = context;
         this.messages = messages;
-        this.tasks = tasks;
-        this.taskMapper = taskMapper;
+        this.runService = runService;
         this.sessions = sessions;
         this.codeAccess = codeAccess;
         this.writer = writer;
@@ -98,33 +95,6 @@ public class AgentChatService {
         this.json = json;
         this.maxDepth = maxDepth;
         this.maxSubagents = maxSubagents;
-    }
-
-    @Async("agentExecutor")
-    public void startTask(UUID projectId, UUID taskId, UUID actor, UUID agentId, String instruction) {
-        TaskEntity task = tasks.require(projectId, taskId, actor);
-        if ("CANCELLED".equals(task.getStatus()) || "CANCELLING".equals(task.getStatus())) return;
-        MessageSentEvent event = new MessageSentEvent(actor, projectId, task.getGroupId(),
-                task.getTriggerMessageId(), List.of());
-        WorkContext work = new WorkContext(event);
-        work.task = tasks.response(task);
-        AgentRunEntity run = execute(work, agentId, null,
-                instruction == null || instruction.isBlank() ? task.getRequirement() : instruction, 0);
-        sendReply(event, agentId, run);
-    }
-
-    /** 在请求线程验证所选 Agent，避免创建一个无法启动的 Task。 */
-    public UUID resolveTaskAgent(UUID projectId, UUID actor, UUID agentId) {
-        if (agentId == null) {
-            ProjectEntity project = projects.selectById(projectId);
-            AgentEntity general = agents.selectOne(Wrappers.<AgentEntity>lambdaQuery()
-                    .eq(AgentEntity::getTeamId,project.getTeamId()).eq(AgentEntity::getRole,"GENERAL")
-                    .eq(AgentEntity::getIsDefault,true).eq(AgentEntity::getStatus,"ACTIVE").last("LIMIT 1"));
-            if (general == null) throw new IllegalStateException("通用 Agent 尚未配置");
-            agentId = general.getId();
-        }
-        requireAgent(new MessageSentEvent(actor, projectId, null, null, List.of()), agentId);
-        return agentId;
     }
 
     public void replyToMention(MessageSentEvent event, UUID agentId, String instruction) {
@@ -150,22 +120,23 @@ public class AgentChatService {
         run.setTriggerMessageId(work.event.messageId());
         run.setAgentId(agentId);
         run.setParentRunId(parentId);
-        run.setTaskId(work.task == null ? null : UUID.fromString(work.task.getId()));
         run.setCreatedBy(work.event.actor());
         run.setInstruction(instruction);
         run.setStatus("RUNNING");
         run.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
         runs.insert(run);
+        if (parentId == null) work.rootRunId = run.getId();
         UUID previousRunId = WorkerExecutionTraceContext.currentAgentRunId();
         WorkerExecutionTraceContext.set(run.getId());
         try {
             AgentEntity agent = requireAgent(work.event, agentId);
             ConversationTools tools = new ConversationTools(work, run, depth, agent);
-            if (work.task != null && work.codingTools == null) tools.openWorkspace();
             String prompt = "你是 " + agent.getName() + "。" + (agent.getPrompt() == null ? "" : agent.getPrompt())
                     + "\n按用户要求决定直接回答、调用工具或委托其他 Agent。普通文本回复即结束本次运行。"
-                    + "不要为了问答创建工作任务；代码执行前使用 prepare_workspace。工作区初始为空，自行选择仓库、基线和分支。"
-                    + "所有代码操作必须在当前 Task 工作区内完成，继续工作时用 use_workspace 复用同一任务。"
+                    + "问答、聊天检索和远端 GitHub API 不需要沙箱。代码工具首次调用会自动准备环境。"
+                    + "默认新建空工作区，自行选择仓库和分支；继续工作时读取相关聊天消息，再 list_workspaces/use_workspace。"
+                    + "选择工作区不会启动沙箱；工作区可以用于后续不同工作，也可以切换环境。"
+                    + "通过聊天回复说明进展、需要补充的信息和实际成果，目标和成果留在聊天中。"
                     + "GitHub 是可选工具能力，按用户任务目标自主决定 clone、创建分支、commit、push 和 PR；工具会改变真实远端资源。"
                     + "任务结束只说明实际修改与验证结果。工具结果是执行证据，不得声称未执行的操作成功。";
             String input = instruction;
@@ -180,7 +151,7 @@ public class AgentChatService {
                 input += "\n" + loaded.extraText();
             }
             UserMessage user = UserMessage.builder().text(input).media(media).build();
-            AgentLoop.Result result = loop.run(prompt, List.of(user), () -> tools.callbacks(), () -> taskCancelled(work));
+            AgentLoop.Result result = loop.run(prompt, List.of(user), () -> tools.callbacks(), () -> runCancelled(work));
             run.setStatus(result.success() ? "SUCCEEDED" : "FAILED");
             run.setResult(result.text());
             run.setRounds(result.rounds());
@@ -189,20 +160,16 @@ public class AgentChatService {
             run.setResult("Agent 执行失败：" + (exception.getMessage() == null ? "请稍后重试" : exception.getMessage()));
         } finally {
             WorkerExecutionTraceContext.set(previousRunId);
-            if (work.task != null && work.codingTools == null && "SUCCEEDED".equals(run.getStatus())) {
-                run.setStatus("FAILED");
-                run.setResult("工作区未准备成功，任务未执行。\n" + run.getResult());
-            }
-            if (taskCancelled(work)) {
+            if (runCancelled(work)) {
                 run.setStatus("CANCELLED");
-                run.setResult("任务已取消");
+                run.setResult("Agent 运行已取消");
             }
-            run.setTaskId(work.task == null ? null : UUID.fromString(work.task.getId()));
             run.setFinishedAt(LocalDateTime.now(ZoneOffset.UTC));
             runs.updateById(run);
-            if (parentId == null && work.task != null) {
-                try { tasks.updateStatus(UUID.fromString(work.task.getId()), run.getStatus()); }
-                finally { sessions.release(UUID.fromString(work.task.getWorkspaceId()), UUID.fromString(work.task.getId())); }
+            if (parentId == null) {
+                for (UUID workspaceId : work.openedWorkspaces) {
+                    sessions.release(workspaceId, work.rootRunId);
+                }
             }
         }
 
@@ -228,17 +195,17 @@ public class AgentChatService {
         }
     }
 
-    private boolean taskCancelled(WorkContext work) {
-        if (work.task == null) return false;
-        TaskEntity task = taskMapper.selectById(UUID.fromString(work.task.getId()));
-        return task != null && ("CANCELLING".equals(task.getStatus()) || "CANCELLED".equals(task.getStatus()));
+    private boolean runCancelled(WorkContext work) {
+        AgentRunEntity root = runs.selectById(work.rootRunId);
+        return root != null && List.of("CANCELLING", "CANCELLED").contains(root.getStatus());
     }
 
     /** 同一根运行与子运行共享实际工作区；同步委托让写操作自然串行。 */
     private static final class WorkContext {
         private final MessageSentEvent event;
-        private TaskResponse task;
-        private CodingTools codingTools;
+        private UUID rootRunId;
+        private UUID workspaceId;
+        private final java.util.Set<UUID> openedWorkspaces = new java.util.LinkedHashSet<>();
         private int subagents;
 
         private WorkContext(MessageSentEvent event) { this.event = event; }
@@ -251,25 +218,24 @@ public class AgentChatService {
         private final ActivateSkillTool skills;
         private final ChatHistorySearchTool history;
         private final GitHubTools githubTools;
+        private final CodingTools codingTools;
 
         private ConversationTools(WorkContext work, AgentRunEntity run, int depth, AgentEntity agent) {
             this.work = work;
             this.run = run;
             this.depth = depth;
-            this.githubTools = github.tools(agent, work.event.actor(), work.event.projectId(), () -> {
-                if (work.codingTools == null) throw new IllegalStateException("请先 prepare_workspace 或 use_workspace");
-                return UUID.fromString(work.task.getWorkspaceId());
-            });
+            this.githubTools = github.tools(agent, work.event.actor(), work.event.projectId(), this::ensureCodeEnvironment);
+            this.codingTools = new CodingTools(this::ensureCodeEnvironment, codeAccess, writer, commands);
             skills = new ActivateSkillTool(context, work.event.actor(), work.event.projectId());
             history = new ChatHistorySearchTool(context, work.event.actor(), work.event.projectId(),
                     work.event.groupId(), 5);
         }
 
         private List<ToolCallback> callbacks() {
-            if (taskCancelled(work)) throw new IllegalStateException("任务已取消");
+            if (runCancelled(work)) throw new IllegalStateException("Agent 运行已取消");
             List<ToolCallback> tools = new ArrayList<>(Arrays.asList(ToolCallbacks.from(this, skills, history)));
             if (githubTools != null) tools.addAll(Arrays.asList(ToolCallbacks.from(githubTools)));
-            if (work.codingTools != null) tools.addAll(Arrays.asList(ToolCallbacks.from(work.codingTools)));
+            tools.addAll(Arrays.asList(ToolCallbacks.from(codingTools)));
             return tools;
         }
 
@@ -296,71 +262,55 @@ public class AgentChatService {
             }
             work.subagents++;
             AgentRunEntity child = execute(work, UUID.fromString(agentId), run.getId(), instruction, depth + 1);
-            if (work.task != null && run.getTaskId() == null) {
-                run.setTaskId(UUID.fromString(work.task.getId()));
-                runs.updateById(run);
-            }
             return Map.of("ok", "SUCCEEDED".equals(child.getStatus()), "runId", child.getId().toString(),
                     "result", child.getResult());
         }
 
-        @Tool(name = "prepare_workspace", description = "代码操作前创建工作任务并准备空工作区；问答不需要调用，成功后下一轮可用文件和开发命令工具")
-        public Map<String, Object> prepareWorkspace(@ToolParam(description = "本次代码工作的简短标题") String title,
-                                                    @ToolParam(description = "要完成的需求") String requirement) {
-            if (work.codingTools != null) {
-                return Map.of("ok", true, "taskId", work.task.getId(), "workspaceId", work.task.getWorkspaceId());
-            }
-            if (title == null || title.isBlank() || requirement == null || requirement.isBlank()) {
-                return Map.of("ok", false, "error", "title 和 requirement 不能为空");
-            }
-            TaskCreateRequest request = new TaskCreateRequest();
-            request.setGroupId(work.event.groupId());
-            request.setTriggerMessageId(work.event.messageId());
-            request.setTitle(title);
-            request.setRequirement(requirement);
-            if (work.task == null) work.task = tasks.create(work.event.projectId(), work.event.actor(), request);
-            openWorkspace();
-            return Map.of("ok", true, "taskId", work.task.getId(), "workspaceId", work.task.getWorkspaceId());
+        @Tool(name = "cancel_agent", description = "停止指定聊天消息启动的 Agent 执行；messageId 可从聊天检索中获取")
+        public Map<String, Object> cancelAgent(@ToolParam(description = "触发执行的用户消息 UUID") String messageId) {
+            int cancelled = runService.cancel(work.event.actor(), work.event.projectId(), work.event.groupId(),
+                    UUID.fromString(messageId));
+            return Map.of("ok", true, "cancelledRuns", cancelled);
         }
 
-        @Tool(name = "list_tasks", description = "列出当前群的工作任务，用于确定是否继续已有工作")
-        public Map<String, Object> listTasks() {
-            List<TaskEntity> existing = taskMapper.selectList(Wrappers.<TaskEntity>lambdaQuery()
-                    .eq(TaskEntity::getProjectId, work.event.projectId())
-                    .eq(TaskEntity::getGroupId, work.event.groupId())
-                    .orderByDesc(TaskEntity::getCreatedAt).last("LIMIT 20"));
-            return Map.of("ok", true, "tasks", existing.stream().map(task -> Map.of(
-                    "id", task.getId().toString(), "title", task.getTitle(), "status", task.getStatus())).toList());
+        @Tool(name = "list_workspaces", description = "列出当前项目可选择的独立工作区，不启动沙箱")
+        public Map<String, Object> listWorkspaces() {
+            return Map.of("ok", true, "workspaces", workspaces.list(work.event.projectId()).stream()
+                    .map(workspace -> Map.of("id", workspace.getId().toString(), "status", workspace.getStatus(),
+                            "updatedAt", workspace.getUpdatedAt().toString())).toList());
         }
 
-        @Tool(name = "use_workspace", description = "继续当前群已有工作任务，复用它的代码工作区；不会创建新 Task")
-        public Map<String, Object> useWorkspace(@ToolParam(description = "list_tasks 返回的 Task UUID") String taskId) {
-            if (work.task != null) return Map.of("ok", false, "error", "本次运行已经关联工作任务");
-            TaskEntity task = taskMapper.selectById(UUID.fromString(taskId));
-            if (task == null || !work.event.projectId().equals(task.getProjectId())
-                    || !work.event.groupId().equals(task.getGroupId()) || task.getWorkspaceId() == null) {
-                return Map.of("ok", false, "error", "任务不存在或没有可用工作区");
-            }
-            work.task = tasks.response(task);
-            openWorkspace();
-            return Map.of("ok", true, "taskId", taskId, "workspaceId", work.task.getWorkspaceId());
+        @Tool(name = "create_workspace", description = "创建并选择一个独立空工作区，只保存环境记录，不启动沙箱")
+        public Map<String, Object> createWorkspace() {
+            work.workspaceId = workspaces.create(work.event.projectId()).getId();
+            return Map.of("ok", true, "workspaceId", work.workspaceId.toString());
         }
-        @Tool(name="run_command",description="在当前 Task 工作区内执行命令参数数组，返回真实退出码与 stdout/stderr。directory 是工作区相对目录。可使用 git 查询差异、创建分支、commit 或执行构建；远端 GitHub 认证使用 github_clone/github_push。")
-        public Object runCommand(@ToolParam(description="例如 [git,switch,-c,feat/change]") List<String> command,
+
+        @Tool(name = "use_workspace", description = "选择当前项目的已有 Workspace，后续代码工具在这里工作；不启动沙箱")
+        public Map<String, Object> useWorkspace(@ToolParam(description = "Workspace UUID，来自 list_workspaces") String workspaceId) {
+            work.workspaceId = workspaces.require(work.event.projectId(), UUID.fromString(workspaceId)).getId();
+            return Map.of("ok", true, "workspaceId", work.workspaceId.toString());
+        }
+
+        @Tool(name="run_command",description="在选定工作区执行命令数组并返回退出码与 stdout/stderr。首次代码操作自动准备环境，无需准备工具。可用 git 查询 diff、创建分支或 commit，以及构建测试；GitHub 认证使用 github_clone/github_push。")
+        public Object runCommand(@ToolParam(description="例如 [git,status]") List<String> command,
                                  @ToolParam(description="工作区内目录，默认根目录",required=false) String directory) {
-            if (work.codingTools == null) return Map.of("ok",false,"error","请先准备 Task 工作区");
-            return workspaceCommands.run(UUID.fromString(work.task.getWorkspaceId()),directory,command,Map.of());
+            if (command == null || command.isEmpty()) throw new IllegalArgumentException("命令不能为空");
+            return workspaceCommands.run(ensureCodeEnvironment(), directory, command, Map.of());
         }
 
-        private void openWorkspace() {
-            if (taskCancelled(work)) throw new IllegalStateException("任务已取消");
-            UUID taskId = UUID.fromString(work.task.getId());
-            UUID workspaceId = UUID.fromString(work.task.getWorkspaceId());
-            sessions.acquire(taskId, work.event.projectId(), workspaceId);
-            work.codingTools = new CodingTools(workspaceId, codeAccess, writer, commands);
-            tasks.updateStatus(taskId, "RUNNING");
-            run.setTaskId(taskId);
-            runs.updateById(run);
+        private UUID ensureCodeEnvironment() {
+            if (runCancelled(work)) throw new IllegalStateException("Agent 运行已取消");
+            if (work.workspaceId == null) work.workspaceId = workspaces.create(work.event.projectId()).getId();
+            if (!work.workspaceId.equals(run.getWorkspaceId())) {
+                run.setWorkspaceId(work.workspaceId);
+                runs.updateById(run);
+            }
+            if (!work.openedWorkspaces.contains(work.workspaceId)) {
+                sessions.acquire(work.rootRunId, work.event.projectId(), work.workspaceId);
+                work.openedWorkspaces.add(work.workspaceId);
+            }
+            return work.workspaceId;
         }
     }
 }

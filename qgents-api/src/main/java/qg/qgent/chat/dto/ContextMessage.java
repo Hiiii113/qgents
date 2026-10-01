@@ -15,6 +15,9 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 public class ContextMessage {
 
+    private String id;
+    private String replyToId;
+
     /**
      * 群内单调递增序号。
      */
@@ -22,7 +25,7 @@ public class ContextMessage {
     private Long sequence;
 
     /**
-     * 消息类型：TEXT/CODE/IMAGE/FILE/QUOTE 等。
+     * 消息类型：TEXT/CODE/IMAGE/FILE 等。
      */
     @Schema(description = "消息类型")
     private String type;

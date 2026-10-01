@@ -4,7 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.tool.ToolCallback;
+import org.springframework.mock.env.MockEnvironment;
 import qg.qgent.agent.entity.AgentEntity;
+import qg.qgent.agent.entity.AgentRunEntity;
+import qg.qgent.agent.service.AgentRunService;
 import qg.qgent.agent.mapper.AgentMapper;
 import qg.qgent.agent.mapper.AgentRunMapper;
 import qg.qgent.agent.tool.AttachmentMediaLoader;
@@ -16,11 +19,10 @@ import qg.qgent.chat.service.MessageService;
 import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.sandbox.service.SandboxSessionManager;
-import qg.qgent.task.dto.TaskResponse;
-import qg.qgent.task.mapper.TaskMapper;
-import qg.qgent.task.service.TaskService;
+import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.workspace.service.*;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -32,101 +34,255 @@ import static org.mockito.Mockito.*;
 
 class AgentChatServiceTest {
     private final UUID projectId = UUID.randomUUID(), groupId = UUID.randomUUID(), actor = UUID.randomUUID();
-    private final UUID agentId = UUID.randomUUID(), workspaceId = UUID.randomUUID(), taskId = UUID.randomUUID();
+    private final UUID agentId = UUID.randomUUID(), workspaceId = UUID.randomUUID();
     private final AgentLoop loop = mock(AgentLoop.class);
-    private final TaskService tasks = mock(TaskService.class);
-    private final TaskMapper taskMapper = mock(TaskMapper.class);
+    private final AgentRunService runService = mock(AgentRunService.class);
+    private final WorkspaceService workspaces = mock(WorkspaceService.class);
     private final SandboxSessionManager sessions = mock(SandboxSessionManager.class);
     private final WorkspaceCommands commands = mock(WorkspaceCommands.class);
+    private final WorkspaceCodeAccess code = mock(WorkspaceCodeAccess.class);
+    private final ContextService context = mock(ContextService.class);
+    private final AgentRunMapper runs = mock(AgentRunMapper.class);
     private final MessageService messages = mock(MessageService.class);
+    private final AgentEntity agent = new AgentEntity();
+    private final MockEnvironment environment = new MockEnvironment();
     private AgentChatService service;
-    private TaskResponse task;
+    private UUID rootRunId;
 
     @BeforeEach
     void setup() {
+        doAnswer(invocation -> {
+            AgentRunEntity run = invocation.getArgument(0);
+            if (run.getParentRunId() == null) rootRunId = run.getId();
+            return 1;
+        }).when(runs).insert(any(AgentRunEntity.class));
         var agents = mock(AgentMapper.class);
         var projects = mock(ProjectMapper.class);
-        var context = mock(ContextService.class);
         var attachments = mock(AttachmentMediaLoader.class);
         var project = new ProjectEntity();
         project.setTeamId(UUID.randomUUID());
-        var agent = new AgentEntity();
-        agent.setId(agentId);
-        agent.setTeamId(project.getTeamId());
-        agent.setName("通用 Agent");
-        agent.setStatus("ACTIVE");
-        agent.setVisibility("TEAM");
+        agent.setId(agentId); agent.setTeamId(project.getTeamId()); agent.setName("通用 Agent");
+        agent.setStatus("ACTIVE"); agent.setVisibility("TEAM");
         when(agents.selectById(agentId)).thenReturn(agent);
         when(projects.selectById(projectId)).thenReturn(project);
-        var group = new GroupContext();
-        group.setConversation(List.of());
+        var group = new GroupContext(); group.setConversation(List.of());
         when(context.buildForGroup(actor, projectId, groupId, 30)).thenReturn(group);
         when(attachments.load(actor, projectId, List.of())).thenReturn(new AttachmentMediaLoader.Result(List.of(), ""));
-        task = new TaskResponse();
-        task.setId(taskId.toString());
-        task.setWorkspaceId(workspaceId.toString());
-        when(tasks.create(eq(projectId), eq(actor), any())).thenReturn(task);
-        service = new AgentChatService(mock(GitHubCapability.class), commands, loop, agents, mock(AgentRunMapper.class),
-                projects, context, messages, tasks, taskMapper, sessions, mock(WorkspaceCodeAccess.class),
+        when(workspaces.create(projectId)).thenReturn(workspace(workspaceId));
+        when(workspaces.require(projectId, workspaceId)).thenReturn(workspace(workspaceId));
+        when(commands.run(any(), any(), anyList(), anyMap())).thenReturn(Map.of("ok", true, "exitCode", 0));
+        service = new AgentChatService(new GitHubCapability(environment, commands, mock(qg.qgent.github.service.GitHubRepositoryService.class)), commands, workspaces,
+                loop, agents, runs, projects, context, messages, runService, sessions, code,
                 mock(WorkspaceCodeWriter.class), attachments, mock(DevelopmentCommandPort.class), new ObjectMapper(), 3, 8);
     }
 
     @Test
-    void agentAnswersWithoutCreatingTaskAndGithubToolsAreAbsentWhenNotConfigured() {
+    void ordinaryAnswerDoesNotPrepareEnvironmentDespiteAvailableCodeTools() {
         when(loop.run(anyString(), anyList(), any(), any())).thenAnswer(invocation -> {
             Supplier<List<ToolCallback>> available = invocation.getArgument(2);
-            assertThat(available.get()).extracting(t -> t.getToolDefinition().name()).doesNotContain("github_clone", "read_file");
+            assertThat(available.get()).extracting(t -> t.getToolDefinition().name())
+                    .contains("read_file", "run_command").doesNotContain("github_clone", "prepare_workspace", "create_task", "use_task", "list_tasks", "update_task");
             return new AgentLoop.Result(true, "你好", 1);
         });
-        service.replyToMention(event(), agentId, "你好");
-        verifyNoInteractions(tasks, sessions, commands);
-        verify(messages).sendAsAgent(eq(groupId), eq(agentId), argThat(reply -> "你好".equals(reply.getContent().get("text"))));
+        reply("你好");
+        verifyNoInteractions(workspaces, sessions, commands, code);
+        verify(messages).sendAsAgent(eq(groupId), eq(agentId), argThat(r -> "你好".equals(r.getContent().get("text"))));
     }
 
     @Test
-    void modelPreparesOneWorkspaceAndCommandsUseThatSameDirectory() {
+    void historySearchDoesNotPrepareEnvironment() {
+        when(context.searchChatHistory(actor, projectId, groupId, "需求", 10)).thenReturn(List.of());
+        runTools(available -> assertThat(find(available, "search_chat_history").call("{\"query\":\"需求\"}"))
+                .contains("\"ok\":true"));
+        reply("查找之前的需求");
+        verifyNoInteractions(workspaces, sessions, commands);
+    }
+
+    @Test
+    void readingReplyTargetReturnsFullTextWithoutCodeEnvironment() {
+        UUID messageId = UUID.randomUUID();
+        var original = new qg.qgent.chat.dto.ContextMessage(1L, "TEXT", "USER", actor.toString(), "需求".repeat(500));
+        when(context.readChatMessage(actor, projectId, groupId, messageId)).thenReturn(original);
+        runTools(available -> assertThat(find(available, "read_chat_message")
+                .call("{\"messageId\":\"" + messageId + "\"}")).contains("需求".repeat(500)));
+        reply("继续原消息的讨论");
+        verifyNoInteractions(workspaces, sessions, commands);
+    }
+
+    @Test
+    void localGithubToolPreparesEnvironmentLazily() {
+        agent.setGithubCredentialRef("personal");
+        environment.withProperty("app.agent.github.personal.token", "test-token");
+        runTools(available -> find(available, "github_git")
+                .call("{\"command\":[\"status\"],\"directory\":\".\"}"));
+        reply("检查仓库");
+        verify(sessions).acquire(rootRunId, projectId, workspaceId);
+        verify(commands).run(eq(workspaceId), eq("."), eq(List.of("git", "status")), anyMap());
+    }
+
+    @Test
+    void firstCodeCallCreatesEnvironmentOnceAndPreservesCommandFailure() {
         when(commands.run(eq(workspaceId), eq("chosen"), anyList(), eq(Map.of())))
                 .thenReturn(Map.of("ok", false, "exitCode", 1, "stderr", "build failed"));
-        when(loop.run(anyString(), anyList(), any(), any())).thenAnswer(invocation -> {
-            Supplier<List<ToolCallback>> available = invocation.getArgument(2);
-            var prepare = find(available, "prepare_workspace");
-            assertThat(prepare.call("{\"title\":\"实现\",\"requirement\":\"需求\"}")).contains(workspaceId.toString());
-            prepare.call("{\"title\":\"继续\",\"requirement\":\"同一需求\"}");
+        runTools(available -> {
             assertThat(find(available, "run_command").call("{\"command\":[\"git\",\"status\"],\"directory\":\"chosen\"}"))
                     .contains("build failed");
-            return new AgentLoop.Result(true, "报告真实失败", 2);
+            find(available, "list_files").call("{}");
         });
-        service.replyToMention(event(), agentId, "实现功能");
-        verify(tasks, times(1)).create(eq(projectId), eq(actor), any());
-        verify(sessions, times(1)).acquire(taskId, projectId, workspaceId);
-        verify(sessions).release(workspaceId, taskId);
+        reply("实现功能");
+        verify(workspaces).create(projectId);
+        verify(sessions).acquire(rootRunId, projectId, workspaceId);
+        verify(sessions).release(workspaceId, rootRunId);
+        verify(runs, atLeastOnce()).updateById(argThat((qg.qgent.agent.entity.AgentRunEntity run) -> workspaceId.equals(run.getWorkspaceId())));
     }
 
     @Test
-    void useWorkspaceContinuesExistingTaskWithoutCreatingAnother() {
-        var stored = new qg.qgent.task.entity.TaskEntity();
-        stored.setId(taskId);
-        stored.setProjectId(projectId);
-        stored.setGroupId(groupId);
-        stored.setWorkspaceId(workspaceId);
-        when(taskMapper.selectById(taskId)).thenReturn(stored);
-        when(tasks.response(stored)).thenReturn(task);
+    void selectingWorkspaceDoesNotStartSandbox() {
+        runTools(available -> find(available, "use_workspace").call("{\"workspaceId\":\"" + workspaceId + "\"}"));
+        reply("选择环境");
+        verifyNoInteractions(sessions, commands);
+        verify(workspaces, never()).create(any());
+    }
+
+    @Test
+    void newRunCanReuseExistingWorkspace() {
+        runTools(available -> {
+            find(available, "use_workspace").call("{\"workspaceId\":\"" + workspaceId + "\"}");
+            find(available, "run_command").call("{\"command\":[\"git\",\"status\"]}");
+        });
+        reply("新任务使用已有代码");
+        verify(workspaces, never()).create(any());
+        verify(sessions).acquire(rootRunId, projectId, workspaceId);
+    }
+
+    @Test
+    void runCanSwitchEnvironmentsAndReleaseAllOpenedSandboxes() {
+        UUID second = UUID.randomUUID();
+        when(workspaces.require(projectId, second)).thenReturn(workspace(second));
+        runTools(available -> {
+            find(available, "run_command").call("{\"command\":[\"pwd\"]}");
+            find(available, "use_workspace").call("{\"workspaceId\":\"" + second + "\"}");
+            find(available, "run_command").call("{\"command\":[\"pwd\"]}");
+        });
+        reply("跨环境工作");
+        verify(sessions).acquire(rootRunId, projectId, workspaceId);
+        verify(sessions).acquire(rootRunId, projectId, second);
+        verify(sessions).release(workspaceId, rootRunId);
+        verify(sessions).release(second, rootRunId);
+    }
+
+    @Test
+    void unavailableGithubCapabilityDoesNotBreakChatOrPrepareEnvironment() {
+        agent.setGithubCredentialRef("missing");
+        runTools(available -> assertThatThrownBy(() -> find(available, "github_request")
+                .call("{\"method\":\"GET\",\"path\":\"/user\"}"))
+                .hasStackTraceContaining("凭证未配置"));
+        reply("查仓库");
+        verifyNoInteractions(workspaces, sessions, commands);
+    }
+
+    @Test
+    void environmentFailureDoesNotExecuteCommand() {
+        when(sessions.acquire(any(), eq(projectId), eq(workspaceId))).thenThrow(new IllegalStateException("worker unavailable"));
+        runTools(available -> assertThatThrownBy(() -> find(available, "run_command")
+                .call("{\"command\":[\"pwd\"]}")) .hasStackTraceContaining("worker unavailable"));
+        reply("读取代码");
+        verifyNoInteractions(commands);
+        verify(sessions, never()).release(any(), any());
+    }
+
+    @Test
+    void childAgentUsesRootEnvironmentAndOnlyRootReleasesIt() {
+        var calls = new java.util.concurrent.atomic.AtomicInteger();
         when(loop.run(anyString(), anyList(), any(), any())).thenAnswer(invocation -> {
             Supplier<List<ToolCallback>> available = invocation.getArgument(2);
-            assertThat(find(available, "use_workspace").call("{\"taskId\":\"" + taskId + "\"}"))
-                    .contains(workspaceId.toString());
-            return new AgentLoop.Result(true, "继续完成", 2);
+            if (calls.getAndIncrement() == 0) {
+                find(available, "run_command").call("{\"command\":[\"pwd\"]}");
+                assertThat(find(available, "call_agent").call("{\"agentId\":\"" + agentId
+                        + "\",\"instruction\":\"读取文件\"}")).contains("\"ok\":true");
+                assertThat(qg.qgent.sandbox.dto.WorkerExecutionTraceContext.currentAgentRunId()).isEqualTo(rootRunId);
+            } else {
+                assertThat(qg.qgent.sandbox.dto.WorkerExecutionTraceContext.currentAgentRunId()).isNotEqualTo(rootRunId);
+                find(available, "list_files").call("{}");
+                verify(sessions, never()).release(any(), any());
+            }
+            return new AgentLoop.Result(true, "结果", 1);
         });
-        service.replyToMention(event(), agentId, "继续工作");
-        verify(tasks, never()).create(any(), any(), any());
-        verify(sessions).acquire(taskId, projectId, workspaceId);
+        reply("委托检查代码");
+        verify(sessions).acquire(rootRunId, projectId, workspaceId);
+        verify(sessions).release(workspaceId, rootRunId);
+        verify(runs, times(2)).insert(any(AgentRunEntity.class));
+        assertThat(qg.qgent.sandbox.dto.WorkerExecutionTraceContext.currentAgentRunId()).isNull();
+    }
+
+    @Test
+    void cancellingRootStopsFurtherCodeCallsAndReturnsCancellationMessage() {
+        var cancelled = new java.util.concurrent.atomic.AtomicBoolean();
+        when(runs.selectById(any(UUID.class))).thenAnswer(invocation -> {
+            var root = new AgentRunEntity();
+            root.setStatus(cancelled.get() ? "CANCELLING" : "RUNNING");
+            return root;
+        });
+        when(loop.run(anyString(), anyList(), any(), any())).thenAnswer(invocation -> {
+            Supplier<List<ToolCallback>> available = invocation.getArgument(2);
+            ToolCallback command = find(available, "run_command");
+            command.call("{\"command\":[\"pwd\"]}");
+            cancelled.set(true);
+            assertThat(((java.util.function.BooleanSupplier) invocation.getArgument(3)).getAsBoolean()).isTrue();
+            assertThatThrownBy(() -> command.call("{\"command\":[\"pwd\"]}"))
+                    .hasStackTraceContaining("Agent 运行已取消");
+            return new AgentLoop.Result(true, "不应作为完成结果", 1);
+        });
+        reply("修改代码");
+        verify(commands).run(any(), any(), anyList(), anyMap());
+        verify(sessions).release(workspaceId, rootRunId);
+        verify(runs, atLeastOnce()).updateById(argThat((AgentRunEntity run) -> "CANCELLED".equals(run.getStatus())));
+        verify(messages).sendAsAgent(eq(groupId), eq(agentId),
+                argThat(request -> "Agent 运行已取消".equals(request.getContent().get("text"))));
+    }
+
+    @Test
+    void failureAfterOpeningEnvironmentStillReleasesIt() {
+        when(loop.run(anyString(), anyList(), any(), any())).thenAnswer(invocation -> {
+            Supplier<List<ToolCallback>> available = invocation.getArgument(2);
+            find(available, "run_command").call("{\"command\":[\"pwd\"]}");
+            throw new IllegalStateException("model unavailable");
+        });
+        reply("修改代码");
+        verify(sessions).release(workspaceId, rootRunId);
+        verify(runs, atLeastOnce()).updateById(argThat((AgentRunEntity run) -> "FAILED".equals(run.getStatus())));
+        verify(messages).sendAsAgent(eq(groupId), eq(agentId),
+                argThat(request -> request.getContent().get("text").toString().contains("model unavailable")));
+    }
+
+    @Test
+    void cancellationToolTargetsChatMessage() {
+        UUID messageId = UUID.randomUUID();
+        when(runService.cancel(actor, projectId, groupId, messageId)).thenReturn(1);
+        runTools(available -> assertThat(find(available, "cancel_agent")
+                .call("{\"messageId\":\"" + messageId + "\"}")).contains("\"cancelledRuns\":1"));
+        reply("停止之前的工作");
+        verify(runService).cancel(actor, projectId, groupId, messageId);
+        verifyNoInteractions(workspaces, sessions, commands);
+    }
+
+    private void runTools(java.util.function.Consumer<Supplier<List<ToolCallback>>> action) {
+        when(loop.run(anyString(), anyList(), any(), any())).thenAnswer(invocation -> {
+            action.accept(invocation.getArgument(2));
+            return new AgentLoop.Result(true, "结果", 2);
+        });
+    }
+
+    private void reply(String instruction) {
+        service.replyToMention(new MessageSentEvent(actor, projectId, groupId, UUID.randomUUID(), List.of()), agentId, instruction);
+    }
+
+    private WorkspaceEntity workspace(UUID id) {
+        WorkspaceEntity workspace = new WorkspaceEntity(); workspace.setId(id); workspace.setProjectId(projectId);
+        workspace.setStatus("READY"); workspace.setUpdatedAt(LocalDateTime.now()); return workspace;
     }
 
     private ToolCallback find(Supplier<List<ToolCallback>> available, String name) {
         return available.get().stream().filter(t -> name.equals(t.getToolDefinition().name())).findFirst().orElseThrow();
-    }
-
-    private MessageSentEvent event() {
-        return new MessageSentEvent(actor, projectId, groupId, UUID.randomUUID(), List.of());
     }
 }

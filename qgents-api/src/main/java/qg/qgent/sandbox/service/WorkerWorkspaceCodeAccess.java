@@ -1,6 +1,5 @@
 package qg.qgent.sandbox.service;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import qg.qgent.agent.service.AgentWorkerExecutionService;
@@ -21,12 +20,8 @@ import java.util.*;
  * 形状翻译：Worker 的 file.list 是一级子项、file.read 是分页 lines、file.search 是 ripgrep
  * 原始输出，本类把它们还原为端口契约要求的"递归相对路径列表 / 整段文本 / 命中路径列表"，
  * 并对 Worker 的目录树同样过滤 .git/target 等噪声目录。
- * <p>
- * {@code app.worker.enabled=true} 时启用本实现，{@link qg.qgent.workspace.service.LocalWorkspaceCodeAccess}
- * 随之停用。
  */
 @Component
-@ConditionalOnProperty(name = "app.worker.enabled", havingValue = "true")
 public class WorkerWorkspaceCodeAccess extends AbstractWorkerToolPort implements WorkspaceCodeAccess {
 
     /**

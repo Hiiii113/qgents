@@ -48,7 +48,7 @@ public class AgentWorkerExecutionService {
             stored = new AgentWorkerExecutionEntity();
             stored.setExecutionId(execution.getId());
             stored.setProjectId(run.getProjectId());
-            stored.setTaskId(run.getTaskId());
+            stored.setWorkspaceId(run.getWorkspaceId());
             stored.setAgentRunId(run.getId());
             stored.setCreatedAt(timestamp(execution.getCreatedAt(), now));
         }

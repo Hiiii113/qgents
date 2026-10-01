@@ -45,8 +45,9 @@ class MessageSentListenerTest {
         MessageEntity message = new MessageEntity();
         message.setContent("{\"text\":\"你好\"}");
         when(messages.selectById(event.messageId())).thenReturn(message);
+        when(messageService.agentInstruction(message)).thenReturn("你好");
         listener.onMessageSent(event);
-        verify(agents).replyToMention(event, mention.getId(), message.getContent());
+        verify(agents).replyToMention(event, mention.getId(), "你好");
         verifyNoMoreInteractions(agents);
     }
 

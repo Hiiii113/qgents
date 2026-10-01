@@ -21,7 +21,7 @@ public class AgentWorkerExecutionEntity {
     @TableId(value = "execution_id", type = IdType.INPUT)
     private UUID executionId;
     private UUID projectId;
-    private UUID taskId;
+    private UUID workspaceId;
     private UUID agentRunId;
     private UUID sandboxId;
     private String toolName;

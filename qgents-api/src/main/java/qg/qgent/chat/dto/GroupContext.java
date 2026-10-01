@@ -11,7 +11,7 @@ import java.util.List;
  * 群聊上下文（点3：聊天上下文管理）。
  * <p>
  * 将项目群聊的历史消息、群描述、已发布 Skill 目录与已批准 Memory 组装为 Agent 输入上下文，
- * 供 Agent 编排系统（后端1）在创建 Task / 运行 Agent 时作为 prompt 输入。
+ * 供 Agent 编排系统（后端1）在运行 Agent 时作为 prompt 输入。
  */
 @Data
 @NoArgsConstructor

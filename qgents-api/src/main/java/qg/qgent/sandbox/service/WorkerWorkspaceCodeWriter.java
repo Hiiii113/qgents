@@ -1,6 +1,5 @@
 package qg.qgent.sandbox.service;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import qg.qgent.agent.service.AgentWorkerExecutionService;
@@ -25,19 +24,16 @@ import java.util.UUID;
  * 先读取目标文件当前 sha256（不存在则取空内容哈希）再写入；file.patch 原样透传调用方提交的
  * expectedHash 与 patch。Worker 返回的哈希冲突、补丁上下文不匹配、路径非法等工具级失败映射为
  * 工具级失败回灌 LLM 纠正；传输/会话/轮询级失败映射为基础设施失败。
- * <p>
- * {@code app.worker.enabled=true} 时启用本实现。
  */
 @Component
-@ConditionalOnProperty(name = "app.worker.enabled", havingValue = "true")
 public class WorkerWorkspaceCodeWriter extends AbstractWorkerToolPort implements WorkspaceCodeWriter {
 
     /**
-     * 单次写入内容的最大字节数，与本地实现一致。
+     * 单次写入内容的最大字节数，与 Worker 文件工具限制一致。
      */
     private static final int MAX_WRITE_BYTES = 256 * 1024;
     /**
-     * 单次补丁文本的最大字节数，与 Worker file.patch 契约一致。
+     * 单次补丁文本的最大字节数，与 Worker 的 file.patch 限制一致。
      */
     private static final int MAX_PATCH_BYTES = 1024 * 1024;
     /**

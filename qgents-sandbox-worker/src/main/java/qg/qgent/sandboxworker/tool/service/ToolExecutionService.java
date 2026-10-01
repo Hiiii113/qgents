@@ -106,8 +106,8 @@ public class ToolExecutionService {
             throw exception;
         }
         append(entity.getId(), "SYSTEM", "工具执行已进入队列：" + request.getTool());
-        log.info("tool queued executionId={} sandboxId={} taskId={} tool={}",
-                entity.getId(), sandboxId, sandbox.getTaskId(), request.getTool());
+        log.info("tool queued executionId={} sandboxId={} agentRunId={} tool={}",
+                entity.getId(), sandboxId, sandbox.getAgentRunId(), request.getTool());
         // 投给后台开始跑
         try {
             sandboxExecutionPool.execute(() -> run(entity.getId(), sandbox, request));
@@ -195,8 +195,8 @@ public class ToolExecutionService {
             return;
         }
         append(executionId, "SYSTEM", "开始执行工具：" + request.getTool());
-        log.info("tool start executionId={} sandboxId={} taskId={} tool={}",
-                executionId, sandbox.getId(), sandbox.getTaskId(), request.getTool());
+        log.info("tool start executionId={} sandboxId={} agentRunId={} tool={}",
+                executionId, sandbox.getId(), sandbox.getAgentRunId(), request.getTool());
 
         String status;
         Integer exitCode = null;
@@ -227,8 +227,8 @@ public class ToolExecutionService {
             status = "FAILED";
             failureCode = failureCode(exception);
             failureReason = failureReason(exception);
-            log.error("tool failed executionId={} sandboxId={} taskId={} tool={} failureCode={} failureReason={}",
-                    executionId, sandbox.getId(), sandbox.getTaskId(), request.getTool(), failureCode, failureReason);
+            log.error("tool failed executionId={} sandboxId={} agentRunId={} tool={} failureCode={} failureReason={}",
+                    executionId, sandbox.getId(), sandbox.getAgentRunId(), request.getTool(), failureCode, failureReason);
         } finally {
             activeThreads.remove(id, Thread.currentThread());
         }
@@ -241,8 +241,8 @@ public class ToolExecutionService {
             append(executionId, "SYSTEM", "工具执行结束，状态：" + completed.getStatus());
         }
         logLocks.remove(executionId);
-        log.info("tool done executionId={} sandboxId={} taskId={} tool={} status={} exitCode={} durationMs={} failureCode={} failureReason={}",
-                executionId, sandbox.getId(), sandbox.getTaskId(), request.getTool(), status, exitCode,
+        log.info("tool done executionId={} sandboxId={} agentRunId={} tool={} status={} exitCode={} durationMs={} failureCode={} failureReason={}",
+                executionId, sandbox.getId(), sandbox.getAgentRunId(), request.getTool(), status, exitCode,
                 Duration.between(started, clock.instant()).toMillis(), failureCode, failureReason);
     }
 

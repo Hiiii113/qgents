@@ -1,7 +1,6 @@
 package qg.qgent.sandbox.service;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import qg.qgent.agent.service.AgentWorkerExecutionService;
@@ -24,7 +23,6 @@ import java.util.UUID;
  */
 @Component
 @Slf4j
-@ConditionalOnProperty(name = "app.worker.enabled", havingValue = "true")
 public class WorkerDevelopmentCommandPort extends AbstractWorkerToolPort implements DevelopmentCommandPort {
 
     /** 生产装配保留受控执行记录（executionId、工具名、状态、exitCode），不持久化输出。 */

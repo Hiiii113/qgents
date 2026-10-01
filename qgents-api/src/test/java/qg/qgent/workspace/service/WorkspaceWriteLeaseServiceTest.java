@@ -23,20 +23,20 @@ class WorkspaceWriteLeaseServiceTest {
     @Test
     void acquireReturnsOpaqueTokenOnlyAfterDatabaseCasWins() {
         WorkspaceMapper mapper = mock(WorkspaceMapper.class);
-        UUID projectId = UUID.randomUUID(), workspaceId = UUID.randomUUID(), taskId = UUID.randomUUID();
-        when(mapper.claimWriteLease(eq(projectId), eq(workspaceId), eq(taskId), any())).thenReturn(1);
+        UUID projectId = UUID.randomUUID(), workspaceId = UUID.randomUUID(), agentRunId = UUID.randomUUID();
+        when(mapper.claimWriteLease(eq(projectId), eq(workspaceId), eq(agentRunId), any())).thenReturn(1);
 
         WorkspaceWriteLeaseService service = new WorkspaceWriteLeaseService(mapper);
-        WorkspaceWriteLease lease = service.acquire(projectId, workspaceId, taskId);
+        WorkspaceWriteLease lease = service.acquire(projectId, workspaceId, agentRunId);
 
         assertEquals(projectId, lease.getProjectId());
         assertEquals(workspaceId, lease.getWorkspaceId());
-        assertEquals(taskId, lease.getTaskId());
+        assertEquals(agentRunId, lease.getAgentRunId());
         assertNotNull(lease.token());
     }
 
     @Test
-    void acquireRejectsOtherActiveTaskWithoutOverwritingIt() {
+    void acquireRejectsOtherActiveRunWithoutOverwritingIt() {
         WorkspaceMapper mapper = mock(WorkspaceMapper.class);
         when(mapper.claimWriteLease(any(), any(), any(), any())).thenReturn(0);
 
@@ -50,15 +50,15 @@ class WorkspaceWriteLeaseServiceTest {
     @Test
     void renewalOrReleaseCanOnlyUseTheOwningToken() {
         WorkspaceMapper mapper = mock(WorkspaceMapper.class);
-        UUID projectId = UUID.randomUUID(), workspaceId = UUID.randomUUID(), taskId = UUID.randomUUID();
-        WorkspaceWriteLease lease = new WorkspaceWriteLease(projectId, workspaceId, taskId, "lease-token");
-        when(mapper.renewWriteLease(projectId, workspaceId, taskId, "lease-token")).thenReturn(0);
+        UUID projectId = UUID.randomUUID(), workspaceId = UUID.randomUUID(), agentRunId = UUID.randomUUID();
+        WorkspaceWriteLease lease = new WorkspaceWriteLease(projectId, workspaceId, agentRunId, "lease-token");
+        when(mapper.renewWriteLease(projectId, workspaceId, agentRunId, "lease-token")).thenReturn(0);
         WorkspaceWriteLeaseService service = new WorkspaceWriteLeaseService(mapper);
 
         ApiException error = assertThrows(ApiException.class, () -> service.renew(lease));
         assertEquals("WORKSPACE_WRITE_LEASE_LOST", error.code());
 
         service.release(lease);
-        verify(mapper).releaseWriteLease(projectId, workspaceId, taskId, "lease-token");
+        verify(mapper).releaseWriteLease(projectId, workspaceId, agentRunId, "lease-token");
     }
 }

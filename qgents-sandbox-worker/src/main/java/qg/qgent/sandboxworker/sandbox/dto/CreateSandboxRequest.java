@@ -24,10 +24,10 @@ public class CreateSandboxRequest {
     private UUID sandboxId;
 
     /**
-     * Sandbox 所属 Task 编号。
+     * Sandbox 所属 AgentRun 编号。
      */
     @NotNull
-    private UUID taskId;
+    private UUID agentRunId;
 
     /**
      * Workspace 的不透明存储键，由 Worker 解析为受控根目录下的实际路径。

@@ -1,5 +1,6 @@
 package qg.qgent.workspace.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -8,35 +9,26 @@ import qg.qgent.workspace.mapper.WorkspaceMapper;
 
 import java.util.UUID;
 
-/**
- * Workspace 跨 JVM 的写入租约。
- * <p>
- * 该服务只执行短数据库 CAS，不在事务内调用 Worker、GitHub 或 LLM。调用方在任何会改动
- * Workspace 的外部操作前领取并定期续租，完成后按同一令牌释放。到期接管只用于进程崩溃恢复；
- * 正常执行器在每次 Worker 工具调用前都会续租，因此不会把两个正常 Task 同时放进一个 Workspace。
- */
+/** Worker 工作区的写入租约：领取、续租和释放均通过数据库条件更新完成。 */
 @Service
+@RequiredArgsConstructor
 public class WorkspaceWriteLeaseService {
     private final WorkspaceMapper workspaces;
 
-    public WorkspaceWriteLeaseService(WorkspaceMapper workspaces) {
-        this.workspaces = workspaces;
-    }
-
     /**
-     * 领取一把新的写入租约。若另一个 Task 正在写入，返回稳定冲突码而不修改对方状态。
+     * 领取一把新的写入租约。若另一个 AgentRun 正在写入，返回稳定冲突码而不修改对方状态。
      */
-    public WorkspaceWriteLease acquire(UUID projectId, UUID workspaceId, UUID taskId) {
-        if (projectId == null || workspaceId == null || taskId == null) {
+    public WorkspaceWriteLease acquire(UUID projectId, UUID workspaceId, UUID agentRunId) {
+        if (projectId == null || workspaceId == null || agentRunId == null) {
             throw new ApiException(HttpStatus.CONFLICT, "WORKSPACE_WRITE_LEASE_CONTEXT_INVALID",
                     "Workspace write lease context is incomplete");
         }
         String token = UUID.randomUUID().toString();
-        if (workspaces.claimWriteLease(projectId, workspaceId, taskId, token) != 1) {
+        if (workspaces.claimWriteLease(projectId, workspaceId, agentRunId, token) != 1) {
             throw new ApiException(HttpStatus.CONFLICT, "WORKSPACE_WRITE_LEASE_HELD",
-                    "Workspace is currently being modified by another Task");
+                    "Workspace is currently being modified by another AgentRun");
         }
-        return new WorkspaceWriteLease(projectId, workspaceId, taskId, token);
+        return new WorkspaceWriteLease(projectId, workspaceId, agentRunId, token);
     }
 
     /**
@@ -44,7 +36,7 @@ public class WorkspaceWriteLeaseService {
      */
     public void renew(WorkspaceWriteLease lease) {
         if (lease == null || workspaces.renewWriteLease(lease.getProjectId(), lease.getWorkspaceId(),
-                lease.getTaskId(), lease.token()) != 1) {
+                lease.getAgentRunId(), lease.token()) != 1) {
             throw new ApiException(HttpStatus.CONFLICT, "WORKSPACE_WRITE_LEASE_LOST",
                     "Workspace write lease is no longer active");
         }
@@ -57,7 +49,7 @@ public class WorkspaceWriteLeaseService {
         if (lease == null) {
             return;
         }
-        workspaces.releaseWriteLease(lease.getProjectId(), lease.getWorkspaceId(), lease.getTaskId(), lease.token());
+        workspaces.releaseWriteLease(lease.getProjectId(), lease.getWorkspaceId(), lease.getAgentRunId(), lease.token());
     }
 
 }

@@ -49,10 +49,11 @@ public class FrontendOpenApiConfiguration {
         openApi.setTags(List.of(
                 tag("4 认证与账户", "4"), tag("5.1 团队与邀请", "5.1"),
                 tag("5.2 项目与项目成员", "5.2"),
+                tag("6 GitHub App 与仓库导入", "6"),
                 tag("7 群组与消息", "7"),
                 tag("7.1 通知中心", "7.1"), tag("8 共享 Skill", "8"),
                 tag("9 共享 Memory", "9"),
-                tag("11.3 工作任务", "11.3"), tag("12.1 实时事件流", "12.1"),
+                tag("12.1 实时事件流", "12.1"),
                 tag("12.2 Agent 执行记录", "12.2"), tag("11.1 Agent 与能力", "11.1")));
     }
 
@@ -61,11 +62,11 @@ public class FrontendOpenApiConfiguration {
     }
 
     private ApiGroup group(String path) {
+        if (path.contains("/integrations/github") || path.contains("/repositories"))
+            return new ApiGroup("6", "GitHub App 与仓库导入");
         if (path.contains("/events")) return new ApiGroup("12.1", "实时事件流");
         if (path.startsWith("/api/v1/notifications")) return new ApiGroup("7.1", "通知中心");
-        if (path.contains("/agent-runs")) return new ApiGroup("12.2", "Agent 执行记录");
         if (path.contains("/agents")) return new ApiGroup("11.1", "Agent 与能力");
-        if (path.contains("/tasks")) return new ApiGroup("11.3", "工作任务");
         if (path.contains("/groups") || path.contains("/messages") || path.contains("/attachments")
                 || path.contains("/context")) return new ApiGroup("7", "群组与消息");
         if (path.contains("/skills")) return new ApiGroup("8", "共享 Skill");
@@ -76,6 +77,16 @@ public class FrontendOpenApiConfiguration {
     }
 
     private String summary(String path, PathItem.HttpMethod method) {
+        if (path.endsWith("/integrations/github/installations"))
+            return method == PathItem.HttpMethod.POST ? "生成 GitHub App 安装地址" : "查询团队 GitHub App 安装";
+        if (path.endsWith("/integrations/github/repositories")) return "查询 App 已授权的可导入仓库";
+        if (path.endsWith("/repositories"))
+            return method == PathItem.HttpMethod.POST ? "导入仓库到项目" : "查询项目已导入仓库";
+        if (path.contains("/repositories/") && method == PathItem.HttpMethod.DELETE) return "移除项目仓库导入记录";
+        if (path.contains("/installations/") && path.endsWith("/sync")) return "同步 App 安装和仓库授权";
+        if (path.contains("/installations/") && method == PathItem.HttpMethod.DELETE) return "解除团队 App 连接";
+        if (path.equals("/api/v1/integrations/github/callback")) return "处理 App 安装回调";
+        if (path.equals("/api/v1/integrations/github/webhook")) return "同步 App 安装与仓库授权变化";
         if (path.endsWith("/register")) return "注册账号";
         if (path.endsWith("/login")) return "登录";
         if (path.endsWith("/refresh")) return "刷新登录令牌";
@@ -136,8 +147,6 @@ public class FrontendOpenApiConfiguration {
         if (path.contains("memories")) return "Memory";
         if (path.contains("messages")) return "群消息";
         if (path.contains("skills")) return "Skill";
-        if (path.contains("agent-runs")) return "任务运行";
-        if (path.contains("tasks")) return "任务";
         if (path.contains("notifications")) return "通知";
         if (path.contains("team-invitations")) return "团队邀请";
         if (path.contains("teams")) return "团队";

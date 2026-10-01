@@ -12,7 +12,7 @@ public class WorkspaceDirectoryResult {
     private boolean created;
     private String error;
     /**
-     * 写入端返回的稳定失败码。本地实现通常为 null；Worker 实现用于避免依赖错误文本分类。
+     * Worker 返回的失败码，用于区分工具错误与服务不可用。
      */
     private String failureCode;
     private boolean infrastructureFailure;

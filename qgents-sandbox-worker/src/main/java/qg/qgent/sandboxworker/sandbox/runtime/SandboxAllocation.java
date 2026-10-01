@@ -20,9 +20,9 @@ public class SandboxAllocation {
      */
     private UUID id;
     /**
-     * Sandbox 所属 Task 编号；
+     * Sandbox 所属 AgentRun 编号；
      */
-    private UUID taskId;
+    private UUID agentRunId;
     /**
      * 控制层提供的不透明 Workspace 存储键。
      */

@@ -36,7 +36,7 @@ public class SandboxService {
 
     /**
      * 创建沙箱并计算实际租约。
-     * 相同 Sandbox 编号的重复创建请求：若任务与 Workspace 规格一致则幂等返回已有沙箱，
+     * 相同 Sandbox 编号的重复创建请求：若所属根运行与 Workspace 规格一致则幂等返回已有沙箱，
      * 规格不同返回冲突，避免初始化重试因请求超时造成重复创建。
      */
     public SandboxResponse create(CreateSandboxRequest request) {
@@ -52,16 +52,16 @@ public class SandboxService {
                 if (existing != null) {
                     SandboxAllocation requested = allocation(request);
                     if (sameSandboxSpec(existing, requested)) {
-                        log.info("sandbox idempotent return sandboxId={} taskId={} workspace={}",
-                                existing.getId(), existing.getTaskId(), existing.getWorkspaceStorageKey());
+                        log.info("sandbox idempotent return sandboxId={} agentRunId={} workspace={}",
+                                existing.getId(), existing.getAgentRunId(), existing.getWorkspaceStorageKey());
                         return response(existing);
                     }
                     throw new WorkerException(HttpStatus.CONFLICT, "SANDBOX_ID_CONFLICT", "同名沙箱规格不一致");
                 }
                 SandboxAllocation allocation = allocation(request);
                 SandboxAllocation created = runtime.create(request, allocation);
-                log.info("sandbox created sandboxId={} taskId={} workspace={} image={} container={}",
-                        created.getId(), created.getTaskId(), created.getWorkspaceStorageKey(),
+                log.info("sandbox created sandboxId={} agentRunId={} workspace={} image={} container={}",
+                        created.getId(), created.getAgentRunId(), created.getWorkspaceStorageKey(),
                         created.getImageProfile(), created.getRuntimeHandle());
                 return response(created);
             });
@@ -77,7 +77,7 @@ public class SandboxService {
         Duration executionTimeout = requestedExecutionTimeout(request.getLimits());
         return new SandboxAllocation(
                 request.getSandboxId(),
-                request.getTaskId(),
+                request.getAgentRunId(),
                 request.getWorkspaceStorageKey(),
                 request.getImageProfile(),
                 "READY",
@@ -91,10 +91,10 @@ public class SandboxService {
     }
 
     /**
-     * 判断两个沙箱规格是否一致：任务、Workspace 存储键、镜像配置与仓库集合全部相等才算一致。
+     * 判断两个沙箱规格是否一致：所属根运行、Workspace 存储键和镜像配置全部相等才算一致。
      */
     private boolean sameSandboxSpec(SandboxAllocation existing, SandboxAllocation requested) {
-        return java.util.Objects.equals(existing.getTaskId(), requested.getTaskId())
+        return java.util.Objects.equals(existing.getAgentRunId(), requested.getAgentRunId())
 
                 && java.util.Objects.equals(existing.getWorkspaceStorageKey(), requested.getWorkspaceStorageKey())
                 && java.util.Objects.equals(existing.getImageProfile(), requested.getImageProfile());
@@ -200,7 +200,7 @@ public class SandboxService {
     private SandboxResponse response(SandboxAllocation allocation) {
         return new SandboxResponse(
                 allocation.getId(),
-                allocation.getTaskId(),
+                allocation.getAgentRunId(),
                 allocation.getWorkspaceStorageKey(),
                 allocation.getImageProfile(),
                 allocation.getStatus(),

@@ -300,14 +300,14 @@ components:
       type: object
       required:
       - sandboxId
-      - taskId
+      - agentRunId
       - workspaceStorageKey
       - imageProfile
       properties:
         sandboxId:
           type: string
           format: uuid
-        taskId:
+        agentRunId:
           type: string
           format: uuid
         workspaceStorageKey:
@@ -328,7 +328,7 @@ components:
         id:
           type: string
           format: uuid
-        taskId:
+        agentRunId:
           type: string
           format: uuid
         workspaceStorageKey:

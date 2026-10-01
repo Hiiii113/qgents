@@ -70,18 +70,14 @@ spring:
 logging:
   file:
     name: ${LOG_FILE:logs/qgents.log}
-  # 输出格式与滚动策略见 logback-spring.xml；排查 SQL 时将对应业务的 mapper 包（例如 qg.qgent.task.mapper）设为 DEBUG
+  # 输出格式与滚动策略见 logback-spring.xml；排查 SQL 时将对应业务的 mapper 包（例如 qg.qgent.chat.mapper）设为 DEBUG
 
 
 
 app:
-  # Worker 关闭时使用的本地 Workspace 代码根目录
-  workspace:
-    base-dir: ${WORKSPACE_BASE_DIR:}
-  # 后端2 Sandbox Worker 客户端配置；enabled=true 时编排链路改走 Worker HTTP API
+  # 代码环境统一由 Sandbox Worker 提供
   worker:
     base-url: ${SANDBOX_WORKER_URL:http://localhost:8091}
-    enabled: ${SANDBOX_WORKER_ENABLED:false}
     backend-service-token: ${SANDBOX_BACKEND_SERVICE_TOKEN:}
     image-profile: ${SANDBOX_IMAGE_PROFILE:dev-tools}
     poll-interval: ${SANDBOX_POLL_INTERVAL:250ms}

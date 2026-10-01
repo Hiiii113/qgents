@@ -20,7 +20,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
-/** 为 Task 准备空工作区和沙箱；同一 Task 复用原目录。 */
+/** 为 AgentRun 准备空工作区和沙箱；同一 AgentRun 复用原目录。 */
 @Service
 public class SandboxSessionManager {
 
@@ -28,60 +28,42 @@ public class SandboxSessionManager {
     private final SandboxWorkerClient client;
     private final SandboxWorkerProperties properties;
     private final WorkspaceMapper workspaceMapper;
-    private final qg.qgent.workspace.service.WorkspaceService localWorkspaces;
     private final WorkspaceWriteLeaseService writeLeases;
     private final Map<UUID, SandboxSession> sessions = new ConcurrentHashMap<>();
     private final Map<UUID, ReentrantLock> acquireLocks = new ConcurrentHashMap<>();
     private final Map<UUID, WorkspaceWriteLease> workspaceLeases = new ConcurrentHashMap<>();
 
     public SandboxSessionManager(SandboxWorkerClient client, SandboxWorkerProperties properties,
-                                 WorkspaceMapper workspaceMapper, qg.qgent.workspace.service.WorkspaceService localWorkspaces, WorkspaceWriteLeaseService writeLeases) {
+                                 WorkspaceMapper workspaceMapper, WorkspaceWriteLeaseService writeLeases) {
         this.client = client;
         this.properties = properties;
         this.workspaceMapper = workspaceMapper;
-        this.localWorkspaces = localWorkspaces;
         this.writeLeases = writeLeases;
     }
 
     /**
-     * 为一次 Task 编排准备 Sandbox 会话；已存在则直接返回。
-     * 未启用 Worker 时返回 null（本地端口不需要会话）。
+     * 为一次 AgentRun 编排准备 Sandbox 会话；已存在则直接返回。
      */
-    public SandboxSession acquire(UUID taskId, UUID projectId, UUID workspaceId) {
-        if (!properties.isEnabled()) {
-            var local=localWorkspaces.resolve(workspaceId);
-            if (!local.found()) throw new IllegalStateException("请配置 app.workspace.base-dir");
-            try { java.nio.file.Files.createDirectories(local.root()); }
-            catch(java.io.IOException e) { throw new IllegalStateException("创建工作区失败",e); }
-            WorkspaceEntity workspace = workspaceMapper.selectById(workspaceId);
-            if (workspace == null || !projectId.equals(workspace.getProjectId()))
-                throw new IllegalArgumentException("工作区不存在");
-            workspace.setStatus("READY");
-            workspaceMapper.updateById(workspace);
-            return null;
-        }
-
+    public SandboxSession acquire(UUID agentRunId, UUID projectId, UUID workspaceId) {
         ReentrantLock acquireLock = acquireLocks.computeIfAbsent(workspaceId, ignored -> new ReentrantLock());
-        // 进程内锁只用于串行化初始化/释放，不能让编排线程无限等待。持锁者可能正卡在
-        // Worker 请求；把冲突交给既有 PENDING/恢复器路径，避免 Task 已 RUNNING
-        // 但永远没有 Sandbox 或 AgentRun。
+        // 初始化或释放已由其他线程处理时返回冲突，避免等待 Worker 请求。
         if (!acquireLock.tryLock()) {
             throw new ApiException(org.springframework.http.HttpStatus.CONFLICT,
-                    "WORKSPACE_WRITE_LEASE_HELD", "Workspace is currently being initialized by another Task");
+                    "WORKSPACE_WRITE_LEASE_HELD", "Workspace is currently being initialized by another AgentRun");
         }
         try {
             SandboxSession existing = sessions.get(workspaceId);
             if (existing != null) {
 
-                if (!existing.taskId().equals(taskId)) {
+                if (!existing.agentRunId().equals(agentRunId)) {
                     throw new qg.qgent.common.web.ApiException(org.springframework.http.HttpStatus.CONFLICT,
-                            "WORKSPACE_WRITE_LEASE_HELD", "Workspace is currently being modified by another Task");
+                            "WORKSPACE_WRITE_LEASE_HELD", "Workspace is currently being modified by another AgentRun");
                 }
                 return existing;
             }
-            WorkspaceWriteLease lease = writeLeases.acquire(projectId, workspaceId, taskId);
+            WorkspaceWriteLease lease = writeLeases.acquire(projectId, workspaceId, agentRunId);
             try {
-                SandboxSession created = doAcquire(taskId, projectId, workspaceId);
+                SandboxSession created = doAcquire(agentRunId, projectId, workspaceId);
                 sessions.put(workspaceId, created);
                 workspaceLeases.put(workspaceId, lease);
                 return created;
@@ -106,27 +88,27 @@ public class SandboxSessionManager {
     }
 
     /**
-     * 销毁会话对应的 Sandbox 并移除记录；Workspace 保留。销毁失败不吞结果，仅不阻断任务收尾。
+     * 销毁会话对应的 Sandbox 并移除记录；Workspace 保留。销毁失败交给 Worker 后续清理，不阻断执行收尾。
      */
-    public void release(UUID workspaceId, UUID taskId) {
-        if (workspaceId == null || taskId == null) {
+    public void release(UUID workspaceId, UUID agentRunId) {
+        if (workspaceId == null || agentRunId == null) {
             return;
         }
         ReentrantLock acquireLock = acquireLocks.computeIfAbsent(workspaceId, ignored -> new ReentrantLock());
         // acquire() 失败后编排器仍会进入 finally；释放路径不能再次阻塞在同一把卡死的锁上。
-        // 持锁者完成后会负责自己的会话/租约清理，当前 Task 没有可安全移除的会话时直接返回。
+        // 持锁者完成后会负责自己的会话/租约清理，当前 AgentRun 没有可安全移除的会话时直接返回。
         if (!acquireLock.tryLock()) {
             return;
         }
         try {
             SandboxSession session = sessions.get(workspaceId);
-            if (session == null || !taskId.equals(session.taskId())) {
-                // acquire 可能因其他 Task 已持有会话而失败；只能清理自己的会话。
+            if (session == null || !agentRunId.equals(session.agentRunId())) {
+                // acquire 可能因其他 AgentRun 已持有会话而失败；只能清理自己的会话。
                 return;
             }
             WorkspaceWriteLease lease = workspaceLeases.get(workspaceId);
-            if (lease != null && !taskId.equals(lease.getTaskId())) {
-                // 缓存不一致时宁可保留可能有效的租约，也不能释放其他 Task 的租约。
+            if (lease != null && !agentRunId.equals(lease.getAgentRunId())) {
+                // 缓存不一致时宁可保留可能有效的租约，也不能释放其他 AgentRun 的租约。
                 return;
             }
             if (!sessions.remove(workspaceId, session)) {
@@ -138,7 +120,7 @@ public class SandboxSessionManager {
             try {
                 client.destroySandbox(session.sandboxId());
             } catch (RuntimeException ignored) {
-                // 销毁失败由 Worker 的清理任务兜底，不阻断任务结果返回。
+                // 销毁失败由 Worker 的清理任务兜底，不阻断执行结果返回。
             } finally {
                 writeLeases.release(lease);
             }
@@ -149,12 +131,12 @@ public class SandboxSessionManager {
 
     /**
      * 每次 Worker 工具提交前验证并续租持久化写入权。租约已丢失时不能再向同一 Workspace
-     * 发起命令、文件写入或测试，避免过期 Task 与后来者并发修改文件。
+     * 发起命令、文件写入或测试，避免过期 AgentRun 与后来者并发修改文件。
      */
     void renewWriteLease(UUID workspaceId) {
         WorkspaceWriteLease lease = workspaceLeases.get(workspaceId);
         SandboxSession session = sessions.get(workspaceId);
-        if (lease == null || session == null || !session.taskId().equals(lease.getTaskId())) {
+        if (lease == null || session == null || !session.agentRunId().equals(lease.getAgentRunId())) {
             throw new qg.qgent.common.web.ApiException(org.springframework.http.HttpStatus.CONFLICT,
                     "WORKSPACE_WRITE_LEASE_LOST", "Workspace write lease is no longer active");
         }
@@ -163,14 +145,11 @@ public class SandboxSessionManager {
     }
 
     /**
-     * 在整个 Task 会话存活期间维持 Sandbox 租约，覆盖 LLM 推理等没有工具调用的空档。
+     * 在整个 AgentRun 会话存活期间维持 Sandbox 租约，覆盖 LLM 推理等没有工具调用的空档。
      * 单个 Sandbox 的续租失败不影响其他会话；实际工具调用会继续得到 Worker 的明确错误。
      */
     @Scheduled(fixedDelayString = "${app.worker.lease-renew-interval:10s}")
     void renewActiveLeases() {
-        if (!properties.isEnabled()) {
-            return;
-        }
         sessions.forEach((workspaceId, session) -> {
             if (sessions.get(workspaceId) != session) {
                 return;
@@ -184,7 +163,7 @@ public class SandboxSessionManager {
         });
     }
 
-    private SandboxSession doAcquire(UUID taskId, UUID projectId, UUID workspaceId) {
+    private SandboxSession doAcquire(UUID agentRunId, UUID projectId, UUID workspaceId) {
         WorkspaceEntity workspace = workspaceMapper.selectById(workspaceId);
         if (workspace == null || !projectId.equals(workspace.getProjectId()))
             throw new IllegalArgumentException("工作区不存在");
@@ -193,12 +172,12 @@ public class SandboxSessionManager {
         WorkerWorkspace ready = client.provisionWorkspace(workspaceId, provision);
         WorkerCreateSandboxRequest request = new WorkerCreateSandboxRequest();
         request.setSandboxId(UuidV7.next());
-        request.setTaskId(taskId);
+        request.setAgentRunId(agentRunId);
         request.setWorkspaceStorageKey(ready.getStorageKey());
         request.setImageProfile(properties.getImageProfile());
         WorkerSandbox sandbox = client.createSandbox(request);
         workspace.setStatus("READY");
         workspaceMapper.updateById(workspace);
-        return new SandboxSession(taskId,workspaceId,sandbox.getId(),ready.getStorageKey());
+        return new SandboxSession(agentRunId,workspaceId,sandbox.getId(),ready.getStorageKey());
     }
 }

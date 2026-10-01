@@ -35,9 +35,9 @@ public class MessageResponse {
     private Long sequence;
 
     /**
-     * 消息类型：TEXT/CODE/IMAGE/FILE/SYSTEM/QUOTE。
+     * 消息类型：TEXT/CODE/IMAGE/FILE/SYSTEM。
      */
-    @Schema(description = "消息类型：TEXT/CODE/IMAGE/FILE/SYSTEM/QUOTE")
+    @Schema(description = "消息类型：TEXT/CODE/IMAGE/FILE/SYSTEM")
     private String type;
 
     /**
@@ -69,12 +69,6 @@ public class MessageResponse {
      */
     @Schema(description = "回复或引用的原消息 ID")
     private String replyToId;
-
-    /**
-     * QUOTE 消息的回复正文（顶层回显，与发送请求体同构，契约 §1.4）；非 QUOTE 消息为空。
-     */
-    @Schema(description = "QUOTE 消息的回复正文，顶层回显；非 QUOTE 消息为空")
-    private String replyText;
 
     /**
      * 提及对象列表。

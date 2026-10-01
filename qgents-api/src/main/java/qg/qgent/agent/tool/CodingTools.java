@@ -27,7 +27,8 @@ import java.util.UUID;
 @Slf4j
 public class CodingTools {
 
-    private final UUID workspaceId;
+    private final java.util.function.Supplier<UUID> workspace;
+    private UUID lastWorkspaceId;
     private final WorkspaceCodeAccess codeAccess;
     private final WorkspaceCodeWriter writer;
     /** 仅允许固定 commandId 的开发命令端口；绝不接收或回传 argv、环境变量、cwd、stdout/stderr。 */
@@ -39,7 +40,12 @@ public class CodingTools {
 
     public CodingTools(UUID workspaceId, WorkspaceCodeAccess codeAccess, WorkspaceCodeWriter writer,
                        DevelopmentCommandPort developmentCommands) {
-        this.workspaceId = workspaceId;
+        this(() -> workspaceId, codeAccess, writer, developmentCommands);
+    }
+
+    public CodingTools(java.util.function.Supplier<UUID> workspace, WorkspaceCodeAccess codeAccess,
+                       WorkspaceCodeWriter writer, DevelopmentCommandPort developmentCommands) {
+        this.workspace = workspace;
         this.codeAccess = codeAccess;
         this.writer = writer;
         this.developmentCommands = developmentCommands;
@@ -61,7 +67,7 @@ public class CodingTools {
 
     @Tool(name = "list_files", description = "列出工作区所有代码文件的相对路径，无参数")
     public Map<String, Object> listFiles() {
-        List<String> files = codeAccess.listFiles(workspaceId);
+        List<String> files = codeAccess.listFiles(workspaceId());
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("ok", true);
         result.put("files", files);
@@ -73,7 +79,7 @@ public class CodingTools {
         if (path == null || path.isBlank()) {
             return error("read_file requires non-empty 'path'");
         }
-        WorkspaceFileReadResult read = codeAccess.readFile(workspaceId, path);
+        WorkspaceFileReadResult read = codeAccess.readFile(workspaceId(), path);
         if (read == null || !read.isOk()) {
             return error(read == null || read.getError() == null
                     ? "file not found or unreadable: " + path : read.getError());
@@ -102,7 +108,7 @@ public class CodingTools {
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("ok", true);
-        result.put("matches", codeAccess.searchCode(workspaceId, query));
+        result.put("matches", codeAccess.searchCode(workspaceId(), query));
         return result;
     }
 
@@ -113,17 +119,17 @@ public class CodingTools {
     @Tool(name = "run_development_command", description = "执行固定的测试或构建命令。"
             + "commandId 只能是 MAVEN_TEST、MAVEN_PACKAGE、MAVEN_WRAPPER_TEST、GRADLE_TEST、"
             + "GRADLE_WRAPPER_TEST、NPM_TEST；不可传递命令、argv、环境变量或 cwd。"
-            + "可选 repositoryPath 必须是当前工作区已绑定仓库的一级相对路径，多仓库时必填。")
+            + "可选 repositoryPath 必须是工作区中的仓库相对目录，省略为根目录。")
     public Map<String, Object> runDevelopmentCommand(
             @ToolParam(description = "固定开发命令枚举") String commandId,
-            @ToolParam(description = "可选：当前工作区已绑定仓库的一级相对路径", required = false) String repositoryPath) {
+            @ToolParam(description = "可选：工作区中的仓库相对目录", required = false) String repositoryPath) {
         DevelopmentCommandId id;
         try {
             id = DevelopmentCommandId.valueOf(commandId == null ? "" : commandId);
         } catch (IllegalArgumentException exception) {
             return error("run_development_command requires a supported commandId");
         }
-        DevelopmentCommandResult execution = developmentCommands.run(workspaceId, repositoryPath, id);
+        DevelopmentCommandResult execution = developmentCommands.run(workspaceId(), repositoryPath, id);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("ok", execution != null && execution.ok());
         result.put("commandId", id.name());
@@ -149,7 +155,7 @@ public class CodingTools {
         if (denied != null) {
             return error(denied);
         }
-        WorkspaceDirectoryResult result = writer.createDirectory(workspaceId, path);
+        WorkspaceDirectoryResult result = writer.createDirectory(workspaceId(), path);
         if (result.isOk()) {
             recordOutcome("create_directory", result.getPath() == null ? path : result.getPath(),
                     true, result.isCreated(), null, null);
@@ -184,6 +190,7 @@ public class CodingTools {
         if (denied != null) {
             return error(denied);
         }
+        workspaceId();
         if (expectedHash == null || expectedHash.isBlank()) {
             expectedHash = latestSha256.get(path);
             if (expectedHash == null) {
@@ -197,7 +204,7 @@ public class CodingTools {
         if (patch == null || patch.isBlank()) {
             return error("apply_patch requires non-empty 'patch'");
         }
-        WorkspaceWriteResult result = writer.patchFile(workspaceId, path, expectedHash, patch);
+        WorkspaceWriteResult result = writer.patchFile(workspaceId(), path, expectedHash, patch);
         if (result.isOk()) {
             latestSha256.put(path, result.getNewSha256());
             recordOutcome("apply_patch", path, true, result.isChanged(), null, null);
@@ -237,7 +244,7 @@ public class CodingTools {
         if (content == null) {
             return error("replace_file requires non-null 'content'");
         }
-        WorkspaceWriteResult result = writer.replaceFile(workspaceId, path, expectedHash, content);
+        WorkspaceWriteResult result = writer.replaceFile(workspaceId(), path, expectedHash, content);
         if (result.isOk()) {
             latestSha256.put(path, result.getNewSha256());
             recordOutcome("replace_file", path, true, result.isChanged(), null, null);
@@ -278,7 +285,7 @@ public class CodingTools {
             recordOutcome("write_file", path, false, false, "FILE_ALREADY_EXISTS", message);
             return error("FILE_ALREADY_EXISTS", message);
         }
-        WorkspaceWriteResult result = writer.writeFile(workspaceId, path, content);
+        WorkspaceWriteResult result = writer.writeFile(workspaceId(), path, content);
         if (result.isOk()) {
             latestSha256.put(path, result.getNewSha256());
             recordOutcome("write_file", path, true, result.isChanged(), null, null);
@@ -311,6 +318,7 @@ public class CodingTools {
         if (denied != null) {
             return error(denied);
         }
+        workspaceId();
         if (expectedHash == null || expectedHash.isBlank()) {
             expectedHash = latestSha256.get(path);
             if (expectedHash == null) {
@@ -321,7 +329,7 @@ public class CodingTools {
         if (!expectedHash.matches("[0-9a-fA-F]{64}")) {
             return error("ensure_trailing_newline requires 64-char hex 'expectedHash' from read_file");
         }
-        WorkspaceWriteResult result = writer.ensureTrailingNewline(workspaceId, path, expectedHash);
+        WorkspaceWriteResult result = writer.ensureTrailingNewline(workspaceId(), path, expectedHash);
         if (result.isOk()) {
             latestSha256.put(path, result.getNewSha256());
             recordOutcome("ensure_trailing_newline", path, true, result.isChanged(), null, null);
@@ -342,12 +350,19 @@ public class CodingTools {
         return error(result.getFailureCode(), message);
     }
 
-    /**
-     * 文件树包含性探测：已存在文件（含子目录）在 list_files 结果中，禁止 write_file 覆盖。
-     */
+    private UUID workspaceId() {
+        UUID selected = workspace.get();
+        if (!selected.equals(lastWorkspaceId)) {
+            latestSha256.clear();
+            lastWorkspaceId = selected;
+        }
+        return selected;
+    }
+
+    /** 已存在文件不能用 write_file 覆盖。 */
     private boolean exists(String path) {
         String normalized = path.replace('\\', '/');
-        return codeAccess.listFiles(workspaceId).stream()
+        return codeAccess.listFiles(workspaceId()).stream()
                 .anyMatch(file -> normalized.equals(file.replace('\\', '/')));
     }
 
