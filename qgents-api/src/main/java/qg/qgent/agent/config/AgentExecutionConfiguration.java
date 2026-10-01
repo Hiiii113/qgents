@@ -5,23 +5,21 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
-import qg.qgent.common.config.ExecutorPerformanceProperties;
 import qg.qgent.common.config.MdcTaskDecorator;
 
 import java.util.concurrent.Executor;
 
 /** 聊天请求提交后异步执行 Agent，subagent 在同一执行线程中调用。 */
 @Configuration
-@EnableConfigurationProperties(ExecutorPerformanceProperties.class)
+@EnableConfigurationProperties(AgentExecutorProperties.class)
 public class AgentExecutionConfiguration {
     @Bean(name = "agentExecutor")
-    public Executor agentExecutor(ExecutorPerformanceProperties properties) {
-        ExecutorPerformanceProperties.Pool pool = properties.getAgent();
-        pool.validate("agent");
+    public Executor agentExecutor(AgentExecutorProperties properties) {
+        properties.validate();
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(pool.getCoreSize());
-        executor.setMaxPoolSize(pool.getMaxSize());
-        executor.setQueueCapacity(pool.getQueueCapacity());
+        executor.setCorePoolSize(properties.getCoreSize());
+        executor.setMaxPoolSize(properties.getMaxSize());
+        executor.setQueueCapacity(properties.getQueueCapacity());
         executor.setThreadNamePrefix("agent-");
         executor.setTaskDecorator(new MdcTaskDecorator());
         executor.initialize();

@@ -1,5 +1,7 @@
 package qg.qgent.github.config;
 
+import lombok.Getter;
+import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.util.Arrays;
@@ -7,6 +9,8 @@ import java.util.Base64;
 import java.util.List;
 
 /** GitHub OAuth 用户授权配置；所有敏感值只能由环境变量或 Secret Manager 注入。 */
+@Getter
+@Setter
 @ConfigurationProperties("github.oauth")
 public class GitHubOAuthProperties {
     private boolean enabled;
@@ -42,26 +46,4 @@ public class GitHubOAuthProperties {
             return false;
         }
     }
-    public boolean isEnabled() { return enabled; }
-    public void setEnabled(boolean enabled) { this.enabled = enabled; }
-    public String getClientId() { return clientId; }
-    public void setClientId(String clientId) { this.clientId = clientId; }
-    public String getClientSecret() { return clientSecret; }
-    public void setClientSecret(String clientSecret) { this.clientSecret = clientSecret; }
-    public String getAuthorizeUrl() { return authorizeUrl; }
-    public void setAuthorizeUrl(String authorizeUrl) { this.authorizeUrl = authorizeUrl; }
-    public String getTokenUrl() { return tokenUrl; }
-    public void setTokenUrl(String tokenUrl) { this.tokenUrl = tokenUrl; }
-    public String getUserUrl() { return userUrl; }
-    public void setUserUrl(String userUrl) { this.userUrl = userUrl; }
-    public String getCallbackUrl() { return callbackUrl; }
-    public void setCallbackUrl(String callbackUrl) { this.callbackUrl = callbackUrl; }
-    public String getStateSecret() { return stateSecret; }
-    public void setStateSecret(String stateSecret) { this.stateSecret = stateSecret; }
-    public String getTokenEncryptionKey() { return tokenEncryptionKey; }
-    public void setTokenEncryptionKey(String tokenEncryptionKey) { this.tokenEncryptionKey = tokenEncryptionKey; }
-    public String getScopes() { return scopes; }
-    public void setScopes(String scopes) { this.scopes = scopes; }
-    public long getStateTtlSeconds() { return stateTtlSeconds; }
-    public void setStateTtlSeconds(long stateTtlSeconds) { this.stateTtlSeconds = stateTtlSeconds; }
 }
