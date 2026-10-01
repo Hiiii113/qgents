@@ -8,7 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
-/** 一条通知到一个设备的可恢复推送投递事实。 */
+/** 一条通知到一个设备的可恢复推送记录。 */
 @Data
 @TableName("push_deliveries")
 public class PushDeliveryEntity {

@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
-/** 推送 Outbox 数据访问；认领使用条件更新防止多实例重复发送。 */
+/** 推送队列数据访问；认领使用条件更新防止多实例重复发送。 */
 @Mapper
 public interface PushDeliveryMapper extends BaseMapper<PushDeliveryEntity> {
     @Select("SELECT * FROM push_deliveries WHERE status IN ('PENDING','FAILED') "

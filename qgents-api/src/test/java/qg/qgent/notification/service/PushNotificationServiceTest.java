@@ -1,9 +1,14 @@
 package qg.qgent.notification.service;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DuplicateKeyException;
 
 import qg.qgent.notification.config.PushProperties;
+import qg.qgent.notification.dto.PushDeviceRegistrationRequest;
+import qg.qgent.notification.dto.PushDeviceResponse;
 import qg.qgent.notification.entity.NotificationEntity;
 import qg.qgent.notification.entity.PushDeliveryEntity;
 import qg.qgent.notification.entity.PushDeviceEntity;
@@ -14,6 +19,7 @@ import qg.qgent.notification.mapper.PushDeviceMapper;
 import java.util.List;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
@@ -21,8 +27,56 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** 推送 Outbox 的通知/设备唯一键是重复通知重试的最终防线。 */
+/** 验证设备注册、推送入队去重和配置关闭时的行为。 */
 class PushNotificationServiceTest {
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void registrationCreatesOrReactivatesTheSameInstallation(boolean newDevice) {
+        UUID userId = UUID.randomUUID();
+        PushDeviceMapper devices = mock(PushDeviceMapper.class);
+        PushTokenCipher cipher = mock(PushTokenCipher.class);
+        PushProperties properties = mock(PushProperties.class);
+        when(properties.deliveryConfigured()).thenReturn(true);
+        when(cipher.hash("token")).thenReturn("hash");
+        when(cipher.encrypt("token")).thenReturn("encrypted");
+        PushDeviceEntity existing = new PushDeviceEntity();
+        existing.setId(UUID.randomUUID());
+        existing.setUserId(userId);
+        existing.setInstallationId("installation");
+        existing.setProvider("FCM");
+        existing.setActive(false);
+        if (!newDevice) {
+            when(devices.selectInstallation(userId, "installation")).thenReturn(existing);
+        }
+        PushDeviceRegistrationRequest request = new PushDeviceRegistrationRequest();
+        request.setInstallationId(" installation ");
+        request.setPlatform("ANDROID");
+        request.setToken(" token ");
+        PushNotificationService service = new PushNotificationService(devices, mock(PushDeliveryMapper.class),
+                mock(NotificationMapper.class), cipher, mock(PushGateway.class), properties);
+
+        PushDeviceResponse response = service.register(userId, request);
+
+        ArgumentCaptor<PushDeviceEntity> saved = ArgumentCaptor.forClass(PushDeviceEntity.class);
+        if (newDevice) {
+            verify(devices).insert(saved.capture());
+            verify(devices, never()).updateById(any(PushDeviceEntity.class));
+        } else {
+            verify(devices).updateById(saved.capture());
+            verify(devices, never()).insert(any(PushDeviceEntity.class));
+            assertEquals(existing.getId().toString(), response.getId());
+        }
+        PushDeviceEntity device = saved.getValue();
+        assertNotNull(device.getId());
+        assertEquals(userId, device.getUserId());
+        assertEquals("installation", device.getInstallationId());
+        assertEquals("FCM", device.getProvider());
+        assertEquals("ANDROID", device.getPlatform());
+        assertEquals("hash", device.getTokenHash());
+        assertEquals("encrypted", device.getTokenCiphertext());
+        assertTrue(response.isActive());
+    }
 
     @Test
     void duplicateOutboxInsertIsTreatedAsIdempotentRetry() {

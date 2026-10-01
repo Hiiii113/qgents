@@ -1,5 +1,6 @@
 package qg.qgent.notification.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 
@@ -17,14 +18,11 @@ import javax.crypto.spec.SecretKeySpec;
 
 /** 对移动端设备 Token 做摘要和 AES-GCM 加密，防止明文进入数据库。 */
 @Component
+@RequiredArgsConstructor
 public class PushTokenCipher {
     private static final int IV_BYTES = 12;
     private final PushProperties properties;
     private final SecureRandom random = new SecureRandom();
-
-    public PushTokenCipher(PushProperties properties) {
-        this.properties = properties;
-    }
 
     public String hash(String token) {
         try {

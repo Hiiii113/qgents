@@ -5,9 +5,7 @@ import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
-/**
- * 移动端离线推送配置。所有凭证仅允许通过受控环境变量注入。
- */
+/** 移动端离线推送配置。所有凭证仅允许通过受控环境变量注入。 */
 @Component
 @Getter
 @Setter

@@ -1,5 +1,7 @@
 package qg.qgent.notification.controller;
 
+import lombok.RequiredArgsConstructor;
+
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -19,14 +21,10 @@ import java.util.UUID;
 /** 移动端 FCM 设备注册与注销接口。Token 不在响应中回显。 */
 @RestController
 @RequestMapping("/api/v1/push/devices")
+@RequiredArgsConstructor
 public class PushDeviceController {
     private final PushNotificationService push;
     private final IdempotencyService idempotency;
-
-    public PushDeviceController(PushNotificationService push, IdempotencyService idempotency) {
-        this.push = push;
-        this.idempotency = idempotency;
-    }
 
     /** 注册或刷新当前用户的一台 Android/iOS 安装实例。 */
     @PostMapping

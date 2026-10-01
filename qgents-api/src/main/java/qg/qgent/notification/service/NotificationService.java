@@ -1,6 +1,6 @@
 package qg.qgent.notification.service;
 
-import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,37 +19,20 @@ import java.util.Map;
 import java.util.UUID;
 
 /** 通知持久化、已读状态和实时推送。 */
-@Slf4j
 @Service
+@RequiredArgsConstructor
 public class NotificationService {
 
     private final NotificationMapper notificationMapper;
     private final EventService eventService;
     private final PushNotificationService pushNotificationService;
 
-    public NotificationService(NotificationMapper notificationMapper, EventService eventService,
-                               PushNotificationService pushNotificationService) {
-        this.notificationMapper = notificationMapper;
-        this.eventService = eventService;
-        this.pushNotificationService = pushNotificationService;
-    }
-
-    /**
-     * 查询当前用户的通知列表，按产生时间倒序（A 约定一次性返回全量，不分页）。
-     *
-     * @param userId 当前登录用户 ID
-     * @return 该用户的全部通知视图，新的在前
-     */
+    /** 查询当前用户的通知列表，按产生时间倒序，不分页。 */
     public List<NotificationResponse> list(UUID userId) {
         return notificationMapper.listByRecipient(userId).stream().map(this::toResponse).toList();
     }
 
-    /**
-     * 标记单条通知已读；通知不存在或不属于当前用户时返回 404。
-     *
-     * @param userId         当前登录用户 ID
-     * @param notificationId 通知 ID
-     */
+    /** 标记单条通知已读；通知不存在或不属于当前用户时返回 404。 */
     @Transactional
     public void markRead(UUID userId, UUID notificationId) {
         NotificationEntity entity = notificationMapper.selectById(notificationId);
@@ -59,29 +42,13 @@ public class NotificationService {
         notificationMapper.markRead(notificationId, userId, LocalDateTime.now(ZoneOffset.UTC));
     }
 
-    /**
-     * 将当前用户的全部未读通知标记为已读（幂等）。
-     *
-     * @param userId 当前登录用户 ID
-     */
+    /** 将当前用户的全部未读通知标记为已读（幂等）。 */
     @Transactional
     public void markAllRead(UUID userId) {
         notificationMapper.markAllRead(userId, LocalDateTime.now(ZoneOffset.UTC));
     }
 
-    /**
-     * 写入一条通知（事件触发入口）。
-     * <p>
-     * 接收人统一为任务发起人（Task.createdBy）；调用方必须已通过项目/资源归属校验。
-     *
-     * @param recipientUserId 接收通知的用户 ID
-     * @param projectId       关联项目 ID，可为空
-     * @param groupId         来源项目群聊 ID，可为空
-     * @param kind            通知类型枚举（见 {@link NotificationEntity}）
-     * @param title           一行标题
-     * @param description     补充说明，可为空
-     * @param resourceId      关联资源 ID 字符串，可为空
-     */
+    /** 为指定用户保存通知、发布实时事件，并加入手机推送队列。 */
     @Transactional
     public void notify(UUID recipientUserId, UUID projectId, UUID groupId, String kind, String title,
                        String description, String resourceId) {
@@ -100,9 +67,9 @@ public class NotificationService {
         entity.setIsRead(false);
         entity.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
         notificationMapper.insert(entity);
-        // 通知级 SSE：新通知信号（前端 SSE 需求清单 ③），事件名 notification.created
+        // 保存实时事件，在线客户端通过 SSE 或 WebSocket 接收。
         eventService.publishNotification(recipientUserId, entity.getId(), "notification.created",
-                Map.of("notificationId", id(entity.getId()), "kind", kind));
+                Map.of("notificationId", entity.getId().toString(), "kind", kind));
         pushNotificationService.enqueue(entity);
     }
 

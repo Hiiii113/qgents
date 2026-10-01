@@ -12,43 +12,20 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * 通知中心数据访问（A 联调约定 §1）。
- * <p>
- * 通知按用户维度持久化；所有查询与已读更新均以 {@code recipient_user_id} 限定当前用户，
- * 避免跨用户读取或误改他人通知。
- */
+/** 通知查询与已读更新。 */
 @Mapper
 public interface NotificationMapper extends BaseMapper<NotificationEntity> {
 
-    /**
-     * 查询指定用户的通知列表，按产生时间倒序（一次性返回全量，A 约定不分页）。
-     *
-     * @param recipientUserId 接收通知的用户 ID
-     * @return 该用户的全部通知，新的在前
-     */
+    /** 查询指定用户的通知列表，按产生时间倒序，不分页。 */
     @Select("SELECT * FROM notifications WHERE recipient_user_id = #{recipientUserId} ORDER BY created_at DESC")
     List<NotificationEntity> listByRecipient(@Param("recipientUserId") UUID recipientUserId);
 
-    /**
-     * 将属于指定用户的一条通知标记为已读；不属于该用户时返回 0（幂等）。
-     *
-     * @param id       通知 ID
-     * @param userId   接收通知的用户 ID
-     * @param readTime 已读时间（UTC）
-     * @return 受影响行数
-     */
+    /** 将属于指定用户的一条通知标记为已读；不属于该用户时返回 0（幂等）。 */
     @Update("UPDATE notifications SET is_read = 1, read_at = #{readTime} "
             + "WHERE id = #{id} AND recipient_user_id = #{userId}")
     int markRead(@Param("id") UUID id, @Param("userId") UUID userId, @Param("readTime") LocalDateTime readTime);
 
-    /**
-     * 将指定用户的全部未读通知标记为已读（幂等）。
-     *
-     * @param userId   接收通知的用户 ID
-     * @param readTime 已读时间（UTC）
-     * @return 受影响行数
-     */
+    /** 将指定用户的全部未读通知标记为已读（幂等）。 */
     @Update("UPDATE notifications SET is_read = 1, read_at = #{readTime} "
             + "WHERE recipient_user_id = #{userId} AND is_read = 0")
     int markAllRead(@Param("userId") UUID userId, @Param("readTime") LocalDateTime readTime);
