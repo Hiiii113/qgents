@@ -34,7 +34,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Project Admin 自建 Skill/Memory 免审批（契约 2026-08-17 决策）：
+ * Project Admin 自建共享 Skill/Memory 免审批：
  * Admin 创建即 PUBLISHED/APPROVED 并发布事件；普通成员创建保持 DRAFT 且无上架事件。
  */
 class SkillMemoryAdminAutoPublishTest {
@@ -71,6 +71,7 @@ class SkillMemoryAdminAutoPublishTest {
         SkillResponse response = skillService.create(admin, projectId, skillRequest("规范", "PROJECT_SHARED"));
 
         assertEquals("PUBLISHED", response.getStatus());
+        verify(skillMapper, never()).updateById(any(SkillEntity.class));
         verify(eventService).publish(eq(projectId), isNull(), eq("skill.published"), any(), any());
     }
 
@@ -100,6 +101,7 @@ class SkillMemoryAdminAutoPublishTest {
         SkillResponse response = skillService.create(member, projectId, skillRequest("个人工具", "PRIVATE"));
 
         assertEquals("PUBLISHED", response.getStatus());
+        verify(skillMapper, never()).updateById(any(SkillEntity.class));
         assertEquals("PRIVATE", response.getVisibility());
         verify(eventService).publish(eq(projectId), isNull(), eq("skill.published"), any(), any());
     }

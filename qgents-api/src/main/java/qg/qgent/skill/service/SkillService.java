@@ -1,5 +1,6 @@
 package qg.qgent.skill.service;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,47 +21,24 @@ import qg.qgent.user.mapper.UserMapper;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Skill 业务：草稿创建、编辑、审核发布/拒绝、归档（契约 §8）。
- * <p>
- * 状态机：DRAFT → PENDING_REVIEW → PUBLISHED | REJECTED；PUBLISHED → ARCHIVED；
- * REJECTED 可重新提交审核。成员先建 PRIVATE，Project Admin 批准后发布为 PROJECT_SHARED。
- */
+/** 管理项目 Skill 的内容、审核、发布和下线。 */
 @Service
+@RequiredArgsConstructor
 public class SkillService {
     private static final Set<String> VISIBILITIES = Set.of("PRIVATE", "PROJECT_SHARED");
     private static final Set<String> SUBMITTABLE = Set.of("DRAFT", "REJECTED");
-    private static final Set<String> EDITABLE = Set.of("DRAFT", "PENDING_REVIEW");
+    private static final Set<String> EDITABLE = Set.of("DRAFT", "PENDING_REVIEW", "REJECTED", "PUBLISHED");
 
     private final SkillMapper skillMapper;
     private final ProjectAccessService access;
     private final UserMapper userMapper;
     private final EventService eventService;
 
-    public SkillService(SkillMapper skillMapper, ProjectAccessService access, UserMapper userMapper,
-                        EventService eventService) {
-        this.skillMapper = skillMapper;
-        this.access = access;
-        this.userMapper = userMapper;
-        this.eventService = eventService;
-    }
-
-    /**
-     * 创建 Skill。免审批规则：
-     * <ul>
-     *   <li>PRIVATE（仅创建者自己可用，不共享）：任何人创建即 PUBLISHED，无需审核；</li>
-     *   <li>PROJECT_SHARED（项目共享）：Project Admin 自建直接 PUBLISHED，普通成员创建为
-     *       DRAFT，经提交审核后由 Admin 发布。</li>
-     * </ul>
-     *
-     * @param actor     当前用户 ID
-     * @param projectId 项目 ID
-     * @param request   创建请求
-     * @return Skill 视图
-     */
+    /** 私有 Skill 和管理员创建的共享 Skill 直接发布，其他共享 Skill 先建草稿。 */
     @Transactional
     public SkillResponse create(UUID actor, UUID projectId, SkillCreateRequest request) {
         access.requireProjectMember(projectId, actor);
@@ -79,65 +57,45 @@ public class SkillService {
         skill.setContent(request.getContent().trim());
         skill.setTags(request.getTags());
         skill.setVisibility(visibility);
-        skill.setStatus("DRAFT");
-        skillMapper.insert(skill);
         boolean autoPublish = "PRIVATE".equals(visibility) || access.isProjectAdmin(projectId, actor);
+        skill.setStatus(autoPublish ? "PUBLISHED" : "DRAFT");
         if (autoPublish) {
-            // PRIVATE 仅自己用无需审核；PROJECT_SHARED 的 Admin 自建免审批
-            skill.setStatus("PUBLISHED");
             skill.setReviewerId(actor);
             skill.setReviewedAt(LocalDateTime.now(ZoneOffset.UTC));
-            skillMapper.updateById(skill);
-            eventService.publish(projectId, null, "skill.published", id(skill.getId()),
-                    deliveryPayload(projectId, skill.getId()));
         }
+        skillMapper.insert(skill);
+        if (autoPublish) publish("skill.published", projectId, skill.getId());
         return toResponse(skillMapper.selectById(skill.getId()));
     }
 
-    /**
-     * 项目内查询 Skill：仅返回 PROJECT_SHARED 或自己创建的，支持状态、标签过滤。
-     *
-     * @param actor     当前用户 ID
-     * @param projectId 项目 ID
-     * @param status    状态过滤，可为空
-     * @param tag       标签过滤，可为空
-     * @return Skill 列表
-     */
+    /** 返回自己的 Skill 和已发布共享内容；管理员还可查询共享草稿及审核记录。 */
     public List<SkillResponse> list(UUID actor, UUID projectId, String status, String tag) {
         access.requireProjectMember(projectId, actor);
-        return skillMapper.listSkills(projectId, actor, blankToNull(status), blankToNull(tag))
+        return skillMapper.listSkills(projectId, actor, blankToNull(status), blankToNull(tag),
+                        access.isProjectAdmin(projectId, actor))
                 .stream().map(this::toResponse).toList();
     }
 
-    /**
-     * 获取 Skill；他人 PRIVATE Skill 视为不可见。
-     *
-     * @param actor     当前用户 ID
-     * @param projectId 项目 ID
-     * @param skillId   Skill ID
-     * @return Skill 视图
-     */
+    /** 详情可见范围与列表一致。 */
     public SkillResponse get(UUID actor, UUID projectId, UUID skillId) {
         access.requireProjectMember(projectId, actor);
         SkillEntity skill = requireSkillInProject(projectId, skillId);
-        if ("PRIVATE".equals(skill.getVisibility()) && !skill.getCreatedBy().equals(actor)) {
+        if (!skill.getCreatedBy().equals(actor)
+                && ("PRIVATE".equals(skill.getVisibility())
+                || (!"PUBLISHED".equals(skill.getStatus()) && !access.isProjectAdmin(projectId, actor)))) {
             throw new ApiException(HttpStatus.NOT_FOUND, "SKILL_NOT_FOUND", "Skill 不存在或无权访问");
         }
         return toResponse(skill);
     }
 
-    /**
-     * 编辑草稿或审核中内容；仅创建者或 Project Admin，且状态为 DRAFT/PENDING_REVIEW。
-     *
-     * @param actor     当前用户 ID
-     * @param projectId 项目 ID
-     * @param skillId   Skill ID
-     * @param request   修改请求（PATCH 语义）
-     * @return Skill 视图
-     */
+    /** 创建者或管理员可编辑草稿、审核中、被拒绝及已发布内容；发布内容修改后立即生效。 */
     @Transactional
     public SkillResponse update(UUID actor, UUID projectId, UUID skillId, SkillUpdateRequest request) {
         SkillEntity skill = requireEditable(actor, projectId, skillId);
+        if (request.getName() != null && request.getName().isBlank()
+                || request.getContent() != null && request.getContent().isBlank()) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_SKILL_CONTENT", "Skill 名称和正文不能为空");
+        }
         if (request.getName() != null) {
             skill.setName(request.getName().trim());
         }
@@ -148,13 +106,11 @@ public class SkillService {
             skill.setTags(request.getTags());
         }
         skillMapper.updateById(skill);
+        publish("skill.updated", projectId, skillId);
         return toResponse(skillMapper.selectById(skillId));
     }
 
-    /**
-     * 提交审核；仅创建者或 Project Admin，且状态为 DRAFT/REJECTED。
-     * PRIVATE Skill 创建即 PUBLISHED（仅自己用，不进交付中心），不支持转共享审核。
-     */
+    /** 创建者或项目管理员提交草稿或被拒绝的 Skill 审核。 */
     @Transactional
     public SkillResponse submitReview(UUID actor, UUID projectId, UUID skillId) {
         SkillEntity skill = requireOwned(actor, projectId, skillId);
@@ -165,14 +121,11 @@ public class SkillService {
         skill.setSubmittedBy(actor);
         skill.setSubmittedAt(LocalDateTime.now(ZoneOffset.UTC));
         skillMapper.updateById(skill);
-        eventService.publish(projectId, null, "skill.submit-review", id(skillId),
-                deliveryPayload(projectId, skillId));
+        publish("skill.submit-review", projectId, skillId);
         return toResponse(skillMapper.selectById(skillId));
     }
 
-    /**
-     * 发布 Skill（Project Admin）；仅 PENDING_REVIEW，发布后自动转为 PROJECT_SHARED。
-     */
+    /** 发布 Skill（Project Admin）；仅 PENDING_REVIEW，发布后自动转为 PROJECT_SHARED。 */
     @Transactional
     public SkillResponse approve(UUID actor, UUID projectId, UUID skillId) {
         access.requireProjectAdmin(projectId, actor);
@@ -185,14 +138,11 @@ public class SkillService {
         skill.setReviewerId(actor);
         skill.setReviewedAt(LocalDateTime.now(ZoneOffset.UTC));
         skillMapper.updateById(skill);
-        eventService.publish(projectId, null, "skill.published", id(skillId),
-                deliveryPayload(projectId, skillId));
+        publish("skill.published", projectId, skillId);
         return toResponse(skillMapper.selectById(skillId));
     }
 
-    /**
-     * 拒绝 Skill 并给出原因（Project Admin）；仅 PENDING_REVIEW。
-     */
+    /** 拒绝 Skill 并给出原因（Project Admin）；仅 PENDING_REVIEW。 */
     @Transactional
     public SkillResponse reject(UUID actor, UUID projectId, UUID skillId, String reason) {
         access.requireProjectAdmin(projectId, actor);
@@ -205,43 +155,28 @@ public class SkillService {
         skill.setRejectionReason(reason);
         skill.setReviewedAt(LocalDateTime.now(ZoneOffset.UTC));
         skillMapper.updateById(skill);
-        eventService.publish(projectId, null, "skill.rejected", id(skillId),
-                deliveryPayload(projectId, skillId));
+        publish("skill.rejected", projectId, skillId);
         return toResponse(skillMapper.selectById(skillId));
     }
 
-    /**
-     * 下线已发布 Skill（Project Admin）；仅 PUBLISHED。
-     */
+    /** 创建者或项目管理员下线已发布 Skill；仅 PUBLISHED。 */
     @Transactional
     public SkillResponse archive(UUID actor, UUID projectId, UUID skillId) {
-        access.requireProjectAdmin(projectId, actor);
-        SkillEntity skill = requireSkillInProject(projectId, skillId);
+        SkillEntity skill = requireOwned(actor, projectId, skillId);
         if (!"PUBLISHED".equals(skill.getStatus())) {
             throw stateConflict(skill.getStatus());
         }
         skill.setStatus("ARCHIVED");
         skillMapper.updateById(skill);
-        eventService.publish(projectId, null, "skill.archived", id(skillId),
-                deliveryPayload(projectId, skillId));
+        publish("skill.archived", projectId, skillId);
         return toResponse(skillMapper.selectById(skillId));
     }
 
-    /**
-     * Skill 交付事件 payload（契约 v1.8.0 §20 DeliveryEventPayload 基座）。
-     */
-    private java.util.Map<String, Object> deliveryPayload(UUID projectId, UUID skillId) {
-        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
-        payload.put("projectId", id(projectId));
-        payload.put("resourceType", "SKILL");
-        payload.put("resourceId", id(skillId));
-        payload.put("eventVersion", 1);
-        payload.put("updatedAt", LocalDateTime.now(ZoneOffset.UTC).toInstant(ZoneOffset.UTC).toString());
-        return payload;
-    }
-
-    private String id(UUID value) {
-        return value == null ? null : value.toString();
+    /** 发布状态变化，通知在线客户端刷新 Skill。 */
+    private void publish(String event, UUID projectId, UUID skillId) {
+        eventService.publish(projectId, null, event, skillId.toString(), Map.of(
+                "projectId", projectId.toString(), "resourceType", "SKILL", "resourceId", skillId.toString(),
+                "eventVersion", 1, "updatedAt", LocalDateTime.now(ZoneOffset.UTC).toInstant(ZoneOffset.UTC).toString()));
     }
 
     private SkillEntity requireSkillInProject(UUID projectId, UUID skillId) {

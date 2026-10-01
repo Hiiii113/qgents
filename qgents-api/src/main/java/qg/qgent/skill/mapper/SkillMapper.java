@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Result;
 import org.apache.ibatis.annotations.Results;
+import org.apache.ibatis.annotations.ResultMap;
 import org.apache.ibatis.annotations.Select;
 
 import qg.qgent.chat.dto.ContextSkill;
@@ -15,32 +16,19 @@ import qg.qgent.skill.entity.SkillEntity;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Skill 数据访问。
- */
+/** Skill 数据访问。 */
 @Mapper
 public interface SkillMapper extends BaseMapper<SkillEntity> {
 
-    /**
-     * 项目内查询 Skill：仅返回 PROJECT_SHARED 或自己创建的；支持状态、标签过滤，按更新时间倒序。
-     * <p>
-     * 自定义 {@code SELECT *} 需要显式 {@code @Results} 才能应用 JacksonTypeHandler
-     * 反序列化 tags JSON 列与 UuidBinaryTypeHandler 处理 BINARY(16) UUID 列。
-     *
-     * @param projectId 项目 ID
-     * @param actor     当前用户 ID（用于可见性过滤）
-     * @param status    状态过滤，可为空
-     * @param tag       标签过滤，可为空
-     * @return Skill 列表
-     */
+    /** 查询自己的 Skill、已发布共享内容；管理员可查看所有共享状态。 */
     @Select({"<script>",
             "SELECT * FROM skills WHERE project_id = #{projectId}",
-            "AND (visibility = 'PROJECT_SHARED' OR created_by = #{actor})",
+            "AND (created_by = #{actor} OR (visibility = 'PROJECT_SHARED' AND (status = 'PUBLISHED' OR #{admin})))",
             "<if test='status != null'>AND status = #{status}</if>",
             "<if test='tag != null'>AND JSON_CONTAINS(tags, JSON_QUOTE(#{tag}))</if>",
             "ORDER BY updated_at DESC",
             "</script>"})
-    @Results({
+    @Results(id = "skill", value = {
             @Result(column = "id", property = "id", id = true, typeHandler = UuidBinaryTypeHandler.class),
             @Result(column = "project_id", property = "projectId", typeHandler = UuidBinaryTypeHandler.class),
             @Result(column = "created_by", property = "createdBy", typeHandler = UuidBinaryTypeHandler.class),
@@ -49,42 +37,9 @@ public interface SkillMapper extends BaseMapper<SkillEntity> {
             @Result(column = "tags", property = "tags", typeHandler = JacksonTypeHandler.class)
     })
     List<SkillEntity> listSkills(@Param("projectId") UUID projectId, @Param("actor") UUID actor,
-                                 @Param("status") String status, @Param("tag") String tag);
+                                 @Param("status") String status, @Param("tag") String tag, @Param("admin") boolean admin);
 
-    /**
-     * 按关键字检索项目内可用的已发布 Skill（点6 上下文检索）。
-     * <p>
-     * 可见性与 listSkills 一致：仅 PROJECT_SHARED 或自己创建；状态固定 PUBLISHED。
-     * 关键字匹配 name 或 content（LIKE），标签用 JSON_CONTAINS 精确匹配。
-     *
-     * @param projectId 项目 ID
-     * @param actor     当前用户 ID（用于可见性过滤）
-     * @param tag       标签过滤，可为空
-     * @param q         关键字，可为空（为空时退化为全部已发布）
-     * @return 匹配的 Skill 实体列表，按更新时间倒序
-     */
-    @Select({"<script>",
-            "SELECT * FROM skills WHERE project_id = #{projectId}",
-            "AND (visibility = 'PROJECT_SHARED' OR created_by = #{actor})",
-            "AND status = 'PUBLISHED'",
-            "<if test='tag != null'>AND JSON_CONTAINS(tags, JSON_QUOTE(#{tag}))</if>",
-            "<if test='q != null'>AND (name LIKE CONCAT('%', #{q}, '%') OR content LIKE CONCAT('%', #{q}, '%'))</if>",
-            "ORDER BY updated_at DESC",
-            "</script>"})
-    @Results({
-            @Result(column = "id", property = "id", id = true, typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "project_id", property = "projectId", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "created_by", property = "createdBy", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "submitted_by", property = "submittedBy", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "reviewer_id", property = "reviewerId", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "tags", property = "tags", typeHandler = JacksonTypeHandler.class)
-    })
-    List<SkillEntity> searchByQuery(@Param("projectId") UUID projectId, @Param("actor") UUID actor,
-                                    @Param("tag") String tag, @Param("q") String q);
-
-    /**
-     * 查询默认上下文可见的已发布 Skill 目录。刻意只投影 ID 与名称，不读取正文。
-     */
+    /** 查询默认上下文可见的已发布 Skill 目录。刻意只投影 ID 与名称，不读取正文。 */
     @Select("SELECT id, name FROM skills WHERE project_id = #{projectId} "
             + "AND (visibility = 'PROJECT_SHARED' OR created_by = #{actor}) "
             + "AND status = 'PUBLISHED' ORDER BY updated_at DESC")
@@ -94,20 +49,11 @@ public interface SkillMapper extends BaseMapper<SkillEntity> {
     })
     List<ContextSkill> listPublishedCatalog(@Param("projectId") UUID projectId, @Param("actor") UUID actor);
 
-    /**
-     * 读取一条当前用户可见的已发布 Skill 正文，供显式激活使用。
-     */
+    /** 读取一条当前用户可见的已发布 Skill 正文，供显式激活使用。 */
     @Select("SELECT * FROM skills WHERE id = #{skillId} AND project_id = #{projectId} "
             + "AND (visibility = 'PROJECT_SHARED' OR created_by = #{actor}) "
             + "AND status = 'PUBLISHED'")
-    @Results({
-            @Result(column = "id", property = "id", id = true, typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "project_id", property = "projectId", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "created_by", property = "createdBy", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "submitted_by", property = "submittedBy", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "reviewer_id", property = "reviewerId", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "tags", property = "tags", typeHandler = JacksonTypeHandler.class)
-    })
+    @ResultMap("skill")
     SkillEntity findVisiblePublishedById(@Param("projectId") UUID projectId, @Param("actor") UUID actor,
                                          @Param("skillId") UUID skillId);
 }
