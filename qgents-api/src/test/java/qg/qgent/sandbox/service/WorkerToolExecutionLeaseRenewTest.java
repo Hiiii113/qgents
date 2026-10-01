@@ -38,7 +38,6 @@ class WorkerToolExecutionLeaseRenewTest {
     private final SandboxWorkerProperties properties = new SandboxWorkerProperties();
 
     private final UUID workspaceId = UUID.randomUUID();
-    private final UUID repositoryId = UUID.randomUUID();
     private final UUID sandboxId = UUID.randomUUID();
     private final UUID executionId = UUID.randomUUID();
 
@@ -48,8 +47,7 @@ class WorkerToolExecutionLeaseRenewTest {
         properties.setPollTimeout(Duration.ofSeconds(300));
         properties.setLeaseRenewInterval(Duration.ofSeconds(10));
 
-        SandboxSession session = new SandboxSession(UUID.randomUUID(), workspaceId, sandboxId, "key",
-                List.of(repositoryId), Map.of(".", repositoryId));
+        SandboxSession session = new SandboxSession(UUID.randomUUID(), workspaceId, sandboxId, "key");
         when(sessions.require(workspaceId)).thenReturn(session);
     }
 
@@ -73,7 +71,7 @@ class WorkerToolExecutionLeaseRenewTest {
         when(client.getToolExecution(executionId)).thenReturn(succeeded);
 
         TestWorkerToolPort port = createPort(System::nanoTime);
-        WorkerToolExecution result = port.runTool(workspaceId, repositoryId);
+        WorkerToolExecution result = port.runTool(workspaceId);
 
         assertThat(result.getStatus()).isEqualTo("SUCCEEDED");
         verify(sessions).renewWriteLease(workspaceId);
@@ -108,7 +106,7 @@ class WorkerToolExecutionLeaseRenewTest {
         });
 
         TestWorkerToolPort port = createPort(timeNanos::get);
-        WorkerToolExecution result = port.runTool(workspaceId, repositoryId);
+        WorkerToolExecution result = port.runTool(workspaceId);
 
         assertThat(result.getStatus()).isEqualTo("SUCCEEDED");
         // Only 1 renew call (the pre-execution renew)
@@ -141,7 +139,7 @@ class WorkerToolExecutionLeaseRenewTest {
         });
 
         TestWorkerToolPort port = createPort(timeNanos::get);
-        WorkerToolExecution result = port.runTool(workspaceId, repositoryId);
+        WorkerToolExecution result = port.runTool(workspaceId);
 
         assertThat(result.getStatus()).isEqualTo("SUCCEEDED");
         // 2 renew calls: 1 initial pre-execution + 1 periodic renewal during polling
@@ -168,7 +166,7 @@ class WorkerToolExecutionLeaseRenewTest {
         });
 
         TestWorkerToolPort port = createPort(timeNanos::get);
-        WorkerToolExecution result = port.runTool(workspaceId, repositoryId);
+        WorkerToolExecution result = port.runTool(workspaceId);
 
         assertThat(result.getStatus()).isEqualTo("SUCCEEDED");
         // Must NOT renew after terminal state reached
@@ -182,7 +180,7 @@ class WorkerToolExecutionLeaseRenewTest {
 
         TestWorkerToolPort port = createPort(System::nanoTime);
 
-        assertThatThrownBy(() -> port.runTool(workspaceId, repositoryId))
+        assertThatThrownBy(() -> port.runTool(workspaceId))
                 .isInstanceOf(ApiException.class)
                 .hasMessageContaining("Worker down");
 
@@ -198,8 +196,8 @@ class WorkerToolExecutionLeaseRenewTest {
             super(client, sessions, properties, nanoTimeSupplier);
         }
 
-        public WorkerToolExecution runTool(UUID workspaceId, UUID repositoryId) {
-            return executeTool(workspaceId, repositoryId, "test.tool", Map.of(), Duration.ofSeconds(30));
+        public WorkerToolExecution runTool(UUID workspaceId) {
+            return executeTool(workspaceId, "test.tool", Map.of(), Duration.ofSeconds(30));
         }
     }
 }

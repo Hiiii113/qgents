@@ -29,9 +29,6 @@ public class ToolRegistry {
         return require(name).execute(context, arguments);
     }
 
-    public boolean requiresRepository(String name) {
-        return require(name).requiresRepository();
-    }
 
     private SandboxTool require(String name) {
         SandboxTool tool = tools.get(name);

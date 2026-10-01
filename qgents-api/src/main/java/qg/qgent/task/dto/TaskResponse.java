@@ -20,7 +20,6 @@ public class TaskResponse {
     private String requirement;
     private String status;
     private String workspaceId;
-    private List<String> repositoryIds;
     private String createdBy;
     private String createdAt;
     private String updatedAt;

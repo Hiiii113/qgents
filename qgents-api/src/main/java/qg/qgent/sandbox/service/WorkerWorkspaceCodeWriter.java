@@ -62,10 +62,10 @@ public class WorkerWorkspaceCodeWriter extends AbstractWorkerToolPort implements
         }
         WorkerPathResolver.Target target = WorkerPathResolver.resolve(session(workspaceId), path);
         if (target == null) {
-            return WorkspaceDirectoryResult.fail(path, "path does not map to a workspace repository");
+            return WorkspaceDirectoryResult.fail(path, "path is empty");
         }
         try {
-            WorkerToolExecution execution = executeTool(workspaceId, target.repositoryId(), "directory.create",
+            WorkerToolExecution execution = executeTool(workspaceId, "directory.create",
                     Map.of("path", target.relativePath()), TOOL_TIMEOUT);
             if ("SUCCEEDED".equals(execution.getStatus())) {
                 Object created = resultOf(execution).get("created");
@@ -90,7 +90,7 @@ public class WorkerWorkspaceCodeWriter extends AbstractWorkerToolPort implements
         }
         WorkerPathResolver.Target target = WorkerPathResolver.resolve(session(workspaceId), path);
         if (target == null) {
-            return WorkspaceWriteResult.fail(path, "path does not map to a workspace repository");
+            return WorkspaceWriteResult.fail(path, "path is empty");
         }
         try {
             WorkspaceDirectoryResult parent = ensureParentDirectory(workspaceId, target);
@@ -100,7 +100,7 @@ public class WorkerWorkspaceCodeWriter extends AbstractWorkerToolPort implements
                         : WorkspaceWriteResult.fail(path, parent.getFailureCode(), parent.getError());
             }
             String expectedHash = currentHash(workspaceId, target);
-            WorkerToolExecution execution = executeTool(workspaceId, target.repositoryId(), "file.write",
+            WorkerToolExecution execution = executeTool(workspaceId, "file.write",
                     Map.of("path", target.relativePath(), "expectedHash", expectedHash, "content", content),
                     TOOL_TIMEOUT);
             if ("SUCCEEDED".equals(execution.getStatus())) {
@@ -128,12 +128,12 @@ public class WorkerWorkspaceCodeWriter extends AbstractWorkerToolPort implements
         }
         WorkerPathResolver.Target target = WorkerPathResolver.resolve(session(workspaceId), path);
         if (target == null) {
-            return WorkspaceWriteResult.fail(path, "path does not map to a workspace repository");
+            return WorkspaceWriteResult.fail(path, "path is empty");
         }
         try {
             // file.write 在 expectedHash 非空时仍执行旧内容哈希校验，因此不会覆盖并发更新；
             // 非空 hash 也会阻止 replace_file 借道创建不存在的新文件。
-            WorkerToolExecution execution = executeTool(workspaceId, target.repositoryId(), "file.write",
+            WorkerToolExecution execution = executeTool(workspaceId, "file.write",
                     Map.of("path", target.relativePath(), "expectedHash", expectedHash, "content", content),
                     TOOL_TIMEOUT);
             if ("SUCCEEDED".equals(execution.getStatus())) {
@@ -161,10 +161,10 @@ public class WorkerWorkspaceCodeWriter extends AbstractWorkerToolPort implements
         }
         WorkerPathResolver.Target target = WorkerPathResolver.resolve(session(workspaceId), path);
         if (target == null) {
-            return WorkspaceWriteResult.fail(path, "path does not map to a workspace repository");
+            return WorkspaceWriteResult.fail(path, "path is empty");
         }
         try {
-            WorkerToolExecution execution = executeTool(workspaceId, target.repositoryId(), "file.patch",
+            WorkerToolExecution execution = executeTool(workspaceId, "file.patch",
                     Map.of("path", target.relativePath(), "expectedHash", expectedHash, "patch", patch),
                     TOOL_TIMEOUT);
             if ("SUCCEEDED".equals(execution.getStatus())) {
@@ -186,10 +186,10 @@ public class WorkerWorkspaceCodeWriter extends AbstractWorkerToolPort implements
         }
         WorkerPathResolver.Target target = WorkerPathResolver.resolve(session(workspaceId), path);
         if (target == null) {
-            return WorkspaceWriteResult.fail(path, "path does not map to a workspace repository");
+            return WorkspaceWriteResult.fail(path, "path is empty");
         }
         try {
-            WorkerToolExecution execution = executeTool(workspaceId, target.repositoryId(),
+            WorkerToolExecution execution = executeTool(workspaceId,
                     "file.ensure_trailing_newline",
                     Map.of("path", target.relativePath(), "expectedHash", expectedHash), TOOL_TIMEOUT);
             if ("SUCCEEDED".equals(execution.getStatus())) {
@@ -212,7 +212,7 @@ public class WorkerWorkspaceCodeWriter extends AbstractWorkerToolPort implements
      * 读取目标文件当前 sha256；文件不存在时返回空内容哈希。
      */
     private String currentHash(UUID workspaceId, WorkerPathResolver.Target target) {
-        WorkerToolExecution read = executeTool(workspaceId, target.repositoryId(), "file.read",
+        WorkerToolExecution read = executeTool(workspaceId, "file.read",
                 Map.of("path", target.relativePath(), "startLine", 1, "lineCount", 1), TOOL_TIMEOUT);
         if ("SUCCEEDED".equals(read.getStatus())) {
             Object sha = resultOf(read).get("sha256");
@@ -230,7 +230,7 @@ public class WorkerWorkspaceCodeWriter extends AbstractWorkerToolPort implements
         }
         String relativeParent = parent.toString().replace('\\', '/');
         try {
-            WorkerToolExecution execution = executeTool(workspaceId, target.repositoryId(), "directory.create",
+            WorkerToolExecution execution = executeTool(workspaceId, "directory.create",
                     Map.of("path", relativeParent), TOOL_TIMEOUT);
             if ("SUCCEEDED".equals(execution.getStatus())) {
                 return WorkspaceDirectoryResult.ok(relativeParent,

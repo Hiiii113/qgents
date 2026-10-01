@@ -13,13 +13,6 @@ import qg.qgent.common.config.PerformanceMetrics;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.sandbox.dto.WorkerCreateSandboxRequest;
 import qg.qgent.sandbox.dto.WorkerErrorResponse;
-import qg.qgent.sandbox.dto.WorkerGitCommitRequest;
-import qg.qgent.sandbox.dto.WorkerGitCommitResponse;
-import qg.qgent.sandbox.dto.WorkerGitDiff;
-import qg.qgent.sandbox.dto.WorkerGitPushRequest;
-import qg.qgent.sandbox.dto.WorkerGitPushResponse;
-import qg.qgent.sandbox.dto.WorkerGitStoreSyncRequest;
-import qg.qgent.sandbox.dto.WorkerGitStoreSyncResponse;
 import qg.qgent.sandbox.dto.WorkerSandbox;
 import qg.qgent.sandbox.dto.WorkerToolExecution;
 import qg.qgent.sandbox.dto.WorkerToolExecutionRequest;
@@ -46,22 +39,18 @@ import java.util.function.Supplier;
  *   <li>Worker 返回的非 2xx 响应解析 {@code {code,message}}，保留 Worker 的业务错误码，
  *       供端口区分工具级失败（可回灌 LLM 纠正）与基础设施失败。</li>
  * </ul>
- * 本客户端不向 Worker 提交宿主机路径、Git 远端或凭证。
+ * 工具临时环境仅用于执行，不保存为工具参数。
  */
 @Slf4j
 public class SandboxWorkerClient {
 
     private static final String BASE_PATH = "/internal/v1";
     private static final String WORKSPACES = BASE_PATH + "/workspaces/{workspaceId}";
-    private static final String GIT_DIFF = WORKSPACES + "/repositories/{repositoryId}/git/diff";
-    private static final String GIT_COMMIT = WORKSPACES + "/repositories/{repositoryId}/git/commit";
     private static final String SANDBOXES = BASE_PATH + "/sandboxes";
     private static final String SANDBOX = BASE_PATH + "/sandboxes/{sandboxId}";
     private static final String SANDBOX_LEASE_RENEW = SANDBOX + "/lease/renew";
     private static final String TOOL_EXECUTIONS = BASE_PATH + "/sandboxes/{sandboxId}/tool-executions";
     private static final String TOOL_EXECUTION = BASE_PATH + "/tool-executions/{executionId}";
-    private static final String GIT_STORE_SYNC = BASE_PATH + "/git-stores/{repositoryId}/sync";
-    private static final String GIT_PUSH = WORKSPACES + "/repositories/{repositoryId}/git/push";
 
     private final RestClient client;
     private final ObjectMapper objectMapper;
@@ -77,7 +66,7 @@ public class SandboxWorkerClient {
     }
 
     /**
-     * 幂等准备一个多仓库 Workspace，返回真实 HEAD 与 storageKey。
+     * 幂等准备空工作区并返回 storageKey。
      */
     public WorkerWorkspace provisionWorkspace(UUID workspaceId, WorkerWorkspaceProvisionRequest request) {
         return execute(() -> client.put()
@@ -88,80 +77,13 @@ public class SandboxWorkerClient {
     }
 
     /**
-     * 查询 Workspace 与各仓库当前 HEAD。
+     * 查询工作区状态。
      */
     public WorkerWorkspace getWorkspace(UUID workspaceId) {
         return execute(() -> client.get()
                 .uri(WORKSPACES, workspaceId)
                 .retrieve()
                 .body(WorkerWorkspace.class));
-    }
-
-    /**
-     * 同步受控 Git Store
-     */
-    public WorkerGitStoreSyncResponse syncGitStore(UUID repositoryId, WorkerGitStoreSyncRequest request) {
-        try {
-            return execute(() -> client.post()
-                    .uri(GIT_STORE_SYNC, repositoryId)
-                    .body(request)
-                    .retrieve()
-                    .body(WorkerGitStoreSyncResponse.class));
-        } catch (ApiException failure) {
-            log.warn("sandbox git store sync failed repositoryId={} status={} code={}", repositoryId,
-                    failure.status(), failure.code());
-            throw failure;
-        }
-    }
-
-    /**
-     * 生成包含未跟踪文件的完整 Diff。
-     * <p>
-     * Worker 端点声明了 {@code @RequestBody}（暂无参数）；无 Content-Type 的 POST 会被
-     * Spring 按 octet-stream 处理并返回 415，因此这里显式发送空 JSON。
-     */
-    public WorkerGitDiff createWorkspaceGitDiff(UUID workspaceId, UUID repositoryId) {
-        return execute(() -> client.post()
-                .uri(GIT_DIFF, workspaceId, repositoryId)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(java.util.Map.of())
-                .retrieve()
-                .body(WorkerGitDiff.class));
-    }
-
-    /**
-     * Commits the exact Worker snapshot identified by its head and patch hash.
-     */
-    public WorkerGitCommitResponse commitWorkspaceDiff(UUID workspaceId, UUID repositoryId,
-                                                       WorkerGitCommitRequest request) {
-        try {
-            return execute(() -> client.post()
-                    .uri(GIT_COMMIT, workspaceId, repositoryId)
-                    .body(request)
-                    .retrieve()
-                    .body(WorkerGitCommitResponse.class));
-        } catch (ApiException failure) {
-            log.warn("sandbox git commit failed workspaceId={} repositoryId={} status={} code={}", workspaceId,
-                    repositoryId, failure.status(), failure.code());
-            throw failure;
-        }
-    }
-
-    /**
-     * 校验 expectedHeadCommit 并带凭证发起推送。
-     */
-    public WorkerGitPushResponse pushWorkspaceBranch(UUID workspaceId, UUID repositoryId, WorkerGitPushRequest request) {
-        try {
-            return execute(() -> client.post()
-                    .uri(GIT_PUSH, workspaceId, repositoryId)
-                    .body(request)
-                    .retrieve()
-                    .body(WorkerGitPushResponse.class));
-        } catch (ApiException failure) {
-            log.warn("sandbox git push failed workspaceId={} repositoryId={} status={} code={}", workspaceId,
-                    repositoryId, failure.status(), failure.code());
-            throw failure;
-        }
     }
 
     /**

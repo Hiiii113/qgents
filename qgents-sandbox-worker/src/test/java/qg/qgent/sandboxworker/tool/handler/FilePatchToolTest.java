@@ -321,6 +321,6 @@ class FilePatchToolTest {
     }
 
     private ToolContext context() {
-        return new ToolContext(null, null, repository, "/workspace/example", null);
+        return new ToolContext(null, repository, "/workspace/example", null);
     }
 }

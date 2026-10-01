@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
- * Persistent project-scoped development workspace; repository worktrees live below this root.
+ * Persistent project-scoped development workspace; the Agent manages files and repositories below this root.
  */
 @Data
 @TableName("workspaces")

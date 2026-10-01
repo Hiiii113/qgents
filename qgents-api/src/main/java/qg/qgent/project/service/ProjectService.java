@@ -13,7 +13,6 @@ import qg.qgent.common.dto.PageInfo;
 import qg.qgent.common.dto.PageSlice;
 import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
-import qg.qgent.github.service.GitHubRepositoryService;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.project.dto.ProjectCreateRequest;
 import qg.qgent.project.dto.ProjectMemberAddRequest;
@@ -26,7 +25,6 @@ import qg.qgent.project.entity.ProjectMemberEntity;
 import qg.qgent.project.event.ProjectCreatedEvent;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.mapper.ProjectMemberMapper;
-import qg.qgent.project.mapper.ProjectRepositoryMapper;
 import qg.qgent.project.mapper.view.ProjectMembershipView;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.team.entity.TeamEntity;
@@ -44,19 +42,16 @@ public class ProjectService {
     private static final Logger log = LoggerFactory.getLogger(ProjectService.class);
     private final ProjectMapper projectMapper;
     private final ProjectMemberMapper memberMapper;
-    private final ProjectRepositoryMapper projectRepositoryMapper;
     private final TeamMapper teamMapper;
     private final TeamMemberMapper teamMemberMapper;
     private final ProjectAccessService access;
     private final ApplicationEventPublisher eventPublisher;
     private final NotificationService notificationService;
     private final EventService eventService;
-    private final GitHubRepositoryService githubRepositoryService;
 
     public ProjectService(ProjectMapper projectMapper, ProjectMemberMapper memberMapper, TeamMapper teamMapper,
                            TeamMemberMapper teamMemberMapper, ProjectAccessService access, ApplicationEventPublisher eventPublisher,
-                           NotificationService notificationService, EventService eventService,
-                           GitHubRepositoryService githubRepositoryService, ProjectRepositoryMapper projectRepositoryMapper) {
+                           NotificationService notificationService, EventService eventService) {
         this.projectMapper = projectMapper;
         this.memberMapper = memberMapper;
         this.teamMapper = teamMapper;
@@ -65,8 +60,6 @@ public class ProjectService {
         this.eventPublisher = eventPublisher;
         this.notificationService = notificationService;
         this.eventService = eventService;
-        this.githubRepositoryService = githubRepositoryService;
-        this.projectRepositoryMapper = projectRepositoryMapper;
     }
 
     /**
@@ -79,16 +72,6 @@ public class ProjectService {
      */
     @Transactional
     public ProjectResponse create(UUID actor, UUID teamId, ProjectCreateRequest request) {
-        validateRepositorySource(request);
-        // 事务外建仓：在获取 team 行锁之前调用（createRemoteRepository 用 NOT_SUPPORTED 挂起事务），
-        // 确保 GitHub 建仓 HTTP 不持有数据库事务或行锁（AGENTS §3.4）。
-        GitHubRepositoryService.RemoteRepositoryCreation createdRepository = null;
-        if (request.getNewRepository() != null) {
-            validateCreatePrerequisites(actor, teamId, request);
-            createdRepository = githubRepositoryService.createRemoteRepository(actor, teamId, request.getNewRepository());
-            registerRemoteRepositoryRollbackCompensation(createdRepository);
-        }
-
         // 查询到team
         TeamEntity team = requireTeamForUpdate(teamId);
         requireCanonicalTeamOwner(team, actor);
@@ -109,71 +92,11 @@ public class ProjectService {
             requireTeamMember(teamId, userId);
             insertMember(project.getId(), userId, "PROJECT_MEMBER");
         }
-        if (createdRepository != null) {
-            // 自动新建：落仓库镜像并绑定到项目（事务内）
-            githubRepositoryService.bindCreatedRepository(project.getId(), createdRepository, request.getNewRepository());
-        } else {
-            // 创建项目时一并绑定 GitHub 授权仓库（前端额外清单 §四；repositoryIds 为 github_repositories.id）
-            githubRepositoryService.bindRepositoriesOnCreate(actor, teamId, project.getId(), request.getRepositoryIds());
-        }
-
         eventPublisher.publishEvent(new ProjectCreatedEvent(project.getId(), project.getName(), actor));
         // 项目创建动态事件：供「团队最近动态」聚合展示，与项目同事务落库
         eventService.publish(project.getId(), null, "project.created", project.getId().toString(),
                 Map.of("projectId", project.getId(), "name", project.getName(), "createdBy", actor));
         return response(project, "PROJECT_ADMIN");
-    }
-
-    /**
-     * 创建项目时只能选择绑定已有仓库或自动新建仓库，不能让后端静默忽略其中一项。
-     */
-    private void validateRepositorySource(ProjectCreateRequest request) {
-        if (request != null
-                && request.getNewRepository() != null
-                && request.getRepositoryIds() != null
-                && !request.getRepositoryIds().isEmpty()) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "PROJECT_REPOSITORY_SOURCE_CONFLICT",
-                    "repositoryIds 与 newRepository 不能同时传入");
-        }
-    }
-
-    /**
-     * 在调用 GitHub 建仓前先完成所有可本地判断的失败条件，缩小补偿删除的触发范围。
-     */
-    private void validateCreatePrerequisites(UUID actor, UUID teamId, ProjectCreateRequest request) {
-        TeamEntity team = requireTeam(teamId);
-        requireCanonicalTeamOwner(team, actor);
-        for (UUID userId : new LinkedHashSet<>(request.getMemberIds() == null ? List.of() : request.getMemberIds())) {
-            if (!actor.equals(userId)) {
-                requireTeamMember(teamId, userId);
-            }
-        }
-    }
-
-    /**
-     * GitHub 建仓无法与本地项目事务组成分布式事务。仅在本地事务回滚后执行补偿，避免留下
-     * 用户不可见、且会阻塞同名重试的远端仓库。
-     */
-    private void registerRemoteRepositoryRollbackCompensation(
-            GitHubRepositoryService.RemoteRepositoryCreation creation) {
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCompletion(int status) {
-                if (status != STATUS_ROLLED_BACK) {
-                    return;
-                }
-                try {
-                    githubRepositoryService.deleteRemoteRepository(creation);
-                } catch (RuntimeException exception) {
-                    log.error("项目创建回滚后的 GitHub 仓库补偿删除失败，repository={}/{}",
-                            creation.repository().getOwnerLogin(), creation.repository().getName(), exception);
-                }
-            }
-        });
     }
 
     public PageSlice<ProjectResponse> list(UUID actor, UUID teamId, String cursor, Integer limit) {
@@ -206,9 +129,8 @@ public class ProjectService {
                 .map(row -> {
                     ProjectResponse response = new ProjectResponse(row.getId().toString(),
                             row.getTeamId().toString(), row.getName(), row.getDescription(), row.getRole(),
-                            row.getStatus(), null, null);
+                            row.getStatus(), null);
                     response.setMemberCount(memberMapper.countMembers(row.getId()));
-                    response.setRepositoryCount(projectRepositoryMapper.countActiveByProject(row.getId()));
                     if (row.getLastActivityAt() != null) {
                         response.setLastActivityAt(row.getLastActivityAt().toInstant(ZoneOffset.UTC).toString());
                     }
@@ -429,21 +351,20 @@ public class ProjectService {
 
     private ProjectResponse response(ProjectEntity project, String role) {
         ProjectResponse r = new ProjectResponse(project.getId().toString(), project.getTeamId().toString(),
-                project.getName(), project.getDescription(), role, project.getStatus(), null, null);
+                project.getName(), project.getDescription(), role, project.getStatus(), null);
         r.setAvatarUrl(project.getAvatarUrl());
         return response(r);
     }
 
     private ProjectResponse response(ProjectMembershipView row) {
         ProjectResponse r = new ProjectResponse(row.getId().toString(), row.getTeamId().toString(), row.getName(),
-                row.getDescription(), row.getRole(), row.getStatus(), null, null);
+                row.getDescription(), row.getRole(), row.getStatus(), null);
         r.setAvatarUrl(row.getAvatarUrl());
         return response(r);
     }
 
     private ProjectResponse response(ProjectResponse r) {
         r.setMemberCount(memberMapper.countMembers(UUID.fromString(r.getId())));
-        r.setRepositoryCount(projectRepositoryMapper.countActiveByProject(UUID.fromString(r.getId())));
         return r;
     }
 

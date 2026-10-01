@@ -17,20 +17,12 @@ import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.persistence.typehandler.UuidBinaryTypeHandler;
-import qg.qgent.github.entity.GitHubInstallationEntity;
-import qg.qgent.github.entity.GitHubRepositoryEntity;
-import qg.qgent.github.mapper.GitHubInstallationMapper;
-import qg.qgent.github.mapper.GitHubRepositoryMapper;
 import qg.qgent.memory.entity.MemoryEntity;
 import qg.qgent.memory.mapper.MemoryMapper;
-import qg.qgent.mergerequest.entity.MergeRequestEntity;
-import qg.qgent.mergerequest.mapper.MergeRequestMapper;
 import qg.qgent.notification.entity.NotificationEntity;
 import qg.qgent.notification.mapper.NotificationMapper;
 import qg.qgent.project.entity.ProjectEntity;
-import qg.qgent.project.entity.ProjectRepositoryEntity;
 import qg.qgent.project.mapper.ProjectMapper;
-import qg.qgent.project.mapper.ProjectRepositoryMapper;
 import qg.qgent.realtime.entity.EventEntity;
 import qg.qgent.realtime.mapper.EventMapper;
 import qg.qgent.skill.entity.SkillEntity;
@@ -65,10 +57,10 @@ class TeamDisbandServiceTest {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(configuration, "");
         for (Class<?> entity : List.of(ProjectEntity.class, NotificationEntity.class, EventEntity.class,
                 ChatGroupEntity.class, MessageEntity.class,
-                MemoryEntity.class, ProjectRepositoryEntity.class, MergeRequestEntity.class, AgentRunEntity.class,
+                MemoryEntity.class, AgentRunEntity.class,
                 TaskEntity.class, WorkspaceEntity.class,
-                SkillEntity.class, AttachmentEntity.class, GitHubRepositoryEntity.class,
-                GitHubInstallationEntity.class, AgentEntity.class)) {
+                SkillEntity.class, AttachmentEntity.class,
+                AgentEntity.class)) {
             TableInfoHelper.initTableInfo(assistant, entity);
         }
     }
@@ -79,29 +71,24 @@ class TeamDisbandServiceTest {
     private final ChatGroupMapper chatGroupMapper = mock(ChatGroupMapper.class);
     private final MessageMapper messageMapper = mock(MessageMapper.class);
     private final MemoryMapper memoryMapper = mock(MemoryMapper.class);
-    private final ProjectRepositoryMapper projectRepositoryMapper = mock(ProjectRepositoryMapper.class);
-    private final MergeRequestMapper mergeRequestMapper = mock(MergeRequestMapper.class);
     private final AgentRunMapper agentRuns = mock(AgentRunMapper.class);
     private final TaskMapper taskMapper = mock(TaskMapper.class);
     private final WorkspaceMapper workspaceMapper = mock(WorkspaceMapper.class);
     private final SkillMapper skillMapper = mock(SkillMapper.class);
     private final AttachmentMapper attachmentMapper = mock(AttachmentMapper.class);
-    private final GitHubRepositoryMapper githubRepositoryMapper = mock(GitHubRepositoryMapper.class);
-    private final GitHubInstallationMapper githubInstallationMapper = mock(GitHubInstallationMapper.class);
     private final AgentMapper agentMapper = mock(AgentMapper.class);
     private final TeamMapper teamMapper = mock(TeamMapper.class);
     private final TeamDisbandService service = new TeamDisbandService(projectMapper, notificationMapper,
             eventMapper, chatGroupMapper, messageMapper, memoryMapper,
-            projectRepositoryMapper, mergeRequestMapper, agentRuns, taskMapper,
-            workspaceMapper, skillMapper, attachmentMapper, githubRepositoryMapper,
-            githubInstallationMapper, agentMapper, teamMapper);
+            agentRuns, taskMapper,
+            workspaceMapper, skillMapper, attachmentMapper,
+            agentMapper, teamMapper);
 
     @Test
     void deleteTeamCleansProjectsInDependencyOrder() {
         UUID teamId = UUID.randomUUID();
         UUID projectId = UUID.randomUUID();
         UUID groupId = UUID.randomUUID();
-        UUID repoId = UUID.randomUUID();
 
         ProjectEntity project = new ProjectEntity();
         project.setId(projectId);
@@ -113,28 +100,16 @@ class TeamDisbandServiceTest {
         group.setProjectId(projectId);
         when(chatGroupMapper.selectList(any())).thenReturn(List.of(group));
 
-        ProjectRepositoryEntity repo = new ProjectRepositoryEntity();
-        repo.setId(repoId);
-        repo.setProjectId(projectId);
-        when(projectRepositoryMapper.selectList(any())).thenReturn(List.of(repo));
-
-        GitHubInstallationEntity installation = new GitHubInstallationEntity();
-        installation.setId(UUID.randomUUID());
-        installation.setTeamId(teamId);
-        when(githubInstallationMapper.selectList(any())).thenReturn(List.of(installation));
-
         service.deleteTeam(teamId);
 
         // 关键依赖顺序：子表先于父表，引用行先于被引用行；agents 在项目级引用清理后最后删除。
-        // github_repositories 引用 github_installations（fk_ghr_install 无级联），必须先删镜像再删安装记录。
         var order = inOrder(notificationMapper, eventMapper, messageMapper,
-                memoryMapper, mergeRequestMapper, agentRuns, taskMapper,
+                memoryMapper, agentRuns, taskMapper,
                 workspaceMapper, skillMapper, attachmentMapper, chatGroupMapper, projectMapper,
-                githubRepositoryMapper, githubInstallationMapper, agentMapper, teamMapper);
+                agentMapper, teamMapper);
         order.verify(notificationMapper).delete(any());
         order.verify(eventMapper).delete(any());
         order.verify(memoryMapper).delete(any());
-        order.verify(mergeRequestMapper).delete(any());
         order.verify(agentRuns).delete(any());
         order.verify(taskMapper).delete(any());
         order.verify(messageMapper).deleteUnreferencedMessages(any());
@@ -143,8 +118,6 @@ class TeamDisbandServiceTest {
         order.verify(attachmentMapper).delete(any());
         order.verify(chatGroupMapper).delete(any());
         order.verify(projectMapper).deleteById(projectId);
-        order.verify(githubRepositoryMapper).delete(any());
-        order.verify(githubInstallationMapper).delete(any());
         order.verify(agentMapper).delete(any());
         order.verify(teamMapper).deleteById(teamId);
     }

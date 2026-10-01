@@ -60,14 +60,13 @@ class ToolExecutionServiceTest {
         UUID executionId = UUID.randomUUID();
         SandboxAllocation sandbox = allocation(sandboxId);
         when(sandboxes.findAllocation(sandboxId)).thenReturn(sandbox);
-        when(tools.requiresRepository("development.run")).thenReturn(true);
         when(tools.execute(anyString(), any(), any())).thenReturn(ToolResult.value(Map.of("ok", true)));
         ToolExecutionService service = new ToolExecutionService(sandboxes, paths, tools, executions, logMapper,
                 new ObjectMapper().findAndRegisterModules(), properties, pool, Clock.systemUTC());
         ToolExecutionRequest request = new ToolExecutionRequest();
         request.setExecutionId(executionId);
         request.setTool("development.run");
-        request.setRepositoryId(UUID.randomUUID());
+        request.setEnvironment(Map.of("GIT_CONFIG_VALUE_0", "temporary-secret"));
 
         String submitted = service.submit(sandboxId, request).getStatus();
         assertTrue(java.util.List.of("QUEUED", "RUNNING", "SUCCEEDED").contains(submitted));
@@ -76,6 +75,9 @@ class ToolExecutionServiceTest {
         }
 
         assertEquals("SUCCEEDED", service.find(executionId).getStatus());
+        assertFalse(rows.get(executionId.toString()).getArgumentsJson().contains("temporary-secret"));
+        org.mockito.Mockito.verify(tools).execute(anyString(), org.mockito.ArgumentMatchers.argThat(context ->
+                "temporary-secret".equals(context.getEnvironment().get("GIT_CONFIG_VALUE_0"))), any());
         assertEquals(null, service.find(executionId).getFailureCode());
         assertEquals(null, service.find(executionId).getFailureReason());
         assertFalse(service.logs(executionId, 0, 100).getItems().isEmpty());
@@ -172,13 +174,11 @@ class ToolExecutionServiceTest {
         UUID sandboxId = UUID.randomUUID();
         UUID executionId = UUID.randomUUID();
         when(sandboxes.findAllocation(sandboxId)).thenReturn(allocation(sandboxId));
-        when(tools.requiresRepository("development.run")).thenReturn(true);
         ToolExecutionService service = new ToolExecutionService(sandboxes, paths, tools, executions, logMapper,
                 new ObjectMapper().findAndRegisterModules(), properties, waitingPool, Clock.systemUTC());
         ToolExecutionRequest request = new ToolExecutionRequest();
         request.setExecutionId(executionId);
         request.setTool("development.run");
-        request.setRepositoryId(UUID.randomUUID());
 
         service.submit(sandboxId, request);
 
@@ -215,7 +215,6 @@ class ToolExecutionServiceTest {
         UUID sandboxId = UUID.randomUUID();
         UUID executionId = UUID.randomUUID();
         when(sandboxes.findAllocation(sandboxId)).thenReturn(allocation(sandboxId));
-        when(tools.requiresRepository("development.run")).thenReturn(true);
         ToolExecutionService service = new ToolExecutionService(sandboxes, paths, tools, executions, logMapper,
                 new ObjectMapper().findAndRegisterModules(), new SandboxWorkerProperties(), rejectedPool, Clock.systemUTC());
         ToolExecutionRequest request = request(executionId);
@@ -305,7 +304,7 @@ class ToolExecutionServiceTest {
         Instant now = Instant.now();
         return new SandboxAllocation(sandboxId, UUID.randomUUID(), "workspaces/" + UUID.randomUUID(), "dev-tools",
                 "READY", "FAKE", now, now, now.plusSeconds(60), now.plusSeconds(3600),
-                Duration.ofMinutes(15), null, Map.of());
+                Duration.ofMinutes(15), null);
     }
 
     private ToolExecutionFixture fixture() {
@@ -320,7 +319,6 @@ class ToolExecutionServiceTest {
         UUID sandboxId = UUID.randomUUID();
         UUID executionId = UUID.randomUUID();
         when(sandboxes.findAllocation(sandboxId)).thenReturn(allocation(sandboxId));
-        when(tools.requiresRepository("development.run")).thenReturn(true);
         ToolExecutionService service = new ToolExecutionService(sandboxes, paths, tools, executions, logMapper,
                 new ObjectMapper().findAndRegisterModules(), properties, pool, Clock.systemUTC());
         return new ToolExecutionFixture(service, tools, rows, sandboxId, executionId, request(executionId));
@@ -330,7 +328,6 @@ class ToolExecutionServiceTest {
         ToolExecutionRequest request = new ToolExecutionRequest();
         request.setExecutionId(executionId);
         request.setTool("development.run");
-        request.setRepositoryId(UUID.randomUUID());
         return request;
     }
 

@@ -15,6 +15,11 @@ import lombok.Data;
 @Data
 @Schema(description = "创建自定义 Agent 请求")
 public class AgentCreateRequest {
+    /** Agent 可选 GitHub 凭证引用。 */
+    @jakarta.validation.constraints.Pattern(regexp="[A-Za-z0-9_-]*")
+    @jakarta.validation.constraints.Size(max=64)
+    private String githubCredentialRef;
+
 
     @NotBlank(message = "name 不能为空白")
     @Size(max = 255, message = "name 最长 255 个字符")

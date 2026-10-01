@@ -13,6 +13,11 @@ import lombok.Data;
 @Data
 @Schema(description = "编辑自定义 Agent 请求")
 public class AgentUpdateRequest {
+    /** Agent 可选 GitHub 凭证引用。 */
+    @jakarta.validation.constraints.Pattern(regexp="[A-Za-z0-9_-]*")
+    @jakarta.validation.constraints.Size(max=64)
+    private String githubCredentialRef;
+
 
     @Size(max = 255, message = "name 最长 255 个字符")
     @Schema(description = "Agent 昵称，去除首尾空白后非空（可选）")

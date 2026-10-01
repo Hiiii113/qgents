@@ -48,6 +48,6 @@ class FakeContainerRuntimeTest {
         Instant now = Instant.parse("2026-08-12T00:00:00Z");
         return new SandboxAllocation(request.getSandboxId(), request.getTaskId(), request.getWorkspaceStorageKey(),
                 request.getImageProfile(), "READY", "FAKE", now, now, now.plusSeconds(60),
-                now.plusSeconds(3600), Duration.ofMinutes(15), null, Map.of());
+                now.plusSeconds(3600), Duration.ofMinutes(15), null);
     }
 }

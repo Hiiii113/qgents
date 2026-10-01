@@ -39,15 +39,9 @@ public class WorkerDevelopmentCommandPort extends AbstractWorkerToolPort impleme
         if (workspaceId == null || commandId == null) {
             return DevelopmentCommandResult.unavailable(commandId);
         }
-        UUID repositoryId = null;
         try {
-            repositoryId = repositoryId(workspaceId, repositoryPath);
-            if (repositoryId == null) {
-                return new DevelopmentCommandResult(false, commandId.name(), null,
-                        "WORKSPACE_REPOSITORY_NOT_FOUND", "未找到工作区绑定的仓库");
-            }
-            WorkerToolExecution execution = executeTool(workspaceId, repositoryId, "development.run",
-                    Map.of("commandId", commandId.name()), Duration.ofMinutes(10));
+            WorkerToolExecution execution = executeTool(workspaceId, "development.run",
+                    Map.of("commandId", commandId.name(), "directory", repositoryPath == null ? "." : repositoryPath), Duration.ofMinutes(10));
             if (execution.getExitCode() != null) {
                 return new DevelopmentCommandResult(execution.getExitCode() == 0, commandId.name(),
                         execution.getExitCode(), execution.getExitCode() == 0 ? null : "PROCESS_EXIT_NONZERO",
@@ -56,19 +50,11 @@ public class WorkerDevelopmentCommandPort extends AbstractWorkerToolPort impleme
             return new DevelopmentCommandResult(false, commandId.name(), null,
                     "DEVELOPMENT_COMMAND_FAILED", "固定开发命令执行失败，请查看受控执行记录");
         } catch (RuntimeException exception) {
-            log.warn("CODING_DEVELOPMENT_COMMAND_FAILED workspaceId={} repositoryId={} commandId={} category={}",
-                    workspaceId, repositoryId, commandId, exception.getClass().getSimpleName());
+            log.warn("CODING_DEVELOPMENT_COMMAND_FAILED workspaceId={} commandId={} category={}",
+                    workspaceId, commandId, exception.getClass().getSimpleName());
             return new DevelopmentCommandResult(false, commandId.name(), null,
                     "DEVELOPMENT_COMMAND_INFRASTRUCTURE", "固定开发命令执行基础设施不可用");
         }
-    }
-
-    private UUID repositoryId(UUID workspaceId, String repositoryPath) {
-        SandboxSession current = session(workspaceId);
-        if (repositoryPath == null || repositoryPath.isBlank()) {
-            return current.singleRepository();
-        }
-        return current.repositoryByPath() == null ? null : current.repositoryByPath().get(repositoryPath);
     }
 
 }

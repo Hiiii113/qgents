@@ -50,14 +50,8 @@ public class WorkerWorkspaceCodeAccess extends AbstractWorkerToolPort implements
 
     @Override
     public List<String> listFiles(UUID workspaceId) {
-        SandboxSession session = session(workspaceId);
-        List<String> files = new ArrayList<>();
-        for (Map.Entry<String, UUID> entry : session.repositoryByPath().entrySet()) {
-            String prefix = entry.getKey();
-            for (String relative : listRecursive(workspaceId, entry.getValue(), ".")) {
-                files.add(prefix + "/" + relative);
-            }
-        }
+        session(workspaceId);
+        List<String> files = listRecursive(workspaceId, ".");
         files.sort(String::compareTo);
         return files;
     }
@@ -66,7 +60,7 @@ public class WorkerWorkspaceCodeAccess extends AbstractWorkerToolPort implements
     public WorkspaceFileReadResult readFile(UUID workspaceId, String path) {
         WorkerPathResolver.Target target = WorkerPathResolver.resolve(session(workspaceId), path);
         if (target == null) {
-            return WorkspaceFileReadResult.fail(path, "path does not map to a workspace repository");
+            return WorkspaceFileReadResult.fail(path, "path is empty");
         }
         String sha256 = null;
         Boolean endsWithNewline = null;
@@ -74,7 +68,7 @@ public class WorkerWorkspaceCodeAccess extends AbstractWorkerToolPort implements
         List<String> allLines = new ArrayList<>();
         int startLine = 1;
         while (true) {
-            WorkerToolExecution execution = executeTool(workspaceId, target.repositoryId(), "file.read",
+            WorkerToolExecution execution = executeTool(workspaceId, "file.read",
                     Map.of("path", target.relativePath(), "startLine", startLine, "lineCount", READ_PAGE_LINES),
                     TOOL_TIMEOUT);
             if (!"SUCCEEDED".equals(execution.getStatus())) {
@@ -126,40 +120,31 @@ public class WorkerWorkspaceCodeAccess extends AbstractWorkerToolPort implements
         if (query == null || query.isBlank()) {
             return List.of();
         }
-        SandboxSession session = session(workspaceId);
+        session(workspaceId);
         TreeSet<String> matches = new TreeSet<>();
-        for (Map.Entry<String, UUID> entry : session.repositoryByPath().entrySet()) {
-            WorkerToolExecution execution = executeTool(workspaceId, entry.getValue(), "file.search",
-                    Map.of("query", query, "path", "."), TOOL_TIMEOUT);
-            if (!"SUCCEEDED".equals(execution.getStatus())) {
-                continue;
-            }
-            Object raw = resultOf(execution).get("matches");
-            if (!(raw instanceof List<?> lines)) {
-                continue;
-            }
-            for (Object line : lines) {
-                String text = String.valueOf(line);
-                int colon = text.indexOf(':');
-                if (colon > 0) {
-                    matches.add(entry.getKey() + "/" + text.substring(0, colon));
-                }
+        WorkerToolExecution execution = executeTool(workspaceId, "file.search",
+                Map.of("query", query, "path", "."), TOOL_TIMEOUT);
+        if (!"SUCCEEDED".equals(execution.getStatus())) {
+            return List.of();
+        }
+        Object raw = resultOf(execution).get("matches");
+        if (!(raw instanceof List<?> lines)) {
+            return List.of();
+        }
+        for (Object line : lines) {
+            String text = String.valueOf(line);
+            int colon = text.indexOf(':');
+            if (colon > 0) {
+                matches.add(text.substring(0, colon));
             }
         }
         return List.copyOf(matches);
     }
 
-    /**
-     * 递归列出仓库内相对路径，跳过 .git/target/node_modules/.idea/build 与点文件。
-     * <p>
-     * 空目录也会被返回（目录本身作为一条路径）：Git 不跟踪空目录，Reviewer 的文件清单
-     * 和 Coding 的目标判定若只依赖「目录下有文件」就无法感知已创建的空目录，导致误判
-     * REVIEW_ASSERTION_TARGET_NOT_FOUND。把空目录自身返回后，目标判定
-     * （精确命中或作为目录前缀存在）即可识别目录已创建。
-     */
-    private List<String> listRecursive(UUID workspaceId, UUID repositoryId, String dir) {
+    /** 递归列出工作区路径，保留空目录，跳过 .git 与构建目录。 */
+    private List<String> listRecursive(UUID workspaceId, String dir) {
         List<String> files = new ArrayList<>();
-        WorkerToolExecution execution = executeTool(workspaceId, repositoryId, "file.list",
+        WorkerToolExecution execution = executeTool(workspaceId, "file.list",
                 Map.of("path", dir), TOOL_TIMEOUT);
         if (!"SUCCEEDED".equals(execution.getStatus())) {
             return files;
@@ -182,7 +167,7 @@ public class WorkerWorkspaceCodeAccess extends AbstractWorkerToolPort implements
                 if (isIgnoredDirectory(name)) {
                     continue;
                 }
-                List<String> nested = listRecursive(workspaceId, repositoryId, child);
+                List<String> nested = listRecursive(workspaceId, child);
                 if (nested.isEmpty()) {
                     // 空目录：没有可跟踪文件，目录自身作为路径返回，供目标判定/文件清单感知。
                     files.add(child);

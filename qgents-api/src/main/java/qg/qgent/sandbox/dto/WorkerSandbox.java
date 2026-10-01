@@ -4,7 +4,6 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
 import java.util.UUID;
 
 /**
@@ -34,11 +33,6 @@ public class WorkerSandbox {
      * Sandbox 使用的 Worker 镜像配置名称。
      */
     private String imageProfile;
-
-    /**
-     * Sandbox 绑定的项目仓库编号集合。
-     */
-    private List<UUID> repositoryIds;
 
     /**
      * 生命周期状态。

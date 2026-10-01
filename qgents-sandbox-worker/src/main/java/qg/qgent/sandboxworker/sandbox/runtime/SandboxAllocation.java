@@ -64,8 +64,4 @@ public class SandboxAllocation {
      */
     private String runtimeHandle;
 
-    /**
-     * 项目仓库编号到 Workspace 内相对仓库目录的不可变映射。
-     */
-    private Map<UUID, String> repositoryPaths;
 }

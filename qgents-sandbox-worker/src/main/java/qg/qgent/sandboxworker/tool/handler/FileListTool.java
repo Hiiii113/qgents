@@ -26,15 +26,11 @@ public class FileListTool implements SandboxTool {
         return "file.list";
     }
 
-    @Override
-    public boolean requiresRepository() {
-        return true;
-    }
 
     @Override
     public ToolResult execute(ToolContext context, Map<String, Object> arguments) {
         String relativePath = ToolArguments.optionalString(arguments, "path", ".", 1024);
-        Path directory = files.resolveExisting(context.getLocalRepository(), relativePath);
+        Path directory = files.resolveExisting(context.getLocalWorkspace(), relativePath);
         try (var stream = Files.list(directory)) {
             List<Map<String, Object>> items = stream.limit(1000)
                     .sorted(Comparator.comparing(path -> path.getFileName().toString()))

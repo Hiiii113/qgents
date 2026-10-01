@@ -10,12 +10,12 @@ RUN chmod +x mvnw && ./mvnw -pl qgents-sandbox-worker -DskipTests package
 
 FROM eclipse-temurin:21-jre
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git ca-certificates curl \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --uid 10001 --create-home worker
 WORKDIR /app
 COPY --from=build /build/qgents-sandbox-worker/target/qgents-sandbox-worker-0.0.1-SNAPSHOT.jar app.jar
-RUN mkdir -p /var/lib/qgents/git-store /var/lib/qgents/workspaces /var/lib/qgents/workspace-metadata /app/logs \
+RUN mkdir -p /var/lib/qgents/workspaces /var/lib/qgents/workspace-metadata /app/logs \
     && chown -R worker:worker /var/lib/qgents /app
 USER 10001
 EXPOSE 8091

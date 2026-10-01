@@ -85,7 +85,7 @@ class DockerContainerRuntimeTest {
         request.setImageProfile("dev-tools");
         SandboxAllocation allocation = new SandboxAllocation(request.getSandboxId(), request.getTaskId(),
                 request.getWorkspaceStorageKey(), request.getImageProfile(), "READY", "DOCKER",
-                Instant.EPOCH, Instant.EPOCH, Instant.EPOCH, Instant.EPOCH, Duration.ofMinutes(1), null, Map.of());
+                Instant.EPOCH, Instant.EPOCH, Instant.EPOCH, Instant.EPOCH, Duration.ofMinutes(1), null);
 
         runtime.create(request, allocation);
 

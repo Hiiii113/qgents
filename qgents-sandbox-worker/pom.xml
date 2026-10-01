@@ -6,8 +6,7 @@
 
     <!--
         Qgents 沙箱执行面服务。
-        承载 Workspace Manager（bare Git Store 上创建 linked worktree，受控 status/diff/commit/push）
-        与 Sandbox Manager（按 repositoryIds 逐仓 bind mount，只提供文件/目录/固定开发命令工具）。
+        承载空工作区管理、沙箱生命周期与文件/命令工具执行。
         该服务持有 Docker Socket 与工作区挂载权限，安全边界高于主后端，因此独立打包、独立数据库、独立部署。
     -->
     <parent>

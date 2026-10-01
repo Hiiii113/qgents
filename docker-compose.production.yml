@@ -53,18 +53,15 @@ services:
       SANDBOX_RUNTIME: docker
       SANDBOX_DOCKER_HOST: unix:///var/run/docker.sock
       SANDBOX_DEV_TOOLS_IMAGE: qgents/sandbox-dev-tools:production
-      SANDBOX_BACKEND_URL: http://api:8080
       SANDBOX_BACKEND_SERVICE_TOKEN: ${SANDBOX_BACKEND_SERVICE_TOKEN:?Set SANDBOX_BACKEND_SERVICE_TOKEN}
-      SANDBOX_GIT_STORE_ROOT: /var/lib/qgents/git-store
       # 容器内路径与镜像内预建目录、application.yaml 默认值保持一致（/var/lib/qgents）；
-      # docker-host-root 是宿主机路径，Worker 用它把 worktree 二次 bind mount 进 Sandbox 容器。
+      # docker-host-root 是宿主机路径，Worker 用它把 完整工作区 bind mount 进 Sandbox 容器。
       SANDBOX_WORKSPACE_LOCAL_ROOT: /var/lib/qgents/workspaces
       SANDBOX_WORKSPACE_DOCKER_HOST_ROOT: ${QGENTS_DATA_ROOT:-/srv/qgents}/workspaces
       SANDBOX_WORKSPACE_METADATA_ROOT: /var/lib/qgents/workspace-metadata
       SANDBOX_WORKER_ID: production-worker-1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${QGENTS_DATA_ROOT:-/srv/qgents}/git-store:/var/lib/qgents/git-store
       - ${QGENTS_DATA_ROOT:-/srv/qgents}/workspaces:/var/lib/qgents/workspaces
       - ${QGENTS_DATA_ROOT:-/srv/qgents}/workspace-metadata:/var/lib/qgents/workspace-metadata
     extra_hosts:
@@ -100,6 +97,7 @@ services:
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:?Set DASHSCOPE_API_KEY}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
       SANDBOX_WORKER_URL: http://sandbox-worker:8091
+      AGENT_GITHUB_TOKEN: ${AGENT_GITHUB_TOKEN:-}
       SANDBOX_WORKER_ENABLED: "true"
       SANDBOX_BACKEND_SERVICE_TOKEN: ${SANDBOX_BACKEND_SERVICE_TOKEN:?Set SANDBOX_BACKEND_SERVICE_TOKEN}
       FRONTEND_URL: ${FRONTEND_URL:-https://qgents.dpdns.org}
@@ -109,19 +107,6 @@ services:
       # 附件下载 URL 签名密钥：application.yaml 的默认值仅供本地开发，生产必须注入随机值，
       # 否则任何人都能伪造附件下载地址。
       ATTACHMENT_SIGNING_SECRET: ${ATTACHMENT_SIGNING_SECRET:?Set ATTACHMENT_SIGNING_SECRET}
-      GITHUB_APP_ID: ${GITHUB_APP_ID:?Set GITHUB_APP_ID}
-      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:?Set GITHUB_APP_SLUG}
-      GITHUB_APP_PRIVATE_KEY_PATH: /run/secrets/github_app.pem
-      GITHUB_APP_CALLBACK_URL: ${GITHUB_APP_CALLBACK_URL:?Set GITHUB_APP_CALLBACK_URL}
-      GITHUB_APP_STATE_SECRET: ${GITHUB_APP_STATE_SECRET:?Set GITHUB_APP_STATE_SECRET}
-      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:?Set GITHUB_WEBHOOK_SECRET}
-      GITHUB_OAUTH_ENABLED: ${GITHUB_OAUTH_ENABLED:-false}
-      GITHUB_OAUTH_CLIENT_ID: ${GITHUB_OAUTH_CLIENT_ID:-}
-      GITHUB_OAUTH_CLIENT_SECRET: ${GITHUB_OAUTH_CLIENT_SECRET:-}
-      GITHUB_OAUTH_CALLBACK_URL: ${GITHUB_OAUTH_CALLBACK_URL:-}
-      GITHUB_OAUTH_STATE_SECRET: ${GITHUB_OAUTH_STATE_SECRET:-}
-      GITHUB_OAUTH_TOKEN_ENCRYPTION_KEY: ${GITHUB_OAUTH_TOKEN_ENCRYPTION_KEY:-}
-      GITHUB_OAUTH_SCOPES: ${GITHUB_OAUTH_SCOPES:-repo}
       ALIYUN_OSS_ENABLED: ${ALIYUN_OSS_ENABLED:-false}
       ALIYUN_OSS_ENDPOINT: ${ALIYUN_OSS_ENDPOINT:-}
       ALIYUN_OSS_BUCKET_NAME: ${ALIYUN_OSS_BUCKET_NAME:-}
@@ -129,8 +114,6 @@ services:
       ALIYUN_OSS_ACCESS_KEY_SECRET: ${ALIYUN_OSS_ACCESS_KEY_SECRET:-}
       ALIYUN_OSS_PRESIGN_EXPIRY_SECONDS: ${ALIYUN_OSS_PRESIGN_EXPIRY_SECONDS:-900}
       ALIYUN_OSS_PUBLIC_BASE_URL: ${ALIYUN_OSS_PUBLIC_BASE_URL:-}
-      GITHUB_PROXY_HOST: ${PROXY_HOST:-clash}
-      GITHUB_PROXY_PORT: ${PROXY_PORT:-7890}
       HTTP_PROXY: http://${PROXY_HOST:-clash}:${PROXY_PORT:-7890}
       HTTPS_PROXY: http://${PROXY_HOST:-clash}:${PROXY_PORT:-7890}
       NO_PROXY: localhost,127.0.0.1,host.docker.internal,redis,api,sandbox-worker,clash
@@ -139,7 +122,6 @@ services:
       MANAGEMENT_SERVER_PORT: "8081"
     volumes:
       - ./qgents-api/src/main/resources/rsa/private_key.pem:/app/src/main/resources/rsa/private_key.pem:ro
-      - ./github_app.pem:/run/secrets/github_app.pem:ro
       - api_data:/app/data
       - api_logs:/app/logs
     expose: ["8080", "8081"]

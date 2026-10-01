@@ -2,7 +2,6 @@ CREATE TABLE IF NOT EXISTS tool_executions (
     id CHAR(36) PRIMARY KEY COMMENT '执行编号',
     owner_worker_id VARCHAR(128) NOT NULL COMMENT '实际运行该执行的 Worker 编号',
     sandbox_id CHAR(36) NOT NULL COMMENT '沙箱编号',
-    repository_id CHAR(36) NULL COMMENT '仓库编号，通用命令可以为空',
     tool_name VARCHAR(64) NOT NULL COMMENT '服务端注册的工具名称',
     arguments_json JSON NOT NULL COMMENT '工具结构化参数',
     status VARCHAR(24) NOT NULL COMMENT '执行状态',

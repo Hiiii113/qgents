@@ -53,17 +53,13 @@ public class FilePatchTool implements SandboxTool {
         return "file.patch";
     }
 
-    @Override
-    public boolean requiresRepository() {
-        return true;
-    }
 
     @Override
     public ToolResult execute(ToolContext context, Map<String, Object> arguments) {
         String relativePath = ToolArguments.string(arguments, "path", 1024);
         String expectedHash = ToolArguments.string(arguments, "expectedHash", 64);
         String patch = ToolArguments.string(arguments, "patch", MAX_PATCH_LENGTH);
-        Path target = files.resolveForWrite(context.getLocalRepository(), relativePath);
+        Path target = files.resolveForWrite(context.getLocalWorkspace(), relativePath);
         try {
             requireExistingTextFile(target);
             if (Files.size(target) > MAX_PATCH_TARGET_BYTES) {

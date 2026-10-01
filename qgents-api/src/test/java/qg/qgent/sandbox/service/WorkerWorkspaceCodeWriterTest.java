@@ -48,8 +48,7 @@ class WorkerWorkspaceCodeWriterTest {
     }
 
     private SandboxSession session() {
-        return new SandboxSession(UUID.randomUUID(), WORKSPACE, SANDBOX, "workspaces/" + WORKSPACE,
-                List.of(REPO), Map.of("repo-1", REPO));
+        return new SandboxSession(UUID.randomUUID(), WORKSPACE, SANDBOX, "workspaces/" + WORKSPACE);
     }
 
     private void stubToolExecution(Function<WorkerToolExecutionRequest, WorkerToolExecution> terminal) {
@@ -83,7 +82,7 @@ class WorkerWorkspaceCodeWriterTest {
                 ArgumentCaptor.forClass(WorkerToolExecutionRequest.class);
         verify(client).submitToolExecution(any(), captor.capture());
         assertThat(captor.getValue().getTool()).isEqualTo("directory.create");
-        assertThat(captor.getValue().getArguments().get("path")).isEqualTo("src/main");
+        assertThat(captor.getValue().getArguments().get("path")).isEqualTo("repo-1/src/main");
     }
 
     @Test
@@ -199,7 +198,7 @@ class WorkerWorkspaceCodeWriterTest {
         verify(client, times(1)).submitToolExecution(any(), captor.capture());
         WorkerToolExecutionRequest patch = captor.getValue();
         assertThat(patch.getTool()).isEqualTo("file.patch");
-        assertThat(patch.getArguments().get("path")).isEqualTo("src/Foo.java");
+        assertThat(patch.getArguments().get("path")).isEqualTo("repo-1/src/Foo.java");
         assertThat(patch.getArguments().get("expectedHash")).isEqualTo(HASH);
         assertThat(patch.getArguments().get("patch")).isEqualTo("@@ -1,1 +1,1 @@\n-a\n+b\n");
     }

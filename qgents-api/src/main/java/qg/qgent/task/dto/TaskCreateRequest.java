@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Request to create one task from an active requirement-group conversation.
+ * Request to create one task from a project chat conversation.
  */
 @Data
 public class TaskCreateRequest {
@@ -32,24 +32,7 @@ public class TaskCreateRequest {
     @Schema(description = "Requirement snapshot", maxLength = 10000, requiredMode = Schema.RequiredMode.REQUIRED)
     private String requirement;
 
-    @Size(max = 20)
-    @Schema(description = "项目仓库 ID；不传则使用项目当前仓库")
-    private List<@NotNull UUID> repositoryIds;
-
     @Schema(description = "执行该任务的 Agent；不传则使用通用 Agent")
     private UUID agentId;
-
-    @Size(max = 512)
-    @Schema(description = "可选的公共基线分支名；不接受 commit SHA，缺省用项目仓库默认分支")
-    private String baseRef;
-
-    /**
-     * 按仓库指定的基线分支名映射（repositoryId → 分支名），支持多仓库各自不同的基准分支。
-     * 解析优先级：{@code baseRefs} 中该仓库的值 &gt; 公共 {@code baseRef} &gt; 该仓库项目绑定的
-     * defaultBranch（后端 Worker provision 兜底）。不接受 commit SHA、Git 引用路径或非法分支名。
-     */
-    @Size(max = 20)
-    @Schema(description = "按仓库指定的基线分支映射（repositoryId → 分支名）；缺省回退公共 baseRef 或该仓库默认分支")
-    private Map<UUID, String> baseRefs;
 
 }

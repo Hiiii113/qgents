@@ -131,96 +131,10 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT fk_pm_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目成员及角色关系';
 
-CREATE TABLE IF NOT EXISTS
-    github_installations (
-        id BINARY(16) PRIMARY KEY COMMENT '安装记录UUIDv7',
-        team_id BINARY(16) NOT NULL COMMENT '授权所属团队ID',
-        provider_installation_id BIGINT UNSIGNED NOT NULL COMMENT 'GitHub App installation数字ID',
-        account_login VARCHAR(255) NOT NULL COMMENT 'GitHub授权账号登录名',
-        account_type VARCHAR(32) NOT NULL COMMENT 'GitHub账号类型枚举：USER/ORGANIZATION；USER 建仓使用 OAuth',
-        repository_selection VARCHAR(16) NULL COMMENT 'GitHub App 仓库访问范围：ALL/SELECTED；历史记录可为空',
-        status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE' COMMENT '安装状态枚举：ACTIVE/SUSPENDED/DELETED',
-        created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '同步创建时间（UTC）',
-        updated_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '同步更新时间（UTC）',
-        UNIQUE KEY uk_ghi_provider (provider_installation_id),
-        KEY idx_ghi_team (team_id, status),
-        CONSTRAINT fk_ghi_team FOREIGN KEY (team_id) REFERENCES teams (id)
-    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '团队GitHub App安装授权元数据，不存访问令牌';
 
-CREATE TABLE IF NOT EXISTS
-    github_oauth_states (
-        id BINARY(16) PRIMARY KEY COMMENT 'OAuth state UUIDv7，同时作为签名 JWT jti',
-        state_hash BINARY(32) NOT NULL COMMENT 'state 原文 SHA-256 摘要，不保存 state 原文',
-        user_id BINARY(16) NOT NULL COMMENT '发起授权的 Qgents 用户',
-        client VARCHAR(16) NOT NULL COMMENT '回跳端：WEB/MOBILE',
-        expires_at DATETIME(6) NOT NULL COMMENT 'state 过期时间（UTC）',
-        consumed_at DATETIME(6) NULL COMMENT '一次性消费时间（UTC）',
-        created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-        UNIQUE KEY uk_ghos_state_hash (state_hash),
-        KEY idx_ghos_user (user_id, created_at),
-        KEY idx_ghos_expiry (expires_at, consumed_at),
-        CONSTRAINT fk_ghos_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        CONSTRAINT chk_ghos_client CHECK (client IN ('WEB', 'MOBILE'))
-    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'GitHub OAuth 一次性 state 摘要';
 
-CREATE TABLE IF NOT EXISTS
-    github_user_authorizations (
-        id BINARY(16) PRIMARY KEY COMMENT '授权记录 UUIDv7',
-        user_id BINARY(16) NOT NULL COMMENT 'Qgents 用户',
-        provider VARCHAR(32) NOT NULL COMMENT 'OAuth 提供方，当前固定 GITHUB',
-        provider_user_id BIGINT UNSIGNED NOT NULL COMMENT 'GitHub /user.id',
-        provider_login VARCHAR(255) NOT NULL COMMENT 'GitHub login 展示快照',
-        access_token_ciphertext TEXT NULL COMMENT 'AES-GCM 加密后的 OAuth Token，不保存明文',
-        scopes VARCHAR(1024) NULL COMMENT '实际授权 scope 快照，逗号分隔',
-        status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE/REVOKING/REVOKED/EXPIRED/ERROR',
-        last_error_code VARCHAR(64) NULL COMMENT '最近一次远程撤销失败的稳定错误码',
-        authorized_at DATETIME(6) NOT NULL COMMENT '首次或最近重新授权时间（UTC）',
-        last_validated_at DATETIME(6) NULL COMMENT '最近成功调用 GitHub /user 时间（UTC）',
-        revoked_at DATETIME(6) NULL COMMENT '本地撤销时间（UTC）',
-        created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-        updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-        UNIQUE KEY uk_ghua_user_provider (user_id, provider),
-        UNIQUE KEY uk_ghua_provider_user (provider, provider_user_id),
-        KEY idx_ghua_user_status (user_id, status),
-        KEY idx_ghua_provider_status (provider_user_id, status),
-        CONSTRAINT fk_ghua_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-        CONSTRAINT chk_ghua_provider CHECK (provider IN ('GITHUB')),
-        CONSTRAINT chk_ghua_status CHECK (status IN ('ACTIVE', 'REVOKING', 'REVOKED', 'EXPIRED', 'ERROR'))
-    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'Qgents 用户 GitHub OAuth 授权密文';
 
-CREATE TABLE IF NOT EXISTS
-    github_repositories (
-        id BINARY(16) PRIMARY KEY COMMENT '仓库镜像UUIDv7',
-        installation_id BINARY(16) NOT NULL COMMENT '所属GitHub安装记录ID',
-        provider_repository_id BIGINT UNSIGNED NOT NULL COMMENT 'GitHub仓库数字ID',
-        owner_login VARCHAR(255) NOT NULL COMMENT 'GitHub仓库所有者登录名',
-        name VARCHAR(255) NOT NULL COMMENT '仓库名称',
-        default_branch VARCHAR(512) NULL COMMENT 'GitHub默认分支名；空仓库尚未创建首个提交时为空',
-        visibility VARCHAR(32) NOT NULL COMMENT '仓库可见性枚举：PUBLIC/PRIVATE/INTERNAL',
-        archived TINYINT (1) NOT NULL DEFAULT 0 COMMENT '是否已在GitHub归档：0否1是',
-        authorization_status VARCHAR(32) NOT NULL DEFAULT 'AUTHORIZED' COMMENT '授权状态枚举：AUTHORIZED/REVOKED',
-        synced_at DATETIME (6) NOT NULL COMMENT '最近同步时间（UTC）',
-        UNIQUE KEY uk_ghr_provider (provider_repository_id),
-        KEY idx_ghr_install (installation_id),
-        CONSTRAINT fk_ghr_install FOREIGN KEY (installation_id) REFERENCES github_installations (id)
-    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'GitHub仓库元数据镜像';
 
-CREATE TABLE IF NOT EXISTS
-    project_repositories (
-        id BINARY(16) PRIMARY KEY COMMENT '项目仓库绑定UUIDv7',
-        project_id BINARY(16) NOT NULL COMMENT '项目ID',
-        repository_id BINARY(16) NOT NULL COMMENT 'GitHub仓库镜像ID',
-        default_branch VARCHAR(512) NOT NULL COMMENT '该项目使用的默认分支，可覆盖GitHub仓库默认值',
-        display_name VARCHAR(255) NULL COMMENT '仓库在项目内的显示名称',
-        bound_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '绑定时间（UTC）',
-        status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE' COMMENT '绑定状态：ACTIVE/UNBOUND（软解绑）',
-        unbound_at DATETIME (6) NULL COMMENT '软解绑时间（UTC）',
-        UNIQUE KEY uk_pr_repo (project_id, repository_id),
-        KEY idx_pr_repository (repository_id),
-        CONSTRAINT fk_pr_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE,
-        CONSTRAINT fk_pr_repo FOREIGN KEY (repository_id) REFERENCES github_repositories (id),
-        CONSTRAINT chk_pr_status CHECK (status IN ('ACTIVE', 'UNBOUND'))
-    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目与GitHub仓库绑定';
 
 CREATE TABLE IF NOT EXISTS
     chat_groups (
@@ -356,36 +270,6 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT fk_mms_message FOREIGN KEY (message_id) REFERENCES messages (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'Memory与多条来源消息关系';
 
-CREATE TABLE IF NOT EXISTS
-    merge_requests (
-        id BINARY(16) PRIMARY KEY COMMENT 'MR镜像UUIDv7',
-        project_repository_id BINARY(16) NOT NULL COMMENT '所属项目仓库绑定ID',
-        task_id BINARY(16) NULL COMMENT 'Owning Task',
-        workspace_id BINARY(16) NULL COMMENT 'Source Workspace',
-        provider VARCHAR(32) NOT NULL DEFAULT 'GITHUB' COMMENT '代码托管提供方枚举：GITHUB',
-        provider_number BIGINT UNSIGNED NOT NULL COMMENT 'GitHub Pull Request编号',
-        source_branch VARCHAR(512) NOT NULL COMMENT '源分支名',
-        target_branch VARCHAR(512) NOT NULL COMMENT '目标分支名',
-        head_commit VARCHAR(128) NOT NULL COMMENT '当前MR头提交SHA',
-        mergeable TINYINT NULL COMMENT 'GitHub是否可合并；null表示GitHub尚未计算完成',
-        mergeable_state VARCHAR(32) NULL COMMENT 'GitHub mergeable_state枚举：clean/dirty/blocked/behind/unstable/draft/unknown',
-        base_sha VARCHAR(128) NULL COMMENT '合并基线（目标分支）提交SHA',
-        title TEXT NULL COMMENT 'MR标题',
-        html_url TEXT NULL COMMENT 'GitHub PR 链接',
-        author_user_id BINARY(16) NULL COMMENT 'MR 创建用户',
-        status VARCHAR(32) NOT NULL COMMENT 'MR状态枚举：OPEN/MERGED/CLOSED',
-        provider_updated_at DATETIME (6) NULL COMMENT 'GitHub侧更新时间（UTC）',
-        synced_at DATETIME (6) NOT NULL COMMENT '本地最近同步时间（UTC）',
-        created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '镜像创建时间（UTC）',
-        UNIQUE KEY uk_mr_provider (project_repository_id, provider, provider_number),
-        KEY idx_mr_repo (
-            project_repository_id,
-            status,
-            provider_updated_at
-        ),
-        KEY idx_mr_repository_status_id (project_repository_id, status, id),
-        CONSTRAINT fk_mr_repo FOREIGN KEY (project_repository_id) REFERENCES project_repositories (id)
-    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'GitHub Pull Request业务镜像';
 
 CREATE TABLE IF NOT EXISTS
     idempotency_records (
@@ -413,6 +297,7 @@ CREATE TABLE IF NOT EXISTS agents (
     id BINARY(16) PRIMARY KEY, team_id BINARY(16) NOT NULL, created_by BINARY(16) NULL,
     name VARCHAR(255) NOT NULL, role VARCHAR(32) NOT NULL,
     avatar TEXT NULL COMMENT 'Agent 头像URL', description TEXT NULL COMMENT 'Agent 用途描述',
+    github_credential_ref VARCHAR(64) NULL COMMENT 'Agent GitHub能力的部署凭证引用',
     prompt TEXT NULL COMMENT 'Agent 系统提示词',
     review_reason TEXT NULL COMMENT '发布审核拒绝原因（Team Owner 填写；批准为空）',
     reviewed_by BINARY(16) NULL COMMENT '发布审核人（Team Owner）ID',
@@ -493,19 +378,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Persistent project development workspace';
 
 ALTER TABLE tasks ADD CONSTRAINT fk_task_workspace FOREIGN KEY(workspace_id) REFERENCES workspaces(id);
-ALTER TABLE merge_requests
-    ADD CONSTRAINT fk_mr_task FOREIGN KEY(task_id) REFERENCES tasks(id),
-    ADD CONSTRAINT fk_mr_workspace FOREIGN KEY(workspace_id) REFERENCES workspaces(id);
 
-CREATE TABLE IF NOT EXISTS workspace_repositories (
-    workspace_id BINARY(16) NOT NULL, project_repository_id BINARY(16) NOT NULL, workspace_path VARCHAR(255) NOT NULL,
-    base_commit VARCHAR(128) NULL, base_ref VARCHAR(512) NULL, source_branch VARCHAR(512) NOT NULL, head_commit VARCHAR(128) NULL,
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
-    PRIMARY KEY(workspace_id,project_repository_id), UNIQUE KEY uk_workspace_repository_path(workspace_id,workspace_path),
-    CONSTRAINT fk_workspace_repo_workspace FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE,
-    CONSTRAINT fk_workspace_repo_repository FOREIGN KEY(project_repository_id) REFERENCES project_repositories(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Persistent repository worktrees in one Workspace';
 
 CREATE TABLE IF NOT EXISTS agent_worker_executions (
     execution_id BINARY(16) PRIMARY KEY COMMENT 'Worker 工具执行ID',
@@ -513,7 +386,6 @@ CREATE TABLE IF NOT EXISTS agent_worker_executions (
     task_id BINARY(16) NULL COMMENT '所属任务ID',
     agent_run_id BINARY(16) NOT NULL COMMENT '所属 Agent 运行ID',
     sandbox_id BINARY(16) NULL COMMENT 'Worker Sandbox ID',
-    repository_id BINARY(16) NULL COMMENT '目标项目仓库ID',
     tool_name VARCHAR(64) NULL COMMENT 'Worker 工具名称',
     status VARCHAR(24) NULL COMMENT 'Worker 工具状态',
     exit_code INT NULL COMMENT '进程类工具退出码',
@@ -536,7 +408,7 @@ CREATE TABLE IF NOT EXISTS
         project_id BINARY(16) NOT NULL COMMENT '所属项目ID',
         group_id BINARY(16) NULL COMMENT '可选关联项目群聊ID',
         sequence_no BIGINT UNSIGNED NOT NULL COMMENT '项目内单调递增事件序号，作为SSE游标',
-        event_type VARCHAR(64) NOT NULL COMMENT '事件类型，如task.updated/merge-request.updated',
+        event_type VARCHAR(64) NOT NULL COMMENT '事件类型，如task.updated/agent-run.updated',
         resource_id VARCHAR(128) NULL COMMENT '关联资源ID字符串，如agentRunId',
         payload JSON NOT NULL COMMENT '脱敏事件载荷JSON，禁止包含凭证',
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '产生时间（UTC）',
@@ -546,24 +418,8 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT fk_event_group FOREIGN KEY (group_id) REFERENCES chat_groups (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目级实时事件存储，至少保留24小时';
 
--- 全新整库初始化时上方 merge_requests 建表不包含该列，由本 ALTER 补齐；
 -- 已存在该列的库自动跳过，脚本整体可重复执行。
 -- 说明：MySQL 不支持 ADD COLUMN IF NOT EXISTS，此处用 information_schema 探测 + PREPARE 动态执行实现幂等。
-CREATE TABLE IF NOT EXISTS git_credential_grants (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    grant_id_hash VARCHAR(64) NOT NULL UNIQUE,
-    team_id BINARY(16) NOT NULL,
-    project_id BINARY(16) NOT NULL,
-    installation_id BIGINT UNSIGNED NOT NULL,
-    repository_full_name VARCHAR(255) NOT NULL,
-    branch_name VARCHAR(255) NOT NULL,
-    expected_head_commit VARCHAR(64) NOT NULL,
-    purpose VARCHAR(16) NOT NULL DEFAULT 'PUSH',
-    expires_at DATETIME(6) NOT NULL,
-    is_used TINYINT(1) NOT NULL DEFAULT 0,
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    INDEX idx_grant_hash (grant_id_hash)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'Git one-time credential grant';
 
 ALTER TABLE messages ADD CONSTRAINT fk_msg_agent FOREIGN KEY (agent_id) REFERENCES agents (id);
 
@@ -573,43 +429,21 @@ CREATE TABLE IF NOT EXISTS
         recipient_user_id BINARY(16) NOT NULL COMMENT '接收通知的用户ID',
         project_id BINARY(16) NULL COMMENT '关联项目ID；系统级通知为空',
         group_id BINARY(16) NULL COMMENT '关联项目群聊ID；非群通知为空',
-        kind VARCHAR(64) NOT NULL COMMENT '通知类型：MESSAGE_MENTION/MR_PENDING/INVITED/TEAM_JOINED/PROJECT_ADDED',
+        kind VARCHAR(64) NOT NULL COMMENT '通知类型：MESSAGE_MENTION/INVITED/TEAM_JOINED/PROJECT_ADDED',
         title VARCHAR(255) NOT NULL COMMENT '一行通知标题',
         description TEXT NULL COMMENT '通知描述正文',
-        resource_id VARCHAR(128) NULL COMMENT '关联资源ID字符串，如taskId/mrId',
-        dedupe_key VARCHAR(256) NULL COMMENT '通知幂等键；MR_PENDING 为资源ID与状态组合',
+        resource_id VARCHAR(128) NULL COMMENT '关联资源ID字符串，如taskId',
         is_read TINYINT (1) NOT NULL DEFAULT 0 COMMENT '是否已读：0未读1已读',
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '产生时间（UTC）',
         read_at DATETIME (6) NULL COMMENT '已读时间（UTC），未读为空',
         KEY idx_notif_user (recipient_user_id, is_read, created_at),
         KEY idx_notif_project (project_id),
         KEY idx_notif_group (group_id),
-        UNIQUE KEY uk_notif_recipient_dedupe (recipient_user_id, dedupe_key),
         CONSTRAINT fk_notif_user FOREIGN KEY (recipient_user_id) REFERENCES users (id) ON DELETE CASCADE,
         CONSTRAINT fk_notif_project FOREIGN KEY (project_id) REFERENCES projects (id),
         CONSTRAINT fk_notif_group FOREIGN KEY (group_id) REFERENCES chat_groups (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '用户通知中心';
 
--- GitHub Webhook 投递幂等记录：以 X-GitHub-Delivery 唯一防重，只存 body 摘要不存 Secret。
-CREATE TABLE IF NOT EXISTS
-    github_webhook_deliveries (
-        id BINARY(16) PRIMARY KEY COMMENT '投递记录UUIDv7',
-        provider_delivery_id VARCHAR(64) NOT NULL COMMENT 'X-GitHub-Delivery，GitHub 投递唯一标识',
-        event_name VARCHAR(64) NOT NULL COMMENT 'X-GitHub-Event 事件名',
-        action VARCHAR(64) NULL COMMENT 'payload 中的 action',
-        provider_installation_id BIGINT UNSIGNED NULL COMMENT 'GitHub installation.id，可空',
-        provider_repository_id BIGINT UNSIGNED NULL COMMENT 'GitHub repository.id，可空',
-        payload_sha256 CHAR(64) NOT NULL COMMENT '原始 body SHA-256 摘要，不保存 Secret',
-        status VARCHAR(32) NOT NULL COMMENT 'RECEIVED/PROCESSED/IGNORED/FAILED',
-        failure_code VARCHAR(64) NULL COMMENT 'Webhook 最近失败码',
-        attempt_count INT UNSIGNED NOT NULL DEFAULT 1 COMMENT '同一 delivery 实际处理次数',
-        received_at DATETIME(6) NOT NULL COMMENT '接收时间（UTC）',
-        processed_at DATETIME(6) NULL COMMENT '处理完成时间（UTC）',
-        updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '最近更新时间（UTC）',
-        UNIQUE KEY uk_ghwd_delivery (provider_delivery_id),
-        KEY idx_ghwd_status (status, received_at),
-        KEY idx_ghwd_install (provider_installation_id, received_at)
-    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'GitHub Webhook 投递幂等记录';
 
 CREATE TABLE IF NOT EXISTS push_devices (
     id BINARY(16) PRIMARY KEY COMMENT '推送设备UUIDv7',
@@ -674,7 +508,6 @@ CREATE TABLE IF NOT EXISTS team_events (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='团队级 SSE 事件（团队维度游标）';
 
 -- ============================================================
--- 只反映 Coding 写过程中的累积工作树变更，永不作为已 commit/push/MR；
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS

@@ -7,7 +7,6 @@ import org.springframework.stereotype.Service;
 
 import qg.qgent.chat.dto.ContextMemory;
 import qg.qgent.chat.dto.ContextMessage;
-import qg.qgent.chat.dto.ContextRepository;
 import qg.qgent.chat.dto.ContextSkill;
 import qg.qgent.chat.dto.GroupContext;
 import qg.qgent.chat.entity.MessageEntity;
@@ -15,11 +14,7 @@ import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.web.ApiException;
-import qg.qgent.github.entity.GitHubRepositoryEntity;
-import qg.qgent.github.mapper.GitHubRepositoryMapper;
 import qg.qgent.memory.mapper.MemoryMapper;
-import qg.qgent.project.entity.ProjectRepositoryEntity;
-import qg.qgent.project.mapper.ProjectRepositoryMapper;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.skill.entity.SkillEntity;
 import qg.qgent.skill.mapper.SkillMapper;
@@ -44,22 +39,17 @@ public class ContextService {
     private final MessageMapper messageMapper;
     private final SkillMapper skillMapper;
     private final MemoryMapper memoryMapper;
-    private final ProjectRepositoryMapper projectRepositoryMapper;
-    private final GitHubRepositoryMapper githubRepositoryMapper;
     private final ProjectAccessService access;
     private final GroupService groupService;
     private final ObjectMapper mapper;
 
     public ContextService(ChatGroupMapper groupMapper, MessageMapper messageMapper, SkillMapper skillMapper,
                           MemoryMapper memoryMapper, ProjectAccessService access,
-                          GroupService groupService, ObjectMapper mapper, ProjectRepositoryMapper projectRepositoryMapper,
-                          GitHubRepositoryMapper githubRepositoryMapper) {
+                          GroupService groupService, ObjectMapper mapper) {
         this.groupMapper = groupMapper;
         this.messageMapper = messageMapper;
         this.skillMapper = skillMapper;
         this.memoryMapper = memoryMapper;
-        this.projectRepositoryMapper = projectRepositoryMapper;
-        this.githubRepositoryMapper = githubRepositoryMapper;
         this.access = access;
         this.groupService = groupService;
         this.mapper = mapper;
@@ -97,52 +87,9 @@ public class ContextService {
         List<ContextSkill> skills = skillMapper.listPublishedCatalog(projectId, actor);
         List<ContextMemory> memories = memoryMapper.listMemories(projectId, actor, isAdmin, "APPROVED", null).stream()
                 .map(m -> new ContextMemory(m.getTitle(), m.getContent(), m.getCategory())).toList();
-        List<UUID> projectRepositoryIds = activeProjectRepositoryIds(projectId);
-        List<String> repositoryIds = projectRepositoryIds.stream().map(UUID::toString).toList();
-        List<ContextRepository> repositories = repositoryManifest(projectId, repositoryIds);
 
         return new GroupContext(group.getId().toString(), projectId.toString(), group.getName(), group.getDescription(),
-                repositoryIds, repositories, conversation, skills, memories);
-    }
-
-    private List<UUID> activeProjectRepositoryIds(UUID projectId) {
-        return projectRepositoryMapper.selectList(Wrappers.<ProjectRepositoryEntity>lambdaQuery()
-                        .eq(ProjectRepositoryEntity::getProjectId, projectId)
-                        .eq(ProjectRepositoryEntity::getStatus, "ACTIVE"))
-                .stream().map(ProjectRepositoryEntity::getId).toList();
-    }
-
-    private List<ContextRepository> repositoryManifest(UUID projectId, List<String> repositoryIds) {
-        if (repositoryIds.isEmpty()) {
-            return List.of();
-        }
-        List<UUID> ids = repositoryIds.stream().map(this::parseUuid).filter(java.util.Objects::nonNull).toList();
-        Map<UUID, ProjectRepositoryEntity> bindings = projectRepositoryMapper.selectBatchIds(ids).stream()
-                .filter(binding -> projectId.equals(binding.getProjectId()))
-                .collect(java.util.stream.Collectors.toMap(ProjectRepositoryEntity::getId,
-                        java.util.function.Function.identity(), (first, ignored) -> first));
-        List<UUID> githubIds = bindings.values().stream().map(ProjectRepositoryEntity::getRepositoryId)
-                .filter(java.util.Objects::nonNull).toList();
-        Map<UUID, GitHubRepositoryEntity> github = githubRepositoryMapper.selectBatchIds(githubIds).stream()
-                .collect(java.util.stream.Collectors.toMap(GitHubRepositoryEntity::getId,
-                        java.util.function.Function.identity(), (first, ignored) -> first));
-        return ids.stream().map(bindings::get).filter(java.util.Objects::nonNull).map(binding -> {
-            GitHubRepositoryEntity remote = github.get(binding.getRepositoryId());
-            String fullName = remote == null || remote.getOwnerLogin() == null || remote.getName() == null
-                    ? null : remote.getOwnerLogin() + "/" + remote.getName();
-            String name = binding.getDisplayName() == null || binding.getDisplayName().isBlank()
-                    ? (fullName == null ? binding.getRepositoryId().toString() : fullName) : binding.getDisplayName();
-            return new ContextRepository(binding.getId().toString(), name, fullName, binding.getDefaultBranch(),
-                    null, null, null);
-        }).toList();
-    }
-
-    private UUID parseUuid(String value) {
-        try {
-            return UUID.fromString(value);
-        } catch (RuntimeException ignored) {
-            return null;
-        }
+                conversation, skills, memories);
     }
 
     /**

@@ -8,8 +8,26 @@ Qgents 是一个支持群聊和代码交付的 Agent 平台。普通消息只用
 
 模型调用 `prepare_workspace` 或用户显式调用 Task API 时创建 Task，并分配固定工作区。
 `list_tasks` / `use_workspace` 或 Task 的 `/start` API 继续已有工作，复用原工作区。
-代码工具复用沙箱 Worker。任务结束只回复执行结果；用户明确要求提交 MR 时，模型调用
-`workspace_repositories` / `create_merge_request` 提交当前修改、推送分支，并直接在 GitHub 创建或复用 PR。
+项目创建时自动创建唯一默认群聊；群成员来自项目成员，不区分主群或需求群。
+Task 工作区初始为空。Agent 自主选择仓库，clone 默认使用远端默认/base 分支，
+可自行建分支、commit、push 和创建 PR；系统不绑定仓库，也不维护 GitHub/MR 业务状态。
+`run_command` 在工作区中执行参数数组命令，并返回真实输出及退出码。
+
+### 可选 GitHub 能力
+
+GitHub 工具绑定 Agent，未配置时不开放工具。先在部署环境提供 `AGENT_GITHUB_TOKEN`，
+再通过 `PUT /api/v1/teams/{teamId}/agents/{agentId}/github-capability` 设置
+`{"credentialRef":"default"}`；空字符串禁用能力。默认 Agent 由 Team Owner 配置，
+自定义 Agent 由创建者配置，也可在创建或编辑时提供 `githubCredentialRef`。
+多凭证可配置 `app.agent.github.<ref>.token`，Agent 只保存引用；token 不进入提示词或工具参数。
+
+- `github_request` 访问 GitHub REST API，如查询仓库、创建 PR、查询或合并 PR。
+- `github_git` 支持带认证的 fetch、pull 等 Git 操作。
+- `github_clone` / `github_push` 使用当前 Agent 的凭证，在其 Task 工作区内操作选择的仓库。
+- 仓库基线省略时遵循远端默认分支；分支、提交和其他 Git 操作用 `run_command`。
+- Git 操作使用临时进程环境认证，不把凭据写入 remote URL 或仓库配置。
+
+本次使用项目已有 Tool 机制提供附加能力，不引入 MCP 服务框架；技能仍通过现有 Skill 工具按需激活。
 
 ## Agent 实现
 
@@ -48,19 +66,19 @@ Qgents/
 
 源码按业务组织，每个业务内部按需使用 `controller`、`service`、`dto`、`entity`、`mapper`、`config` 等子包。测试与被测代码保持相同包路径。
 
-- API：`agent`（loop、Agent 管理和模型工具）、`chat`（群组、消息、上下文）、`task`、`workspace`、`sandbox`（Worker 客户端）、`github`、`mergerequest`、`team`、`project`、`auth`、`user`、`attachment`、`skill`、`memory`、`notification`、`realtime`。
-- Worker：`sandbox`（容器和租约）、`workspace`（工作区及 Git 操作）、`tool`（文件和开发命令工具）。
+- API：`agent`（loop、Agent 管理和模型工具）、`chat`（群组、消息、上下文）、`task`、`workspace`、`sandbox`（Worker 客户端）、`team`、`project`、`auth`、`user`、`attachment`、`skill`、`memory`、`notification`、`realtime`。
+- Worker：`sandbox`（容器和租约）、`workspace`（空工作区管理）、`tool`（文件和开发命令工具）。
 - `common`：跨业务的响应、异常、UUID、幂等处理和基础配置；业务代码放回所属业务包。
 
 ### 两个服务的职责边界
 
 | 服务 | 职责 | 端口 | 数据库 |
 |---|---|---|---|
-| `qgents-api` | Team / Project 隔离、群聊与任务编排、GitHub 集成、Task 工作区与 GitHub PR、鉴权与通知 | 8080（API）、8081（管理端点） | `qgents` |
-| `qgents-sandbox-worker` | Workspace Manager（bare Git Store 上的 linked worktree 与受控 Git 操作）、Sandbox Manager（沙箱创建与受限文件/命令工具） | 8091 | `qgents_sandbox_worker` |
+| `qgents-api` | Team / Project 隔离、群聊、Agent loop 与 Task 工作区、鉴权与通知 | 8080（API）、8081（管理端点） | `qgents` |
+| `qgents-sandbox-worker` | 空工作区、沙箱创建与文件/命令执行 | 8091 | `qgents_sandbox_worker` |
 
 `qgents-sandbox-worker` 持有 Docker Socket 与工作区挂载权限，安全边界高于主后端，因此独立打包、
-独立数据库、独立部署。Agent 沙箱镜像不安装 Git，Worker 镜像保留 Git CLI。
+独立数据库、独立部署。Agent 沙箱镜像安装 Git，命令在沙箱中执行。
 
 ## 环境要求
 
@@ -81,9 +99,13 @@ Qgents/
 .\mvnw.cmd -pl qgents-api clean package -DskipTests
 .\mvnw.cmd -pl qgents-sandbox-worker clean package -DskipTests
 
-# 运行测试
+# 运行单元测试（不要求数据库和 Docker）
 .\mvnw.cmd test
 .\mvnw.cmd -pl qgents-sandbox-worker test
+
+# 外部服务集成测试需初始化新版数据库，并显式启用
+$env:QGENTS_INTEGRATION_TESTS="true"
+.\mvnw.cmd -pl qgents-api -Dtest=FixedAccountAuthIntegrationTest test
 ```
 
 ## 运行

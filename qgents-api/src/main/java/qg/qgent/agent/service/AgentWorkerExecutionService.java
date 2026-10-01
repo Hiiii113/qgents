@@ -57,7 +57,6 @@ public class AgentWorkerExecutionService {
             return;
         }
         stored.setSandboxId(execution.getSandboxId());
-        stored.setRepositoryId(execution.getRepositoryId());
         stored.setToolName(limit(execution.getTool(), 64));
         stored.setStatus(limit(execution.getStatus(), 24));
         stored.setExitCode(execution.getExitCode());

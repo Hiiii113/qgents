@@ -24,7 +24,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        bash build-essential ca-certificates curl diffutils findutils gnupg jq make \
+        bash build-essential ca-certificates curl diffutils findutils gnupg git jq make \
         patch python3 ripgrep tar unzip wget xz-utils zip \
     && curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \

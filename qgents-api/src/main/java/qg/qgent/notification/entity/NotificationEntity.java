@@ -35,7 +35,7 @@ public class NotificationEntity {
     private UUID groupId;
 
     /**
-     * 通知类型：MESSAGE_MENTION/MR_PENDING/INVITED/TEAM_JOINED/PROJECT_ADDED。
+     * 通知类型：MESSAGE_MENTION/INVITED/TEAM_JOINED/PROJECT_ADDED。
      */
     private String kind;
 
@@ -54,8 +54,6 @@ public class NotificationEntity {
      */
     private String resourceId;
 
-    /** MR_PENDING 的幂等键；其他通知为空。 */
-    private String dedupeKey;
 
     /**
      * 是否已读：true 已读，false 未读（TINYINT(1)）。

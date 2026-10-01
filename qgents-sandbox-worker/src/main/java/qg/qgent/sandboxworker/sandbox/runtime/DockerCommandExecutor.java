@@ -42,6 +42,11 @@ public class DockerCommandExecutor implements CommandExecutor {
     public CommandExecutionResult execute(SandboxAllocation sandbox, String workingDirectory, List<String> command,
                                           Duration timeout)
             throws InterruptedException {
+        return execute(sandbox,workingDirectory,command,timeout,java.util.Map.of());
+    }
+    @Override
+    public CommandExecutionResult execute(SandboxAllocation sandbox,String workingDirectory,List<String> command,
+                                          Duration timeout,java.util.Map<String,String> environment) throws InterruptedException {
         if (sandbox.getRuntimeHandle() == null) {
             throw new IllegalStateException("沙箱缺少底层容器编号");
         }
@@ -49,7 +54,7 @@ public class DockerCommandExecutor implements CommandExecutor {
                 new ReentrantLock());
         lock.lockInterruptibly();
         try {
-            return executeLocked(sandbox, workingDirectory, command, timeout);
+            return executeLocked(sandbox, workingDirectory, command, timeout, environment);
         } finally {
             lock.unlock();
         }
@@ -60,13 +65,14 @@ public class DockerCommandExecutor implements CommandExecutor {
      * 取消或超时需要重启容器，因此同一 Sandbox 内的容器命令必须串行，避免误杀其他正在运行的命令。
      */
     private CommandExecutionResult executeLocked(SandboxAllocation sandbox, String workingDirectory,
-                                                  List<String> command, Duration timeout) throws InterruptedException {
+                                                  List<String> command, Duration timeout,java.util.Map<String,String> environment) throws InterruptedException {
         String execId;
         try {
             execId = docker.execCreateCmd(sandbox.getRuntimeHandle())
                     .withAttachStdout(true)
                     .withAttachStderr(true)
                     .withWorkingDir(workingDirectory)
+                    .withEnv(environment.entrySet().stream().map(e -> e.getKey()+"="+e.getValue()).toList())
                     .withCmd(command.toArray(String[]::new))
                     .exec().getId();
         } catch (RuntimeException exception) {

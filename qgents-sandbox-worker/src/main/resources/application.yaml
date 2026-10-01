@@ -55,9 +55,6 @@ sandbox:
   workspace-local-root: ${SANDBOX_WORKSPACE_LOCAL_ROOT:/var/lib/qgents/workspaces}
   workspace-docker-host-root: ${SANDBOX_WORKSPACE_DOCKER_HOST_ROOT:/srv/qgents/workspaces}
   workspace-metadata-root: ${SANDBOX_WORKSPACE_METADATA_ROOT:/var/lib/qgents/workspace-metadata}
-  git-store-root: ${SANDBOX_GIT_STORE_ROOT:/var/lib/qgents/git-store}
-  # 主后端内部地址；仅用于兑换一次性短期 Git 凭据，真实 Token 不写入配置或数据库。
-  backend-url: ${SANDBOX_BACKEND_URL:http://qgents-backend:8080}
   backend-service-token: ${SANDBOX_BACKEND_SERVICE_TOKEN:}
   images:
     dev-tools: ${SANDBOX_DEV_TOOLS_IMAGE:qgents/sandbox-dev-tools:0.2.0}

@@ -41,16 +41,12 @@ public class FileEnsureTrailingNewlineTool implements SandboxTool {
         return "file.ensure_trailing_newline";
     }
 
-    @Override
-    public boolean requiresRepository() {
-        return true;
-    }
 
     @Override
     public ToolResult execute(ToolContext context, Map<String, Object> arguments) {
         String relativePath = ToolArguments.string(arguments, "path", 1024);
         String expectedHash = ToolArguments.string(arguments, "expectedHash", 64);
-        Path target = files.resolveForWrite(context.getLocalRepository(), relativePath);
+        Path target = files.resolveForWrite(context.getLocalWorkspace(), relativePath);
         try {
             if (Files.isSymbolicLink(target) || !Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)) {
                 throw new WorkerException(UNPROCESSABLE_ENTITY, "TOOL_PATH_INVALID",

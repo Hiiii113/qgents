@@ -28,7 +28,6 @@ public class SandboxResponse {
     /**
      * Sandbox 绑定的项目仓库编号集合。
      */
-    private List<UUID> repositoryIds;
     private String status;
     private String runtimeKind;
     private Instant createdAt;

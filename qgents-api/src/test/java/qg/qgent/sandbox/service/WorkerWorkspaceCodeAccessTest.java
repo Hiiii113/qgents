@@ -45,8 +45,7 @@ class WorkerWorkspaceCodeAccessTest {
     }
 
     private SandboxSession session() {
-        return new SandboxSession(UUID.randomUUID(), WORKSPACE, SANDBOX, "workspaces/" + WORKSPACE,
-                List.of(REPO_A, REPO_B), Map.of("repo-a", REPO_A, "repo-b", REPO_B));
+        return new SandboxSession(UUID.randomUUID(), WORKSPACE, SANDBOX, "workspaces/" + WORKSPACE);
     }
 
     /** 按请求构造终态结果：submit 时记录执行编号，poll 时按编号返回。 */
@@ -64,28 +63,22 @@ class WorkerWorkspaceCodeAccessTest {
     }
 
     @Test
-    void listFilesFlattensAcrossRepositoriesAndSkipsIgnoredDirs() {
+    void listFilesTraversesAgentCreatedDirectoriesAndSkipsBuildOutput() {
         when(sessions.require(WORKSPACE)).thenReturn(session());
         stubToolExecution(request -> {
-            WorkerToolExecution execution = new WorkerToolExecution();
-            execution.setStatus("SUCCEEDED");
-            String dir = String.valueOf(request.getArguments().get("path"));
-            List<Map<String, Object>> items;
-            if (REPO_A.equals(request.getRepositoryId())) {
-                items = ".".equals(dir)
-                        ? List.of(Map.of("name", "src", "directory", true),
-                                Map.of("name", "README.md", "directory", false))
-                        : List.of(Map.of("name", "A.java", "directory", false));
-            } else {
-                items = List.of(Map.of("name", "B.java", "directory", false),
-                        Map.of("name", "target", "directory", true));
-            }
-            execution.setResult(Map.of("path", dir, "items", items));
-            return execution;
+            WorkerToolExecution result = new WorkerToolExecution();
+            result.setStatus("SUCCEEDED");
+            String path = request.getArguments().get("path").toString();
+            var items = switch (path) {
+                case "." -> List.of(Map.of("name", "repo-a", "directory", true), Map.of("name", "repo-b", "directory", true));
+                case "repo-a" -> List.of(Map.of("name", "src", "directory", true), Map.of("name", "README.md", "directory", false));
+                case "repo-a/src" -> List.of(Map.of("name", "A.java", "directory", false));
+                default -> List.of(Map.of("name", "B.java", "directory", false), Map.of("name", "target", "directory", true));
+            };
+            result.setResult(Map.of("items", items));
+            return result;
         });
-
-        assertThat(access.listFiles(WORKSPACE))
-                .containsExactly("repo-a/README.md", "repo-a/src/A.java", "repo-b/B.java");
+        assertThat(access.listFiles(WORKSPACE)).containsExactly("repo-a/README.md", "repo-a/src/A.java", "repo-b/B.java");
     }
 
     @Test
@@ -96,9 +89,7 @@ class WorkerWorkspaceCodeAccessTest {
             execution.setStatus("SUCCEEDED");
             String dir = String.valueOf(request.getArguments().get("path"));
             List<Map<String, Object>> items;
-            if (REPO_B.equals(request.getRepositoryId())) {
-                items = List.of();
-            } else if (".".equals(dir)) {
+            if (".".equals(dir)) {
                 items = List.of(Map.of("name", "empty-folder", "directory", true),
                         Map.of("name", "src", "directory", true));
             } else if ("src".equals(dir)) {
@@ -112,7 +103,7 @@ class WorkerWorkspaceCodeAccessTest {
         });
 
         assertThat(access.listFiles(WORKSPACE))
-                .containsExactly("repo-a/empty-folder", "repo-a/src/A.java");
+                .containsExactly("empty-folder", "src/A.java");
     }
 
     @Test
@@ -135,8 +126,7 @@ class WorkerWorkspaceCodeAccessTest {
         ArgumentCaptor<WorkerToolExecutionRequest> captor =
                 ArgumentCaptor.forClass(WorkerToolExecutionRequest.class);
         verify(client).submitToolExecution(any(), captor.capture());
-        assertThat(captor.getValue().getRepositoryId()).isEqualTo(REPO_A);
-        assertThat(captor.getValue().getArguments().get("path")).isEqualTo("src/Foo.java");
+        assertThat(captor.getValue().getArguments().get("path")).isEqualTo("repo-a/src/Foo.java");
     }
 
     @Test
@@ -145,9 +135,7 @@ class WorkerWorkspaceCodeAccessTest {
         stubToolExecution(request -> {
             WorkerToolExecution execution = new WorkerToolExecution();
             execution.setStatus("SUCCEEDED");
-            List<String> matches = REPO_A.equals(request.getRepositoryId())
-                    ? List.of("src/Foo.java:12:foo()", "src/Foo.java:20:foo")
-                    : List.of("Bar.java:1:foo");
+            List<String> matches = List.of("repo-a/src/Foo.java:12:foo()", "repo-a/src/Foo.java:20:foo", "repo-b/Bar.java:1:foo");
             execution.setResult(Map.of("matches", matches));
             return execution;
         });

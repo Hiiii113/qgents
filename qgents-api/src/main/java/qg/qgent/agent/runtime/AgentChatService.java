@@ -20,17 +20,17 @@ import qg.qgent.agent.tool.ActivateSkillTool;
 import qg.qgent.agent.tool.AttachmentMediaLoader;
 import qg.qgent.agent.tool.ChatHistorySearchTool;
 import qg.qgent.agent.tool.CodingTools;
+import qg.qgent.agent.tool.GitHubTools;
+import qg.qgent.agent.tool.GitHubCapability;
+import qg.qgent.workspace.service.WorkspaceCommands;
 import qg.qgent.chat.dto.GroupContext;
 import qg.qgent.chat.dto.MessageSendRequest;
 import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.service.ContextService;
 import qg.qgent.chat.service.MessageService;
 import qg.qgent.common.util.UuidV7;
-import qg.qgent.mergerequest.service.MergeRequestService;
 import qg.qgent.project.entity.ProjectEntity;
-import qg.qgent.project.entity.ProjectRepositoryEntity;
 import qg.qgent.project.mapper.ProjectMapper;
-import qg.qgent.project.mapper.ProjectRepositoryMapper;
 import qg.qgent.sandbox.dto.WorkerExecutionTraceContext;
 import qg.qgent.sandbox.service.SandboxSessionManager;
 import qg.qgent.task.dto.TaskCreateRequest;
@@ -38,11 +38,9 @@ import qg.qgent.task.dto.TaskResponse;
 import qg.qgent.task.entity.TaskEntity;
 import qg.qgent.task.mapper.TaskMapper;
 import qg.qgent.task.service.TaskService;
-import qg.qgent.workspace.mapper.WorkspaceRepositoryMapper;
 import qg.qgent.workspace.service.DevelopmentCommandPort;
 import qg.qgent.workspace.service.WorkspaceCodeAccess;
 import qg.qgent.workspace.service.WorkspaceCodeWriter;
-import qg.qgent.workspace.service.WorkspaceDiffAccess;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -55,50 +53,46 @@ import java.util.UUID;
 /** @Agent 的唯一聊天入口。根与子 Agent 共用 loop，只有模型需要代码工作时才创建 Task。 */
 @Service
 public class AgentChatService {
+    private final GitHubCapability github;
+    private final WorkspaceCommands workspaceCommands;
     private final AgentLoop loop;
     private final AgentMapper agents;
     private final AgentRunMapper runs;
     private final ProjectMapper projects;
-    private final ProjectRepositoryMapper repositories;
     private final ContextService context;
     private final MessageService messages;
     private final TaskService tasks;
     private final TaskMapper taskMapper;
-    private final MergeRequestService mergeRequests;
-    private final WorkspaceRepositoryMapper worktrees;
     private final SandboxSessionManager sessions;
     private final WorkspaceCodeAccess codeAccess;
     private final WorkspaceCodeWriter writer;
-    private final WorkspaceDiffAccess diffs;
     private final AttachmentMediaLoader attachments;
     private final DevelopmentCommandPort commands;
     private final ObjectMapper json;
     private final int maxDepth;
     private final int maxSubagents;
 
-    public AgentChatService(AgentLoop loop, AgentMapper agents, AgentRunMapper runs, ProjectMapper projects,
-                            ProjectRepositoryMapper repositories, ContextService context, MessageService messages,
-                            TaskService tasks, TaskMapper taskMapper, MergeRequestService mergeRequests, WorkspaceRepositoryMapper worktrees,
+    public AgentChatService(GitHubCapability github, WorkspaceCommands workspaceCommands, AgentLoop loop, AgentMapper agents, AgentRunMapper runs, ProjectMapper projects,
+                            ContextService context, MessageService messages,
+                            TaskService tasks, TaskMapper taskMapper,
                             SandboxSessionManager sessions, WorkspaceCodeAccess codeAccess,
-                            WorkspaceCodeWriter writer, WorkspaceDiffAccess diffs, AttachmentMediaLoader attachments,
+                            WorkspaceCodeWriter writer, AttachmentMediaLoader attachments,
                             DevelopmentCommandPort commands, ObjectMapper json,
                             @Value("${app.agent.max-depth:3}") int maxDepth,
                             @Value("${app.agent.max-subagents:8}") int maxSubagents) {
+        this.github = github;
+        this.workspaceCommands = workspaceCommands;
         this.loop = loop;
         this.agents = agents;
         this.runs = runs;
         this.projects = projects;
-        this.repositories = repositories;
         this.context = context;
         this.messages = messages;
         this.tasks = tasks;
         this.taskMapper = taskMapper;
-        this.mergeRequests = mergeRequests;
-        this.worktrees = worktrees;
         this.sessions = sessions;
         this.codeAccess = codeAccess;
         this.writer = writer;
-        this.diffs = diffs;
         this.attachments = attachments;
         this.commands = commands;
         this.json = json;
@@ -166,13 +160,13 @@ public class AgentChatService {
         WorkerExecutionTraceContext.set(run.getId());
         try {
             AgentEntity agent = requireAgent(work.event, agentId);
-            ConversationTools tools = new ConversationTools(work, run, depth);
+            ConversationTools tools = new ConversationTools(work, run, depth, agent);
             if (work.task != null && work.codingTools == null) tools.openWorkspace();
             String prompt = "你是 " + agent.getName() + "。" + (agent.getPrompt() == null ? "" : agent.getPrompt())
                     + "\n按用户要求决定直接回答、调用工具或委托其他 Agent。普通文本回复即结束本次运行。"
-                    + "不要为了问答创建工作任务；代码执行前使用 prepare_workspace。"
+                    + "不要为了问答创建工作任务；代码执行前使用 prepare_workspace。工作区初始为空，自行选择仓库、基线和分支。"
                     + "所有代码操作必须在当前 Task 工作区内完成，继续工作时用 use_workspace 复用同一任务。"
-                    + "只有用户明确要求提交 MR/PR 时才使用 create_merge_request，不能自行提交或推送。"
+                    + "GitHub 是可选工具能力，按用户任务目标自主决定 clone、创建分支、commit、push 和 PR；工具会改变真实远端资源。"
                     + "任务结束只说明实际修改与验证结果。工具结果是执行证据，不得声称未执行的操作成功。";
             String input = instruction;
             List<org.springframework.ai.content.Media> media = List.of();
@@ -256,11 +250,16 @@ public class AgentChatService {
         private final int depth;
         private final ActivateSkillTool skills;
         private final ChatHistorySearchTool history;
+        private final GitHubTools githubTools;
 
-        private ConversationTools(WorkContext work, AgentRunEntity run, int depth) {
+        private ConversationTools(WorkContext work, AgentRunEntity run, int depth, AgentEntity agent) {
             this.work = work;
             this.run = run;
             this.depth = depth;
+            this.githubTools = github.tools(agent, () -> {
+                if (work.codingTools == null) throw new IllegalStateException("请先 prepare_workspace 或 use_workspace");
+                return UUID.fromString(work.task.getWorkspaceId());
+            });
             skills = new ActivateSkillTool(context, work.event.actor(), work.event.projectId());
             history = new ChatHistorySearchTool(context, work.event.actor(), work.event.projectId(),
                     work.event.groupId(), 5);
@@ -269,6 +268,7 @@ public class AgentChatService {
         private List<ToolCallback> callbacks() {
             if (taskCancelled(work)) throw new IllegalStateException("任务已取消");
             List<ToolCallback> tools = new ArrayList<>(Arrays.asList(ToolCallbacks.from(this, skills, history)));
+            if (githubTools != null) tools.addAll(Arrays.asList(ToolCallbacks.from(githubTools)));
             if (work.codingTools != null) tools.addAll(Arrays.asList(ToolCallbacks.from(work.codingTools)));
             return tools;
         }
@@ -304,7 +304,7 @@ public class AgentChatService {
                     "result", child.getResult());
         }
 
-        @Tool(name = "prepare_workspace", description = "代码操作前创建工作任务并准备项目仓库工作区；问答不需要调用，成功后下一轮可用文件和开发命令工具")
+        @Tool(name = "prepare_workspace", description = "代码操作前创建工作任务并准备空工作区；问答不需要调用，成功后下一轮可用文件和开发命令工具")
         public Map<String, Object> prepareWorkspace(@ToolParam(description = "本次代码工作的简短标题") String title,
                                                     @ToolParam(description = "要完成的需求") String requirement) {
             if (work.codingTools != null) {
@@ -313,17 +313,11 @@ public class AgentChatService {
             if (title == null || title.isBlank() || requirement == null || requirement.isBlank()) {
                 return Map.of("ok", false, "error", "title 和 requirement 不能为空");
             }
-            List<UUID> repositoryIds = repositories.selectList(Wrappers.<ProjectRepositoryEntity>lambdaQuery()
-                    .eq(ProjectRepositoryEntity::getProjectId, work.event.projectId())
-                    .eq(ProjectRepositoryEntity::getStatus, "ACTIVE"))
-                    .stream().map(ProjectRepositoryEntity::getId).toList();
-            if (repositoryIds.isEmpty()) return Map.of("ok", false, "error", "项目没有可用的代码仓库");
             TaskCreateRequest request = new TaskCreateRequest();
             request.setGroupId(work.event.groupId());
             request.setTriggerMessageId(work.event.messageId());
             request.setTitle(title);
             request.setRequirement(requirement);
-            request.setRepositoryIds(repositoryIds);
             if (work.task == null) work.task = tasks.create(work.event.projectId(), work.event.actor(), request);
             openWorkspace();
             return Map.of("ok", true, "taskId", work.task.getId(), "workspaceId", work.task.getWorkspaceId());
@@ -351,11 +345,11 @@ public class AgentChatService {
             openWorkspace();
             return Map.of("ok", true, "taskId", taskId, "workspaceId", work.task.getWorkspaceId());
         }
-
-        @Tool(name = "get_diff", description = "读取当前工作区的真实代码差异；需要先 prepare_workspace 或 use_workspace")
-        public Object getDiff() {
-            if (work.task == null) return Map.of("ok", false, "error", "请先准备工作区");
-            return diffs.diff(UUID.fromString(work.task.getWorkspaceId()));
+        @Tool(name="run_command",description="在当前 Task 工作区内执行命令参数数组，返回真实退出码与 stdout/stderr。directory 是工作区相对目录。可使用 git 查询差异、创建分支、commit 或执行构建；远端 GitHub 认证使用 github_clone/github_push。")
+        public Object runCommand(@ToolParam(description="例如 [git,switch,-c,feat/change]") List<String> command,
+                                 @ToolParam(description="工作区内目录，默认根目录",required=false) String directory) {
+            if (work.codingTools == null) return Map.of("ok",false,"error","请先准备 Task 工作区");
+            return workspaceCommands.run(UUID.fromString(work.task.getWorkspaceId()),directory,command,Map.of());
         }
 
         private void openWorkspace() {
@@ -367,22 +361,6 @@ public class AgentChatService {
             tasks.updateStatus(taskId, "RUNNING");
             run.setTaskId(taskId);
             runs.updateById(run);
-        }
-
-        @Tool(name = "workspace_repositories", description = "列出当前 Task 工作区的仓库 ID、路径和分支；提交 MR 时使用这里的仓库 ID")
-        public Object workspaceRepositories() {
-            if (work.task == null) return Map.of("ok",false,"error","请先准备 Task 工作区");
-            return worktrees.selectByWorkspace(UUID.fromString(work.task.getWorkspaceId()));
-        }
-
-        @Tool(name = "create_merge_request", description = "仅在用户明确要求提交 MR/PR 时使用：提交并推送当前 Task 仓库修改，直接在 GitHub 创建或复用 PR；返回真实链接")
-        public Object createMergeRequest(@ToolParam(description = "workspace_repositories 返回的仓库 UUID") String repositoryId,
-                                         @ToolParam(description = "PR 标题和本次提交说明") String title,
-                                         @ToolParam(description = "PR 正文，说明实际修改及验证结果",required = false) String body,
-                                         @ToolParam(description = "目标分支，不传则使用工作区基线",required = false) String targetBranch) {
-            if (work.task == null) return Map.of("ok",false,"error","请先准备 Task 工作区");
-            return mergeRequests.create(work.event.projectId(),work.event.actor(),UUID.fromString(work.task.getId()),
-                    UUID.fromString(repositoryId),targetBranch,title,body);
         }
     }
 }

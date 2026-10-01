@@ -20,7 +20,9 @@ public class ToolExecutionRequest {
     @NotNull
     private UUID executionId;
 
-    private UUID repositoryId;
+    @lombok.ToString.Exclude
+    private Map<String,String> environment = Map.of();
+
 
     @NotBlank
     @Size(max = 64)

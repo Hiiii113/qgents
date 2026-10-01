@@ -9,7 +9,6 @@ import qg.qgent.sandboxworker.sandbox.dto.CreateSandboxRequest;
 import qg.qgent.sandboxworker.sandbox.dto.ResourceLimitsRequest;
 import qg.qgent.sandboxworker.sandbox.dto.SandboxResponse;
 import qg.qgent.sandboxworker.sandbox.runtime.FakeContainerRuntime;
-import qg.qgent.sandboxworker.workspace.service.WorkspaceMetadataStore;
 import qg.qgent.sandboxworker.workspace.service.WorkspaceOperationLock;
 
 import java.nio.file.Path;
@@ -59,35 +58,9 @@ class SandboxServiceTest {
         assertTrue(service.expiredSandboxIds().contains(request.getSandboxId()));
     }
 
-    @Test
-    void resolvesAuthorizedRepositoryIdsFromWorkspaceMetadata() {
-        SandboxWorkerProperties properties = properties();
-        WorkspaceMetadataStore metadata = mock(WorkspaceMetadataStore.class);
-        UUID repositoryId = UUID.randomUUID();
-        CreateSandboxRequest request = request();
-        request.setRepositoryIds(java.util.List.of(repositoryId));
-        when(metadata.resolveRepositories(request.getWorkspaceStorageKey(), request.getRepositoryIds()))
-                .thenReturn(java.util.Map.of(repositoryId, "backend"));
 
-        SandboxService service = new SandboxService(runtime, properties, Clock.fixed(now, ZoneOffset.UTC),
-                new WorkspaceOperationLock(properties), metadata);
-        service.create(request);
 
-        assertEquals("backend", runtime.find(request.getSandboxId()).orElseThrow()
-                .getRepositoryPaths().get(repositoryId));
-    }
 
-    @Test
-    void rejectsDuplicateRepositoryIds() {
-        UUID repositoryId = UUID.randomUUID();
-        CreateSandboxRequest request = request();
-        request.setRepositoryIds(java.util.List.of(repositoryId, repositoryId));
-
-        var exception = assertThrows(qg.qgent.sandboxworker.common.web.WorkerException.class,
-                () -> service().create(request));
-
-        assertEquals("SANDBOX_REPOSITORY_DUPLICATE", exception.getCode());
-    }
 
     @Test
     void sameSandboxIdSameSpecIsIdempotent() {
@@ -110,7 +83,6 @@ class SandboxServiceTest {
         assertEquals(request.getWorkspaceStorageKey(), response.getWorkspaceStorageKey());
         assertEquals(request.getTaskId(), response.getTaskId());
         assertEquals(request.getImageProfile(), response.getImageProfile());
-        assertEquals(java.util.List.of(), response.getRepositoryIds());
     }
 
     @Test
@@ -149,10 +121,7 @@ class SandboxServiceTest {
 
     private SandboxService service() {
         SandboxWorkerProperties properties = properties();
-        WorkspaceMetadataStore metadata = mock(WorkspaceMetadataStore.class);
-        when(metadata.resolveRepositories(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyList()))
-                .thenReturn(java.util.Map.of());
         return new SandboxService(runtime, properties, Clock.fixed(now, ZoneOffset.UTC),
-                new WorkspaceOperationLock(properties), metadata);
+                new WorkspaceOperationLock(properties));
     }
 }

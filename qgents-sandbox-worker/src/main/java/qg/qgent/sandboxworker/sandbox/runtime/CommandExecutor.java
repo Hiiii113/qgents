@@ -22,4 +22,9 @@ public interface CommandExecutor {
             String workingDirectory,
             List<String> command,
             Duration timeout) throws InterruptedException;
+    default CommandExecutionResult execute(SandboxAllocation sandbox,String directory,List<String> command,
+                                           Duration timeout,java.util.Map<String,String> environment) throws InterruptedException {
+        if (!environment.isEmpty()) throw new IllegalStateException("此命令运行器不支持凭证环境");
+        return execute(sandbox,directory,command,timeout);
+    }
 }

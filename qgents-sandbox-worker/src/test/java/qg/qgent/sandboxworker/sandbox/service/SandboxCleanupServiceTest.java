@@ -7,7 +7,6 @@ import qg.qgent.sandboxworker.sandbox.config.SandboxWorkerProperties;
 import qg.qgent.sandboxworker.sandbox.dto.CreateSandboxRequest;
 import qg.qgent.sandboxworker.sandbox.runtime.FakeContainerRuntime;
 import qg.qgent.sandboxworker.tool.service.ToolExecutionService;
-import qg.qgent.sandboxworker.workspace.service.WorkspaceMetadataStore;
 import qg.qgent.sandboxworker.workspace.service.WorkspaceOperationLock;
 
 import java.nio.file.Path;
@@ -31,7 +30,7 @@ class SandboxCleanupServiceTest {
         FakeContainerRuntime runtime = new FakeContainerRuntime();
         Clock clock = Clock.fixed(Instant.parse("2026-08-12T00:00:00Z"), ZoneOffset.UTC);
         SandboxService sandboxes = new SandboxService(runtime, properties, clock,
-                new WorkspaceOperationLock(properties), mock(WorkspaceMetadataStore.class));
+                new WorkspaceOperationLock(properties));
         ToolExecutionService executions = mock(ToolExecutionService.class);
         SandboxCleanupService cleanup = new SandboxCleanupService(sandboxes, executions);
         CreateSandboxRequest request = request();

@@ -16,7 +16,6 @@ public class ToolExecutionEntity {
     private String id;
     private String ownerWorkerId;
     private String sandboxId;
-    private String repositoryId;
     private String toolName;
     private String argumentsJson;
     private String status;

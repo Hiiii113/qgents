@@ -62,8 +62,13 @@ abstract class AbstractWorkerToolPort {
     /**
      * 提交一次工具执行并阻塞等待终态。
      */
-    protected WorkerToolExecution executeTool(UUID workspaceId, UUID repositoryId, String tool,
+    protected WorkerToolExecution executeTool(UUID workspaceId, String tool,
                                               Map<String, Object> arguments, Duration timeout) {
+        return executeTool(workspaceId,tool,arguments,timeout,Map.of());
+    }
+
+    protected WorkerToolExecution executeTool(UUID workspaceId, String tool,
+                                              Map<String,Object> arguments, Duration timeout,Map<String,String> environment) {
         SandboxSession session = session(workspaceId);
         // 先续持久 Workspace 写租约，再续 Sandbox；二者都成功后才允许提交可能改动文件的工具。
         // 固定开发命令当前仍可能生成测试报告或构建缓存，因此保守地走同一护栏。
@@ -73,9 +78,9 @@ abstract class AbstractWorkerToolPort {
 
         WorkerToolExecutionRequest request = new WorkerToolExecutionRequest();
         request.setExecutionId(UuidV7.next());
-        request.setRepositoryId(repositoryId);
         request.setTool(tool);
         request.setArguments(arguments);
+        request.setEnvironment(environment);
         request.setTimeoutSeconds(timeout == null ? null : Math.max(1, timeout.toSeconds()));
         WorkerToolExecution submitted = client.submitToolExecution(sandboxId, request);
         // 提交成功后立即记录 ID：即使后续轮询超时或线程被取消，运维仍可定位 Worker 日志。

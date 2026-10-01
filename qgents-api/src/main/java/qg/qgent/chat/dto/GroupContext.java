@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * 群聊上下文（点3：聊天上下文管理）。
  * <p>
- * 将项目群聊的历史消息、需求、关联仓库、已发布 Skill 目录与已批准 Memory 组装为 Agent 输入上下文，
+ * 将项目群聊的历史消息、群描述、已发布 Skill 目录与已批准 Memory 组装为 Agent 输入上下文，
  * 供 Agent 编排系统（后端1）在创建 Task / 运行 Agent 时作为 prompt 输入。
  */
 @Data
@@ -18,57 +18,26 @@ import java.util.List;
 @AllArgsConstructor
 public class GroupContext {
 
-    /**
-     * 项目群聊 ID。
-     */
     @Schema(description = "项目群聊 ID")
     private String groupId;
 
-    /**
-     * 所属项目 ID。
-     */
     @Schema(description = "所属项目 ID")
     private String projectId;
 
-    /**
-     * 项目群聊标题（需求名称）。
-     */
     @Schema(description = "项目群聊标题")
-    private String requirementTitle;
+    private String title;
 
-    /**
-     * 需求背景说明。
-     */
     @Schema(description = "需求背景说明")
-    private String requirementDescription;
+    private String description;
 
-    /**
-     * 项目当前 ACTIVE 的仓库绑定 ID 列表；所有项目群聊共享项目仓库范围。
-     */
-    @Schema(description = "项目当前 ACTIVE 的仓库绑定 ID 列表，所有项目群聊共享")
-    private List<String> repositoryIds;
 
-    /**
-     * 项目当前可用的仓库清单；任务运行时会补充 Workspace 别名和实际分支。
-     */
-    @Schema(description = "项目共享仓库的可读清单")
-    private List<ContextRepository> repositories;
 
-    /**
-     * 近期群聊消息（新→旧或旧→新，供 Agent 理解对话历史）。
-     */
     @Schema(description = "近期群聊消息")
     private List<ContextMessage> conversation;
 
-    /**
-     * 项目可见的已发布 Skill 目录（仅 ID 与名称，正文需显式激活）。
-     */
     @Schema(description = "项目已发布 Skill 目录，仅包含 ID 与名称")
     private List<ContextSkill> skills;
 
-    /**
-     * 项目已批准的 Memory（供 Agent 复用确认知识）。
-     */
     @Schema(description = "项目已批准的 Memory")
     private List<ContextMemory> memories;
 

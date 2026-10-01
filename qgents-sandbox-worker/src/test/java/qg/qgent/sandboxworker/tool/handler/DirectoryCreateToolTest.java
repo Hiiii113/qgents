@@ -119,6 +119,6 @@ class DirectoryCreateToolTest {
     }
 
     private ToolContext context() {
-        return new ToolContext(null, null, repository, "/workspace/repository", null);
+        return new ToolContext(null, repository, "/workspace/repository", null);
     }
 }

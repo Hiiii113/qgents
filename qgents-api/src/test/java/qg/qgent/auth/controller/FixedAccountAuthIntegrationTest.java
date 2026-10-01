@@ -30,6 +30,7 @@ import java.util.Base64;
 import java.util.UUID;
 import javax.crypto.Cipher;
 
+@org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named = "QGENTS_INTEGRATION_TESTS", matches = "true")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 public class FixedAccountAuthIntegrationTest {
 

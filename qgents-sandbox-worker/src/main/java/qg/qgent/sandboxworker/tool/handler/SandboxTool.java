@@ -11,7 +11,7 @@ import java.util.Map;
 public interface SandboxTool {
     String name();
 
-    boolean requiresRepository();
+
 
     ToolResult execute(ToolContext context, Map<String, Object> arguments) throws InterruptedException;
 }

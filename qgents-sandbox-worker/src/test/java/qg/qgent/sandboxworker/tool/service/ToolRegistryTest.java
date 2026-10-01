@@ -43,7 +43,6 @@ class ToolRegistryTest {
 
         assertEquals("one\nTWO\nthree\n", Files.readString(file));
         assertEquals(0, result.getExitCode());
-        assertTrue(registry.requiresRepository("file.patch"));
     }
 
     @Test
@@ -53,7 +52,6 @@ class ToolRegistryTest {
         ToolResult result = registry.execute("directory.create", context(), Map.of("path", "new/dir"));
 
         assertEquals(true, result.getResult().get("created"));
-        assertTrue(registry.requiresRepository("directory.create"));
     }
 
     @Test
@@ -67,6 +65,6 @@ class ToolRegistryTest {
     }
 
     private ToolContext context() {
-        return new ToolContext(null, null, repository, "/workspace/note", null);
+        return new ToolContext(null, repository, "/workspace/note", null);
     }
 }

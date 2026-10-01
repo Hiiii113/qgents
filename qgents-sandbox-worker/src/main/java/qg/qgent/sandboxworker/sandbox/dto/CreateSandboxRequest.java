@@ -51,11 +51,4 @@ public class CreateSandboxRequest {
     @Valid
     private ResourceLimitsRequest limits;
 
-    /**
-     * 项目仓库编号到 Workspace 内相对目录的映射。
-     * 控制层根据 workspace_repositories 生成，工具执行时通过 repositoryId 选择工作目录。
-     */
-    @NotNull
-    @Size(max = 32)
-    private List<@NotNull UUID> repositoryIds = List.of();
 }

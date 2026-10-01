@@ -37,8 +37,4 @@ public class WorkerCreateSandboxRequest {
      */
     private WorkerResourceLimits limits;
 
-    /**
-     * 项目仓库编号列表，工具执行时据此解析工作目录。
-     */
-    private List<UUID> repositoryIds;
 }

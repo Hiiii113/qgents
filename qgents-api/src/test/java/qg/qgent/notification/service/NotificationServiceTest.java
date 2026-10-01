@@ -20,31 +20,15 @@ class NotificationServiceTest {
     private final EventService events = mock(EventService.class);
 
     @Test
-    void repeatedMrStatusDoesNotCreateAnotherNotification() {
+    void notificationPersistsAndPublishesToRecipient() {
         UUID recipient = UUID.randomUUID();
-        String mrId = UUID.randomUUID().toString();
-        doThrow(new DuplicateKeyException("duplicate MR status"))
-                .when(mapper).insert(any(NotificationEntity.class));
-        NotificationService service = new NotificationService(mapper, events, mock(PushNotificationService.class));
-
-        service.notifyMrStatus(recipient, UUID.randomUUID(), null, "MR 状态更新：1", "OPEN", mrId, "OPEN");
-
-        verify(mapper).insert(any(NotificationEntity.class));
-        verifyNoInteractions(events);
-    }
-
-    @Test
-    void changedMrStatusCreatesNotification() {
-        UUID recipient = UUID.randomUUID();
-        String mrId = UUID.randomUUID().toString();
-        NotificationService service = new NotificationService(mapper, events, mock(PushNotificationService.class));
-
-        service.notifyMrStatus(recipient, UUID.randomUUID(), null, "MR 状态更新：1", "MERGED", mrId, "MERGED");
-
-        verify(mapper).insert(any(NotificationEntity.class));
-        verify(events).publishNotification(eq(recipient), any(), eq("notification.created"), any());
+        PushNotificationService push = mock(PushNotificationService.class);
+        NotificationService service = new NotificationService(mapper, events, push);
+        service.notify(recipient, UUID.randomUUID(), null, "INVITED", "团队邀请", "欢迎", null);
         ArgumentCaptor<NotificationEntity> notification = ArgumentCaptor.forClass(NotificationEntity.class);
         verify(mapper).insert(notification.capture());
-        assertEquals(mrId + ":MERGED", notification.getValue().getDedupeKey());
+        assertEquals("INVITED", notification.getValue().getKind());
+        verify(events).publishNotification(eq(recipient), any(), eq("notification.created"), any());
+        verify(push).enqueue(notification.getValue());
     }
 }

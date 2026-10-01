@@ -9,9 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 import qg.qgent.chat.service.GroupService;
 import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
-import qg.qgent.project.entity.ProjectRepositoryEntity;
 import qg.qgent.project.mapper.ProjectMapper;
-import qg.qgent.project.mapper.ProjectRepositoryMapper;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.task.dto.TaskCreateRequest;
@@ -20,7 +18,6 @@ import qg.qgent.task.entity.TaskEntity;
 import qg.qgent.task.mapper.TaskMapper;
 import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
-import qg.qgent.workspace.mapper.WorkspaceRepositoryMapper;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -34,8 +31,6 @@ import java.util.UUID;
 public class TaskService {
     private final TaskMapper tasks;
     private final WorkspaceMapper workspaces;
-    private final WorkspaceRepositoryMapper worktrees;
-    private final ProjectRepositoryMapper repositories;
     private final ProjectMapper projects;
     private final GroupService groups;
     private final ProjectAccessService access;
@@ -45,20 +40,6 @@ public class TaskService {
     public TaskResponse create(UUID projectId, UUID actor, TaskCreateRequest request) {
         groups.requireGroupMember(projectId,request.getGroupId(),actor);
         projects.selectByIdForUpdate(projectId);
-        List<UUID> repositoryIds = request.getRepositoryIds();
-        if (repositoryIds == null || repositoryIds.isEmpty()) {
-            repositoryIds = repositories.selectList(Wrappers.<ProjectRepositoryEntity>lambdaQuery()
-                    .eq(ProjectRepositoryEntity::getProjectId, projectId)
-                    .eq(ProjectRepositoryEntity::getStatus, "ACTIVE"))
-                    .stream().map(ProjectRepositoryEntity::getId).toList();
-        }
-        repositoryIds = repositoryIds.stream().distinct().toList();
-        if (repositoryIds.isEmpty()) throw new IllegalArgumentException("项目没有可用代码仓库");
-        for (UUID id : repositoryIds) {
-            ProjectRepositoryEntity repository = repositories.selectById(id);
-            if (repository == null || !projectId.equals(repository.getProjectId()) || !"ACTIVE".equals(repository.getStatus()))
-                throw new IllegalArgumentException("仓库未绑定到当前项目");
-        }
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         WorkspaceEntity workspace = new WorkspaceEntity();
         workspace.setId(UuidV7.next());
@@ -83,12 +64,6 @@ public class TaskService {
         task.setCreatedAt(now);
         task.setUpdatedAt(now);
         tasks.insert(task);
-        int index = 1;
-        for (UUID id : repositoryIds) {
-            String baseRef = request.getBaseRefs() == null ? null : request.getBaseRefs().get(id);
-            if (baseRef == null) baseRef = request.getBaseRef();
-            worktrees.insertLink(workspace.getId(), id, "repo-" + index++, baseRef, "feat/task-" + task.getId());
-        }
         publish(task);
         return response(task);
     }
@@ -133,8 +108,6 @@ public class TaskService {
         response.setTriggerMessageId(task.getTriggerMessageId() == null ? null : task.getTriggerMessageId().toString());
         response.setCreatedAt(task.getCreatedAt() == null ? null : task.getCreatedAt().toString());
         response.setUpdatedAt(task.getUpdatedAt() == null ? null : task.getUpdatedAt().toString());
-        response.setRepositoryIds(worktrees.selectByWorkspace(task.getWorkspaceId()).stream()
-                .map(item->item.getProjectRepositoryId().toString()).toList());
         return response;
     }
 

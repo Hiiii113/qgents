@@ -24,9 +24,6 @@ import qg.qgent.sandboxworker.tool.dto.ExecutionLogsResponse;
 import qg.qgent.sandboxworker.tool.dto.ToolExecutionRequest;
 import qg.qgent.sandboxworker.tool.dto.ToolExecutionResponse;
 import qg.qgent.sandboxworker.tool.service.ToolExecutionService;
-import qg.qgent.sandboxworker.workspace.dto.GitResolveRequest;
-import qg.qgent.sandboxworker.workspace.dto.GitResolveResponse;
-import qg.qgent.sandboxworker.workspace.service.WorkspaceManagerService;
 
 import java.util.Map;
 import java.util.UUID;
@@ -42,7 +39,6 @@ import java.util.UUID;
 public class InternalSandboxController {
     private final SandboxService sandboxService;
     private final ToolExecutionService toolExecutionService;
-    private final WorkspaceManagerService workspaceManagerService;
 
     /**
      * 返回 Worker 进程的基础存活状态。
@@ -131,11 +127,4 @@ public class InternalSandboxController {
         sandboxService.destroy(sandboxId);
     }
 
-    /**
-     * 在受控 Git Store 中把引用解析为固定 commit SHA。
-     */
-    @PostMapping("/git-resolutions")
-    public GitResolveResponse resolveGitRef(@Valid @RequestBody GitResolveRequest request) {
-        return new GitResolveResponse(workspaceManagerService.resolveGitRef(request.getRepositoryId(), request.getRef()));
-    }
 }

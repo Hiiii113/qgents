@@ -34,7 +34,6 @@ public class WorkerToolExecution {
     /**
      * 目标仓库编号，无仓库工具为 null。
      */
-    private UUID repositoryId;
 
     /**
      * 工具名。

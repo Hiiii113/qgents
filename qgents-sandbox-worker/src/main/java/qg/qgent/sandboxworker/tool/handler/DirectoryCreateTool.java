@@ -45,15 +45,11 @@ public class DirectoryCreateTool implements SandboxTool {
         return "directory.create";
     }
 
-    @Override
-    public boolean requiresRepository() {
-        return true;
-    }
 
     @Override
     public ToolResult execute(ToolContext context, Map<String, Object> arguments) {
         String relativePath = ToolArguments.string(arguments, "path", 1024);
-        Path target = files.resolveForDirectoryCreate(context.getLocalRepository(), relativePath);
+        Path target = files.resolveForDirectoryCreate(context.getLocalWorkspace(), relativePath);
         try {
             if (Files.exists(target, LinkOption.NOFOLLOW_LINKS)) {
                 if (Files.isSymbolicLink(target) || !Files.isDirectory(target, LinkOption.NOFOLLOW_LINKS)) {
@@ -63,7 +59,7 @@ public class DirectoryCreateTool implements SandboxTool {
                 return ToolResult.value(Map.of("path", relativePath, "created", false));
             }
             Files.createDirectories(target);
-            files.verifyCreatedPath(context.getLocalRepository(), target);
+            files.verifyCreatedPath(context.getLocalWorkspace(), target);
             grantSandboxOwnership(target);
             ensureGitKeepWhenEmpty(target);
             return ToolResult.value(Map.of("path", relativePath, "created", true));

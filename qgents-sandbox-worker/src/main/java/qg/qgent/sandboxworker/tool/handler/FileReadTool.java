@@ -28,17 +28,13 @@ public class FileReadTool implements SandboxTool {
         return "file.read";
     }
 
-    @Override
-    public boolean requiresRepository() {
-        return true;
-    }
 
     @Override
     public ToolResult execute(ToolContext context, Map<String, Object> arguments) {
         String relativePath = ToolArguments.string(arguments, "path", 1024);
         int startLine = ToolArguments.integer(arguments, "startLine", 1, 1, Integer.MAX_VALUE);
         int lineCount = ToolArguments.integer(arguments, "lineCount", 200, 1, 1000);
-        Path file = files.resolveExisting(context.getLocalRepository(), relativePath);
+        Path file = files.resolveExisting(context.getLocalWorkspace(), relativePath);
         try {
             byte[] bytes = Files.readAllBytes(file);
             if (bytes.length > 2 * 1024 * 1024) {

@@ -24,7 +24,6 @@ public class AgentWorkerExecutionEntity {
     private UUID taskId;
     private UUID agentRunId;
     private UUID sandboxId;
-    private UUID repositoryId;
     private String toolName;
     private String status;
     private Integer exitCode;

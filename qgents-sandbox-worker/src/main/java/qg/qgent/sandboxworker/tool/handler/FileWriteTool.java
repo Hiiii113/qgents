@@ -46,17 +46,13 @@ public class FileWriteTool implements SandboxTool {
         return "file.write";
     }
 
-    @Override
-    public boolean requiresRepository() {
-        return true;
-    }
 
     @Override
     public ToolResult execute(ToolContext context, Map<String, Object> arguments) {
         String relativePath = ToolArguments.string(arguments, "path", 1024);
         String expectedHash = ToolArguments.string(arguments, "expectedHash", 64);
         String content = ToolArguments.optionalString(arguments, "content", "", 2 * 1024 * 1024);
-        Path target = files.resolveForWrite(context.getLocalRepository(), relativePath);
+        Path target = files.resolveForWrite(context.getLocalWorkspace(), relativePath);
         try {
             boolean existed = Files.exists(target);
             if (existed && (Files.isSymbolicLink(target)

@@ -37,19 +37,24 @@ public class DevelopmentRunTool implements SandboxTool {
         return "development.run";
     }
 
-    @Override
-    public boolean requiresRepository() {
-        return true;
-    }
 
     @Override
     public ToolResult execute(ToolContext context, Map<String, Object> arguments) throws InterruptedException {
-        if (arguments == null || arguments.size() != 1 || !arguments.containsKey("commandId")) {
+        if (arguments == null || !arguments.containsKey("commandId")
+                || !java.util.Set.of("commandId", "directory").containsAll(arguments.keySet())) {
             throw new WorkerException(HttpStatus.UNPROCESSABLE_ENTITY, "DEVELOPMENT_COMMAND_INVALID",
                     "开发命令只接受 commandId 枚举参数");
         }
         DevelopmentCommandId commandId = commandId(arguments.get("commandId"));
-        CommandExecutionResult result = executor.execute(context.getSandbox(), context.getContainerRepository(),
+        String directory = java.util.Objects.toString(arguments.get("directory"),".");
+        String containerDirectory;
+        try {
+            java.nio.file.Path root=context.getLocalWorkspace().toRealPath();
+            java.nio.file.Path target=root.resolve(directory).normalize().toRealPath();
+            if (!target.startsWith(root)) throw new IllegalArgumentException("工作目录超出工作区");
+            containerDirectory="/workspace"+(target.equals(root)?"":"/"+root.relativize(target).toString().replace('\\','/'));
+        } catch(java.io.IOException e) { throw new IllegalArgumentException("工作目录不存在",e); }
+        CommandExecutionResult result = executor.execute(context.getSandbox(), containerDirectory,
                 commandId.argv(), context.getTimeout());
         // 日志会持久化，因此必须在进入 ToolExecutionService 前先脱敏；结果只返回 commandId，绝不保存 argv。
         return new ToolResult(result.getExitCode(), Map.of("commandId", commandId.name()),

@@ -61,14 +61,10 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         }
         String path = request.getRequestURI();
 
-        // GitHub Installations: POST, DELETE, POST /sync
-        boolean isGitHubInstallApi = path.matches("^/api/v1/teams/[^/]+/integrations/github/installations(?:/[^/]+(?:/sync)?)?$");
-        boolean isGitHubOAuthWriteApi = path.matches("^/api/v1/me/integrations/github/oauth(?:/start)?$");
-
         // 项目下的所有写接口都可能被移动端、SSE 刷新后的前端重试或网络层重放。
         boolean isProjectWriteApi = path.matches("^/api/v1/projects/[^/]+(?:/.*)?$");
 
-        return !isGitHubInstallApi && !isGitHubOAuthWriteApi && !isProjectWriteApi;
+        return !isProjectWriteApi;
     }
 
     @Override

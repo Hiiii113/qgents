@@ -14,8 +14,6 @@ import qg.qgent.common.dto.PageSlice;
 import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.common.web.PersistedApiException;
-import qg.qgent.mergerequest.entity.MergeRequestEntity;
-import qg.qgent.mergerequest.mapper.MergeRequestMapper;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.entity.ProjectMemberEntity;
@@ -81,7 +79,6 @@ public class TeamService {
     private final EventService eventService;
     private final EventMapper eventMapper;
     private final TaskMapper taskMapper;
-    private final MergeRequestMapper mergeRequestMapper;
     private final DefaultAgentProvisioner defaultAgents;
 
     public TeamService(TeamMapper teamMapper, TeamMemberMapper memberMapper,
@@ -89,7 +86,7 @@ public class TeamService {
                        UserMapper userMapper, TokenService tokens, TeamInvitationMailer invitationMailer,
                        TeamDisbandService teamDisbandService, NotificationService notificationService,
                         EventService eventService,
-                        EventMapper eventMapper, TaskMapper taskMapper, MergeRequestMapper mergeRequestMapper,
+                        EventMapper eventMapper, TaskMapper taskMapper,
                         DefaultAgentProvisioner defaultAgents) {
         this.teamMapper = teamMapper;
         this.memberMapper = memberMapper;
@@ -104,7 +101,6 @@ public class TeamService {
         this.eventService = eventService;
         this.eventMapper = eventMapper;
         this.taskMapper = taskMapper;
-        this.mergeRequestMapper = mergeRequestMapper;
         this.defaultAgents = defaultAgents;
     }
 
@@ -132,7 +128,7 @@ public class TeamService {
         member.setUserId(actor);
         member.setRole("TEAM_OWNER");
         memberMapper.insert(member);
-        // 建团队即预置团队默认 Agent（4 工作角色 + 编排助手），不依赖应用重启时的启动兜底
+        // 建团队即预置团队默认 Agent（通用 Agent 和 Coding Agent），不依赖应用重启时的启动兜底
         defaultAgents.ensureForTeam(team.getId(), actor);
         // 重查一次以带回数据库生成的 created_at
         return team(teamMapper.selectById(team.getId()), "TEAM_OWNER");
@@ -600,7 +596,7 @@ public class TeamService {
      *
      * @param actor  当前用户 ID（必须是团队成员）
      * @param teamId 团队 ID
-     * @param type   动态类型过滤，逗号分隔（如 TASK,MR），可为空表示全部
+     * @param type   动态类型过滤，逗号分隔（如 TASK,GROUP_CREATED），可为空表示全部
      * @param cursor 上一页游标，可为空
      * @param limit  每页数量（默认 20、最大 50，前端清单约定）
      * @return 团队最近动态分页结果
@@ -614,11 +610,10 @@ public class TeamService {
         List<String> fragments = activityFragments(type);
         List<EventEntity> rows = eventMapper.listTeamAfter(teamId, anchor, fragments, pageSize + 1);
         Map<UUID, TaskEntity> tasks = loadTasks(rows);
-        Map<UUID, MergeRequestEntity> mergeRequests = loadMergeRequests(rows);
         Map<UUID, ProjectEntity> projects = loadProjects(rows);
         Map<UUID, String> userNames = loadActivityUserNames(rows, tasks);
         return keysetPage(rows, pageSize, scope, EventEntity::getId,
-                event -> activity(event, tasks, mergeRequests, projects, userNames));
+                event -> activity(event, tasks, projects, userNames));
     }
 
     // ---------- 团队动态：事件类型映射与条目构建 ----------
@@ -636,15 +631,11 @@ public class TeamService {
             Map.entry("TASK_COMPLETED", "e.event_type='task.updated' AND "
                     + "JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.status'))='SUCCEEDED'"),
             Map.entry("TASK_FAILED", "e.event_type='task.updated' AND "
-                    + "JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.status'))='FAILED'"),
-            Map.entry("MR_CREATED", "e.event_type='merge-request.updated' AND "
-                    + "JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.status'))='OPEN'"),
-            Map.entry("MR_MERGED", "e.event_type='merge-request.updated' AND "
-                    + "JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.status'))='MERGED'"));
+                    + "JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.status'))='FAILED'"));
 
     /**
      * 将逗号分隔的 type 过滤参数映射为 SQL 片段集合；无参数返回全部。
-     * 每个过滤 token 按前缀匹配命中动态类型（TASK→TASK_COMPLETED/TASK_FAILED，MR→MR_*，精确值同样可用）；
+     * 每个过滤 token 按前缀匹配命中动态类型（TASK→TASK_COMPLETED/TASK_FAILED，精确值同样可用）；
      * 过滤 token 命中不到任何动态类型时返回 {@code List.of("1=0")}，保证查询返回空集而非全量。
      */
     private List<String> activityFragments(String type) {
@@ -661,7 +652,6 @@ public class TeamService {
     }
 
     private ActivityResponse activity(EventEntity event, Map<UUID, TaskEntity> tasks,
-                                      Map<UUID, MergeRequestEntity> mergeRequests,
                                       Map<UUID, ProjectEntity> projects, Map<UUID, String> userNames) {
         String type = activityType(event);
         UUID taskId = taskIdOf(event);
@@ -693,19 +683,6 @@ public class TeamService {
                     default -> "已失败";
                 };
             }
-            case "MR_CREATED", "MR_MERGED" -> {
-                UUID mrId = uuidOf(event.getResourceId());
-                MergeRequestEntity mr = mrId == null ? null : mergeRequests.get(mrId);
-                String mrTitle = mr == null || mr.getTitle() == null || mr.getTitle().isBlank()
-                        ? "MR" : mr.getTitle();
-                String mrNumber = mr == null || mr.getProviderNumber() == null
-                        ? "?" : String.valueOf(mr.getProviderNumber());
-                targetType = "MR";
-                targetId = mrId == null ? null : mrId.toString();
-                targetTitle = "#" + mrNumber + " " + mrTitle;
-                title = mrTitle + " MR #" + mrNumber + ("MR_CREATED".equals(type) ? " 已创建" : " 已合并");
-                actorId = null;
-            }
             default -> throw new IllegalStateException("unmapped activity type: " + type);
         }
         String actorName = actorId == null ? null : userNames.get(UUID.fromString(actorId));
@@ -729,11 +706,6 @@ public class TeamService {
                 default -> null;
             };
             case "project.created" -> "GROUP_CREATED";
-            case "merge-request.updated" -> switch (status) {
-                case "OPEN" -> "MR_CREATED";
-                case "MERGED" -> "MR_MERGED";
-                default -> null;
-            };
             default -> null;
         };
     }
@@ -744,7 +716,7 @@ public class TeamService {
     }
 
     /**
-     * 事件关联的 Task id：task.updated/merge-request.updated 均在 payload.taskId 中携带。
+     * 事件关联的 Task id：task.updated 均在 payload.taskId 中携带。
      */
     private UUID taskIdOf(EventEntity event) {
         return uuidOf(event.getPayload() == null ? null : event.getPayload().get("taskId"));
@@ -776,18 +748,6 @@ public class TeamService {
             return Map.of();
         }
         return taskMapper.selectBatchIds(taskIds).stream().collect(Collectors.toMap(TaskEntity::getId, t -> t));
-    }
-
-    private Map<UUID, MergeRequestEntity> loadMergeRequests(List<EventEntity> rows) {
-        Set<UUID> mrIds = rows.stream()
-                .filter(event -> "merge-request.updated".equals(event.getEventType()))
-                .map(event -> uuidOf(event.getResourceId()))
-                .filter(Objects::nonNull).collect(Collectors.toSet());
-        if (mrIds.isEmpty()) {
-            return Map.of();
-        }
-        return mergeRequestMapper.selectBatchIds(mrIds).stream()
-                .collect(Collectors.toMap(MergeRequestEntity::getId, mr -> mr));
     }
 
     private Map<UUID, ProjectEntity> loadProjects(List<EventEntity> rows) {

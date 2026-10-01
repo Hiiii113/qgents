@@ -25,17 +25,13 @@ public class FileSearchTool implements SandboxTool {
         return "file.search";
     }
 
-    @Override
-    public boolean requiresRepository() {
-        return true;
-    }
 
     @Override
     public ToolResult execute(ToolContext context, Map<String, Object> arguments) throws InterruptedException {
         String query = ToolArguments.string(arguments, "query", 512);
         String path = ToolArguments.optionalString(arguments, "path", ".", 1024);
         List<String> command = List.of("rg", "--line-number", "--color", "never", "--max-count", "200", "--", query, path);
-        CommandExecutionResult result = executor.execute(context.getSandbox(), context.getContainerRepository(), command,
+        CommandExecutionResult result = executor.execute(context.getSandbox(), context.getContainerWorkspace(), command,
                 context.getTimeout());
         int exitCode = result.getExitCode() == 1 ? 0 : result.getExitCode();
         return new ToolResult(exitCode, Map.of("matches", result.getStandardOutput()),

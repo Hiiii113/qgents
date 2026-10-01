@@ -17,10 +17,8 @@ public class WorkerToolExecutionRequest {
      */
     private UUID executionId;
 
-    /**
-     * 目标仓库编号；无需仓库的工具可为 null。
-     */
-    private UUID repositoryId;
+    @lombok.ToString.Exclude
+    private Map<String,String> environment = Map.of();
 
     /**
      * 工具名，形如 {@code file.read} / {@code development.run}。

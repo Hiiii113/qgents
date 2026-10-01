@@ -38,17 +38,6 @@ public class SandboxWorkerProperties {
      */
     private String imageProfile = "dev-tools";
 
-    /**
-     * 「同步 Git Store + 准备 Workspace」阶段的最大尝试次数（含首次）。
-     * 初始化阶段的瞬态失败（Worker 不可达、远程仓库未同步等）在此上限内自动重试，
-     * 耗尽后向 Agent loop 返回工作区准备失败。
-     */
-    private int acquireMaxAttempts = 3;
-
-    /**
-     * 初始化阶段重试的初始退避：第 n 次重试前等待 initial * 2^(n-1)。
-     */
-    private Duration acquireInitialBackoff = Duration.ofSeconds(1);
 
     /**
      * 轮询工具执行结果的间隔。
@@ -82,8 +71,6 @@ public class SandboxWorkerProperties {
     @PostConstruct
     void validateLeaseRenewInterval() {
         leaseRenewInterval();
-        acquireMaxAttempts();
-        acquireInitialBackoff();
     }
 
     /**
@@ -94,25 +81,5 @@ public class SandboxWorkerProperties {
             throw new IllegalStateException("app.worker.lease-renew-interval must be greater than zero");
         }
         return leaseRenewInterval;
-    }
-
-    /**
-     * 返回已校验的初始化最大尝试次数，包含首次调用。
-     */
-    public int acquireMaxAttempts() {
-        if (acquireMaxAttempts < 1) {
-            throw new IllegalStateException("app.worker.acquire-max-attempts must be at least one");
-        }
-        return acquireMaxAttempts;
-    }
-
-    /**
-     * 返回已校验的初始化重试初始退避时间。
-     */
-    public Duration acquireInitialBackoff() {
-        if (acquireInitialBackoff == null || acquireInitialBackoff.isNegative()) {
-            throw new IllegalStateException("app.worker.acquire-initial-backoff must not be negative");
-        }
-        return acquireInitialBackoff;
     }
 }

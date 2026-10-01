@@ -48,13 +48,12 @@ public class FrontendOpenApiConfiguration {
                 }));
         openApi.setTags(List.of(
                 tag("4 认证与账户", "4"), tag("5.1 团队与邀请", "5.1"),
-                tag("5.2 项目与项目成员", "5.2"), tag("6 GitHub 集成与仓库", "6"),
+                tag("5.2 项目与项目成员", "5.2"),
                 tag("7 群组与消息", "7"),
                 tag("7.1 通知中心", "7.1"), tag("8 共享 Skill", "8"),
                 tag("9 共享 Memory", "9"),
                 tag("11.3 工作任务", "11.3"), tag("12.1 实时事件流", "12.1"),
-                tag("12.2 Agent 执行记录", "12.2"),
-                tag("13 合并请求", "13")));
+                tag("12.2 Agent 执行记录", "12.2"), tag("11.1 Agent 与能力", "11.1")));
     }
 
     private Tag tag(String name, String code) {
@@ -65,9 +64,7 @@ public class FrontendOpenApiConfiguration {
         if (path.contains("/events")) return new ApiGroup("12.1", "实时事件流");
         if (path.startsWith("/api/v1/notifications")) return new ApiGroup("7.1", "通知中心");
         if (path.contains("/agent-runs")) return new ApiGroup("12.2", "Agent 执行记录");
-        if (path.contains("/merge-requests")) return new ApiGroup("13", "合并请求");
-        if (path.contains("/integrations/github") || path.contains("/repositories"))
-            return new ApiGroup("6", "GitHub 集成与仓库");
+        if (path.contains("/agents")) return new ApiGroup("11.1", "Agent 与能力");
         if (path.contains("/tasks")) return new ApiGroup("11.3", "工作任务");
         if (path.contains("/groups") || path.contains("/messages") || path.contains("/attachments")
                 || path.contains("/context")) return new ApiGroup("7", "群组与消息");
@@ -124,12 +121,12 @@ public class FrontendOpenApiConfiguration {
     }
 
     private String resource(String path) {
+        if (path.endsWith("github-capability")) return "Agent GitHub 能力";
+        if (path.contains("/agents")) return "Agent";
         if (path.contains("attachments")) return "附件直传凭证";
         if (path.contains("context")) return "群聊上下文";
         if (path.contains("diffs")) return "Diff";
         if (path.contains("events")) return "项目事件流";
-        if (path.contains("integrations/github/installations")) return "GitHub 安装授权";
-        if (path.contains("repositories")) return "仓库绑定";
         if (path.contains("groups") && path.contains("members")) return "群成员";
         if (path.contains("invitations")) return "团队邀请";
         if (path.contains("members") && path.contains("/teams/")) return "团队成员";
@@ -137,7 +134,6 @@ public class FrontendOpenApiConfiguration {
         if (path.contains("members")) return "成员";
         if (path.contains("groups")) return "群组";
         if (path.contains("memories")) return "Memory";
-        if (path.contains("merge-requests")) return "合并请求";
         if (path.contains("messages")) return "群消息";
         if (path.contains("skills")) return "Skill";
         if (path.contains("agent-runs")) return "任务运行";

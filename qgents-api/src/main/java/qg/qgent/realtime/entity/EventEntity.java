@@ -34,7 +34,7 @@ public class EventEntity {
      */
     private Long sequenceNo;
     /**
-     * 事件类型，如 task.updated / merge-request.updated。
+     * 事件类型，如 task.updated / agent-run.updated。
      */
     private String eventType;
     /**

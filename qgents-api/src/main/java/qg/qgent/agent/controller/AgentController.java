@@ -7,6 +7,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import qg.qgent.agent.dto.AgentGithubCapabilityRequest;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -135,6 +137,15 @@ public class AgentController {
                 Map.of("teamId", teamId, "agentId", agentId, "body", body), 200, AgentResponse.class,
                 () -> service.update(actor, teamId, agentId, body));
         return ApiResponse.ok(result, (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
+    }
+
+    @PutMapping("/teams/{teamId}/agents/{agentId}/github-capability")
+    public ApiResponse<AgentResponse> configureGithub(@AuthenticationPrincipal UUID actor,
+            @PathVariable UUID teamId, @PathVariable UUID agentId,
+            @Valid @RequestBody AgentGithubCapabilityRequest body,
+            HttpServletRequest request) {
+        return ApiResponse.ok(service.configureGithub(actor, teamId, agentId, body.getCredentialRef()),
+                (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
     }
 
     /**

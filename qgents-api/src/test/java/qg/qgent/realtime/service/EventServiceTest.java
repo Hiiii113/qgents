@@ -132,7 +132,7 @@ class EventServiceTest {
         EventService service = fullService(mock(EventMapper.class), mock(NotificationEventMapper.class),
                 mock(TeamEventMapper.class), mock(UserMapper.class), mock(TeamMapper.class));
 
-        assertEquals("notification.created", service.notificationEventType("MR_PENDING"));
+        assertEquals("notification.created", service.notificationEventType("INVITED"));
         assertEquals("notification.created", service.notificationEventType(null));
         assertEquals("notification.removed", service.notificationEventType("notification.removed"));
     }

@@ -12,7 +12,6 @@ import qg.qgent.sandboxworker.sandbox.dto.ResourceLimitsRequest;
 import qg.qgent.sandboxworker.sandbox.dto.SandboxResponse;
 import qg.qgent.sandboxworker.sandbox.runtime.ContainerRuntime;
 import qg.qgent.sandboxworker.sandbox.runtime.SandboxAllocation;
-import qg.qgent.sandboxworker.workspace.service.WorkspaceMetadataStore;
 import qg.qgent.sandboxworker.workspace.service.WorkspaceOperationLock;
 
 import java.time.Clock;
@@ -34,7 +33,6 @@ public class SandboxService {
     private final SandboxWorkerProperties properties;
     private final Clock clock;
     private final WorkspaceOperationLock workspaceLock;
-    private final WorkspaceMetadataStore workspaceMetadataStore;
 
     /**
      * 创建沙箱并计算实际租约。
@@ -42,11 +40,6 @@ public class SandboxService {
      * 规格不同返回冲突，避免初始化重试因请求超时造成重复创建。
      */
     public SandboxResponse create(CreateSandboxRequest request) {
-        // 如果里面说的仓库有重复的
-        if (request.getRepositoryIds().stream().distinct().count() != request.getRepositoryIds().size()) {
-            throw new WorkerException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "SANDBOX_REPOSITORY_DUPLICATE", "Sandbox 不能重复声明同一仓库");
-        }
         // 如果镜像不在列表中
         if (!properties.getImageProfiles().contains(request.getImageProfile())) {
             throw new WorkerException(HttpStatus.UNPROCESSABLE_ENTITY,
@@ -67,9 +60,9 @@ public class SandboxService {
                 }
                 SandboxAllocation allocation = allocation(request);
                 SandboxAllocation created = runtime.create(request, allocation);
-                log.info("sandbox created sandboxId={} taskId={} workspace={} image={} repos={} container={}",
+                log.info("sandbox created sandboxId={} taskId={} workspace={} image={} container={}",
                         created.getId(), created.getTaskId(), created.getWorkspaceStorageKey(),
-                        created.getImageProfile(), created.getRepositoryPaths().size(), created.getRuntimeHandle());
+                        created.getImageProfile(), created.getRuntimeHandle());
                 return response(created);
             });
         } catch (IllegalStateException exception) {
@@ -94,9 +87,7 @@ public class SandboxService {
                 now.plus(idleTtl),
                 now.plus(maxLifetime),
                 executionTimeout,
-                null,
-                workspaceMetadataStore.resolveRepositories(request.getWorkspaceStorageKey(),
-                        request.getRepositoryIds()));
+                null);
     }
 
     /**
@@ -106,8 +97,7 @@ public class SandboxService {
         return java.util.Objects.equals(existing.getTaskId(), requested.getTaskId())
 
                 && java.util.Objects.equals(existing.getWorkspaceStorageKey(), requested.getWorkspaceStorageKey())
-                && java.util.Objects.equals(existing.getImageProfile(), requested.getImageProfile())
-                && java.util.Objects.equals(existing.getRepositoryPaths(), requested.getRepositoryPaths());
+                && java.util.Objects.equals(existing.getImageProfile(), requested.getImageProfile());
     }
 
     /**
@@ -213,9 +203,6 @@ public class SandboxService {
                 allocation.getTaskId(),
                 allocation.getWorkspaceStorageKey(),
                 allocation.getImageProfile(),
-                allocation.getRepositoryPaths().keySet().stream()
-                        .sorted(java.util.Comparator.comparing(UUID::toString))
-                        .toList(),
                 allocation.getStatus(),
                 allocation.getRuntimeKind(),
                 allocation.getCreatedAt(),

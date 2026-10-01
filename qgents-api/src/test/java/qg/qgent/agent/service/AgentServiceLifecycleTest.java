@@ -51,6 +51,21 @@ class AgentServiceLifecycleTest {
     private final UUID owner = UUID.randomUUID();
 
     @Test
+    void teamOwnerCanEnableAndDisableDefaultAgentGithubCapability() {
+        member(teamId, owner);
+        TeamEntity team = new TeamEntity();
+        team.setOwnerUserId(owner);
+        when(teams.selectById(teamId)).thenReturn(team);
+        UUID id = agentId();
+        AgentEntity agent = agent(id, teamId, owner, "TEAM", "ACTIVE", true);
+        when(agents.selectById(id)).thenReturn(agent);
+        assertEquals("default", service.configureGithub(owner, teamId, id, "default").getGithubCredentialRef());
+        assertNull(service.configureGithub(owner, teamId, id, "").getGithubCredentialRef());
+        member(teamId, other);
+        assertThrows(ApiException.class, () -> service.configureGithub(other, teamId, id, "default"));
+    }
+
+    @Test
     void createPersistsPrivateActiveNonDefaultAgent() {
         member(teamId, creator);
         AgentCreateRequest request = createRequest("Java 后端 Agent", "DEVELOPER", "负责后端实现",

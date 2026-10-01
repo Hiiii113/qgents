@@ -91,11 +91,6 @@ public class SandboxWorkerProperties {
     private String workspaceMetadataRoot = "/var/lib/qgents/workspace-metadata";
 
     /**
-     * 后端 3 同步完成的共享裸 Git 仓库根目录。
-     */
-    private String gitStoreRoot = "/var/lib/qgents/git-store";
-
-    /**
      * 镜像配置名称到实际镜像引用的映射。
      */
     private Map<String, String> images = Map.of("dev-tools", "qgents/sandbox-dev-tools:0.2.0");
@@ -145,11 +140,6 @@ public class SandboxWorkerProperties {
 
     /** 沙箱开发用户 HOME 的临时可写容量，覆盖各构建工具的隐藏状态目录。 */
     private String developerHomeSize = "8g";
-
-    /**
-     * 主后端地址，供 Worker 访问内部接口。
-     */
-    private String backendUrl = "http://qgents-backend:8080";
 
     /**
      * Worker 与主后端通信的独立内部鉴权 Token。

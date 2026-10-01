@@ -16,8 +16,15 @@ import java.util.UUID;
 @AllArgsConstructor
 public class ToolContext {
     private SandboxAllocation sandbox;
-    private UUID repositoryId;
-    private Path localRepository;
-    private String containerRepository;
+    private Path localWorkspace;
+    private String containerWorkspace;
     private Duration timeout;
+    @lombok.Setter
+    private java.util.Map<String, String> environment = java.util.Map.of();
+    public ToolContext(SandboxAllocation sandbox, Path localWorkspace, String containerWorkspace, Duration timeout) {
+        this.sandbox = sandbox;
+        this.localWorkspace = localWorkspace;
+        this.containerWorkspace = containerWorkspace;
+        this.timeout = timeout;
+    }
 }

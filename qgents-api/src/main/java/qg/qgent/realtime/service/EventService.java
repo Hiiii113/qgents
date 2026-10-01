@@ -196,7 +196,7 @@ public class EventService {
      *
      * @param projectId  所属项目ID（调用方应已校验项目成员身份）
      * @param groupId    可选关联项目群聊ID，可为 null
-     * @param eventType  事件类型，如 task.updated / merge-request.updated
+     * @param eventType  事件类型，如 task.updated / agent-run.updated
      * @param resourceId 关联资源ID字符串，如 agentRunId，可为 null
      * @param payload    脱敏事件载荷 JSON
      */

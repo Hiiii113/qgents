@@ -24,6 +24,8 @@ import static org.mockito.Mockito.when;
 
 /** 固定开发命令工具测试：请求不允许携带任意 argv，执行和记录中均不泄露 argv。 */
 class DevelopmentRunToolTest {
+    @org.junit.jupiter.api.io.TempDir
+    java.nio.file.Path directory;
 
     private final CommandExecutor executor = mock(CommandExecutor.class);
     private final DevelopmentRunTool tool = new DevelopmentRunTool(executor);
@@ -36,7 +38,7 @@ class DevelopmentRunToolTest {
 
         ToolResult result = tool.execute(context, Map.of("commandId", "MAVEN_WRAPPER_TEST"));
 
-        verify(executor).execute(any(), eq(context.getContainerRepository()),
+        verify(executor).execute(any(), eq(context.getContainerWorkspace()),
                 eq(List.of("sh", "./mvnw", "test")), eq(context.getTimeout()));
         assertThat(result.getResult()).containsOnly(Map.entry("commandId", "MAVEN_WRAPPER_TEST"));
         assertThat(result.getResult()).doesNotContainKeys("command", "argv", "cwd", "environment");
@@ -67,7 +69,6 @@ class DevelopmentRunToolTest {
     }
 
     private ToolContext context() {
-        return new ToolContext(mock(qg.qgent.sandboxworker.sandbox.runtime.SandboxAllocation.class),
-                null, null, "/workspace/repository", Duration.ofMinutes(5));
+        return new ToolContext(mock(qg.qgent.sandboxworker.sandbox.runtime.SandboxAllocation.class), directory, "/workspace", Duration.ofMinutes(5));
     }
 }

@@ -18,9 +18,9 @@ public class NotificationResponse {
     private String id;
 
     /**
-     * 通知类型：MESSAGE_MENTION/MR_PENDING/INVITED/TEAM_JOINED/PROJECT_ADDED。
+     * 通知类型：MESSAGE_MENTION/INVITED/TEAM_JOINED/PROJECT_ADDED。
      */
-    @Schema(description = "通知类型：MESSAGE_MENTION/MR_PENDING/INVITED/TEAM_JOINED/PROJECT_ADDED")
+    @Schema(description = "通知类型：MESSAGE_MENTION/INVITED/TEAM_JOINED/PROJECT_ADDED")
     private String kind;
 
     /**

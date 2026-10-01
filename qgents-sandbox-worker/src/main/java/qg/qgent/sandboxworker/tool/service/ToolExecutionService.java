@@ -93,8 +93,7 @@ public class ToolExecutionService {
 
         // 沙箱需要存在
         SandboxAllocation sandbox = sandboxes.findAllocation(sandboxId);
-        // 需要仓库的工具必须要给仓库
-        validateRepository(request);
+        // 参数与执行结果持久化，临时环境变量只用于本次进程
         String argumentsJson = json(request.getArguments());
         ToolExecutionEntity entity = createEntity(sandboxId, request, argumentsJson);
         try {
@@ -107,8 +106,8 @@ public class ToolExecutionService {
             throw exception;
         }
         append(entity.getId(), "SYSTEM", "工具执行已进入队列：" + request.getTool());
-        log.info("tool queued executionId={} sandboxId={} taskId={} tool={} repositoryId={}",
-                entity.getId(), sandboxId, sandbox.getTaskId(), request.getTool(), request.getRepositoryId());
+        log.info("tool queued executionId={} sandboxId={} taskId={} tool={}",
+                entity.getId(), sandboxId, sandbox.getTaskId(), request.getTool());
         // 投给后台开始跑
         try {
             sandboxExecutionPool.execute(() -> run(entity.getId(), sandbox, request));
@@ -196,8 +195,8 @@ public class ToolExecutionService {
             return;
         }
         append(executionId, "SYSTEM", "开始执行工具：" + request.getTool());
-        log.info("tool start executionId={} sandboxId={} taskId={} tool={} repositoryId={}",
-                executionId, sandbox.getId(), sandbox.getTaskId(), request.getTool(), request.getRepositoryId());
+        log.info("tool start executionId={} sandboxId={} taskId={} tool={}",
+                executionId, sandbox.getId(), sandbox.getTaskId(), request.getTool());
 
         String status;
         Integer exitCode = null;
@@ -206,7 +205,8 @@ public class ToolExecutionService {
         String failureReason = null;
         try {
             Duration timeout = timeout(request.getTimeoutSeconds(), sandbox.getExecutionTimeout());
-            ToolContext context = context(sandbox, request.getRepositoryId(), timeout);
+            ToolContext context = context(sandbox, timeout);
+            context.setEnvironment(request.getEnvironment() == null ? Map.of() : request.getEnvironment());
             ToolResult result = tools.execute(request.getTool(), context, request.getArguments());
             result.getStandardOutput().forEach(line -> append(executionId, "STDOUT", line));
             result.getStandardError().forEach(line -> append(executionId, "STDERR", line));
@@ -246,19 +246,8 @@ public class ToolExecutionService {
                 Duration.between(started, clock.instant()).toMillis(), failureCode, failureReason);
     }
 
-    private void validateRepository(ToolExecutionRequest request) {
-        if (tools.requiresRepository(request.getTool()) && request.getRepositoryId() == null) {
-            throw new WorkerException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "REPOSITORY_REQUIRED", "该工具必须指定仓库编号");
-        }
-    }
-
-    private ToolContext context(SandboxAllocation sandbox, UUID repositoryId, Duration timeout) {
-        if (repositoryId == null) {
-            return new ToolContext(sandbox, null, null, "/workspace", timeout);
-        }
-        return new ToolContext(sandbox, repositoryId, paths.resolveRepositoryLocal(sandbox, repositoryId),
-                paths.resolveRepositoryContainer(sandbox, repositoryId), timeout);
+    private ToolContext context(SandboxAllocation sandbox, Duration timeout) {
+        return new ToolContext(sandbox, paths.resolveLocal(sandbox.getWorkspaceStorageKey()), "/workspace", timeout);
     }
 
     private ToolExecutionEntity createEntity(UUID sandboxId, ToolExecutionRequest request, String argumentsJson) {
@@ -266,7 +255,6 @@ public class ToolExecutionService {
         entity.setId(request.getExecutionId().toString());
         entity.setOwnerWorkerId(properties.getWorkerId());
         entity.setSandboxId(sandboxId.toString());
-        entity.setRepositoryId(request.getRepositoryId() == null ? null : request.getRepositoryId().toString());
         entity.setToolName(request.getTool());
         entity.setArgumentsJson(argumentsJson);
         entity.setStatus("QUEUED");
@@ -359,7 +347,6 @@ public class ToolExecutionService {
     private ToolExecutionResponse response(ToolExecutionEntity entity) {
         return new ToolExecutionResponse(UUID.fromString(entity.getId()), entity.getOwnerWorkerId(),
                 UUID.fromString(entity.getSandboxId()),
-                entity.getRepositoryId() == null ? null : UUID.fromString(entity.getRepositoryId()),
                 entity.getToolName(), entity.getStatus(), entity.getExitCode(), map(entity.getResultJson()),
                 entity.getFailureCode(), entity.getFailureReason(), instant(entity.getCreatedAt()), instant(entity.getStartedAt()),
                 instant(entity.getFinishedAt()));
