@@ -118,6 +118,7 @@ class SkillMemoryAdminAutoPublishTest {
         MemoryResponse response = memoryService.create(admin, projectId, memoryRequest("登录约定"));
 
         assertEquals("APPROVED", response.getStatus());
+        verify(memoryMapper, never()).updateById(any(MemoryEntity.class));
         verify(eventService).publish(eq(projectId), isNull(), eq("memory.approved"), any(), any());
     }
 
