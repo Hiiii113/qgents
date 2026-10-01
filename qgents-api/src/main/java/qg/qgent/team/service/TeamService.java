@@ -1,6 +1,7 @@
 package qg.qgent.team.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,8 +23,6 @@ import qg.qgent.project.mapper.ProjectMemberMapper;
 import qg.qgent.realtime.entity.EventEntity;
 import qg.qgent.realtime.mapper.EventMapper;
 import qg.qgent.realtime.service.EventService;
-import qg.qgent.task.entity.TaskEntity;
-import qg.qgent.task.mapper.TaskMapper;
 import qg.qgent.team.dto.ActivityResponse;
 import qg.qgent.team.dto.ReceivedInvitationResponse;
 import qg.qgent.team.dto.TeamCreateRequest;
@@ -60,11 +59,9 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/**
- * 团队服务 service
- * TeamService
- */
+/** 管理团队资料、成员、邀请与最近动态。 */
 @Service
+@RequiredArgsConstructor
 public class TeamService {
     private final TeamMapper teamMapper;
     private final TeamMemberMapper memberMapper;
@@ -78,42 +75,11 @@ public class TeamService {
     private final NotificationService notificationService;
     private final EventService eventService;
     private final EventMapper eventMapper;
-    private final TaskMapper taskMapper;
     private final DefaultAgentProvisioner defaultAgents;
 
-    public TeamService(TeamMapper teamMapper, TeamMemberMapper memberMapper,
-                       TeamInvitationMapper invitationMapper, ProjectMemberMapper projectMemberMapper, ProjectMapper projectMapper,
-                       UserMapper userMapper, TokenService tokens, TeamInvitationMailer invitationMailer,
-                       TeamDisbandService teamDisbandService, NotificationService notificationService,
-                        EventService eventService,
-                        EventMapper eventMapper, TaskMapper taskMapper,
-                        DefaultAgentProvisioner defaultAgents) {
-        this.teamMapper = teamMapper;
-        this.memberMapper = memberMapper;
-        this.invitationMapper = invitationMapper;
-        this.projectMemberMapper = projectMemberMapper;
-        this.projectMapper = projectMapper;
-        this.userMapper = userMapper;
-        this.tokens = tokens;
-        this.invitationMailer = invitationMailer;
-        this.teamDisbandService = teamDisbandService;
-        this.notificationService = notificationService;
-        this.eventService = eventService;
-        this.eventMapper = eventMapper;
-        this.taskMapper = taskMapper;
-        this.defaultAgents = defaultAgents;
-    }
-
-    /**
-     * 创建团队
-     *
-     * @param actor
-     * @param request
-     * @return
-     */
+    /** 创建团队 */
     @Transactional
     public TeamResponse create(UUID actor, TeamCreateRequest request) {
-        // 插入一个团队记录
         TeamEntity team = new TeamEntity();
         team.setId(UuidV7.next());
         team.setOwnerUserId(actor);
@@ -122,7 +88,7 @@ public class TeamService {
         team.setAvatarUrl(blankToNull(request.getAvatarUrl()));
         team.setStatus("ACTIVE");
         teamMapper.insert(team);
-        // 给这个团队的owner设置成创建这个的用户
+
         TeamMemberEntity member = new TeamMemberEntity();
         member.setTeamId(team.getId());
         member.setUserId(actor);
@@ -134,88 +100,39 @@ public class TeamService {
         return team(teamMapper.selectById(team.getId()), "TEAM_OWNER");
     }
 
-    /**
-     * 获取团队列表
-     *
-     * @param actor
-     * @param cursor
-     * @param limit
-     * @return
-     */
+    /** 获取团队列表 */
     public PageSlice<TeamResponse> list(UUID actor, String cursor, Integer limit) {
         int pageSize = pageSize(limit);
         String scope = "teams";
         UUID anchor = decodeCursor(cursor, scope);
-        // 通过自定义sql查询团队成员列表
+
         List<TeamMembershipView> rows = teamMapper.selectMembershipPage(actor, anchor, pageSize + 1);
         // 转成指定的分页响应，memberCount/description/createdAt 来自列表聚合查询
         return keysetPage(rows, pageSize, scope, TeamMembershipView::getId,
-                row -> {
-                    TeamResponse response = new TeamResponse(row.getId().toString(), row.getName(),
-                            effectiveRole(row.getOwnerUserId(), actor, row.getRole()));
-                    response.setMemberCount(row.getMemberCount());
-                    response.setDescription(row.getDescription());
-                    response.setAvatarUrl(row.getAvatarUrl());
-                    response.setCreatedAt(row.getCreatedAt());
-                    return response;
-                });
+                row -> membershipResponse(row, actor));
     }
 
-    /**
-     * 获取当前用户所有团队，按最后活跃时间倒序（团队最后活跃 = 该团队下所有项目最后活跃的最大值；
-     * 旗下任何项目都无消息时为 null，沉底显示，不兜底创建时间）。不分页，供团队选择/工作台
-     * 按最近活跃展示。
-     *
-     * @param actor 当前用户 ID
-     * @return 团队视图列表，按最后活跃倒序
-     */
+    /** 按最近聊天时间列出团队；无消息的团队排在最后。 */
     public List<TeamResponse> listByLastActivity(UUID actor) {
         return teamMapper.selectMembershipByActivity(actor).stream()
-                .map(row -> {
-                    TeamResponse response = new TeamResponse(row.getId().toString(), row.getName(),
-                            effectiveRole(row.getOwnerUserId(), actor, row.getRole()));
-                    response.setMemberCount(row.getMemberCount());
-                    response.setDescription(row.getDescription());
-                    response.setAvatarUrl(row.getAvatarUrl());
-                    response.setCreatedAt(row.getCreatedAt());
-                    if (row.getLastActivityAt() != null) {
-                        response.setLastActivityAt(row.getLastActivityAt().toInstant(ZoneOffset.UTC).toString());
-                    }
-                    return response;
-                })
+                .map(row -> membershipResponse(row, actor))
                 .toList();
     }
 
-    /**
-     * 获取团队详情
-     *
-     * @param actor
-     * @param teamId
-     * @return
-     */
+    /** 获取团队详情 */
     public TeamResponse get(UUID actor, UUID teamId) {
-        // 获取一个团队的详情
         TeamMemberEntity member = requireMember(teamId, actor);
         TeamEntity team = requireTeam(teamId);
         return team(team, effectiveRole(team.getOwnerUserId(), actor, member.getRole()));
     }
 
-    /**
-     * 更新团队信息
-     *
-     * @param actor
-     * @param teamId
-     * @param request
-     * @return
-     */
+    /** 更新团队信息 */
     @Transactional
     public TeamResponse update(UUID actor, UUID teamId, TeamUpdateRequest request) {
-        // 获取一个team
         TeamEntity team = requireTeamForUpdate(teamId);
-        // 检查用户是否是团队的owner
+
         requireOwner(team, actor);
-        // 设置并写入数据库（PATCH 语义）：name/description/avatarUrl 传 null 均表示保留原值；
-        // 空串表示清空（name 空串由前端校验，此处仅 trim 后写入）
+
         if (request.getName() != null) {
             team.setName(request.getName().trim());
         }
@@ -230,15 +147,7 @@ public class TeamService {
         return team(team, "TEAM_OWNER");
     }
 
-    /**
-     * 获取团队成员列表
-     *
-     * @param actor
-     * @param teamId
-     * @param cursor
-     * @param limit
-     * @return
-     */
+    /** 获取团队成员列表 */
     public PageSlice<TeamMemberResponse> members(UUID actor, UUID teamId, String cursor, Integer limit) {
         // 检查用户是否是团队的成员
         requireMember(teamId, actor);
@@ -258,19 +167,12 @@ public class TeamService {
                 });
     }
 
-    /**
-     * 邀请成员加入团队
-     *
-     * @param actor
-     * @param teamId
-     * @param request
-     * @return
-     */
+    /** 邀请成员加入团队 */
     @Transactional
     public TeamInvitationResponse invite(UUID actor, UUID teamId, TeamMemberInviteRequest request) {
         // 确保team存在
         TeamEntity team = requireTeamForUpdate(teamId);
-        // 检查用户是否是团队的owner
+
         requireOwner(team, actor);
         if (!"TEAM_MEMBER".equals(request.getRole())) {
             throw invalid("邀请角色目前仅支持 TEAM_MEMBER");
@@ -279,7 +181,7 @@ public class TeamService {
             throw invalid("邀请有效期不能超过30天");
         }
         String email = normalize(request.getEmail());
-        // 找出来这个邮箱对应的用户记录
+
         UserEntity invitedUser = userMapper
                 .selectOne(Wrappers.<UserEntity>lambdaQuery().eq(UserEntity::getEmail, email));
         // 判断用户是否已经是团队成员
@@ -295,9 +197,9 @@ public class TeamService {
         if (pending != null) {
             throw conflict("INVITATION_ALREADY_PENDING", "该邮箱已有待处理邀请");
         }
-        // 生成一个随机的邀请token
+
         String rawToken = tokens.opaque();
-        // 创建一个邀请记录并写入数据库
+
         TeamInvitationEntity invitation = new TeamInvitationEntity();
         invitation.setId(UuidV7.next());
         invitation.setTeamId(teamId);
@@ -324,17 +226,8 @@ public class TeamService {
         return invitation(invitation);
     }
 
-    /**
-     * 获取团队邀请列表
-     *
-     * @param actor
-     * @param teamId
-     * @param cursor
-     * @param limit
-     * @return
-     */
+    /** 获取团队邀请列表 */
     public PageSlice<TeamInvitationResponse> invitations(UUID actor, UUID teamId, String cursor, Integer limit) {
-        // 检查用户是否是团队的owner
         requireOwner(requireTeam(teamId), actor);
         int pageSize = pageSize(limit);
         String scope = "team-invitations:" + teamId;
@@ -343,18 +236,7 @@ public class TeamService {
         return keysetPage(rows, pageSize, scope, TeamInvitationEntity::getId, this::effectiveInvitation);
     }
 
-    /**
-     * 当前用户收到的待处理团队邀请（收件人视角）。
-     * <p>
-     * 按当前登录用户邮箱的归一化值匹配 email_normalized 的 PENDING 邀请（PENDING 但已过期
-     * 在响应中按 EXPIRED 展示，由调用方在事务外完成状态判定）；不返回明文邀请 token，
-     * 接受时使用响应中的 id 调用 {@link #accept}。团队名与邀请人显示名页内批量补全，避免 N+1。
-     *
-     * @param actor  当前用户 ID
-     * @param cursor 上一页游标，可为空
-     * @param limit  每页数量（自动收敛到 1..100）
-     * @return 收到的邀请分页结果
-     */
+    /** 当前用户收到的待处理团队邀请（收件人视角）。 */
     public PageSlice<ReceivedInvitationResponse> myInvitations(UUID actor, String cursor, Integer limit) {
         UserEntity user = userMapper.selectById(actor);
         if (user == null || user.getEmail() == null || user.getEmail().isBlank()) {
@@ -371,18 +253,7 @@ public class TeamService {
                 invitation -> receivedInvitation(invitation, teamNames, inviterNames));
     }
 
-    /**
-     * 接受团队邀请。
-     * <p>
-     * reference 为「邀请记录 id（UUIDv7）或明文邀请 token」：若能被解析为 UUID 则按 id 查找，
-     * 否则按明文 token 的 SHA-256 哈希查找（token 为 base64url 字符串、无连字符，永远不会被
-     * UUID.fromString 误判，两种查找方式可安全区分）。两种路径收敛到同一接受逻辑：
-     * 当前用户邮箱必须与被邀请邮箱归一化后一致；已接受且已是成员时幂等返回；过期置 EXPIRED。
-     *
-     * @param actor     当前用户 ID
-     * @param reference 邀请记录 id 或明文邀请 token
-     * @return 接受后的团队成员视图
-     */
+    /** 接受团队邀请。 */
     @Transactional(noRollbackFor = PersistedApiException.class)
     public TeamMemberResponse accept(UUID actor, String reference) {
         if (reference == null || reference.isBlank() || reference.length() > 512) {
@@ -424,7 +295,7 @@ public class TeamService {
             member.setUserId(actor);
             member.setRole("TEAM_MEMBER");
             memberMapper.insert(member);
-            // 团队级 SSE：新成员加入团队（前端 SSE 需求清单 ②）
+            // 团队级 SSE：新成员加入团队
             eventService.publishTeamEvent(invitation.getTeamId(), "team.member.updated", id(actor),
                     Map.of("teamId", id(invitation.getTeamId()), "userId", id(actor)));
         }
@@ -441,11 +312,7 @@ public class TeamService {
         return memberResponse(actor, team, member.getRole(), user);
     }
 
-    /**
-     * 解析接受邀请的引用：reference 为邀请 id 时按主键查找（加行锁），否则视为明文 token 按其哈希查找。
-     * 明文 token 由 {@link TokenService#opaque()} 生成（base64url、无连字符），不可能等于 UUIDv7 字符串，
-     * 因此只有真正的邀请 id 会命中 by-id 分支，存量 token 流程行为不变。
-     */
+    /** 解析接受邀请的引用：reference 为邀请 id 时按主键查找（加行锁），否则视为明文 token 按其哈希查找。 */
     private TeamInvitationEntity resolveInvitation(String reference) {
         UUID parsed = tryUuid(reference);
         if (parsed != null) {
@@ -464,19 +331,12 @@ public class TeamService {
         }
     }
 
-    /**
-     * 撤销团队邀请
-     *
-     * @param actor
-     * @param teamId
-     * @param invitationId
-     * @return
-     */
+    /** 撤销团队邀请 */
     @Transactional(noRollbackFor = PersistedApiException.class)
     public TeamInvitationResponse revoke(UUID actor, UUID teamId, UUID invitationId) {
         // 检查团队是否存在
         TeamEntity team = requireTeamForUpdate(teamId);
-        // 检查用户是否是团队的owner
+
         requireOwner(team, actor);
         // 查询到这个邀请记录并加行锁
         TeamInvitationEntity invitation = invitationMapper.selectOne(Wrappers.<TeamInvitationEntity>lambdaQuery()
@@ -501,20 +361,11 @@ public class TeamService {
         return invitation(invitation);
     }
 
-    /**
-     * 更新团队成员角色
-     *
-     * @param actor
-     * @param teamId
-     * @param userId
-     * @param request
-     * @return
-     */
+    /** 更新团队成员角色 */
     @Transactional
     public TeamMemberResponse updateMember(UUID actor, UUID teamId, UUID userId, TeamMemberUpdateRequest request) {
-        // 获取到team
         TeamEntity team = requireTeamForUpdate(teamId);
-        // 判断用户是否是团队的owner
+
         requireOwner(team, actor);
         if (!"TEAM_MEMBER".equals(request.getRole())) {
             throw invalid("成员角色仅支持 TEAM_MEMBER，不能通过成员接口设置 TEAM_OWNER");
@@ -523,25 +374,17 @@ public class TeamService {
         if (team.getOwnerUserId().equals(userId)) {
             throw conflict("TEAM_OWNER_IMMUTABLE", "Team Owner 不能通过成员角色接口降级");
         }
-        // 更新团队成员角色
+
         target.setRole(request.getRole());
         memberMapper.updateRole(teamId, userId, request.getRole());
         return memberResponse(userId, team, target.getRole(), userMapper.selectById(userId));
     }
 
-    /**
-     * 移除团队成员
-     *
-     * @param actor
-     * @param teamId
-     * @param userId
-     * @return
-     */
+    /** 移除团队成员 */
     @Transactional
     public TeamMemberResponse removeMember(UUID actor, UUID teamId, UUID userId) {
-        // 获取team
         TeamEntity team = requireTeamForUpdate(teamId);
-        // 检查是否是owner
+
         requireOwner(team, actor);
         TeamMemberEntity target = requireMember(teamId, userId);
         if (team.getOwnerUserId().equals(userId)) {
@@ -560,21 +403,13 @@ public class TeamService {
         projectMemberMapper.deleteByTeamAndUser(teamId, userId);
         // 移除团队成员在团队成员列表
         memberMapper.deleteByTeamAndUser(teamId, userId);
-        // 团队级 SSE：成员移出团队（前端 SSE 需求清单 ②）
+        // 团队级 SSE：成员移出团队
         eventService.publishTeamEvent(teamId, "team.member.updated", id(userId),
                 Map.of("teamId", id(teamId), "userId", id(userId)));
         return memberResponse(userId, team, target.getRole(), userMapper.selectById(userId));
     }
 
-    /**
-     * 解散团队：仅 Team Owner 可调用，级联删除团队下所有项目、项目群聊、消息、成员关系
-     * 等数据（不可恢复）。与成员管理接口不同，本操作是团队生命周期终态，允许把
-     * canonical Owner 所在的整个团队一并移除；删除在单事务内完成，失败整体回滚。
-     *
-     * @param actor  当前操作用户 ID
-     * @param teamId 要解散的团队 ID
-     * @return 解散前团队的摘要信息（id/name/role/memberCount/description/createdAt）
-     */
+    /** 团队所有者解散团队，删除团队及其项目数据。 */
     @Transactional
     public TeamResponse disband(UUID actor, UUID teamId) {
         TeamEntity team = requireTeamForUpdate(teamId);
@@ -585,22 +420,7 @@ public class TeamService {
         return summary;
     }
 
-    /**
-     * 团队最近动态（基于项目事件聚合，轻量方案）。
-     * <p>
-     * 在 events 表上按团队 JOIN projects 拉取最近事件，覆盖事件保留窗口（24 小时）；
-     * 类型过滤（type 逗号分隔、前缀匹配）与 keyset 分页都在数据库侧完成，游标为事件 id
-     * （UUIDv7 自带时间序，倒序即最近优先）。事件载荷中的 UUID 字段读回为字符串，
-     * 统一经 {@link #uuidOf} 转换。MESSAGE/GROUP_CREATED/MEMBER_JOINED/TASK_CREATED
-     * 四类动态当前无事件来源，不在此接口产出。
-     *
-     * @param actor  当前用户 ID（必须是团队成员）
-     * @param teamId 团队 ID
-     * @param type   动态类型过滤，逗号分隔（如 TASK,GROUP_CREATED），可为空表示全部
-     * @param cursor 上一页游标，可为空
-     * @param limit  每页数量（默认 20、最大 50，前端清单约定）
-     * @return 团队最近动态分页结果
-     */
+    /** 从项目事件中查询团队最近动态，按类型筛选并分页。 */
     public PageSlice<ActivityResponse> activities(UUID actor, UUID teamId, String type, String cursor, Integer limit) {
         requireMember(teamId, actor);
         requireTeam(teamId);
@@ -609,35 +429,19 @@ public class TeamService {
         UUID anchor = decodeCursor(cursor, scope);
         List<String> fragments = activityFragments(type);
         List<EventEntity> rows = eventMapper.listTeamAfter(teamId, anchor, fragments, pageSize + 1);
-        Map<UUID, TaskEntity> tasks = loadTasks(rows);
         Map<UUID, ProjectEntity> projects = loadProjects(rows);
-        Map<UUID, String> userNames = loadActivityUserNames(rows, tasks);
+        Map<UUID, String> userNames = loadActivityUserNames(rows);
         return keysetPage(rows, pageSize, scope, EventEntity::getId,
-                event -> activity(event, tasks, projects, userNames));
+                event -> activity(event, projects, userNames));
     }
 
     // ---------- 团队动态：事件类型映射与条目构建 ----------
 
-    /**
-     * 动态类型 → SQL 过滤片段白名单（event_type 与 payload.status 的 JSON 取值约束）。
-     * TASK_CREATED 复用创建任务时已发布的 task.updated(PENDING)：PENDING 仅出现在任务创建态，
-     * 后续状态转移不会回到 PENDING，故可安全代表「任务已创建」，无需新增独立事件发布源。
-     * 仅由服务端常量引用，绝不拼接用户输入；{@link #activityFragments} 只挑选其中子集。
-     */
-    private static final Map<String, String> ACTIVITY_FRAGMENTS = Map.ofEntries(
-            Map.entry("GROUP_CREATED", "e.event_type='project.created'"),
-            Map.entry("TASK_CREATED", "e.event_type='task.updated' AND "
-                    + "JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.status'))='PENDING'"),
-            Map.entry("TASK_COMPLETED", "e.event_type='task.updated' AND "
-                    + "JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.status'))='SUCCEEDED'"),
-            Map.entry("TASK_FAILED", "e.event_type='task.updated' AND "
-                    + "JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.status'))='FAILED'"));
+    /** 动态类型对应的固定 SQL 条件；用户参数只用于选择条件。 */
+    private static final Map<String, String> ACTIVITY_FRAGMENTS = Map.of(
+            "GROUP_CREATED", "e.event_type='project.created'");
 
-    /**
-     * 将逗号分隔的 type 过滤参数映射为 SQL 片段集合；无参数返回全部。
-     * 每个过滤 token 按前缀匹配命中动态类型（TASK→TASK_COMPLETED/TASK_FAILED，精确值同样可用）；
-     * 过滤 token 命中不到任何动态类型时返回 {@code List.of("1=0")}，保证查询返回空集而非全量。
-     */
+    /** 将逗号分隔的 type 过滤参数映射为 SQL 片段集合；无参数返回全部。 */
     private List<String> activityFragments(String type) {
         List<String> tokens = type == null || type.isBlank()
                 ? List.of()
@@ -651,13 +455,10 @@ public class TeamService {
         return fragments.isEmpty() ? List.of("1=0") : fragments;
     }
 
-    private ActivityResponse activity(EventEntity event, Map<UUID, TaskEntity> tasks,
+    private ActivityResponse activity(EventEntity event,
                                       Map<UUID, ProjectEntity> projects, Map<UUID, String> userNames) {
         String type = activityType(event);
-        UUID taskId = taskIdOf(event);
-        TaskEntity task = taskId == null ? null : tasks.get(taskId);
-        String taskTitle = task == null ? null : task.getTitle();
-        String actorId = task == null || task.getCreatedBy() == null ? null : task.getCreatedBy().toString();
+        String actorId = null;
         String targetType;
         String targetId;
         String targetTitle;
@@ -673,16 +474,6 @@ public class TeamService {
                 title = "项目「" + safe(projectName) + "」已创建";
                 actorId = payloadString(event, "createdBy");
             }
-            case "TASK_CREATED", "TASK_COMPLETED", "TASK_FAILED" -> {
-                targetType = "TASK";
-                targetId = taskId.toString();
-                targetTitle = taskTitle;
-                title = "任务「" + safe(taskTitle) + "」" + switch (type) {
-                    case "TASK_CREATED" -> "已创建";
-                    case "TASK_COMPLETED" -> "已完成";
-                    default -> "已失败";
-                };
-            }
             default -> throw new IllegalStateException("unmapped activity type: " + type);
         }
         String actorName = actorId == null ? null : userNames.get(UUID.fromString(actorId));
@@ -692,19 +483,10 @@ public class TeamService {
                 iso(event.getCreatedAt()));
     }
 
-    /**
-     * 事件 → 动态类型；SQL 片段已按状态过滤，返回值与 {@link #ACTIVITY_FRAGMENTS} 的 key 一致。
-     */
+    /** 事件 → 动态类型；SQL 片段已按状态过滤，返回值与 {@link #ACTIVITY_FRAGMENTS} 的 key 一致。 */
     private String activityType(EventEntity event) {
         String eventType = event.getEventType();
-        String status = payloadString(event, "status");
         return switch (eventType) {
-            case "task.updated" -> switch (status) {
-                case "PENDING" -> "TASK_CREATED";
-                case "SUCCEEDED" -> "TASK_COMPLETED";
-                case "FAILED" -> "TASK_FAILED";
-                default -> null;
-            };
             case "project.created" -> "GROUP_CREATED";
             default -> null;
         };
@@ -713,13 +495,6 @@ public class TeamService {
     private String payloadString(EventEntity event, String key) {
         Object value = event.getPayload() == null ? null : event.getPayload().get(key);
         return value == null ? null : String.valueOf(value);
-    }
-
-    /**
-     * 事件关联的 Task id：task.updated 均在 payload.taskId 中携带。
-     */
-    private UUID taskIdOf(EventEntity event) {
-        return uuidOf(event.getPayload() == null ? null : event.getPayload().get("taskId"));
     }
 
     private UUID uuidOf(Object value) {
@@ -737,18 +512,10 @@ public class TeamService {
     }
 
     private String safe(String value) {
-        return value == null || value.isBlank() ? "未知任务" : value;
+        return value == null || value.isBlank() ? "未知项目" : value;
     }
 
     // ---------- 团队动态：页内批量富化 ----------
-
-    private Map<UUID, TaskEntity> loadTasks(List<EventEntity> rows) {
-        Set<UUID> taskIds = rows.stream().map(this::taskIdOf).filter(Objects::nonNull).collect(Collectors.toSet());
-        if (taskIds.isEmpty()) {
-            return Map.of();
-        }
-        return taskMapper.selectBatchIds(taskIds).stream().collect(Collectors.toMap(TaskEntity::getId, t -> t));
-    }
 
     private Map<UUID, ProjectEntity> loadProjects(List<EventEntity> rows) {
         Set<UUID> projectIds = rows.stream()
@@ -760,10 +527,9 @@ public class TeamService {
         return projectMapper.selectBatchIds(projectIds).stream().collect(Collectors.toMap(ProjectEntity::getId, p -> p));
     }
 
-    private Map<UUID, String> loadActivityUserNames(List<EventEntity> rows, Map<UUID, TaskEntity> tasks) {
-        Set<UUID> userIds = tasks.values().stream().map(TaskEntity::getCreatedBy).filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-        // 项目创建动态的发起人取自 project.created 载荷，而非任务关联
+    private Map<UUID, String> loadActivityUserNames(List<EventEntity> rows) {
+        Set<UUID> userIds = new java.util.HashSet<>();
+        // 项目创建动态的发起人取自 project.created 载荷。
         for (EventEntity row : rows) {
             if ("project.created".equals(row.getEventType())) {
                 UUID creator = uuidOf(row.getPayload() == null ? null : row.getPayload().get("createdBy"));
@@ -864,6 +630,19 @@ public class TeamService {
                 ? encodeCursor(scope, id.apply(visible.get(visible.size() - 1)))
                 : null;
         return new PageSlice<>(visible.stream().map(convert).toList(), new PageInfo(nextCursor, hasMore));
+    }
+
+    private TeamResponse membershipResponse(TeamMembershipView row, UUID actor) {
+        TeamResponse response = new TeamResponse(row.getId().toString(), row.getName(),
+                effectiveRole(row.getOwnerUserId(), actor, row.getRole()));
+        response.setMemberCount(row.getMemberCount());
+        response.setDescription(row.getDescription());
+        response.setAvatarUrl(row.getAvatarUrl());
+        response.setCreatedAt(row.getCreatedAt());
+        if (row.getLastActivityAt() != null) {
+            response.setLastActivityAt(row.getLastActivityAt().toInstant(ZoneOffset.UTC).toString());
+        }
+        return response;
     }
 
     private TeamResponse team(TeamEntity team, String role) {

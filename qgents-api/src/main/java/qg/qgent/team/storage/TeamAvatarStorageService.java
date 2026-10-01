@@ -2,6 +2,7 @@ package qg.qgent.team.storage;
 
 import com.aliyun.oss.HttpMethod;
 import com.aliyun.oss.OSS;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -20,20 +21,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * 团队头像对象存储直传服务：复用阿里云 OSS 直传能力，头像对象走独立命名空间
- * {@code teams/{teamId}/{uuid}.{ext}}，确认后返回**长期稳定、公共读**的头像 URL。
- * 与用户头像（{@link AvatarStorageService}）相互独立——团队头像不写任何用户字段。
- * <p>
- * OSS 未启用时统一抛 501；对象键由服务端生成，confirm 校验对象键属于当前团队前缀，
- * 防止覆盖他人/他团队头像。
- */
+/** 签发团队头像 OSS 上传地址，确认后返回公共访问 URL。 */
 @Component
+@RequiredArgsConstructor
 public class TeamAvatarStorageService {
 
-    /**
-     * 头像对象大小上限（字节）。
-     */
+    /** 头像对象大小上限（字节）。 */
     static final long MAX_SIZE_BYTES = 5 * 1024 * 1024;
 
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
@@ -41,19 +34,7 @@ public class TeamAvatarStorageService {
     private final ObjectProvider<OSS> ossProvider;
     private final AliyunOssProperties properties;
 
-    public TeamAvatarStorageService(ObjectProvider<OSS> ossProvider, AliyunOssProperties properties) {
-        this.ossProvider = ossProvider;
-        this.properties = properties;
-    }
-
-    /**
-     * 为团队签发头像直传凭证：对象键 {@code teams/{teamId}/{uuid}.{ext}}，预签名 PUT。
-     *
-     * @param teamId    团队 ID（对象键命名空间）
-     * @param mediaType MIME 类型，必须为 image/ 开头
-     * @param sizeBytes 文件大小字节，必须为正且不超过上限
-     * @return 直传凭证（含服务端签发的对象键，确认时原样回传）
-     */
+    /** 为团队签发头像直传凭证：对象键 {@code teams/{teamId}/{uuid}.{ext}}，预签名 PUT。 */
     public TeamAvatarCredential createCredential(UUID teamId, String mediaType, Long sizeBytes) {
         OSS oss = requireConfigured();
         requirePublicUrl();
@@ -77,13 +58,7 @@ public class TeamAvatarStorageService {
         return new TeamAvatarCredential(objectKey, new UploadCredential(url.toString(), "PUT", Map.of(), expiry));
     }
 
-    /**
-     * 确认团队头像已上传并返回长期公共读 URL；校验对象存在且属于该团队命名空间。
-     *
-     * @param teamId    团队 ID（前缀校验）
-     * @param objectKey 直传凭证签发的对象键
-     * @return 公共读长期稳定 URL
-     */
+    /** 确认团队头像已上传并返回长期公共读 URL；校验对象存在且属于该团队命名空间。 */
     public String confirmAvatar(UUID teamId, String objectKey) {
         requireConfigured();
         if (objectKey == null || objectKey.isBlank()) {
@@ -127,9 +102,7 @@ public class TeamAvatarStorageService {
         return ext;
     }
 
-    /**
-     * 团队头像直传凭证：服务端签发的对象键与其对应预签名上传凭证。
-     */
+    /** 团队头像直传凭证：服务端签发的对象键与其对应预签名上传凭证。 */
     public record TeamAvatarCredential(String objectKey, UploadCredential credential) {
     }
 }

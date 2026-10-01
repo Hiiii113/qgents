@@ -4,13 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/**
- * 团队最近动态条目（聚合自项目事件，覆盖最近 24 小时保留窗口）。
- * type 枚举：GROUP_CREATED/TASK_CREATED/TASK_COMPLETED/TASK_FAILED/MR_CREATED/MR_MERGED。
- * 按前端约定后端只回 target.type + target.id，link 由前端自行拼前端路由；
- * actor 无可靠来源（如 MR 事件）时为 null。
- * createdAt 为 ISO8601 UTC 时间字符串。
- */
+/** 团队最近动态条目（聚合自项目事件，覆盖最近 24 小时保留窗口）。 */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -24,9 +18,7 @@ public class ActivityResponse {
     private String link;
     private String createdAt;
 
-    /**
-     * 动态发起者（用户）；avatar 当前无来源，恒为 null。
-     */
+    /** 动态发起者（用户）；avatar 当前无来源，恒为 null。 */
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
@@ -36,9 +28,7 @@ public class ActivityResponse {
         private String avatar;
     }
 
-    /**
-     * 动态关联目标；type 取值 GROUP/TASK/MR/PROJECT，title 为展示用标题。
-     */
+    /** 动态关联的项目或任务。 */
     @Data
     @NoArgsConstructor
     @AllArgsConstructor

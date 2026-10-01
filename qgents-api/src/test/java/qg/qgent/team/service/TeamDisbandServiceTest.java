@@ -27,8 +27,6 @@ import qg.qgent.realtime.entity.EventEntity;
 import qg.qgent.realtime.mapper.EventMapper;
 import qg.qgent.skill.entity.SkillEntity;
 import qg.qgent.skill.mapper.SkillMapper;
-import qg.qgent.task.entity.TaskEntity;
-import qg.qgent.task.mapper.TaskMapper;
 import qg.qgent.team.mapper.TeamMapper;
 import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
@@ -58,7 +56,7 @@ class TeamDisbandServiceTest {
         for (Class<?> entity : List.of(ProjectEntity.class, NotificationEntity.class, EventEntity.class,
                 ChatGroupEntity.class, MessageEntity.class,
                 MemoryEntity.class, AgentRunEntity.class,
-                TaskEntity.class, WorkspaceEntity.class,
+                WorkspaceEntity.class,
                 SkillEntity.class, AttachmentEntity.class,
                 AgentEntity.class)) {
             TableInfoHelper.initTableInfo(assistant, entity);
@@ -72,7 +70,6 @@ class TeamDisbandServiceTest {
     private final MessageMapper messageMapper = mock(MessageMapper.class);
     private final MemoryMapper memoryMapper = mock(MemoryMapper.class);
     private final AgentRunMapper agentRuns = mock(AgentRunMapper.class);
-    private final TaskMapper taskMapper = mock(TaskMapper.class);
     private final WorkspaceMapper workspaceMapper = mock(WorkspaceMapper.class);
     private final SkillMapper skillMapper = mock(SkillMapper.class);
     private final AttachmentMapper attachmentMapper = mock(AttachmentMapper.class);
@@ -80,7 +77,7 @@ class TeamDisbandServiceTest {
     private final TeamMapper teamMapper = mock(TeamMapper.class);
     private final TeamDisbandService service = new TeamDisbandService(projectMapper, notificationMapper,
             eventMapper, chatGroupMapper, messageMapper, memoryMapper,
-            agentRuns, taskMapper,
+            agentRuns,
             workspaceMapper, skillMapper, attachmentMapper,
             agentMapper, teamMapper);
 
@@ -104,14 +101,13 @@ class TeamDisbandServiceTest {
 
         // 关键依赖顺序：子表先于父表，引用行先于被引用行；agents 在项目级引用清理后最后删除。
         var order = inOrder(notificationMapper, eventMapper, messageMapper,
-                memoryMapper, agentRuns, taskMapper,
+                memoryMapper, agentRuns,
                 workspaceMapper, skillMapper, attachmentMapper, chatGroupMapper, projectMapper,
                 agentMapper, teamMapper);
         order.verify(notificationMapper).delete(any());
         order.verify(eventMapper).delete(any());
         order.verify(memoryMapper).delete(any());
         order.verify(agentRuns).delete(any());
-        order.verify(taskMapper).delete(any());
         order.verify(messageMapper).deleteUnreferencedMessages(any());
         order.verify(workspaceMapper).delete(any());
         order.verify(skillMapper).delete(any());

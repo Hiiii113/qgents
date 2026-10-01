@@ -31,11 +31,7 @@ public interface TeamInvitationMapper extends BaseMapper<TeamInvitationEntity> {
     List<TeamInvitationEntity> selectInvitationPage(@Param("teamId") UUID teamId,
                                                     @Param("anchor") UUID anchor, @Param("limit") int limit);
 
-    /**
-     * 按被邀请邮箱分页查询待处理（PENDING）邀请，按 id 升序，用于收件人视角列表。
-     * 过期判定由服务层在映射响应时完成（PENDING 且已过期按 EXPIRED 展示），
-     * 因此查询层只按 PENDING 过滤，避免遗漏刚过期的记录。
-     */
+    /** 按被邀请邮箱分页查询待处理（PENDING）邀请，按 id 升序，用于收件人视角列表。 */
     @Select({"<script>",
             "SELECT id, team_id, invited_by, email_normalized, token_hash, status, expires_at, accepted_at, created_at",
             "FROM team_invitations WHERE email_normalized = #{emailNormalized} AND status = 'PENDING'",

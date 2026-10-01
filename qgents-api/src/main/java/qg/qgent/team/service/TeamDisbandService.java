@@ -24,8 +24,6 @@ import qg.qgent.realtime.entity.EventEntity;
 import qg.qgent.realtime.mapper.EventMapper;
 import qg.qgent.skill.entity.SkillEntity;
 import qg.qgent.skill.mapper.SkillMapper;
-import qg.qgent.task.entity.TaskEntity;
-import qg.qgent.task.mapper.TaskMapper;
 import qg.qgent.team.mapper.TeamMapper;
 import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
@@ -33,12 +31,7 @@ import qg.qgent.workspace.mapper.WorkspaceMapper;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * 团队解散时的级联删除执行体。所有删除在单事务内完成，按子表先于父表的
- * 依赖顺序手工清理（相关外键在库中大多未声明 ON DELETE CASCADE）。
- * <p>
- * 只负责数据清理，权限校验（Team Owner）与状态检查由 {@link TeamService#disband} 完成。
- */
+/** 按外键依赖顺序，在同一事务中删除团队及其归属数据。 */
 @Service
 @RequiredArgsConstructor
 public class TeamDisbandService {
@@ -49,20 +42,13 @@ public class TeamDisbandService {
     private final MessageMapper messageMapper;
     private final MemoryMapper memoryMapper;
     private final AgentRunMapper agentRuns;
-    private final TaskMapper taskMapper;
     private final WorkspaceMapper workspaceMapper;
     private final SkillMapper skillMapper;
     private final AttachmentMapper attachmentMapper;
     private final AgentMapper agentMapper;
     private final TeamMapper teamMapper;
 
-    /**
-     * 删除团队及其全部归属数据：先逐项目清理项目下所有子表，再删
-     * Agent，最后删团队本体（team_members/team_invitations 由外键
-     * ON DELETE CASCADE 移除）。本方法在调用方事务内执行（REQUIRED 传播），任一步失败整体回滚。
-     *
-     * @param teamId 待解散的团队 ID
-     */
+    /** 先清理各项目的数据，再删除团队 Agent 和团队记录。 */
     @Transactional
     public void deleteTeam(UUID teamId) {
         List<UUID> projectIds = projectMapper.selectList(Wrappers.<ProjectEntity>lambdaQuery()
@@ -74,12 +60,7 @@ public class TeamDisbandService {
         teamMapper.deleteById(teamId);
     }
 
-    /**
-     * 删除单个项目及其全部归属数据。子表先于父表，引用关系严格按外键约束排序；
-     * 依赖库内级联的（project_members、
-     * group_agents、memory_message_sources、
-     * agent_run 子表等）不在此重复删除。
-     */
+    /** 按外键依赖顺序删除项目及其数据。 */
     private void deleteProject(UUID projectId) {
         // 引用 chat_groups 且无级联的行须在 chat_groups 删除前清理
         notificationMapper.delete(Wrappers.<NotificationEntity>lambdaQuery()
@@ -94,10 +75,8 @@ public class TeamDisbandService {
 
         agentRuns.delete(Wrappers.<AgentRunEntity>lambdaQuery().eq(AgentRunEntity::getProjectId, projectId));
         int deleted;
-        taskMapper.delete(Wrappers.<TaskEntity>lambdaQuery().eq(TaskEntity::getProjectId, projectId));
 
-        // messages 引用 agents（agents 在团队级 deleteTeam 最后删除）；tasks.trigger_message_id
-        // 经 fk_task_message 引用 messages，须先删 tasks 再删 messages；亦须在 chat_groups 之前。
+        // 消息引用 Agent，需要在团队 Agent 与群聊之前删除。
         // messages 自引用外键 fk_msg_reply（reply_to_message_id -> id）且无级联、回复链可多级，
         // 同样须逐层删除不再被引用的叶子消息直至清空。
         if (!groupIds.isEmpty()) {
@@ -112,7 +91,7 @@ public class TeamDisbandService {
         attachmentMapper.delete(Wrappers.<AttachmentEntity>lambdaQuery().eq(AttachmentEntity::getProjectId, projectId));
 
         // chat_groups 引用 project；group_agents 由 chat_groups 外键级联，
-        // 须在 messages/events/notifications/tasks 之后删除
+        // 须在 messages/events/notifications 之后删除
         chatGroupMapper.delete(Wrappers.<ChatGroupEntity>lambdaQuery()
                 .eq(ChatGroupEntity::getProjectId, projectId));
 

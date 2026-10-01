@@ -17,7 +17,6 @@ import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.mapper.ProjectMemberMapper;
 import qg.qgent.realtime.mapper.EventMapper;
 import qg.qgent.realtime.service.EventService;
-import qg.qgent.task.mapper.TaskMapper;
 import qg.qgent.team.dto.TeamCreateRequest;
 import qg.qgent.team.dto.TeamMemberInviteRequest;
 import qg.qgent.team.dto.TeamMemberUpdateRequest;
@@ -71,12 +70,11 @@ class TeamServiceTest {
     private final TeamDisbandService teamDisbandService = mock(TeamDisbandService.class);
     private final NotificationService notificationService = mock(NotificationService.class);
     private final EventMapper eventMapper = mock(EventMapper.class);
-    private final TaskMapper taskMapper = mock(TaskMapper.class);
     private final DefaultAgentProvisioner defaultAgents = mock(DefaultAgentProvisioner.class);
     private final TeamService service = new TeamService(teamMapper, memberMapper, invitationMapper,
             projectMemberMapper, projectMapper, userMapper, mock(TokenService.class),
             mock(TeamInvitationMailer.class), teamDisbandService, notificationService,
-            mock(EventService.class), eventMapper, taskMapper, defaultAgents);
+            mock(EventService.class), eventMapper, defaultAgents);
 
     @Test
     void createAddsCreatorAsOwner() {
@@ -307,7 +305,7 @@ class TeamServiceTest {
         TokenService tokens = mock(TokenService.class);
         TeamService localService = new TeamService(teamMapper, memberMapper, invitationMapper, projectMemberMapper,
                 projectMapper, userMapper, tokens, mock(TeamInvitationMailer.class), mock(TeamDisbandService.class),
-                mock(NotificationService.class), mock(EventService.class), eventMapper, taskMapper,
+                mock(NotificationService.class), mock(EventService.class), eventMapper,
                 defaultAgents);
         when(userMapper.selectById(actor)).thenReturn(user);
         when(tokens.hash("raw-token")).thenReturn(new byte[] { 1 });
@@ -355,7 +353,7 @@ class TeamServiceTest {
         when(tokens.hash("raw-token")).thenReturn(new byte[] { 1 });
         TeamService localService = new TeamService(teamMapper, memberMapper, invitationMapper, projectMemberMapper,
                 projectMapper, userMapper, tokens, mock(TeamInvitationMailer.class), mock(TeamDisbandService.class),
-                mock(NotificationService.class), mock(EventService.class), eventMapper, taskMapper,
+                mock(NotificationService.class), mock(EventService.class), eventMapper,
                 defaultAgents);
         TeamMemberInviteRequest request = new TeamMemberInviteRequest();
         request.setEmail("new@example.com");

@@ -10,13 +10,7 @@ import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.HtmlUtils;
 
-/**
- * 发送团队邀请邮件。
- * <p>
- * 邀请令牌以独立令牌框展示，点击令牌即可全选复制（邮件客户端会剥离脚本，因此不依赖
- * 复制按钮脚本），并附带前往 Qgents 的域名入口。接受页未完成前不拼接深链；
- * 未注册用户登录即被引导注册。
- */
+/** 发送团队邀请邮件。 */
 @Component
 public class TeamInvitationMailer {
     private static final Logger log = LoggerFactory.getLogger(TeamInvitationMailer.class);
