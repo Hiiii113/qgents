@@ -178,3 +178,12 @@ mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+
+# 团队 GitHub App：安装回调、仓库导入及 Agent PR 操作，不使用个人 OAuth。
+github:
+  app:
+    app-id: ${GITHUB_APP_ID:}
+    slug: ${GITHUB_APP_SLUG:}
+    private-key-path: ${GITHUB_APP_PRIVATE_KEY_PATH:}
+    callback-url: ${GITHUB_APP_CALLBACK_URL:}
+    webhook-secret: ${GITHUB_WEBHOOK_SECRET:}

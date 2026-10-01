@@ -11,7 +11,7 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 public class AgentResponse {
-    /** Agent 可选 GitHub 凭证引用。 */
+    /** 可选 GitHub 能力：github-app 使用导入仓库的 App 授权，其他引用读取部署配置。 */
     private String githubCredentialRef;
 
     @Schema(description = "Agent ID")

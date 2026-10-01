@@ -24,6 +24,30 @@ class GitHubToolsTest {
     private final WorkspaceCommands commands = mock(WorkspaceCommands.class);
 
     @Test
+    void appCapabilityUsesImportedRepositoriesAndRenewsTokenForEachRequest() {
+        var repositories = mock(qg.qgent.github.service.GitHubRepositoryService.class);
+        var actor = UUID.randomUUID();
+        var project = UUID.randomUUID();
+        var agent = new AgentEntity();
+        agent.setTeamId(UUID.randomUUID());
+        agent.setGithubCredentialRef("github-app");
+        var imported = new qg.qgent.github.entity.ProjectRepositoryEntity();
+        imported.setFullName("owner/repo");
+        when(repositories.listProjectRepositories(actor, project)).thenReturn(List.of(imported));
+        var tools = new GitHubCapability(new MockEnvironment(), commands, repositories)
+                .tools(agent, actor, project, () -> workspace);
+        assertThat(tools.repositories()).isEqualTo(List.of(imported));
+        verifyNoInteractions(commands);
+        when(repositories.repositoryToken(actor, project, agent.getTeamId(), "owner/repo"))
+                .thenReturn("fresh-token", "renewed-token");
+        tools.cloneRepository("owner/repo", "repo", null);
+        tools.push("owner/repo", "repo", "feature");
+        verify(repositories, times(2)).repositoryToken(actor, project, agent.getTeamId(), "owner/repo");
+        assertThatThrownBy(() -> tools.request("GET", "/user/repos", null)).hasMessageContaining("App 模式");
+        assertThatThrownBy(() -> tools.git(List.of("fetch"), "repo", null)).hasMessageContaining("owner/repo");
+    }
+
+    @Test
     void cloningUsesRemoteDefaultBranchAndTransientAuthentication() {
         when(commands.run(any(), anyString(), anyList(), anyMap())).thenReturn(Map.of("exitCode", 0));
         var tools = new GitHubTools(RestClient.create(), "test-token-123", commands, () -> workspace);
@@ -64,13 +88,16 @@ class GitHubToolsTest {
     @Test
     void capabilityIsOptionalAndResolvedPerAgent() {
         var env = new MockEnvironment().withProperty("app.agent.github.personal.token", "token");
-        var capability = new GitHubCapability(env, commands);
+        var capability = new GitHubCapability(env, commands, mock(qg.qgent.github.service.GitHubRepositoryService.class));
         var agent = new AgentEntity();
-        assertThat(capability.tools(agent, () -> workspace)).isNull();
+        assertThat(capability.tools(agent, UUID.randomUUID(), UUID.randomUUID(), () -> workspace)).isNull();
         agent.setGithubCredentialRef("personal");
-        assertThat(capability.tools(agent, () -> workspace)).isNotNull();
+        assertThat(capability.tools(agent, UUID.randomUUID(), UUID.randomUUID(), () -> workspace)).isNotNull();
         agent.setGithubCredentialRef("missing");
-        assertThatThrownBy(() -> capability.tools(agent, () -> workspace)).isInstanceOf(IllegalStateException.class);
+        var unavailable = capability.tools(agent, UUID.randomUUID(), UUID.randomUUID(), () -> workspace);
+        assertThat(unavailable).isNotNull();
+        assertThatThrownBy(() -> unavailable.request("GET", "/user", null))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("凭证未配置");
     }
 
     @Test
@@ -82,7 +109,7 @@ class GitHubToolsTest {
         var tools = new GitHubTools(builder.build(), "token", commands, () -> workspace);
         assertThatThrownBy(() -> tools.request("GET", "/repos/owner/repo", null))
                 .isInstanceOf(org.springframework.web.client.HttpClientErrorException.class);
-        tools.git(List.of("fetch", "origin"), "selected");
+        tools.git(List.of("fetch", "origin"), "selected", null);
         verify(commands).run(eq(workspace), eq("selected"), eq(List.of("git", "fetch", "origin")), anyMap());
         server.verify();
     }

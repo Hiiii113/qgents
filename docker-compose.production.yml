@@ -98,6 +98,11 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
       SANDBOX_WORKER_URL: http://sandbox-worker:8091
       AGENT_GITHUB_TOKEN: ${AGENT_GITHUB_TOKEN:-}
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      GITHUB_APP_PRIVATE_KEY_PATH: /run/qgents/github/private-key.pem
+      GITHUB_APP_CALLBACK_URL: ${GITHUB_APP_CALLBACK_URL:-}
+      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
       SANDBOX_WORKER_ENABLED: "true"
       SANDBOX_BACKEND_SERVICE_TOKEN: ${SANDBOX_BACKEND_SERVICE_TOKEN:?Set SANDBOX_BACKEND_SERVICE_TOKEN}
       FRONTEND_URL: ${FRONTEND_URL:-https://qgents.dpdns.org}
@@ -122,6 +127,7 @@ services:
       MANAGEMENT_SERVER_PORT: "8081"
     volumes:
       - ./qgents-api/src/main/resources/rsa/private_key.pem:/app/src/main/resources/rsa/private_key.pem:ro
+      - ${QGENTS_DATA_ROOT:-/srv/qgents}/github-app:/run/qgents/github:ro
       - api_data:/app/data
       - api_logs:/app/logs
     expose: ["8080", "8081"]

@@ -92,7 +92,9 @@ public class SecurityConfiguration {
                                 "/api/v1/auth/refresh", "/api/v1/auth/password-reset-requests",
                                 "/api/v1/auth/password-resets")
                         .permitAll()
-                        // GitHub Webhook 公开接口：安全依据为 X-Hub-Signature-256 验签，不携带 Qgents JWT。
+                        // App 回调通过一次性 state 识别安装发起人；Webhook 单独校验签名。
+                        .requestMatchers(HttpMethod.GET, "/api/v1/integrations/github/callback").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/v1/integrations/github/webhook").permitAll()
                         // SSE 断线时容器触发 async dispatch 的兜底；初始请求的成员鉴权由
                         // EventController/EventService 的 requireProjectMember 保证。
                         .requestMatchers(HttpMethod.GET, "/api/v1/projects/*/events").permitAll()

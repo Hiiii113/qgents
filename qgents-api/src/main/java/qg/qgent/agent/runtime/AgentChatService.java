@@ -256,7 +256,7 @@ public class AgentChatService {
             this.work = work;
             this.run = run;
             this.depth = depth;
-            this.githubTools = github.tools(agent, () -> {
+            this.githubTools = github.tools(agent, work.event.actor(), work.event.projectId(), () -> {
                 if (work.codingTools == null) throw new IllegalStateException("请先 prepare_workspace 或 use_workspace");
                 return UUID.fromString(work.task.getWorkspaceId());
             });

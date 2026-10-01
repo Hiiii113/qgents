@@ -526,3 +526,41 @@ CREATE TABLE IF NOT EXISTS
         PRIMARY KEY (user_id, group_id),
         KEY idx_ugp_group (group_id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '用户×群置顶偏好（跨设备同步）';
+
+CREATE TABLE IF NOT EXISTS github_installations (
+    id BINARY(16) PRIMARY KEY,
+    team_id BINARY(16) NOT NULL,
+    provider_installation_id BIGINT NOT NULL,
+    account_login VARCHAR(255) NOT NULL,
+    account_type VARCHAR(32) NOT NULL,
+    suspended TINYINT(1) NOT NULL DEFAULT 0,
+    UNIQUE KEY uk_github_installation (provider_installation_id),
+    CONSTRAINT fk_github_installation_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='团队 GitHub App 安装授权';
+
+CREATE TABLE IF NOT EXISTS github_installation_states (
+    id BINARY(16) PRIMARY KEY,
+    team_id BINARY(16) NOT NULL,
+    actor_id BINARY(16) NOT NULL,
+    state_hash BINARY(32) NOT NULL,
+    client VARCHAR(16) NOT NULL,
+    expires_at DATETIME(6) NOT NULL,
+    used_at DATETIME(6) NULL,
+    UNIQUE KEY uk_github_installation_state (state_hash),
+    CONSTRAINT fk_github_state_team FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+    CONSTRAINT fk_github_state_actor FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='一次性 App 安装回调凭据';
+
+CREATE TABLE IF NOT EXISTS project_repositories (
+    id BINARY(16) PRIMARY KEY,
+    project_id BINARY(16) NOT NULL,
+    installation_id BINARY(16) NOT NULL,
+    provider_repository_id BIGINT NOT NULL,
+    full_name VARCHAR(255) NOT NULL,
+    default_branch VARCHAR(255) NOT NULL,
+    html_url VARCHAR(1024) NOT NULL,
+    private_repository TINYINT(1) NOT NULL,
+    UNIQUE KEY uk_project_imported_repository (project_id, provider_repository_id),
+    CONSTRAINT fk_import_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    CONSTRAINT fk_import_installation FOREIGN KEY (installation_id) REFERENCES github_installations(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目显式导入的 GitHub 仓库';

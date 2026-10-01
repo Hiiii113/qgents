@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 /**
- * 创建自定义 Agent 请求体（契约 §11.1，接口补充 v2.0.3 §2）。
+ * 创建自定义 Agent，可配置描述、模型和附加能力。
  * <p>
  * 创建成功后固定为 {@code visibility=PRIVATE}、{@code status=ACTIVE}、{@code isDefault=false}。
  * role 仅用于展示用途，执行方式由模型和工具决定；prompt 不得包含凭据、
@@ -15,7 +15,7 @@ import lombok.Data;
 @Data
 @Schema(description = "创建自定义 Agent 请求")
 public class AgentCreateRequest {
-    /** Agent 可选 GitHub 凭证引用。 */
+    /** 可选 GitHub 能力：github-app 使用导入仓库的 App 授权，其他引用读取部署配置。 */
     @jakarta.validation.constraints.Pattern(regexp="[A-Za-z0-9_-]*")
     @jakarta.validation.constraints.Size(max=64)
     private String githubCredentialRef;

@@ -42,8 +42,10 @@ replay_pid*
 .omc/
 .claude/
 
-# ai doc files
-/docs/
+# 其他文档默认忽略；产品愿景和 GitHub 接入说明纳入版本控制
+/docs/*
+!/docs/target.md
+!/docs/github-app.md
 
 # 环境变量文件（本地运行配置，一律不入库）
 .env
@@ -61,7 +63,7 @@ qgents-api/src/main/resources/rsa/private_key.pem
 # 例外必须放在 *.pem 之后：git 以最后一条匹配规则为准
 # 主后端 RSA 公钥公开无风险，允许提交
 !qgents-api/src/main/resources/rsa/public_key.pem
-# 环境变量模板是契约文件，允许提交
+# 环境变量配置示例允许提交
 !.env.example
 
 # 数据库迁移脚本仍在开发中，当前不纳入版本控制
