@@ -4,6 +4,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import qg.qgent.dto.ProjectResponse;
+import qg.qgent.dto.TeamResponse;
+
 import java.util.List;
 
 @Data

@@ -21,11 +21,11 @@ public class MergeRequestCreateRequest {
     /**
      * 目标分支名。
      */
-    @NotBlank
     private String targetBranch;
     /**
      * MR 标题。
      */
     @NotBlank
     private String title;
+    private String body;
 }

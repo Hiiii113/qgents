@@ -14,7 +14,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.util.ContentCachingRequestWrapper;
 import org.springframework.web.util.ContentCachingResponseWrapper;
-import qg.qgent.api.RequestIdFilter;
+
 import qg.qgent.entity.IdempotencyRecordEntity;
 import qg.qgent.service.IdempotencyService;
 
@@ -26,6 +26,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import qg.qgent.api.RequestIdFilter;
 
 /**
  * 写接口幂等过滤器。
@@ -66,7 +67,6 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         boolean isGitHubOAuthWriteApi = path.matches("^/api/v1/me/integrations/github/oauth(?:/start)?$");
 
         // 项目下的所有写接口都可能被移动端、SSE 刷新后的前端重试或网络层重放。
-        // 不只保护仓库绑定和 Diff 审核，否则 Dry Run、CQ 决策、创建 MR 等高副作用操作会重复执行。
         boolean isProjectWriteApi = path.matches("^/api/v1/projects/[^/]+(?:/.*)?$");
 
         return !isGitHubInstallApi && !isGitHubOAuthWriteApi && !isProjectWriteApi;

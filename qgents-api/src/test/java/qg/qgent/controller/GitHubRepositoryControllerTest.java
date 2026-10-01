@@ -1,26 +1,26 @@
 package qg.qgent.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 import org.springframework.http.ResponseEntity;
+
+import qg.qgent.security.CurrentActorProvider;
 import qg.qgent.api.ApiResponse;
-import qg.qgent.dto.BindProjectRepositoryRequest;
-import qg.qgent.dto.CreateRemoteBranchRequest;
+import qg.qgent.github.GitHubClient;
+import qg.qgent.github.GitHubInstallationState;
 import qg.qgent.dto.GitHubInstallationResponse;
 import qg.qgent.dto.GitHubInstallationUrlResponse;
 import qg.qgent.dto.GitHubRepositoryResponse;
+import qg.qgent.dto.CreateRemoteBranchRequest;
+import qg.qgent.dto.RemoteBranchResponse;
+import qg.qgent.service.GitHubRepositoryService;
+import qg.qgent.dto.BindProjectRepositoryRequest;
 import qg.qgent.dto.NewProjectRepositoryRequest;
 import qg.qgent.dto.ProjectRepositoryResponse;
-import qg.qgent.dto.RemoteBranchResponse;
 import qg.qgent.dto.UpdateProjectRepositoryRequest;
-import qg.qgent.github.GitHubClient;
-import qg.qgent.github.GitHubInstallationState;
-import qg.qgent.security.CurrentActorProvider;
-import qg.qgent.service.GitHubRepositoryService;
 
 import java.util.List;
 import java.util.UUID;
@@ -29,7 +29,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 

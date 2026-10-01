@@ -1,5 +1,43 @@
 package qg.qgent.orchestration.worker;
 
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.http.HttpStatus;
+
+import qg.qgent.api.ApiException;
+import qg.qgent.github.GitHubAppClient;
+import qg.qgent.github.GitHubBranchDetails;
+import qg.qgent.entity.GitCredentialPurpose;
+import qg.qgent.entity.GitHubInstallationEntity;
+import qg.qgent.entity.GitHubRepositoryEntity;
+import qg.qgent.mapper.GitHubInstallationMapper;
+import qg.qgent.mapper.GitHubRepositoryMapper;
+import qg.qgent.service.GitCredentialService;
+import qg.qgent.entity.ProjectRepositoryEntity;
+import qg.qgent.mapper.ProjectRepositoryMapper;
+import qg.qgent.orchestration.worker.SandboxWorkerClient;
+import qg.qgent.orchestration.worker.SandboxWorkerProperties;
+import qg.qgent.orchestration.worker.WorkerCreateSandboxRequest;
+import qg.qgent.orchestration.worker.WorkerGitStoreSyncRequest;
+import qg.qgent.orchestration.worker.WorkerGitStoreSyncResponse;
+import qg.qgent.orchestration.worker.WorkerSandbox;
+import qg.qgent.orchestration.worker.WorkerWorkspace;
+import qg.qgent.orchestration.worker.WorkerWorkspaceProvisionRequest;
+import qg.qgent.orchestration.worker.WorkerWorkspaceRepositoryRequest;
+import qg.qgent.entity.WorkspaceEntity;
+import qg.qgent.entity.WorkspaceRepositoryEntity;
+import qg.qgent.mapper.WorkspaceMapper;
+import qg.qgent.mapper.WorkspaceRepositoryMapper;
+import qg.qgent.service.WorkspaceWriteLease;
+import qg.qgent.service.WorkspaceWriteLeaseService;
+
+import java.time.Duration;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -13,32 +51,6 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
-
-import java.time.Duration;
-import java.util.List;
-import java.util.UUID;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.springframework.http.HttpStatus;
-
-import qg.qgent.api.ApiException;
-import qg.qgent.entity.ProjectRepositoryEntity;
-import qg.qgent.entity.WorkspaceEntity;
-import qg.qgent.entity.WorkspaceRepositoryEntity;
-import qg.qgent.entity.GitHubRepositoryEntity;
-import qg.qgent.entity.GitHubInstallationEntity;
-import qg.qgent.mapper.ProjectRepositoryMapper;
-import qg.qgent.mapper.WorkspaceMapper;
-import qg.qgent.mapper.WorkspaceRepositoryMapper;
-import qg.qgent.mapper.GitHubRepositoryMapper;
-import qg.qgent.mapper.GitHubInstallationMapper;
-import qg.qgent.service.GitCredentialService;
-import qg.qgent.service.WorkspaceWriteLease;
-import qg.qgent.service.WorkspaceWriteLeaseService;
 
 /**
  * {@link SandboxSessionManager} 单元测试：验证 provision/创建 Sandbox 的字段映射、
@@ -105,7 +117,7 @@ class SandboxSessionManagerTest {
         entity.setWorkspaceId(WORKSPACE);
         entity.setProjectRepositoryId(REPO);
         entity.setWorkspacePath("repo-1");
-        entity.setBaseCommit("main");
+        entity.setBaseRef("main");
         entity.setSourceBranch("feat/task-" + TASK);
         return entity;
     }
@@ -225,7 +237,7 @@ class SandboxSessionManagerTest {
         WorkerCreateSandboxRequest create = createCaptor.getValue();
         assertThat(create.getWorkspaceStorageKey()).isEqualTo("workspaces/" + WORKSPACE);
         assertThat(create.getTaskId()).isEqualTo(TASK);
-        assertThat(create.getTaskRunId()).isEqualTo(TASK);
+        assertThat(create.getTaskId()).isEqualTo(TASK);
         assertThat(create.getRepositoryIds()).containsExactly(REPO);
         assertThat(create.getImageProfile()).isEqualTo("dev-tools");
 
@@ -401,100 +413,23 @@ class SandboxSessionManagerTest {
     }
 
     @Test
-    void acquireKeepsBaseRefWhenBaseCommitAlreadyResolvedToSha() {
-        // 重试场景：base_commit 已被 provision 回填为 SHA，base_ref 仍持有原始基线分支名。
-        // 同步与 provision 必须继续用 main，且 expectedHeadCommit 沿用钉扎 SHA，不换到项目默认分支。
+    void continuingTaskReopensWorktreeWithoutFetchingAdvancedRemoteBase() {
         mockDependenciesForAcquire();
-        ProjectRepositoryEntity binding = projectRepositoryMapper.selectById(REPO);
-        binding.setDefaultBranch("develop");
-        WorkspaceRepositoryEntity provisioned = repository();
-        provisioned.setBaseRef("main");
-        provisioned.setBaseCommit("f".repeat(40));
-        when(repositoryMapper.selectByWorkspace(WORKSPACE)).thenReturn(List.of(provisioned));
-        when(client.syncGitStore(any(), any())).thenReturn(syncResponse(REPO, "main", "f".repeat(40)));
-        WorkerWorkspace workspaceResult = new WorkerWorkspace();
-        workspaceResult.setStorageKey("workspaces/" + WORKSPACE);
-        when(client.provisionWorkspace(any(), any())).thenReturn(workspaceResult);
+        WorkspaceRepositoryEntity repository = repository();
+        repository.setBaseRef("main");
+        repository.setBaseCommit("f".repeat(40));
+        when(repositoryMapper.selectByWorkspace(WORKSPACE)).thenReturn(List.of(repository));
+        WorkerWorkspace existing = new WorkerWorkspace();
+        existing.setStorageKey("workspaces/" + WORKSPACE);
+        when(client.getWorkspace(WORKSPACE)).thenReturn(existing);
 
-        enabledManager().acquire(TASK, PROJECT, WORKSPACE);
+        SandboxSession session = enabledManager().acquire(TASK, PROJECT, WORKSPACE);
 
-        ArgumentCaptor<WorkerGitStoreSyncRequest> syncCaptor =
-                ArgumentCaptor.forClass(WorkerGitStoreSyncRequest.class);
-        verify(client).syncGitStore(eq(REPO), syncCaptor.capture());
-        assertThat(syncCaptor.getValue().getRemoteBranch()).isEqualTo("main");
-        assertThat(syncCaptor.getValue().getExpectedHeadCommit()).isEqualTo("f".repeat(40));
-        verify(githubAppClient, never()).getBranch(org.mockito.ArgumentMatchers.anyLong(), any(), any(), any());
-
-        ArgumentCaptor<WorkerWorkspaceProvisionRequest> provisionCaptor =
-                ArgumentCaptor.forClass(WorkerWorkspaceProvisionRequest.class);
-        verify(client).provisionWorkspace(eq(WORKSPACE), provisionCaptor.capture());
-        assertThat(provisionCaptor.getValue().getRepositories())
-                .singleElement()
-                .extracting(WorkerWorkspaceRepositoryRequest::getBaseRef)
-                .isEqualTo("main");
-    }
-
-    @Test
-    void acquireRecoversLegacyBaseRefFromWorkerMetadataWhenDefaultBranchDiffers() {
-        // 迁移回归：base_commit 已 SHA 化且 base_ref 为空、项目默认分支不同时，
-        // 必须从 Worker 持久化元数据恢复原基线 main，并以钉扎 SHA 校验，不得换 develop。
-        mockDependenciesForAcquire();
-        ProjectRepositoryEntity binding = projectRepositoryMapper.selectById(REPO);
-        binding.setDefaultBranch("develop");
-        WorkspaceRepositoryEntity legacy = repository();
-        legacy.setBaseRef(null);
-        legacy.setBaseCommit("f".repeat(40));
-        when(repositoryMapper.selectByWorkspace(WORKSPACE)).thenReturn(List.of(legacy));
-        WorkerWorkspace metadata = new WorkerWorkspace();
-        WorkerWorkspaceRepository persistedRepo = new WorkerWorkspaceRepository();
-        persistedRepo.setRepositoryId(REPO);
-        persistedRepo.setBaseRef("main");
-        metadata.setRepositories(List.of(persistedRepo));
-        when(client.getWorkspace(WORKSPACE)).thenReturn(metadata);
-        when(client.syncGitStore(any(), any())).thenReturn(syncResponse(REPO, "main", "f".repeat(40)));
-        WorkerWorkspace provisioned = new WorkerWorkspace();
-        provisioned.setStorageKey("workspaces/" + WORKSPACE);
-        when(client.provisionWorkspace(any(), any())).thenReturn(provisioned);
-
-        enabledManager().acquire(TASK, PROJECT, WORKSPACE);
-
-        ArgumentCaptor<WorkerGitStoreSyncRequest> syncCaptor =
-                ArgumentCaptor.forClass(WorkerGitStoreSyncRequest.class);
-        verify(client).syncGitStore(eq(REPO), syncCaptor.capture());
-        assertThat(syncCaptor.getValue().getRemoteBranch()).isEqualTo("main");
-        assertThat(syncCaptor.getValue().getExpectedHeadCommit()).isEqualTo("f".repeat(40));
-        verify(githubAppClient, never()).getBranch(org.mockito.ArgumentMatchers.anyLong(), any(), any(), any());
-        // 恢复出的 base_ref 固化回库，后续 acquire 不再依赖 Worker 元数据
-        verify(repositoryMapper).updateCommits(eq(WORKSPACE), eq(REPO), eq("f".repeat(40)), any(), eq("main"));
-
-        ArgumentCaptor<WorkerWorkspaceProvisionRequest> provisionCaptor =
-                ArgumentCaptor.forClass(WorkerWorkspaceProvisionRequest.class);
-        verify(client).provisionWorkspace(eq(WORKSPACE), provisionCaptor.capture());
-        assertThat(provisionCaptor.getValue().getRepositories())
-                .singleElement()
-                .extracting(WorkerWorkspaceRepositoryRequest::getBaseRef)
-                .isEqualTo("main");
-    }
-
-    @Test
-    void acquireFailsWithExplicitErrorWhenLegacyBaseRefUnrecoverable() {
-        // Worker 元数据也拿不到原基线时必须显式失败，禁止静默回退项目默认分支。
-        mockDependenciesForAcquire();
-        ProjectRepositoryEntity binding = projectRepositoryMapper.selectById(REPO);
-        binding.setDefaultBranch("develop");
-        WorkspaceRepositoryEntity legacy = repository();
-        legacy.setBaseRef(null);
-        legacy.setBaseCommit("f".repeat(40));
-        when(repositoryMapper.selectByWorkspace(WORKSPACE)).thenReturn(List.of(legacy));
-        when(client.getWorkspace(WORKSPACE)).thenReturn(new WorkerWorkspace());
-
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> enabledManager().acquire(TASK, PROJECT, WORKSPACE))
-                .isInstanceOf(qg.qgent.api.ApiException.class)
-                .hasMessageContaining("原基线分支不可追溯")
-                .extracting("status")
-                .isEqualTo(org.springframework.http.HttpStatus.CONFLICT);
+        assertThat(session.storageKey()).isEqualTo(existing.getStorageKey());
+        verify(client).getWorkspace(WORKSPACE);
         verify(client, never()).syncGitStore(any(), any());
         verify(client, never()).provisionWorkspace(any(), any());
+        verifyNoInteractions(githubAppClient);
     }
 
     @Test
@@ -635,7 +570,7 @@ class SandboxSessionManagerTest {
         repoBEntity.setWorkspaceId(WORKSPACE);
         repoBEntity.setProjectRepositoryId(repoB);
         repoBEntity.setWorkspacePath("repo-2");
-        repoBEntity.setBaseCommit("main");
+        repoBEntity.setBaseRef("main");
         repoBEntity.setSourceBranch("feat/task-2");
         when(repositoryMapper.selectByWorkspace(WORKSPACE)).thenReturn(List.of(repository(), repoBEntity));
         stubRepositoryBinding(repoB);
@@ -684,7 +619,7 @@ class SandboxSessionManagerTest {
         when(client.createSandbox(any()))
                 .thenThrow(new ApiException(HttpStatus.BAD_GATEWAY, "SANDBOX_WORKER_UNAVAILABLE", "timeout"));
         WorkerSandbox existing = new WorkerSandbox();
-        existing.setTaskRunId(TASK);
+        existing.setTaskId(TASK);
         existing.setWorkspaceStorageKey("workspaces/" + WORKSPACE);
         existing.setImageProfile("dev-tools");
         existing.setRepositoryIds(List.of(REPO));
@@ -707,7 +642,7 @@ class SandboxSessionManagerTest {
         when(client.createSandbox(any()))
                 .thenThrow(new ApiException(HttpStatus.BAD_GATEWAY, "SANDBOX_WORKER_UNAVAILABLE", "timeout"));
         WorkerSandbox existing = new WorkerSandbox();
-        existing.setTaskRunId(UUID.fromString("00000000-0000-0000-0000-000000000099"));
+        existing.setTaskId(UUID.fromString("00000000-0000-0000-0000-000000000099"));
         existing.setWorkspaceStorageKey("workspaces/" + WORKSPACE);
         existing.setImageProfile("dev-tools");
         existing.setRepositoryIds(List.of(REPO));
@@ -728,7 +663,7 @@ class SandboxSessionManagerTest {
         when(client.createSandbox(any()))
                 .thenThrow(new ApiException(HttpStatus.BAD_GATEWAY, "SANDBOX_WORKER_UNAVAILABLE", "timeout"));
         WorkerSandbox existing = new WorkerSandbox();
-        existing.setTaskRunId(TASK);
+        existing.setTaskId(TASK);
         existing.setWorkspaceStorageKey("workspaces/" + WORKSPACE);
         existing.setImageProfile("python");
         existing.setRepositoryIds(List.of(REPO));

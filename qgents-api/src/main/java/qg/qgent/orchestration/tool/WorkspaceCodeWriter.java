@@ -1,10 +1,13 @@
 package qg.qgent.orchestration.tool;
 
+import qg.qgent.orchestration.tool.WorkspaceDirectoryResult;
+import qg.qgent.orchestration.tool.WorkspaceWriteResult;
+
 import java.util.UUID;
 
 /**
  * 对 Workspace 的受控写入端口。与只读端口 {@link WorkspaceCodeAccess} 分离，
- * 只有持有本端口的 Agent（CodingAgent）才被允许修改代码，PlanAgent 不会获得写能力。
+ * Agent 准备工作区后，通过本端口修改工作区内的代码。
  * <p>
  * 实现必须保证：路径限制在 Workspace 根目录内、拒绝路径穿越、限制单文件大小、
  * 失败时返回明确错误。当前本地实现写入 {@code app.workspace.base-dir}/{storageKey}，

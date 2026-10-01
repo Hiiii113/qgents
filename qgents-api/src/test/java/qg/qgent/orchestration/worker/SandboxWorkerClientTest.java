@@ -1,36 +1,43 @@
 package qg.qgent.orchestration.worker;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
-import static org.springframework.test.web.client.ExpectedCount.once;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
-
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.net.ConnectException;
-import java.time.Duration;
-import java.util.concurrent.atomic.AtomicReference;
-
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
-import org.springframework.web.client.RestClient;
 import org.springframework.web.client.ResourceAccessException;
-
-import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.web.client.RestClient;
 
 import qg.qgent.api.ApiException;
+import qg.qgent.orchestration.worker.WorkerCreateSandboxRequest;
+import qg.qgent.orchestration.worker.WorkerGitDiff;
+import qg.qgent.orchestration.worker.WorkerGitPushRequest;
+import qg.qgent.orchestration.worker.WorkerGitPushResponse;
+import qg.qgent.orchestration.worker.WorkerGitStoreSyncRequest;
+import qg.qgent.orchestration.worker.WorkerGitStoreSyncResponse;
+import qg.qgent.orchestration.worker.WorkerSandbox;
+import qg.qgent.orchestration.worker.WorkerToolExecution;
+import qg.qgent.orchestration.worker.WorkerToolExecutionRequest;
+import qg.qgent.orchestration.worker.WorkerWorkspace;
+import qg.qgent.orchestration.worker.WorkerWorkspaceProvisionRequest;
+import qg.qgent.orchestration.worker.WorkerWorkspaceRepositoryRequest;
+
+import java.net.ConnectException;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.springframework.test.web.client.ExpectedCount.once;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 /**
  * {@link SandboxWorkerClient} 的契约测试：用 MockRestServiceServer 对齐
@@ -91,13 +98,13 @@ class SandboxWorkerClientTest {
         server.expect(once(), requestTo(BASE + "/internal/v1/sandboxes"))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withSuccess("""
-                        {"id":"%s","taskRunId":"00000000-0000-0000-0000-000000000005","status":"READY",
+                        {"id":"%s","taskId":"00000000-0000-0000-0000-000000000005","status":"READY",
                          "runtimeKind":"fake","createdAt":"2026-08-13T00:00:00Z"}
                         """.formatted(SANDBOX), MediaType.APPLICATION_JSON));
 
         WorkerCreateSandboxRequest request = new WorkerCreateSandboxRequest();
         request.setSandboxId(SANDBOX);
-        request.setTaskRunId(UUID.fromString("00000000-0000-0000-0000-000000000005"));
+        request.setTaskId(UUID.fromString("00000000-0000-0000-0000-000000000005"));
         request.setWorkspaceStorageKey("workspaces/" + WORKSPACE);
         request.setImageProfile("dev-tools");
         request.setRepositoryIds(List.of(REPO));
@@ -106,60 +113,6 @@ class SandboxWorkerClientTest {
 
         assertEquals(SANDBOX, sandbox.getId());
         assertEquals("fake", sandbox.getRuntimeKind());
-        server.verify();
-    }
-
-    @Test
-    void createsControlledTestSnapshot() {
-        UUID snapshot = UUID.fromString("00000000-0000-0000-0000-000000000008");
-        UUID project = UUID.fromString("00000000-0000-0000-0000-000000000009");
-        server.expect(once(), requestTo(BASE + "/internal/v1/workspaces/" + WORKSPACE
-                        + "/repositories/" + REPO + "/test-snapshots/" + snapshot + "?projectId=" + project
-                        + "&expectedHeadCommit=0123456789012345678901234567890123456789"))
-                .andExpect(method(HttpMethod.POST))
-                .andRespond(withSuccess("""
-                        {"id":"%s","projectId":"%s","storageKey":"workspaces/%s","status":"READY",
-                         "repositories":[],"createdAt":"2026-08-14T00:00:00Z","updatedAt":"2026-08-14T00:00:00Z"}
-                        """.formatted(snapshot, project, snapshot), MediaType.APPLICATION_JSON));
-
-        WorkerWorkspace result = client.createTestSnapshot(WORKSPACE, REPO, snapshot, project,
-                "0123456789012345678901234567890123456789");
-
-        assertEquals(snapshot, result.getId());
-        server.verify();
-    }
-
-    @Test
-    void resolvesGitRefToImmutableCommit() {
-        String sha = "0123456789012345678901234567890123456789";
-        server.expect(once(), requestTo(BASE + "/internal/v1/git-resolutions"))
-                .andExpect(method(HttpMethod.POST))
-                .andRespond(withSuccess("{\"commitSha\":\"" + sha + "\"}", MediaType.APPLICATION_JSON));
-        WorkerGitResolveRequest request = new WorkerGitResolveRequest();
-        request.setRepositoryId(REPO); request.setRef("main");
-
-        WorkerGitResolveResponse response = client.resolveGitRef(request);
-
-        assertEquals(sha, response.getCommitSha());
-        server.verify();
-    }
-
-    @Test
-    void executesTestsetsThroughDedicatedWorkerOperation() {
-        server.expect(once(), requestTo(BASE + "/internal/v1/test-executions"))
-                .andExpect(method(HttpMethod.POST))
-                .andRespond(withSuccess("""
-                        {"executionId":"%s","status":"PASSED","resolvedHeadCommit":"abc",
-                         "results":[{"testsetId":"%s","status":"PASSED","exitCode":0,"durationMs":12}]}
-                        """.formatted(EXECUTION, REPO), MediaType.APPLICATION_JSON));
-        WorkerTestExecutionRequest request = new WorkerTestExecutionRequest();
-        request.setExecutionId(EXECUTION); request.setProjectId(UUID.randomUUID()); request.setRepositoryId(REPO);
-        request.setWorkspaceId(WORKSPACE); request.setTestsets(List.of());
-
-        WorkerTestExecutionResponse response = client.executeTests(request);
-
-        assertEquals("PASSED", response.getStatus());
-        assertEquals(1, response.getResults().size());
         server.verify();
     }
 
@@ -228,24 +181,6 @@ class SandboxWorkerClientTest {
     }
 
     @Test
-    void readsExecutionLogsWithCursor() {
-        server.expect(once(),
-                requestTo(BASE + "/internal/v1/tool-executions/" + EXECUTION + "/logs?after=0&limit=200"))
-                .andExpect(method(HttpMethod.GET))
-                .andRespond(withSuccess("""
-                        {"items":[{"sequence":1,"stream":"STDOUT","content":"Tests run: 1",
-                         "timestamp":"2026-08-13T00:00:01Z"}],"nextCursor":1}
-                        """, MediaType.APPLICATION_JSON));
-
-        WorkerExecutionLogs logs = client.getToolExecutionLogs(EXECUTION, 0, 200);
-
-        assertEquals(1, logs.getNextCursor());
-        assertEquals(1, logs.getItems().size());
-        assertEquals("STDOUT", logs.getItems().get(0).getStream());
-        server.verify();
-    }
-
-    @Test
     void readsWorkspaceGitDiff() {
         server.expect(once(), requestTo(BASE + "/internal/v1/workspaces/" + WORKSPACE + "/repositories/" + REPO + "/git/diff"))
                 .andExpect(method(HttpMethod.POST))
@@ -277,61 +212,6 @@ class SandboxWorkerClientTest {
         assertEquals("EXECUTION_ID_CONFLICT", exception.code());
         assertEquals(HttpStatus.CONFLICT, exception.status());
         assertEquals("执行编号已经存在", exception.getMessage());
-        server.verify();
-    }
-
-    @Test
-    void testExecutionUsesTheSumOfSerializedTestsetBudgets() {
-        AtomicReference<Duration> timeout = new AtomicReference<>();
-        RestClient.Builder builder = RestClient.builder().baseUrl(BASE);
-        MockRestServiceServer testServer = MockRestServiceServer.bindTo(builder).build();
-        client = new SandboxWorkerClient(builder.build(), new ObjectMapper(), null, value -> {
-            timeout.set(value);
-            return builder.build();
-        });
-        testServer.expect(once(), requestTo(BASE + "/internal/v1/test-executions"))
-                .andExpect(method(HttpMethod.POST))
-                .andRespond(withSuccess("""
-                        {"executionId":"%s","status":"PASSED","resolvedHeadCommit":"abc","results":[]}
-                        """.formatted(EXECUTION), MediaType.APPLICATION_JSON));
-        WorkerTestExecutionItemRequest first = new WorkerTestExecutionItemRequest();
-        first.setTimeoutSeconds(60);
-        WorkerTestExecutionItemRequest second = new WorkerTestExecutionItemRequest();
-        second.setTimeoutSeconds(120);
-        WorkerTestExecutionRequest request = new WorkerTestExecutionRequest();
-        request.setExecutionId(EXECUTION); request.setProjectId(UUID.randomUUID()); request.setRepositoryId(REPO);
-        request.setWorkspaceId(WORKSPACE); request.setTestsets(List.of(first, second));
-
-        client.executeTests(request);
-
-        assertEquals(Duration.ofMinutes(13), timeout.get());
-        testServer.verify();
-    }
-
-    @Test
-    void submitsMergePreviewWithFrozenTargetCommit() {
-        server.expect(once(), requestTo(BASE + "/internal/v1/merge-previews"))
-                .andExpect(method(HttpMethod.POST))
-                .andExpect(content().json("""
-                        {"repositoryId":"00000000-0000-0000-0000-000000000002",
-                         "sourceRef":"0123456789012345678901234567890123456789",
-                         "targetCommit":"abcdefabcdefabcdefabcdefabcdefabcdefabcd"}
-                        """))
-                .andRespond(withSuccess("""
-                        {"resolvedHeadCommit":"0123456789012345678901234567890123456789",
-                         "resolvedTargetCommit":"abcdefabcdefabcdefabcdefabcdefabcdefabcd",
-                         "mergeable":true,"conflicts":[]}
-                        """, MediaType.APPLICATION_JSON));
-
-        WorkerMergePreviewRequest request = new WorkerMergePreviewRequest();
-        request.setRepositoryId(REPO);
-        request.setSourceRef("0123456789012345678901234567890123456789");
-        request.setTargetCommit("abcdefabcdefabcdefabcdefabcdefabcdefabcd");
-
-        WorkerMergePreviewResponse response = client.mergePreview(request);
-
-        assertTrue(response.isMergeable());
-        assertEquals(request.getTargetCommit(), response.getResolvedTargetCommit());
         server.verify();
     }
 
@@ -390,7 +270,7 @@ class SandboxWorkerClientTest {
         server.expect(once(), requestTo(BASE + "/internal/v1/sandboxes/" + SANDBOX + "/lease/renew"))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withSuccess("""
-                        {"id":"%s","taskRunId":"00000000-0000-0000-0000-000000000005","status":"READY",
+                        {"id":"%s","taskId":"00000000-0000-0000-0000-000000000005","status":"READY",
                          "runtimeKind":"fake","createdAt":"2026-08-13T00:00:00Z"}
                         """.formatted(SANDBOX), MediaType.APPLICATION_JSON));
 
@@ -406,7 +286,7 @@ class SandboxWorkerClientTest {
         server.expect(once(), requestTo(BASE + "/internal/v1/sandboxes/" + SANDBOX + "/lease/renew?ttlSeconds=60"))
                 .andExpect(method(HttpMethod.POST))
                 .andRespond(withSuccess("""
-                        {"id":"%s","taskRunId":"00000000-0000-0000-0000-000000000005","status":"READY",
+                        {"id":"%s","taskId":"00000000-0000-0000-0000-000000000005","status":"READY",
                          "runtimeKind":"fake","createdAt":"2026-08-13T00:00:00Z"}
                         """.formatted(SANDBOX), MediaType.APPLICATION_JSON));
 

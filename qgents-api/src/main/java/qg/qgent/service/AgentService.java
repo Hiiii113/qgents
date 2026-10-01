@@ -5,24 +5,27 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import qg.qgent.api.ApiException;
-import qg.qgent.api.PagedApiResponse;
-import qg.qgent.auth.UuidV7;
+
 import qg.qgent.dto.AgentAssignmentListItem;
+import qg.qgent.dto.CreateAgentRequest;
 import qg.qgent.dto.AgentResponse;
 import qg.qgent.dto.AgentRuntimeSummary;
-import qg.qgent.dto.CreateAgentRequest;
-import qg.qgent.dto.PageInfo;
 import qg.qgent.dto.UpdateAgentRequest;
 import qg.qgent.entity.AgentEntity;
-import qg.qgent.entity.RequirementGroupEntity;
-import qg.qgent.entity.TaskRunEntity;
-import qg.qgent.entity.TeamEntity;
+import qg.qgent.entity.AgentRunEntity;
 import qg.qgent.mapper.AgentMapper;
+import qg.qgent.mapper.AgentRunMapper;
+import qg.qgent.entity.RequirementGroupEntity;
 import qg.qgent.mapper.GroupAgentMapper;
-import qg.qgent.mapper.ProjectMapper;
 import qg.qgent.mapper.RequirementGroupMapper;
-import qg.qgent.mapper.TaskRunMapper;
+import qg.qgent.dto.PageInfo;
+import qg.qgent.auth.UuidV7;
+import qg.qgent.api.ApiException;
+import qg.qgent.api.PagedApiResponse;
+import qg.qgent.entity.ProjectEntity;
+import qg.qgent.mapper.ProjectMapper;
+import qg.qgent.service.ProjectAccessService;
+import qg.qgent.entity.TeamEntity;
 import qg.qgent.mapper.TeamMapper;
 import qg.qgent.mapper.TeamMemberMapper;
 
@@ -33,7 +36,6 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.regex.Pattern;
@@ -46,13 +48,7 @@ import java.util.stream.Collectors;
 public class AgentService {
     private static final int DEFAULT_LIMIT = 30;
     private static final int MAX_LIMIT = 100;
-    private static final List<String> ACTIVE_RUN_STATUSES = List.of("RUNNING", "QUEUED", "WAITING_INPUT",
-            "WAITING_APPROVAL", "BLOCKED", "CANCELLING");
-    /**
-     * 角色标签白名单（契约 §11.1）：只是调度与工具权限的角色标签，不是客户端可自行扩大的权限。
-     */
-    private static final Set<String> ALLOWED_ROLES = Set.of("ORCHESTRATOR", "PLANNER", "DEVELOPER",
-            "TESTER", "REVIEWER", "GENERAL");
+    private static final List<String> ACTIVE_RUN_STATUSES = List.of("RUNNING");
     /**
      * Prompt 敏感信息拦截模式：命中即拒绝保存，防止凭据/私钥/宿主机敏感信息进入 Agent 上下文。
      */
@@ -69,20 +65,20 @@ public class AgentService {
     private final ProjectAccessService projectAccess;
     private final GroupAgentMapper groupAgentMapper;
     private final RequirementGroupMapper requirementGroupMapper;
-    private final TaskRunMapper taskRunMapper;
+    private final AgentRunMapper agentRuns;
     private final ProjectMapper projectMapper;
     private final TeamMapper teamMapper;
 
     public AgentService(AgentMapper agentMapper, TeamMemberMapper teamMemberMapper,
                         ProjectAccessService projectAccess, GroupAgentMapper groupAgentMapper,
-                        RequirementGroupMapper requirementGroupMapper, TaskRunMapper taskRunMapper,
+                        RequirementGroupMapper requirementGroupMapper, AgentRunMapper agentRuns,
                         ProjectMapper projectMapper, TeamMapper teamMapper) {
         this.agentMapper = agentMapper;
         this.teamMemberMapper = teamMemberMapper;
         this.projectAccess = projectAccess;
         this.groupAgentMapper = groupAgentMapper;
         this.requirementGroupMapper = requirementGroupMapper;
-        this.taskRunMapper = taskRunMapper;
+        this.agentRuns = agentRuns;
         this.projectMapper = projectMapper;
         this.teamMapper = teamMapper;
     }
@@ -173,10 +169,10 @@ public class AgentService {
     public AgentRuntimeSummary runtime(UUID projectId, UUID agentId, UUID actor) {
         projectAccess.requireProjectMember(projectId, actor);
         requireAgent(agentId);
-        long activeRuns = taskRunMapper.selectCount(Wrappers.<TaskRunEntity>lambdaQuery()
-                .eq(TaskRunEntity::getProjectId, projectId)
-                .eq(TaskRunEntity::getAgentId, agentId)
-                .in(TaskRunEntity::getStatus, ACTIVE_RUN_STATUSES));
+        long activeRuns = agentRuns.selectCount(Wrappers.<AgentRunEntity>lambdaQuery()
+                .eq(AgentRunEntity::getProjectId, projectId)
+                .eq(AgentRunEntity::getAgentId, agentId)
+                .in(AgentRunEntity::getStatus, ACTIVE_RUN_STATUSES));
         List<UUID> groupIds = groupAgentMapper.selectGroupIdsByAgent(projectId, agentId);
         long assignableGroups = requirementGroupMapper.selectCount(Wrappers.<RequirementGroupEntity>lambdaQuery()
                 .eq(RequirementGroupEntity::getProjectId, projectId)
@@ -226,7 +222,7 @@ public class AgentService {
     /**
      * 编辑自定义 Agent：仅创建者可编辑，系统预置 Agent（isDefault=true）不可编辑。
      * 所有字段可选但至少一个；visibility/status/createdBy/isDefault 不允许客户端修改。
-     * role 变更只影响后续新分配的 TaskStep，不改变已定型的 TaskStep.assignedAgentId。
+     * role 只作为展示标签，模型执行由提示词与工具决定。
      */
     @Transactional
     public AgentResponse update(UUID actor, UUID teamId, UUID agentId, UpdateAgentRequest request) {
@@ -351,7 +347,7 @@ public class AgentService {
 
     /**
      * 归档 Agent：PRIVATE/TEAM + ACTIVE → ARCHIVED。仅创建者或 Team Owner 可归档。
-     * 归档后不能绑定新 TaskStep；已运行 TaskRun 不受影响；历史记录与 Skill 关系保留。
+     * 归档后不能启动新 AgentRun；已运行的 loop 和历史记录保留。
      */
     @Transactional
     public AgentResponse archive(UUID actor, UUID teamId, UUID agentId) {
@@ -463,9 +459,9 @@ public class AgentService {
     }
 
     private void validateRole(String role) {
-        if (role == null || !ALLOWED_ROLES.contains(role)) {
+        if (role == null || role.isBlank() || role.length() > 32) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_ROLE_INVALID",
-                    "角色不在允许集合内");
+                    "Agent 用途标签不能为空且不能超过 32 个字符");
         }
     }
 

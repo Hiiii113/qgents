@@ -1,11 +1,10 @@
 package qg.qgent.sandboxworker.workspace;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
 import java.util.List;
-
-import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * Workspace 仓库的结构化 Git 状态。

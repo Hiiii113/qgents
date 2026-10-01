@@ -2,21 +2,19 @@ package qg.qgent.service;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
+
 import qg.qgent.auth.PasswordResetMailer;
-import qg.qgent.auth.RateLimiter;
-import qg.qgent.auth.RsaPasswordDecryptor;
-import qg.qgent.auth.TokenService;
 import qg.qgent.auth.VerificationCodeMailer;
-import qg.qgent.entity.TeamEntity;
-import qg.qgent.entity.TeamMemberEntity;
-import qg.qgent.entity.UserEntity;
-import qg.qgent.dto.ProjectMembershipView;
 import qg.qgent.mapper.EmailVerificationCodeMapper;
 import qg.qgent.mapper.PasswordResetTokenMapper;
-import qg.qgent.mapper.ProjectMapper;
 import qg.qgent.mapper.RefreshTokenMapper;
+import qg.qgent.mapper.ProjectMapper;
+import qg.qgent.dto.ProjectMembershipView;
+import qg.qgent.entity.TeamEntity;
+import qg.qgent.entity.TeamMemberEntity;
 import qg.qgent.mapper.TeamMapper;
 import qg.qgent.mapper.TeamMemberMapper;
+import qg.qgent.entity.UserEntity;
 import qg.qgent.mapper.UserMapper;
 
 import java.util.List;
@@ -26,6 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import qg.qgent.auth.RateLimiter;
+import qg.qgent.auth.RsaPasswordDecryptor;
+import qg.qgent.auth.TokenService;
 
 class AuthServiceTeamRoleTest {
     @Test

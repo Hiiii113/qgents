@@ -3,11 +3,18 @@ package qg.qgent.service;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import qg.qgent.api.ApiException;
+import qg.qgent.github.GitHubAppClient;
 import qg.qgent.entity.GitCredentialGrant;
 import qg.qgent.entity.GitCredentialPurpose;
-import qg.qgent.github.GitHubAppClient;
+import qg.qgent.entity.GitHubInstallationEntity;
+import qg.qgent.entity.GitHubRepositoryEntity;
 import qg.qgent.mapper.GitCredentialGrantMapper;
+import qg.qgent.mapper.GitHubInstallationMapper;
+import qg.qgent.mapper.GitHubRepositoryMapper;
+import qg.qgent.entity.ProjectRepositoryEntity;
+import qg.qgent.mapper.ProjectRepositoryMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;

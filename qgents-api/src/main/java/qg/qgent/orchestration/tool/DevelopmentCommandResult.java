@@ -1,5 +1,7 @@
 package qg.qgent.orchestration.tool;
 
+import qg.qgent.orchestration.tool.DevelopmentCommandId;
+
 /**
  * 固定开发命令的最小结果。标准输出和标准错误不会从 Worker 取回或进入模型上下文。
  */

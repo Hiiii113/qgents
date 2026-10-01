@@ -3,15 +3,18 @@ package qg.qgent.service;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import qg.qgent.api.ApiException;
+
 import qg.qgent.auth.UuidV7;
+import qg.qgent.api.ApiException;
+import qg.qgent.service.ProjectAccessService;
+import qg.qgent.service.EventService;
 import qg.qgent.dto.SkillCreateRequest;
 import qg.qgent.dto.SkillResponse;
 import qg.qgent.dto.SkillUpdateRequest;
-import qg.qgent.dto.UserSummary;
 import qg.qgent.entity.SkillEntity;
-import qg.qgent.entity.UserEntity;
 import qg.qgent.mapper.SkillMapper;
+import qg.qgent.dto.UserSummary;
+import qg.qgent.entity.UserEntity;
 import qg.qgent.mapper.UserMapper;
 
 import java.time.LocalDateTime;

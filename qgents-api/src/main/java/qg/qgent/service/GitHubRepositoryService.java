@@ -10,12 +10,39 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
-import qg.qgent.api.ApiException;
+
 import qg.qgent.auth.UuidV7;
-import qg.qgent.dto.*;
-import qg.qgent.entity.*;
-import qg.qgent.github.*;
-import qg.qgent.mapper.*;
+import qg.qgent.api.ApiException;
+import qg.qgent.github.GitHubAppClient;
+import qg.qgent.github.GitHubBranchDetails;
+import qg.qgent.github.GitHubClient;
+import qg.qgent.github.GitHubInstallationDetails;
+import qg.qgent.github.GitHubInstallationState;
+import qg.qgent.github.GitHubOAuthClient;
+import qg.qgent.github.GitHubRepositoryCreateRequest;
+import qg.qgent.github.GitHubRepositoryDetails;
+import qg.qgent.dto.GitHubInstallationResponse;
+import qg.qgent.dto.GitHubInstallationUrlResponse;
+import qg.qgent.dto.GitHubRepositoryResponse;
+import qg.qgent.dto.CreateRemoteBranchRequest;
+import qg.qgent.dto.RemoteBranchResponse;
+import qg.qgent.entity.GitHubInstallationEntity;
+import qg.qgent.entity.GitHubRepositoryEntity;
+import qg.qgent.mapper.GitHubInstallationMapper;
+import qg.qgent.mapper.GitHubRepositoryMapper;
+import qg.qgent.dto.BindProjectRepositoryRequest;
+import qg.qgent.dto.NewProjectRepositoryRequest;
+import qg.qgent.dto.ProjectRepositoryResponse;
+import qg.qgent.dto.UpdateProjectRepositoryRequest;
+import qg.qgent.entity.ProjectEntity;
+import qg.qgent.entity.ProjectMemberEntity;
+import qg.qgent.entity.ProjectRepositoryEntity;
+import qg.qgent.mapper.ProjectMapper;
+import qg.qgent.mapper.ProjectMemberMapper;
+import qg.qgent.mapper.ProjectRepositoryMapper;
+import qg.qgent.mapper.TaskMapper;
+import qg.qgent.entity.TeamMemberEntity;
+import qg.qgent.mapper.TeamMemberMapper;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -637,7 +664,7 @@ public class GitHubRepositoryService {
      * 保留 RequirementGroup / Task / Workspace / Diff / MR / 分支配置等历史外键引用。
      * <p>
      * 幂等：已 UNBOUND 的绑定重复解绑直接返回，不报错。
-     * 活动 Task 占用校验：该仓库仍被 PLANNING/RUNNING 等进行中任务使用时返回
+     * 活动 Task 占用校验：该仓库仍被 PENDING/RUNNING 等进行中任务使用时返回
      * 409 PROJECT_REPOSITORY_IN_USE，不改变状态。
      *
      * @param actorId             操作人的用户 ID
@@ -658,7 +685,7 @@ public class GitHubRepositoryService {
         if ("UNBOUND".equals(current.getStatus())) {
             return;
         }
-        // 活动任务占用校验：有 PLANNING/RUNNING 等进行中任务使用该仓库时拒绝软解绑
+        // 活动任务占用校验：有 PENDING/RUNNING 等进行中任务使用该仓库时拒绝软解绑
         if (taskMapper.countActiveTasksUsingRepository(projectRepositoryId) > 0) {
             throw new ApiException(HttpStatus.CONFLICT, "PROJECT_REPOSITORY_IN_USE",
                     "Repository is used by an active task and cannot be unbound");

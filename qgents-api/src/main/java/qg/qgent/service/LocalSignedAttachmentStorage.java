@@ -2,6 +2,7 @@ package qg.qgent.service;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+
 import qg.qgent.dto.UploadCredential;
 
 import java.io.IOException;

@@ -1,14 +1,21 @@
 package qg.qgent.sandboxworker.workspace;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import qg.qgent.sandboxworker.api.WorkerException;
 import qg.qgent.sandboxworker.config.SandboxWorkerProperties;
 import qg.qgent.sandboxworker.api.CreateSandboxRequest;
-import qg.qgent.sandboxworker.api.WorkerException;
 import qg.qgent.sandboxworker.runtime.FakeContainerRuntime;
 import qg.qgent.sandboxworker.service.SandboxService;
+import qg.qgent.sandboxworker.workspace.GitCommitRequest;
+import qg.qgent.sandboxworker.workspace.GitCommitResponse;
+import qg.qgent.sandboxworker.workspace.GitDiffResponse;
+import qg.qgent.sandboxworker.workspace.WorkspaceProvisionRequest;
+import qg.qgent.sandboxworker.workspace.WorkspaceRepositoryRequest;
+import qg.qgent.sandboxworker.workspace.WorkspaceResponse;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,8 +27,9 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import qg.qgent.sandboxworker.runtime.WorkspacePathResolver;
 
 class WorkspaceManagerServiceTest {
     @TempDir
@@ -68,7 +76,7 @@ class WorkspaceManagerServiceTest {
     }
 
     @Test
-    void rejectsDeletionWhileSandboxUsesWorkspace() throws Exception {
+    void permitsExplicitCommitButRejectsDeletionWhileSandboxUsesWorkspace() throws Exception {
         UUID repositoryId = UUID.randomUUID();
         UUID workspaceId = UUID.randomUUID();
         SandboxWorkerProperties properties = properties();
@@ -85,7 +93,7 @@ class WorkspaceManagerServiceTest {
 
         CreateSandboxRequest sandbox = new CreateSandboxRequest();
         sandbox.setSandboxId(UUID.randomUUID());
-        sandbox.setTaskRunId(UUID.randomUUID());
+        sandbox.setTaskId(UUID.randomUUID());
         sandbox.setWorkspaceStorageKey("workspaces/" + workspaceId);
         sandbox.setImageProfile("dev-tools");
         sandbox.setRepositoryIds(List.of(repositoryId));
@@ -93,6 +101,18 @@ class WorkspaceManagerServiceTest {
 
         WorkerException exception = assertThrows(WorkerException.class, () -> service.delete(workspaceId));
         assertEquals("WORKSPACE_IN_USE", exception.getCode());
+
+        Files.writeString(Path.of(properties.getWorkspaceLocalRoot()).resolve(workspaceId.toString())
+                .resolve("backend/README.md"), "Agent modification");
+        GitDiffResponse diff = service.gitDiff(workspaceId, repositoryId);
+        GitCommitRequest commit = new GitCommitRequest();
+        commit.setExpectedHeadCommit(diff.getHeadCommit());
+        commit.setExpectedDiffHash(diff.getDiffHash());
+        commit.setMessage("Submit requested change");
+        commit.setOperationId(UUID.randomUUID().toString());
+        GitCommitResponse committed = service.gitCommit(workspaceId, repositoryId, commit);
+        assertFalse(diff.getHeadCommit().equals(committed.getCommitSha()));
+        assertTrue(service.gitDiff(workspaceId, repositoryId).getPatch().isEmpty());
     }
 
     @Test
@@ -115,22 +135,6 @@ class WorkspaceManagerServiceTest {
         assertTrue(Files.isRegularFile(marker));
         assertEquals(0, Files.size(marker));
         assertEquals("preserve me", Files.readString(workspace.resolve("backend").resolve("local-change.txt")));
-    }
-
-    @Test
-    void rejectsTestSnapshotWhenTheSourceHeadChangedAfterTheTestWasRequested() throws Exception {
-        UUID repositoryId = UUID.randomUUID();
-        UUID workspaceId = UUID.randomUUID();
-        SandboxWorkerProperties properties = properties();
-        prepareBareRepository(Path.of(properties.getGitStoreRoot()).resolve(repositoryId + ".git"));
-        WorkspaceManagerService service = service(properties, new FakeContainerRuntime());
-        WorkspaceResponse workspace = service.provision(workspaceId, request(repositoryId));
-
-        WorkerException failure = assertThrows(WorkerException.class,
-                () -> service.snapshotForTest(workspaceId, repositoryId, UUID.randomUUID(), workspace.getProjectId(),
-                        "f".repeat(40)));
-
-        assertEquals("TEST_SNAPSHOT_HEAD_MISMATCH", failure.getCode());
     }
 
     private WorkspaceManagerService service(SandboxWorkerProperties properties, FakeContainerRuntime runtime) {

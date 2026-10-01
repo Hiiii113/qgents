@@ -10,15 +10,30 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import qg.qgent.api.ApiException;
-import qg.qgent.auth.UuidV7;
-import qg.qgent.dto.*;
+
 import qg.qgent.entity.AgentEntity;
+import qg.qgent.mapper.AgentMapper;
+import qg.qgent.service.AttachmentService;
+import qg.qgent.dto.Mention;
+import qg.qgent.dto.MessageResponse;
+import qg.qgent.dto.MessageSendRequest;
 import qg.qgent.entity.MessageEntity;
-import qg.qgent.entity.ProjectEntity;
 import qg.qgent.entity.RequirementGroupEntity;
+import qg.qgent.service.MessageSentEvent;
+import qg.qgent.mapper.GroupAgentMapper;
+import qg.qgent.mapper.MessageMapper;
+import qg.qgent.mapper.RequirementGroupMapper;
+import qg.qgent.dto.PageInfo;
+import qg.qgent.dto.PageSlice;
+import qg.qgent.auth.UuidV7;
+import qg.qgent.api.ApiException;
+import qg.qgent.service.NotificationService;
+import qg.qgent.entity.ProjectEntity;
+import qg.qgent.mapper.ProjectMapper;
+import qg.qgent.service.ProjectAccessService;
+import qg.qgent.service.EventService;
 import qg.qgent.entity.UserEntity;
-import qg.qgent.mapper.*;
+import qg.qgent.mapper.UserMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
@@ -32,7 +47,7 @@ import java.util.stream.Collectors;
 @Service
 public class MessageService {
     private static final Logger log = LoggerFactory.getLogger(MessageService.class);
-    private static final Set<String> PUBLIC_TYPES = Set.of("TEXT", "CODE", "IMAGE", "FILE", "DIFF", "TASK_STATUS",
+    private static final Set<String> PUBLIC_TYPES = Set.of("TEXT", "CODE", "IMAGE", "FILE",
             "QUOTE");
     private static final String CURSOR_PREFIX = "cursor_";
 
@@ -293,135 +308,6 @@ public class MessageService {
         return response;
     }
 
-    /**
-     * 自动化卡片发送（内部方法，供编排系统在团队无可用编排助手 Agent 时兜底回群）。
-     * <p>
-     * 自动化发送者没有用户或 Agent 身份，响应中的 {@code senderType=SYSTEM}；但消息类型必须保留
-     * {@code DIFF}/{@code TASK_STATUS} 的业务语义，前端才能渲染 Diff 卡、并把引用 Diff 识别为续作。
-     * 此方法不经过用户发送路径，客户端无法伪造无发送者的自动化消息。
-     *
-     * @param groupId 需求群 ID
-     * @param body    仅允许 DIFF 或 TASK_STATUS 的自动化卡片
-     * @return 消息视图
-     */
-    @Transactional
-    public MessageResponse sendAsSystem(UUID groupId, MessageSendRequest body) {
-        RequirementGroupEntity group = lockGroup(groupId);
-        if (group == null) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在");
-        }
-        return doSend(group.getProjectId(), groupId, null, null, body, normalizeSystemCardType(body.getType()));
-    }
-
-    /**
-     * 创建或更新 Task 状态卡。卡片是 Task 在需求群中的唯一自动化状态消息，更新时不改变消息
-     * ID、sequence 和创建时间；调用方只提供本次状态增量，已有 Plan/Steps 会被保留。
-     *
-     * @param groupId 需求群 ID
-     * @param agentId 可选的编排 Agent ID；为空时使用 SYSTEM 身份
-     * @param body    TASK_STATUS 卡片内容，必须包含 taskId
-     * @return 创建或更新后的消息
-     */
-    @Transactional
-    public MessageResponse upsertTaskStatusCard(UUID groupId, UUID agentId, MessageSendRequest body) {
-        return upsertAutomationCard(groupId, agentId, body, "TASK_STATUS");
-    }
-
-    /**
-     * 创建或更新 Task 的唯一 Diff 卡。Diff 卡始终保留 DIFF 类型和顶层 content.diffId，
-     * 以便用户引用原消息时继续进入 Diff 续作流程。
-     *
-     * @param groupId 需求群 ID
-     * @param agentId 可选的编排 Agent ID；为空时使用 SYSTEM 身份
-     * @param body    DIFF 卡片内容，必须包含 taskId 和 diffId
-     * @return 创建或更新后的消息
-     */
-    @Transactional
-    public MessageResponse upsertDiffCard(UUID groupId, UUID agentId, MessageSendRequest body) {
-        return upsertAutomationCard(groupId, agentId, body, "DIFF");
-    }
-
-    private MessageResponse upsertAutomationCard(UUID groupId, UUID agentId, MessageSendRequest body,
-                                                 String expectedType) {
-        RequirementGroupEntity group = lockGroup(groupId);
-        if (group == null) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在");
-        }
-        if (body == null || !expectedType.equalsIgnoreCase(body.getType())) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "SYSTEM_MESSAGE_TYPE_INVALID",
-                    "自动化卡片类型不匹配");
-        }
-        if (agentId != null) {
-            validateAgentForProject(group, agentId);
-        }
-        Map<String, Object> incoming = body.getContent() == null ? Map.of() : body.getContent();
-        requireField(incoming, "taskId", "自动化卡片缺少 taskId 字段");
-        String taskId = String.valueOf(incoming.get("taskId"));
-        String clientMessageId = ("TASK_STATUS".equals(expectedType) ? "task-card-" : "diff-card-") + taskId;
-        MessageEntity existing = findByClientMessageId(groupId, clientMessageId);
-        if (existing != null) {
-            if (!expectedType.equals(existing.getMessageType())) {
-                throw new ApiException(HttpStatus.CONFLICT, "CARD_MESSAGE_TYPE_CONFLICT",
-                        "任务卡片消息类型与既有消息不一致");
-            }
-            Map<String, Object> merged = new LinkedHashMap<>(readJson(existing.getContent(),
-                    new TypeReference<Map<String, Object>>() {
-                    }));
-            Object incomingPlan = incoming.get("plan");
-            Object existingPlan = merged.get("plan");
-            if (incomingPlan instanceof Map<?, ?> incomingPlanMap && existingPlan instanceof Map<?, ?> existingPlanMap) {
-                Map<String, Object> plan = new LinkedHashMap<>();
-                existingPlanMap.forEach((key, value) -> plan.put(String.valueOf(key), value));
-                incomingPlanMap.forEach((key, value) -> {
-                    // 后续状态更新通常不重复携带 Planner 摘要，不能用 null 抹掉已生成的 Plan。
-                    if (!"summary".equals(String.valueOf(key)) || value != null) {
-                        plan.put(String.valueOf(key), value);
-                    }
-                });
-                merged.put("plan", plan);
-            }
-            incoming.forEach((key, value) -> {
-                if (!"plan".equals(key)) merged.put(key, value);
-            });
-            validateContent(expectedType, merged);
-            existing.setContent(writeJson(merged));
-            messageMapper.updateById(existing);
-            if (agentId != null && groupAgentMapper.insertAgent(groupId, agentId) > 0) {
-                eventService.publish(group.getProjectId(), groupId, "group.member.updated", id(groupId),
-                        Map.of("projectId", id(group.getProjectId()), "groupId", id(groupId)));
-            }
-            eventService.publish(group.getProjectId(), groupId, "message.updated", id(existing.getId()),
-                    Map.of("projectId", id(group.getProjectId()), "groupId", id(groupId),
-                            "messageId", id(existing.getId()), "sequence", existing.getSequenceNo()));
-            return toResponse(existing);
-        }
-
-        MessageSendRequest normalized = new MessageSendRequest();
-        normalized.setType(expectedType);
-        normalized.setContent(incoming);
-        normalized.setClientMessageId(clientMessageId);
-        normalized.setMentions(List.of());
-        return doSend(group.getProjectId(), groupId, null, agentId, normalized, expectedType);
-    }
-
-    private void validateAgentForProject(RequirementGroupEntity group, UUID agentId) {
-        AgentEntity agent = agentMapper.selectById(agentId);
-        if (agent == null) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "AGENT_NOT_FOUND", "Agent 不存在");
-        }
-        ProjectEntity project = projectMapper.selectById(group.getProjectId());
-        if (project == null) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "PROJECT_NOT_FOUND", "项目不存在");
-        }
-        if (!project.getTeamId().equals(agent.getTeamId())) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_NOT_IN_PROJECT_TEAM",
-                    "Agent 不属于当前项目的 Team");
-        }
-        if (!"ACTIVE".equals(agent.getStatus())) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_NOT_ACTIVE", "Agent 未启用");
-        }
-    }
-
     private RequirementGroupEntity lockGroup(UUID groupId) {
         return groupMapper.selectOne(Wrappers.<RequirementGroupEntity>lambdaQuery()
                 .eq(RequirementGroupEntity::getId, groupId)
@@ -621,19 +507,6 @@ public class MessageService {
         return normalized;
     }
 
-    /**
-     * 无发送者的内部消息只允许两类受控卡片。DIFF 必须保留类型，不能降级为 SYSTEM 文本，
-     * 否则引用续作无法从 replyToId 稳定地定位源 Workspace。
-     */
-    private String normalizeSystemCardType(String type) {
-        String normalized = normalizeType(type);
-        if (!"DIFF".equals(normalized) && !"TASK_STATUS".equals(normalized)) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "SYSTEM_MESSAGE_TYPE_INVALID",
-                    "自动化消息仅支持 DIFF 或 TASK_STATUS 卡片");
-        }
-        return normalized;
-    }
-
     private void validateContent(String type, Map<String, Object> content) {
         if (content == null || content.isEmpty()) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "MESSAGE_CONTENT_INVALID", "消息内容不能为空");
@@ -653,11 +526,6 @@ public class MessageService {
                 requireField(content, "code", "代码消息缺少 code 字段");
             }
             case "IMAGE", "FILE" -> requireField(content, "url", type + " 消息缺少 url 字段");
-            case "DIFF" -> requireField(content, "diffId", "Diff 卡片消息缺少 diffId 字段");
-            case "TASK_STATUS" -> {
-                requireField(content, "taskId", "任务状态卡片缺少 taskId 字段");
-                requireField(content, "status", "任务状态卡片缺少 status 字段");
-            }
             default -> throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "MESSAGE_TYPE_INVALID",
                     "不支持的消息类型");
         }

@@ -1,21 +1,5 @@
 package qg.qgent.github;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.springframework.test.web.client.ExpectedCount.once;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
-import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
-import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
-
-import java.time.Clock;
-import java.util.List;
-import java.util.UUID;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -25,7 +9,30 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import qg.qgent.api.ApiException;
+import qg.qgent.github.GitHubBranchDetails;
+import qg.qgent.github.GitHubClient;
+import qg.qgent.github.GitHubInstallationState;
+import qg.qgent.github.GitHubPullRequestCreateRequest;
+import qg.qgent.github.GitHubPullRequestDetails;
+import qg.qgent.github.GitHubRepositoryCreateRequest;
+import qg.qgent.github.GitHubRepositoryDetails;
 import qg.qgent.config.GitHubAppProperties;
+
+import java.time.Clock;
+import java.util.List;
+import java.util.UUID;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.springframework.test.web.client.ExpectedCount.once;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withBadRequest;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class RestGitHubAppClientTest {
 
@@ -166,113 +173,6 @@ class RestGitHubAppClientTest {
         assertEquals(null, details.mergeable());
         assertEquals("unknown", details.mergeableState());
         server.verify();
-    }
-
-    @Test
-    void getsCheckRunsForHeadCommit() {
-        server.expect(once(), requestTo("https://api.github.com/repos/owner/repo/commits/sha123/check-runs?per_page=100"))
-                .andExpect(method(HttpMethod.GET))
-                .andRespond(withSuccess("""
-                        {"check_runs":[{"id":1001,"name":"TESTSET","status":"completed","conclusion":"success"},
-                        {"id":1002,"name":"AI_REVIEW","status":"completed","conclusion":"success"}]}
-                        """, MediaType.APPLICATION_JSON));
-        List<GitHubCheckRunDetails> checks = client.getPullRequestChecks(12345L, "owner", "repo", "sha123");
-        assertEquals(2, checks.size());
-        assertEquals("TESTSET", checks.getFirst().name());
-        server.verify();
-    }
-
-    @Test
-    void getsPullRequestReviews() {
-        server.expect(once(), requestTo("https://api.github.com/repos/owner/repo/pulls/42/reviews?per_page=100"))
-                .andExpect(method(HttpMethod.GET))
-                .andRespond(withSuccess("""
-                        [{"id":2001,"state":"APPROVED","author_association":"MEMBER","user":{"login":"reviewer-user"}}]
-                        """, MediaType.APPLICATION_JSON));
-        List<GitHubReviewDetails> reviews = client.getPullRequestReviews(12345L, "owner", "repo", 42);
-        assertEquals(1, reviews.size());
-        assertEquals("APPROVED", reviews.get(0).state());
-        server.verify();
-    }
-
-    @Test
-    void getsPullRequestCommitsWithRealTotalCount() {
-        server.expect(once(), requestTo("https://api.github.com/repos/owner/repo/pulls/42"))
-                .andExpect(method(HttpMethod.GET))
-                .andRespond(withSuccess("""
-                        {"id":1,"number":42,"commits":5}
-                        """, MediaType.APPLICATION_JSON));
-        server.expect(once(), requestTo("https://api.github.com/repos/owner/repo/pulls/42/commits?per_page=3"))
-                .andExpect(method(HttpMethod.GET))
-                .andRespond(withSuccess("""
-                        [{"sha":"abc123","commit":{"message":"实现提交记录\\n\\n更多说明",
-                        "author":{"name":"Alice","date":"2026-08-22T00:00:00Z"}},
-                        "author":{"id":123,"login":"alice"}}]
-                        """, MediaType.APPLICATION_JSON));
-
-        GitHubPullRequestCommitList commits = client.getPullRequestCommits(12345L, "owner", "repo", 42, 3);
-
-        assertEquals(5, commits.totalCount());
-        assertEquals(1, commits.items().size());
-        assertEquals("abc123", commits.items().getFirst().sha());
-        assertEquals("Alice", commits.items().getFirst().authorName());
-        assertEquals(null, commits.items().getFirst().authorUserId());
-        server.verify();
-    }
-
-    @Test
-    void createsPullRequestIssueComment() {
-        server.expect(once(), requestTo("https://api.github.com/repos/owner/repo/issues/42/comments"))
-                .andExpect(method(HttpMethod.POST))
-                .andExpect(header("Authorization", "Bearer test-token"))
-                .andRespond(withSuccess("""
-                        {"id":3001,"body":"Please add a regression test",
-                         "html_url":"https://github.com/owner/repo/pull/42#issuecomment-3001",
-                         "created_at":"2026-08-18T15:00:00Z"}
-                        """, MediaType.APPLICATION_JSON));
-
-        GitHubPullRequestCommentDetails comment = client.createPullRequestComment(12345L, "owner", "repo", 42,
-                new GitHubPullRequestCommentRequest("Please add a regression test"));
-        assertEquals(3001L, comment.id());
-        assertEquals("Please add a regression test", comment.body());
-        assertEquals("https://github.com/owner/repo/pull/42#issuecomment-3001", comment.htmlUrl());
-        server.verify();
-    }
-
-    @Test
-    void returnsGitHubMergeOutcomeInsteadOfAssumingSuccess() {
-        server.expect(once(), requestTo("https://api.github.com/repos/owner/repo/pulls/42/merge"))
-                .andExpect(method(HttpMethod.PUT))
-                .andExpect(content().json("{\"commit_title\":\"Merge login\",\"merge_method\":\"squash\",\"sha\":\"head-sha\"}"))
-                .andRespond(withSuccess("""
-                        {"sha":"merge-sha","merged":false,"message":"Pull Request is not mergeable"}
-                        """, MediaType.APPLICATION_JSON));
-
-        GitHubPullRequestMergeResult result = client.mergePullRequest(12345L, "owner", "repo", 42,
-                new GitHubPullRequestMergeRequest("Merge login", null, "squash", "head-sha"));
-
-        assertFalse(result.merged());
-        assertEquals("Pull Request is not mergeable", result.message());
-        server.verify();
-    }
-
-    @Test
-    void preservesRejectedGitHubMergeReason() {
-        server.expect(once(), requestTo("https://api.github.com/repos/owner/repo/pulls/42/merge"))
-                .andExpect(method(HttpMethod.PUT))
-                .andRespond(withStatus(HttpStatus.FORBIDDEN)
-                        .body("{\"message\":\"Resource not accessible by integration\"}"));
-
-        try {
-            client.mergePullRequest(12345L, "owner", "repo", 42,
-                    new GitHubPullRequestMergeRequest("Merge login", "", "squash", "head-sha"));
-        } catch (qg.qgent.api.ApiException exception) {
-            assertEquals("GITHUB_MERGE_REJECTED", exception.code());
-            assertTrue(exception.getMessage().contains("Resource not accessible by integration"));
-            server.verify();
-            return;
-        }
-        throw new AssertionError("Expected GitHub merge failure");
     }
 
     @Test

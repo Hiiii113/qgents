@@ -1,16 +1,16 @@
 package qg.qgent.sandboxworker.runtime;
 
 import org.junit.jupiter.api.Test;
+
 import qg.qgent.sandboxworker.api.CreateSandboxRequest;
 
-import java.util.UUID;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class FakeContainerRuntimeTest {
     private final FakeContainerRuntime runtime = new FakeContainerRuntime();
@@ -38,7 +38,7 @@ class FakeContainerRuntimeTest {
     private CreateSandboxRequest request() {
         CreateSandboxRequest request = new CreateSandboxRequest();
         request.setSandboxId(UUID.randomUUID());
-        request.setTaskRunId(UUID.randomUUID());
+        request.setTaskId(UUID.randomUUID());
         request.setWorkspaceStorageKey("workspaces/example");
         request.setImageProfile("dev-tools");
         return request;
@@ -46,7 +46,7 @@ class FakeContainerRuntimeTest {
 
     private SandboxAllocation allocation(CreateSandboxRequest request) {
         Instant now = Instant.parse("2026-08-12T00:00:00Z");
-        return new SandboxAllocation(request.getSandboxId(), request.getTaskRunId(), request.getTaskId(), request.getWorkspaceStorageKey(),
+        return new SandboxAllocation(request.getSandboxId(), request.getTaskId(), request.getWorkspaceStorageKey(),
                 request.getImageProfile(), "READY", "FAKE", now, now, now.plusSeconds(60),
                 now.plusSeconds(3600), Duration.ofMinutes(15), null, Map.of());
     }

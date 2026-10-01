@@ -4,21 +4,21 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+
+import qg.qgent.sandboxworker.api.WorkerException;
+import qg.qgent.sandboxworker.config.SandboxWorkerProperties;
 import qg.qgent.sandboxworker.api.CreateSandboxRequest;
 import qg.qgent.sandboxworker.api.ResourceLimitsRequest;
 import qg.qgent.sandboxworker.api.SandboxResponse;
-import qg.qgent.sandboxworker.api.WorkerException;
-import qg.qgent.sandboxworker.config.SandboxWorkerProperties;
 import qg.qgent.sandboxworker.runtime.ContainerRuntime;
 import qg.qgent.sandboxworker.runtime.SandboxAllocation;
-import qg.qgent.sandboxworker.workspace.WorkspaceOperationLock;
 import qg.qgent.sandboxworker.workspace.WorkspaceMetadataStore;
+import qg.qgent.sandboxworker.workspace.WorkspaceOperationLock;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -59,17 +59,16 @@ public class SandboxService {
                 if (existing != null) {
                     SandboxAllocation requested = allocation(request);
                     if (sameSandboxSpec(existing, requested)) {
-                        log.info("sandbox idempotent return sandboxId={} taskId={} taskRunId={} workspace={}",
-                                existing.getId(), existing.getTaskId(), existing.getTaskRunId(),
-                                existing.getWorkspaceStorageKey());
+                        log.info("sandbox idempotent return sandboxId={} taskId={} workspace={}",
+                                existing.getId(), existing.getTaskId(), existing.getWorkspaceStorageKey());
                         return response(existing);
                     }
                     throw new WorkerException(HttpStatus.CONFLICT, "SANDBOX_ID_CONFLICT", "同名沙箱规格不一致");
                 }
                 SandboxAllocation allocation = allocation(request);
                 SandboxAllocation created = runtime.create(request, allocation);
-                log.info("sandbox created sandboxId={} taskId={} taskRunId={} workspace={} image={} repos={} container={}",
-                        created.getId(), created.getTaskId(), created.getTaskRunId(), created.getWorkspaceStorageKey(),
+                log.info("sandbox created sandboxId={} taskId={} workspace={} image={} repos={} container={}",
+                        created.getId(), created.getTaskId(), created.getWorkspaceStorageKey(),
                         created.getImageProfile(), created.getRepositoryPaths().size(), created.getRuntimeHandle());
                 return response(created);
             });
@@ -85,7 +84,6 @@ public class SandboxService {
         Duration executionTimeout = requestedExecutionTimeout(request.getLimits());
         return new SandboxAllocation(
                 request.getSandboxId(),
-                request.getTaskRunId(),
                 request.getTaskId(),
                 request.getWorkspaceStorageKey(),
                 request.getImageProfile(),
@@ -105,8 +103,8 @@ public class SandboxService {
      * 判断两个沙箱规格是否一致：任务、Workspace 存储键、镜像配置与仓库集合全部相等才算一致。
      */
     private boolean sameSandboxSpec(SandboxAllocation existing, SandboxAllocation requested) {
-        return java.util.Objects.equals(existing.getTaskRunId(), requested.getTaskRunId())
-                && (existing.getTaskId() == null || java.util.Objects.equals(existing.getTaskId(), requested.getTaskId()))
+        return java.util.Objects.equals(existing.getTaskId(), requested.getTaskId())
+
                 && java.util.Objects.equals(existing.getWorkspaceStorageKey(), requested.getWorkspaceStorageKey())
                 && java.util.Objects.equals(existing.getImageProfile(), requested.getImageProfile())
                 && java.util.Objects.equals(existing.getRepositoryPaths(), requested.getRepositoryPaths());
@@ -212,7 +210,6 @@ public class SandboxService {
     private SandboxResponse response(SandboxAllocation allocation) {
         return new SandboxResponse(
                 allocation.getId(),
-                allocation.getTaskRunId(),
                 allocation.getTaskId(),
                 allocation.getWorkspaceStorageKey(),
                 allocation.getImageProfile(),

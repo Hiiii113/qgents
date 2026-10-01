@@ -2,11 +2,19 @@ package qg.qgent.sandboxworker.tool;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
 import qg.qgent.sandboxworker.api.WorkerException;
+import qg.qgent.sandboxworker.tool.ToolContext;
+import qg.qgent.sandboxworker.tool.ToolResult;
+import qg.qgent.sandboxworker.tool.DirectoryCreateTool;
+import qg.qgent.sandboxworker.tool.FilePatchTool;
+import qg.qgent.sandboxworker.tool.RepositoryFileResolver;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 
@@ -30,7 +38,8 @@ class ToolRegistryTest {
                 """;
 
         ToolResult result = registry.execute("file.patch", context(), Map.of("path", "note.txt",
-                "expectedHash", FileReadTool.sha256(Files.readAllBytes(file)), "patch", patch));
+                "expectedHash", HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(file))),
+                "patch", patch));
 
         assertEquals("one\nTWO\nthree\n", Files.readString(file));
         assertEquals(0, result.getExitCode());

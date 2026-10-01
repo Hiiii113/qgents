@@ -31,7 +31,7 @@ public class AgentEntity {
      */
     private String name;
     /**
-     * Declared role matched against TaskStep.role (角色标签).
+     * Agent 用途标签，不参与阶段调度。
      */
     private String role;
     /**

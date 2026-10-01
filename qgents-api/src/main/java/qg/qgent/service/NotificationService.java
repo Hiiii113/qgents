@@ -1,16 +1,18 @@
 package qg.qgent.service;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import qg.qgent.api.ApiException;
+
 import qg.qgent.auth.UuidV7;
+import qg.qgent.api.ApiException;
 import qg.qgent.dto.NotificationResponse;
 import qg.qgent.entity.NotificationEntity;
 import qg.qgent.mapper.NotificationMapper;
+import qg.qgent.service.EventService;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;

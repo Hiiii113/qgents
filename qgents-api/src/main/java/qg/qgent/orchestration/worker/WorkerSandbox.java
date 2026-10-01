@@ -21,12 +21,7 @@ public class WorkerSandbox {
     private UUID id;
 
     /**
-     * 关联的任务运行编号。
-     */
-    private UUID taskRunId;
-
-    /**
-     * Sandbox 所属 Task 编号；独立测试执行创建的 Sandbox 可以为空。
+     * Sandbox 所属 Task 编号；
      */
     private UUID taskId;
 

@@ -1,11 +1,12 @@
 package qg.qgent.orchestration.worker;
 
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import qg.qgent.orchestration.worker.SandboxWorkerClient;
+
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
  * 验证 {@link SandboxWorkerConfiguration} 在提供 {@link ObjectMapper} 的情况下

@@ -1,13 +1,15 @@
 package qg.qgent.orchestration.worker;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
+
 import qg.qgent.config.PerformanceMetrics;
+import qg.qgent.orchestration.worker.SandboxWorkerClient;
 
 import java.time.Duration;
 
@@ -29,12 +31,11 @@ public class SandboxWorkerConfiguration {
     SandboxWorkerClient sandboxWorkerClient(SandboxWorkerProperties properties, ObjectMapper objectMapper,
                                             ObjectProvider<PerformanceMetrics> metricsProvider) {
         RestClient client = workerClient(properties, properties.getResponseTimeout());
-        return new SandboxWorkerClient(client, objectMapper, metricsProvider.getIfAvailable(),
-                timeout -> workerClient(properties, timeout));
+        return new SandboxWorkerClient(client, objectMapper, metricsProvider.getIfAvailable());
     }
 
     /**
-     * 普通 Worker API 使用短读取超时；同步 Testset API 由调用方传入本次运行的总预算。
+     * Worker API 的读取超时。
      */
     private RestClient workerClient(SandboxWorkerProperties properties, Duration responseTimeout) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();

@@ -3,12 +3,14 @@ package qg.qgent.service;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import qg.qgent.api.ApiException;
 import qg.qgent.dto.AvatarConfirmRequest;
 import qg.qgent.dto.AvatarConfirmResponse;
 import qg.qgent.dto.AvatarCredentialResponse;
 import qg.qgent.entity.UserEntity;
 import qg.qgent.mapper.UserMapper;
+import qg.qgent.service.AvatarStorageService;
 
 import java.util.UUID;
 

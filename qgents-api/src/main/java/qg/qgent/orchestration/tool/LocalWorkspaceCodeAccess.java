@@ -2,7 +2,9 @@ package qg.qgent.orchestration.tool;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
-import qg.qgent.service.WorkspaceService;
+
+import qg.qgent.orchestration.tool.WorkspaceFileReadResult;
+import qg.qgent.orchestration.tool.Sha256;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -12,6 +14,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.Stream;
+import qg.qgent.service.WorkspaceService;
 
 /**
  * WorkspaceCodeAccess 的最小本地实现，供 Plan/Coding/Review Agent 在真实 Sandbox 落地前读取代码。

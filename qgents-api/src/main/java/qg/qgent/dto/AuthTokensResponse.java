@@ -4,6 +4,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import qg.qgent.dto.UserResponse;
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

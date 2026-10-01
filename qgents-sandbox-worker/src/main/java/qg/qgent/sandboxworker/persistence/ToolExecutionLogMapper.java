@@ -4,6 +4,8 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Select;
 
+import qg.qgent.sandboxworker.persistence.ToolExecutionLogEntity;
+
 import java.util.List;
 
 /**

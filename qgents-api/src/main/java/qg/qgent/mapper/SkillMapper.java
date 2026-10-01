@@ -7,9 +7,10 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Result;
 import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
-import qg.qgent.entity.SkillEntity;
+
 import qg.qgent.dto.ContextSkill;
 import qg.qgent.handler.UuidBinaryTypeHandler;
+import qg.qgent.entity.SkillEntity;
 
 import java.util.List;
 import java.util.UUID;

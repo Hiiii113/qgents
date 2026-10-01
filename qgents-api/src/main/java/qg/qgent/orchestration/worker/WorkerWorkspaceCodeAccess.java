@@ -1,11 +1,15 @@
 package qg.qgent.orchestration.worker;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
-import org.springframework.beans.factory.annotation.Autowired;
-import qg.qgent.orchestration.tool.WorkspaceCodeAccess;
+
+import qg.qgent.service.AgentWorkerExecutionService;
+import qg.qgent.orchestration.worker.SandboxWorkerClient;
+import qg.qgent.orchestration.worker.SandboxWorkerProperties;
+import qg.qgent.orchestration.worker.WorkerToolExecution;
 import qg.qgent.orchestration.tool.WorkspaceFileReadResult;
-import qg.qgent.service.TaskRunWorkerExecutionService;
+import qg.qgent.orchestration.tool.WorkspaceCodeAccess;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -48,7 +52,7 @@ public class WorkerWorkspaceCodeAccess extends AbstractWorkerToolPort implements
     @Autowired
     public WorkerWorkspaceCodeAccess(SandboxWorkerClient client, SandboxSessionManager sessions,
                                      SandboxWorkerProperties properties,
-                                     TaskRunWorkerExecutionService workerExecutionService) {
+                                     AgentWorkerExecutionService workerExecutionService) {
         super(client, sessions, properties, workerExecutionService);
     }
 

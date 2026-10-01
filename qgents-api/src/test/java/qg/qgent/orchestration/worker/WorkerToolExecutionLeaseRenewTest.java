@@ -3,8 +3,12 @@ package qg.qgent.orchestration.worker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+
 import qg.qgent.api.ApiException;
-import qg.qgent.orchestration.tool.ExecutionResult;
+import qg.qgent.orchestration.worker.SandboxWorkerClient;
+import qg.qgent.orchestration.worker.SandboxWorkerProperties;
+import qg.qgent.orchestration.worker.WorkerToolExecution;
+import qg.qgent.orchestration.worker.WorkerSandbox;
 
 import java.time.Duration;
 import java.util.List;
@@ -182,22 +186,6 @@ class WorkerToolExecutionLeaseRenewTest {
                 .isInstanceOf(ApiException.class)
                 .hasMessageContaining("Worker down");
 
-        verify(client, never()).submitToolExecution(any(), any());
-    }
-
-    @Test
-    void sandboxNotFound404HandledAsExecutionFailureInExecutionPort() {
-        WorkerSandboxExecutionPort executionPort = new WorkerSandboxExecutionPort(client, sessions, properties);
-
-        when(client.renewSandbox(sandboxId))
-                .thenThrow(new ApiException(HttpStatus.NOT_FOUND, "SANDBOX_NOT_FOUND", "Sandbox missing"));
-
-        // 固定命令目录内选 MAVEN_TEST，确保 execute 真正走到 sandbox 续租再触发 404（"ls" 不在目录内会提前拒绝）。
-        ExecutionResult result = executionPort.execute(workspaceId, List.of("mvn", "test"), Duration.ofSeconds(10));
-
-        assertThat(result.ok()).isFalse();
-        assertThat(result.exitCode()).isEqualTo(-1);
-        assertThat(result.error()).contains("Sandbox missing");
         verify(client, never()).submitToolExecution(any(), any());
     }
 

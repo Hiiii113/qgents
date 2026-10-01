@@ -7,14 +7,23 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
-import jakarta.validation.constraints.Pattern;
+
+import qg.qgent.sandboxworker.workspace.GitCommitRequest;
+import qg.qgent.sandboxworker.workspace.GitCommitResponse;
+import qg.qgent.sandboxworker.workspace.GitDiffRequest;
+import qg.qgent.sandboxworker.workspace.GitDiffResponse;
+import qg.qgent.sandboxworker.workspace.GitPushRequest;
+import qg.qgent.sandboxworker.workspace.GitPushResponse;
+import qg.qgent.sandboxworker.workspace.GitStatusResponse;
+import qg.qgent.sandboxworker.workspace.WorkspaceProvisionRequest;
+import qg.qgent.sandboxworker.workspace.WorkspaceResponse;
+import qg.qgent.sandboxworker.workspace.WorkspaceManagerService;
 
 import java.util.UUID;
 
@@ -57,19 +66,6 @@ public class InternalWorkspaceController {
     }
 
     /**
-     * 固化一个仓库当前未提交工作树，返回独立且可重复使用的测试 Workspace。
-     */
-    @PostMapping("/{workspaceId}/repositories/{repositoryId}/test-snapshots/{snapshotWorkspaceId}")
-    public WorkspaceResponse snapshotForTest(@PathVariable UUID workspaceId,
-                                             @PathVariable UUID repositoryId, @PathVariable UUID snapshotWorkspaceId,
-                                             @RequestParam UUID projectId,
-                                             @RequestParam @Pattern(regexp = "^[0-9a-fA-F]{40,64}$")
-                                             String expectedHeadCommit) {
-        return workspaceManagerService.snapshotForTest(workspaceId, repositoryId, snapshotWorkspaceId, projectId,
-                expectedHeadCommit);
-    }
-
-    /**
      * 查询仓库当前分支、HEAD 和结构化变更。
      */
     @GetMapping("/{workspaceId}/repositories/{repositoryId}/git/status")
@@ -87,7 +83,7 @@ public class InternalWorkspaceController {
     }
 
     /**
-     * 校验审查快照并在内部执行 add -A 与 commit。
+     * 校验当前修改并执行 add -A 与 commit。
      */
     @PostMapping("/{workspaceId}/repositories/{repositoryId}/git/commit")
     public GitCommitResponse gitCommit(@PathVariable UUID workspaceId, @PathVariable UUID repositoryId,

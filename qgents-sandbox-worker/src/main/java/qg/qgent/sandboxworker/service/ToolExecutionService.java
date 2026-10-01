@@ -7,21 +7,22 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import qg.qgent.sandboxworker.api.ExecutionLogEntryResponse;
-import qg.qgent.sandboxworker.api.ExecutionLogsResponse;
-import qg.qgent.sandboxworker.api.ToolExecutionRequest;
-import qg.qgent.sandboxworker.api.ToolExecutionResponse;
+
 import qg.qgent.sandboxworker.api.WorkerException;
 import qg.qgent.sandboxworker.config.SandboxWorkerProperties;
+import qg.qgent.sandboxworker.runtime.SandboxAllocation;
+import qg.qgent.sandboxworker.service.SandboxService;
+import qg.qgent.sandboxworker.api.ExecutionLogEntryResponse;
+import qg.qgent.sandboxworker.api.ExecutionLogsResponse;
+import qg.qgent.sandboxworker.tool.ToolContext;
+import qg.qgent.sandboxworker.api.ToolExecutionRequest;
+import qg.qgent.sandboxworker.api.ToolExecutionResponse;
+import qg.qgent.sandboxworker.tool.ToolResult;
 import qg.qgent.sandboxworker.persistence.ToolExecutionEntity;
 import qg.qgent.sandboxworker.persistence.ToolExecutionLogEntity;
 import qg.qgent.sandboxworker.persistence.ToolExecutionLogMapper;
 import qg.qgent.sandboxworker.persistence.ToolExecutionMapper;
-import qg.qgent.sandboxworker.runtime.SandboxAllocation;
 import qg.qgent.sandboxworker.runtime.WorkspacePathResolver;
-import qg.qgent.sandboxworker.tool.ToolContext;
-import qg.qgent.sandboxworker.tool.ToolRegistry;
-import qg.qgent.sandboxworker.tool.ToolResult;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -36,6 +37,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.regex.Pattern;
+import qg.qgent.sandboxworker.tool.ToolRegistry;
 
 /**
  * 统一管理结构化工具的异步执行、取消、日志和 MySQL 持久化。

@@ -6,9 +6,8 @@ import java.util.regex.Pattern;
 /**
  * 构造受控 git diff / rev-parse 启动向量的包私有工具。
  * <p>
- * Git 进程由同包的 {@link SandboxProcessRunner} 启动，不经过 {@link SandboxCommandPolicy}
- * 白名单端口（该端口只放行 mvn/npm/gradle 等测试命令），因此 base ref 校验必须足够严格，
- * 从结构上排除 option 注入、范围操作符与越权引用：
+ * Git 进程由同包的 {@link SandboxProcessRunner} 启动。
+ * base ref 校验排除 option 注入和范围操作符：
  * <ul>
  *   <li>base 视为外部输入（可能来自 DB 的 baseCommit/headCommit），只允许字母/数字开头，
  *       后续字符限字母、数字、{@code _ - . /}；</li>

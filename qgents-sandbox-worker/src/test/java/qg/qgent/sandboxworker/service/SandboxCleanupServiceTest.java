@@ -2,16 +2,18 @@ package qg.qgent.sandboxworker.service;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import qg.qgent.sandboxworker.api.CreateSandboxRequest;
-import qg.qgent.sandboxworker.config.SandboxWorkerProperties;
-import qg.qgent.sandboxworker.runtime.FakeContainerRuntime;
-import qg.qgent.sandboxworker.workspace.WorkspaceOperationLock;
-import qg.qgent.sandboxworker.workspace.WorkspaceMetadataStore;
 
+import qg.qgent.sandboxworker.config.SandboxWorkerProperties;
+import qg.qgent.sandboxworker.api.CreateSandboxRequest;
+import qg.qgent.sandboxworker.runtime.FakeContainerRuntime;
+import qg.qgent.sandboxworker.service.ToolExecutionService;
+import qg.qgent.sandboxworker.workspace.WorkspaceMetadataStore;
+import qg.qgent.sandboxworker.workspace.WorkspaceOperationLock;
+
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.nio.file.Path;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -45,7 +47,7 @@ class SandboxCleanupServiceTest {
     private CreateSandboxRequest request() {
         CreateSandboxRequest request = new CreateSandboxRequest();
         request.setSandboxId(UUID.randomUUID());
-        request.setTaskRunId(UUID.randomUUID());
+        request.setTaskId(UUID.randomUUID());
         request.setWorkspaceStorageKey("workspaces/" + UUID.randomUUID());
         request.setImageProfile("dev-tools");
         return request;

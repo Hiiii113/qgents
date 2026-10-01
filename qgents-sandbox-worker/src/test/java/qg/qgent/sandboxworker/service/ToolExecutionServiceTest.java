@@ -3,17 +3,18 @@ package qg.qgent.sandboxworker.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import qg.qgent.sandboxworker.api.ToolExecutionRequest;
+
 import qg.qgent.sandboxworker.api.WorkerException;
 import qg.qgent.sandboxworker.config.SandboxWorkerProperties;
+import qg.qgent.sandboxworker.runtime.SandboxAllocation;
+import qg.qgent.sandboxworker.service.SandboxService;
+import qg.qgent.sandboxworker.api.ToolExecutionRequest;
+import qg.qgent.sandboxworker.tool.ToolResult;
 import qg.qgent.sandboxworker.persistence.ToolExecutionEntity;
 import qg.qgent.sandboxworker.persistence.ToolExecutionLogEntity;
 import qg.qgent.sandboxworker.persistence.ToolExecutionLogMapper;
 import qg.qgent.sandboxworker.persistence.ToolExecutionMapper;
-import qg.qgent.sandboxworker.runtime.SandboxAllocation;
 import qg.qgent.sandboxworker.runtime.WorkspacePathResolver;
-import qg.qgent.sandboxworker.tool.ToolRegistry;
-import qg.qgent.sandboxworker.tool.ToolResult;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -29,13 +30,14 @@ import java.util.concurrent.RejectedExecutionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import qg.qgent.sandboxworker.tool.ToolRegistry;
 
 class ToolExecutionServiceTest {
     private final ExecutorService pool = Executors.newSingleThreadExecutor();
@@ -302,7 +304,7 @@ class ToolExecutionServiceTest {
 
     private SandboxAllocation allocation(UUID sandboxId) {
         Instant now = Instant.now();
-        return new SandboxAllocation(sandboxId, UUID.randomUUID(), UUID.randomUUID(), "workspaces/" + UUID.randomUUID(), "dev-tools",
+        return new SandboxAllocation(sandboxId, UUID.randomUUID(), "workspaces/" + UUID.randomUUID(), "dev-tools",
                 "READY", "FAKE", now, now, now.plusSeconds(60), now.plusSeconds(3600),
                 Duration.ofMinutes(15), null, Map.of());
     }

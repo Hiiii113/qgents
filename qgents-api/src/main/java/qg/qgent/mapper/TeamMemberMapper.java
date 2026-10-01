@@ -2,9 +2,10 @@ package qg.qgent.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.*;
-import qg.qgent.dto.TeamMemberView;
-import qg.qgent.entity.TeamMemberEntity;
+
 import qg.qgent.handler.UuidBinaryTypeHandler;
+import qg.qgent.entity.TeamMemberEntity;
+import qg.qgent.dto.TeamMemberView;
 
 import java.util.List;
 import java.util.UUID;

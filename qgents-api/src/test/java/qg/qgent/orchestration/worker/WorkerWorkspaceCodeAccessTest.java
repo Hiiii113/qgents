@@ -1,10 +1,14 @@
 package qg.qgent.orchestration.worker;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import qg.qgent.orchestration.worker.SandboxWorkerClient;
+import qg.qgent.orchestration.worker.SandboxWorkerProperties;
+import qg.qgent.orchestration.worker.WorkerToolExecution;
+import qg.qgent.orchestration.worker.WorkerToolExecutionRequest;
+import qg.qgent.orchestration.tool.WorkspaceFileReadResult;
 
 import java.util.HashMap;
 import java.util.List;
@@ -12,11 +16,11 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.function.Function;
 
-import qg.qgent.orchestration.tool.WorkspaceFileReadResult;
-
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * {@link WorkerWorkspaceCodeAccess} 形状翻译单测：递归 list 扁平化、file.read 分页重组、

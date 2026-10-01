@@ -4,6 +4,7 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+
 import qg.qgent.entity.WorkspaceRepositoryEntity;
 
 import java.util.List;
@@ -73,7 +74,7 @@ public interface WorkspaceRepositoryMapper {
 
     /**
      * 固化 Worker provision 返回的真实基线/HEAD 提交。base_commit 专存 SHA；
-     * base_ref 为空时用 Worker 回报的基线分支名回填（兼容迁移前旧数据），已有值不覆盖。
+     * base_ref 为空时用 Worker 回报的基线分支名回填，已有值不覆盖。
      */
     @org.apache.ibatis.annotations.Update("update workspace_repositories set base_commit=#{baseCommit}, "
             + "head_commit=#{headCommit}, base_ref=coalesce(nullif(base_ref,''), #{baseRef}) "

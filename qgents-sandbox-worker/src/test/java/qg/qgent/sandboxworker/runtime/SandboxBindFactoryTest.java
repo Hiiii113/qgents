@@ -3,7 +3,9 @@ package qg.qgent.sandboxworker.runtime;
 import com.github.dockerjava.api.model.AccessMode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
 import qg.qgent.sandboxworker.config.SandboxWorkerProperties;
+import qg.qgent.sandboxworker.runtime.WorkspacePathResolver;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -29,7 +31,7 @@ class SandboxBindFactoryTest {
         SandboxWorkerProperties properties = new SandboxWorkerProperties();
         properties.setWorkspaceLocalRoot(localRoot.toString());
         properties.setWorkspaceDockerHostRoot(hostRoot.toString());
-        SandboxAllocation allocation = new SandboxAllocation(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+        SandboxAllocation allocation = new SandboxAllocation(UUID.randomUUID(), UUID.randomUUID(),
                 "workspaces/" + workspaceId, "dev-tools", "READY", "DOCKER", Instant.EPOCH,
                 Instant.EPOCH, Instant.EPOCH, Instant.EPOCH, Duration.ofMinutes(1), null,
                 Map.of(repositoryId, "backend"));

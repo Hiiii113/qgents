@@ -2,17 +2,18 @@ package qg.qgent.service;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+
 import qg.qgent.api.ApiException;
 import qg.qgent.config.PushProperties;
 
-import javax.crypto.Cipher;
-import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.HexFormat;
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 
 /** 对移动端设备 Token 做摘要和 AES-GCM 加密，防止明文进入数据库。 */
 @Component

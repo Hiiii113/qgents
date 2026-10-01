@@ -1,5 +1,8 @@
 package qg.qgent.sandboxworker.tool;
 
+import qg.qgent.sandboxworker.tool.ToolContext;
+import qg.qgent.sandboxworker.tool.ToolResult;
+
 import java.util.Map;
 
 /**

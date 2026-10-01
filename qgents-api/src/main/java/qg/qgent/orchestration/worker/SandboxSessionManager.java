@@ -2,18 +2,36 @@ package qg.qgent.orchestration.worker;
 
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import qg.qgent.api.ApiException;
+
 import qg.qgent.auth.UuidV7;
-import qg.qgent.entity.*;
+import qg.qgent.api.ApiException;
 import qg.qgent.github.GitHubAppClient;
 import qg.qgent.github.GitHubBranchDetails;
-import qg.qgent.mapper.*;
+import qg.qgent.entity.GitCredentialPurpose;
+import qg.qgent.entity.GitHubInstallationEntity;
+import qg.qgent.entity.GitHubRepositoryEntity;
+import qg.qgent.mapper.GitHubInstallationMapper;
+import qg.qgent.mapper.GitHubRepositoryMapper;
 import qg.qgent.service.GitCredentialService;
+import qg.qgent.entity.ProjectRepositoryEntity;
+import qg.qgent.mapper.ProjectRepositoryMapper;
+import qg.qgent.orchestration.worker.SandboxWorkerClient;
+import qg.qgent.orchestration.worker.SandboxWorkerProperties;
+import qg.qgent.orchestration.worker.WorkerCreateSandboxRequest;
+import qg.qgent.orchestration.worker.WorkerGitStoreSyncRequest;
+import qg.qgent.orchestration.worker.WorkerGitStoreSyncResponse;
+import qg.qgent.orchestration.worker.WorkerSandbox;
+import qg.qgent.orchestration.worker.WorkerWorkspace;
+import qg.qgent.orchestration.worker.WorkerWorkspaceProvisionRequest;
+import qg.qgent.orchestration.worker.WorkerWorkspaceRepository;
+import qg.qgent.orchestration.worker.WorkerWorkspaceRepositoryRequest;
+import qg.qgent.entity.WorkspaceEntity;
+import qg.qgent.entity.WorkspaceRepositoryEntity;
+import qg.qgent.mapper.WorkspaceMapper;
+import qg.qgent.mapper.WorkspaceRepositoryMapper;
 import qg.qgent.service.WorkspaceWriteLease;
 import qg.qgent.service.WorkspaceWriteLeaseService;
-import qg.qgent.service.WorkBranchDevelopmentGuard;
 
-import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
@@ -52,7 +70,6 @@ public class SandboxSessionManager {
     private final GitCredentialService credentialService;
     private final GitHubAppClient githubAppClient;
     private final WorkspaceWriteLeaseService writeLeases;
-    private WorkBranchDevelopmentGuard developmentGuard;
     private final Map<UUID, SandboxSession> sessions = new ConcurrentHashMap<>();
     private final Map<UUID, ReentrantLock> acquireLocks = new ConcurrentHashMap<>();
     private final Map<UUID, WorkspaceWriteLease> workspaceLeases = new ConcurrentHashMap<>();
@@ -74,11 +91,6 @@ public class SandboxSessionManager {
         this.writeLeases = writeLeases;
     }
 
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    void setDevelopmentGuard(WorkBranchDevelopmentGuard developmentGuard) {
-        this.developmentGuard = developmentGuard;
-    }
-
     /**
      * 为一次 Task 编排准备 Sandbox 会话；已存在则直接返回。
      * 未启用 Worker 时返回 null（本地端口不需要会话）。
@@ -87,11 +99,11 @@ public class SandboxSessionManager {
         if (!properties.isEnabled()) {
             return null;
         }
-        requireWorkerWriteAllowed(projectId, workspaceId);
+
         ReentrantLock acquireLock = acquireLocks.computeIfAbsent(workspaceId, ignored -> new ReentrantLock());
         // 进程内锁只用于串行化初始化/释放，不能让编排线程无限等待。持锁者可能正卡在
         // Worker/GitHub 请求；把冲突交给既有 PENDING/恢复器路径，避免 Task 已 RUNNING
-        // 但永远没有 Sandbox 或 TaskRun。
+        // 但永远没有 Sandbox 或 AgentRun。
         if (!acquireLock.tryLock()) {
             throw new ApiException(org.springframework.http.HttpStatus.CONFLICT,
                     "WORKSPACE_WRITE_LEASE_HELD", "Workspace is currently being initialized by another Task");
@@ -99,7 +111,7 @@ public class SandboxSessionManager {
         try {
             SandboxSession existing = sessions.get(workspaceId);
             if (existing != null) {
-                requireWorkerWriteAllowed(projectId, workspaceId);
+
                 if (!existing.taskId().equals(taskId)) {
                     throw new qg.qgent.api.ApiException(org.springframework.http.HttpStatus.CONFLICT,
                             "WORKSPACE_WRITE_LEASE_HELD", "Workspace is currently being modified by another Task");
@@ -185,18 +197,12 @@ public class SandboxSessionManager {
             throw new qg.qgent.api.ApiException(org.springframework.http.HttpStatus.CONFLICT,
                     "WORKSPACE_WRITE_LEASE_LOST", "Workspace write lease is no longer active");
         }
-        requireWorkerWriteAllowed(lease.getProjectId(), workspaceId);
+
         writeLeases.renew(lease);
     }
 
-    private void requireWorkerWriteAllowed(UUID projectId, UUID workspaceId) {
-        if (developmentGuard != null) {
-            developmentGuard.requireWorkerWriteAllowed(projectId, workspaceId);
-        }
-    }
-
     /**
-     * 在整个 Task 会话存活期间维持 Sandbox 租约，覆盖 LLM 推理和阶段切换等没有工具调用的空档。
+     * 在整个 Task 会话存活期间维持 Sandbox 租约，覆盖 LLM 推理等没有工具调用的空档。
      * 单个 Sandbox 的续租失败不影响其他会话；实际工具调用会继续得到 Worker 的明确错误。
      */
     @Scheduled(fixedDelayString = "${app.worker.lease-renew-interval:10s}")
@@ -229,14 +235,15 @@ public class SandboxSessionManager {
         }
 
         // 阶段一：同步所有 Git Store 并幂等准备 Workspace，瞬态失败在此阶段内自动重试。
-        String storageKey = prepareWorkspace(projectId, workspaceId, workspace, repositories);
+        boolean provisioned = repositories.stream().allMatch(repository -> isCommitSha(repository.getBaseCommit()));
+        String storageKey = provisioned ? client.getWorkspace(workspaceId).getStorageKey()
+                : prepareWorkspace(projectId, workspaceId, workspace, repositories);
 
         // 阶段二：创建 Sandbox，整个 acquire 只生成一次 sandboxId，创建请求超时后按同 id 幂等恢复。
         UUID sandboxId = UuidV7.next();
         WorkerCreateSandboxRequest create = new WorkerCreateSandboxRequest();
         create.setSandboxId(sandboxId);
         create.setTaskId(taskId);
-        create.setTaskRunId(taskId);
         create.setWorkspaceStorageKey(storageKey);
         create.setImageProfile(properties.getImageProfile());
         create.setRepositoryIds(repositories.stream().map(WorkspaceRepositoryEntity::getProjectRepositoryId).toList());
@@ -287,10 +294,6 @@ public class SandboxSessionManager {
         // 一次 acquire 对每个仓库只解析一次基线分支。同步 Git Store 与后续创建 worktree
         // 必须使用同一个值，避免任务指定基线与项目默认分支不同时出现“已同步 main、却从 develop 建树”。
         Map<UUID, String> baseRefByRepository = new HashMap<>();
-        // 迁移前旧数据（base_commit 已是 SHA、base_ref 为空）的原基线分支名从 Worker 持久化
-        // Workspace 元数据恢复；懒加载，仅存在无法本地解析的仓库时查询一次。
-        Map<UUID, String> workerBaseRefs = null;
-
         // Fetch Grants and Sync bare Git Stores for each repository
         for (WorkspaceRepositoryEntity repository : repositories) {
             ProjectRepositoryEntity projectRepo = projectRepositoryMapper.selectById(repository.getProjectRepositoryId());
@@ -298,26 +301,7 @@ public class SandboxSessionManager {
                 throw new qg.qgent.api.ApiException(org.springframework.http.HttpStatus.BAD_REQUEST, "PROJECT_REPOSITORY_NOT_BOUND",
                         "Repository binding is not active for workspace repository");
             }
-            // 基线分支以不可变 base_ref 为准；兼容迁移前旧数据：base_ref 为空时回退 base_commit
-            // 中的分支名（非 SHA 形态）。base_commit 已回填 SHA 后不得静默换用项目默认分支，
-            // 否则会以旧 SHA 校验新分支必然失败；必须恢复原基线，恢复不了就明确报错。
-            String legacyBranchRef = isCommitSha(repository.getBaseCommit()) ? null : repository.getBaseCommit();
-            String configuredBaseRef = firstNonBlank(repository.getBaseRef(), legacyBranchRef);
-            if ((configuredBaseRef == null || configuredBaseRef.isBlank()) && isCommitSha(repository.getBaseCommit())) {
-                // 仅确已 provision 过（base_commit 为 SHA）的迁移前旧数据走恢复；
-                // 从未 provision（base_commit 为空）的行直接用项目默认分支。
-                if (workerBaseRefs == null) {
-                    workerBaseRefs = loadWorkerBaseRefs(workspaceId);
-                }
-                String recovered = workerBaseRefs.get(repository.getProjectRepositoryId());
-                if (recovered == null || recovered.isBlank()) {
-                    throw new qg.qgent.api.ApiException(org.springframework.http.HttpStatus.CONFLICT,
-                            "WORKSPACE_BASE_REF_UNKNOWN",
-                            "Workspace 已 provision 但原基线分支不可追溯，请重建 Workspace 后重试");
-                }
-                configuredBaseRef = recovered;
-                persistRecoveredBaseRef(repository, recovered);
-            }
+            String configuredBaseRef = repository.getBaseRef();
             String defaultBranch = projectRepo.getDefaultBranch();
             String remoteBranch = firstNonBlank(configuredBaseRef, defaultBranch);
             if (remoteBranch == null || remoteBranch.isBlank()) {
@@ -356,7 +340,7 @@ public class SandboxSessionManager {
                             installation.getProviderInstallationId(), owner, repoName, remoteBranch);
                 } catch (ApiException branchFailure) {
                     // 基线分支不存在是用户可修复的确定性错误：保留稳定码与仓库/分支上下文，
-                    // 供任务启动失败卡片与详情 statusReason 展示「修改基线分支后重试」，不降级为泛化错误。
+                    // 供 Agent 工具结果说明「修改基线分支后重试」，不降级为泛化错误。
                     if ("GIT_BRANCH_NOT_FOUND".equals(branchFailure.code())) {
                         throw new ApiException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
                                 "GIT_BRANCH_NOT_FOUND",
@@ -463,9 +447,8 @@ public class SandboxSessionManager {
     }
 
     private boolean sameSandboxSpec(WorkerCreateSandboxRequest request, WorkerSandbox existing) {
-        return Objects.equals(request.getTaskRunId(), existing.getTaskRunId())
-                // 旧 Worker 返回没有 taskId；缺失时按旧规格兼容恢复，不把瞬时超时升级为冲突。
-                && (existing.getTaskId() == null || Objects.equals(request.getTaskId(), existing.getTaskId()))
+        return Objects.equals(request.getTaskId(), existing.getTaskId())
+
                 && Objects.equals(request.getWorkspaceStorageKey(), existing.getWorkspaceStorageKey())
                 && Objects.equals(request.getImageProfile(), existing.getImageProfile())
                 && existing.getRepositoryIds() != null
@@ -496,7 +479,7 @@ public class SandboxSessionManager {
     /**
      * 用 Worker provision 返回的真实基线/HEAD 提交回填 Workspace repository 持久字段。
      * base_commit 专存真实 commit SHA 供最终 Diff 校验比对；不可变基线分支名存 base_ref
-     * （迁移前旧数据在回填时补写）。
+     * 。
      */
     private void persistProvisionedCommits(List<WorkspaceRepositoryEntity> repositories, WorkerWorkspace provisioned) {
         if (provisioned == null || provisioned.getRepositories() == null) {
@@ -531,32 +514,6 @@ public class SandboxSessionManager {
         request.setSourceBranch(repository.getSourceBranch());
         request.setWorkspacePath(repository.getWorkspacePath());
         return request;
-    }
-
-    /**
-     * 从 Worker 持久化的 Workspace 元数据读取各仓库的原基线分支名。
-     * 仅用于迁移前旧数据（base_commit 已 SHA 化且 base_ref 为空）的恢复；
-     * Worker 不可达时传输错误按 {@code SANDBOX_WORKER_UNAVAILABLE} 上抛，不静默降级。
-     */
-    private Map<UUID, String> loadWorkerBaseRefs(UUID workspaceId) {
-        WorkerWorkspace persisted = client.getWorkspace(workspaceId);
-        Map<UUID, String> refs = new HashMap<>();
-        if (persisted != null && persisted.getRepositories() != null) {
-            for (WorkerWorkspaceRepository repo : persisted.getRepositories()) {
-                refs.put(repo.getRepositoryId(), repo.getBaseRef());
-            }
-        }
-        return refs;
-    }
-
-    /**
-     * 把恢复出的原基线分支名固化回 base_ref，后续 acquire 不再依赖 Worker 元数据。
-     * base_commit/head_commit 原值写回，幂等无害。
-     */
-    private void persistRecoveredBaseRef(WorkspaceRepositoryEntity repository, String recovered) {
-        repository.setBaseRef(recovered);
-        repositoryMapper.updateCommits(repository.getWorkspaceId(), repository.getProjectRepositoryId(),
-                repository.getBaseCommit(), repository.getHeadCommit(), recovered);
     }
 
     private boolean isCommitSha(String value) {

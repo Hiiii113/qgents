@@ -10,24 +10,24 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
-import qg.qgent.api.ApiException;
+
 import qg.qgent.auth.UuidV7;
+import qg.qgent.api.ApiException;
+import qg.qgent.github.GitHubAppClient;
+import qg.qgent.github.GitHubRepositoryDetails;
 import qg.qgent.config.GitHubWebhookProperties;
 import qg.qgent.entity.GitHubInstallationEntity;
 import qg.qgent.entity.GitHubRepositoryEntity;
 import qg.qgent.entity.GitHubWebhookDeliveryEntity;
-import qg.qgent.entity.MergeRequestEntity;
-import qg.qgent.entity.ProjectRepositoryEntity;
-import qg.qgent.github.GitHubAppClient;
-import qg.qgent.github.GitHubRepositoryDetails;
 import qg.qgent.mapper.GitHubInstallationMapper;
 import qg.qgent.mapper.GitHubRepositoryMapper;
 import qg.qgent.mapper.GitHubWebhookDeliveryMapper;
+import qg.qgent.entity.MergeRequestEntity;
 import qg.qgent.mapper.MergeRequestMapper;
+import qg.qgent.entity.ProjectRepositoryEntity;
 import qg.qgent.mapper.ProjectRepositoryMapper;
+import qg.qgent.service.EventService;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -44,6 +44,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 /**
  * GitHub Webhook 接收与同步服务。
@@ -617,9 +619,9 @@ public class GitHubWebhookService {
                 mr.setSourceBranch(sourceBranch);
                 mr.setTargetBranch(targetBranch);
                 mr.setHeadCommit(headSha);
+                mr.setHtmlUrl(pr.path("html_url").asText(null));
                 mr.setTitle(title);
                 mr.setStatus(status);
-                mr.setQualityGateStatus("PENDING");
                 mr.setProviderUpdatedAt(providerUpdatedAt);
                 mr.setSyncedAt(now);
                 mr.setCreatedAt(now);
@@ -630,6 +632,7 @@ public class GitHubWebhookService {
                 mr.setSourceBranch(sourceBranch);
                 mr.setTargetBranch(targetBranch);
                 mr.setHeadCommit(headSha);
+                mr.setHtmlUrl(pr.path("html_url").asText(null));
                 if (title != null) {
                     mr.setTitle(title);
                 }
@@ -659,8 +662,8 @@ public class GitHubWebhookService {
         payload.put("number", mr.getProviderNumber());
         payload.put("status", mr.getStatus());
         payload.put("headCommit", mr.getHeadCommit());
+        payload.put("url", mr.getHtmlUrl());
         payload.put("providerUpdatedAt", iso(mr.getProviderUpdatedAt()));
-        payload.put("qualityGateStatus", mr.getQualityGateStatus());
         payload.put("timestamp", Instant.now().toString());
         eventService.publish(binding.getProjectId(), null, "merge-request.updated",
                 mr.getId().toString(), payload);

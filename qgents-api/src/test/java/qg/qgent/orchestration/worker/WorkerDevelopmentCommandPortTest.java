@@ -3,8 +3,13 @@ package qg.qgent.orchestration.worker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import qg.qgent.orchestration.tool.DevelopmentCommandId;
+
+import qg.qgent.orchestration.worker.SandboxWorkerClient;
+import qg.qgent.orchestration.worker.SandboxWorkerProperties;
+import qg.qgent.orchestration.worker.WorkerToolExecution;
+import qg.qgent.orchestration.worker.WorkerToolExecutionRequest;
 import qg.qgent.orchestration.tool.DevelopmentCommandResult;
+import qg.qgent.orchestration.tool.DevelopmentCommandId;
 
 import java.util.List;
 import java.util.Map;
@@ -12,8 +17,6 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -38,7 +41,7 @@ class WorkerDevelopmentCommandPortTest {
     }
 
     @Test
-    void submitsOnlyCommandIdToBoundRepositoryAndNeverFetchesLogs() {
+    void submitsOnlyCommandIdToBoundRepository() {
         when(sessions.require(WORKSPACE)).thenReturn(new SandboxSession(UUID.randomUUID(), WORKSPACE, SANDBOX,
                 "workspaces/opaque", List.of(REPO), Map.of("repo-1", REPO)));
         when(client.submitToolExecution(any(), any())).thenAnswer(invocation -> {
@@ -64,7 +67,6 @@ class WorkerDevelopmentCommandPortTest {
         assertThat(request.getValue().getRepositoryId()).isEqualTo(REPO);
         assertThat(request.getValue().getArguments()).containsOnly(Map.entry("commandId", "MAVEN_TEST"));
         assertThat(request.getValue().getArguments()).doesNotContainKeys("command", "argv", "cwd", "environment");
-        verify(client, never()).getToolExecutionLogs(any(), anyLong(), anyInt());
         assertThat(result).isEqualTo(new DevelopmentCommandResult(true, "MAVEN_TEST", 0, null, null));
     }
 

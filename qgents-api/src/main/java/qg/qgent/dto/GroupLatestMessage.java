@@ -30,8 +30,8 @@ public class GroupLatestMessage {
     private String text;
 
     /**
-     * 最新消息类型，取值与消息类型枚举一致：TEXT/CODE/IMAGE/FILE/SYSTEM/QUOTE/DIFF/TASK_STATUS。
+     * 最新消息类型，取值与消息类型枚举一致：TEXT/CODE/IMAGE/FILE/SYSTEM/QUOTE。
      */
-    @Schema(description = "最新消息类型，取值与消息类型枚举一致：TEXT/CODE/IMAGE/FILE/SYSTEM/QUOTE/DIFF/TASK_STATUS")
+    @Schema(description = "最新消息类型，取值与消息类型枚举一致：TEXT/CODE/IMAGE/FILE/SYSTEM/QUOTE")
     private String type;
 }

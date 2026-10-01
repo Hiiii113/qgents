@@ -1,18 +1,20 @@
 package qg.qgent.orchestration.worker;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+import qg.qgent.orchestration.worker.SandboxWorkerClient;
+import qg.qgent.orchestration.worker.WorkerGitDiff;
+import qg.qgent.orchestration.tool.GitDiffResult;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
-import qg.qgent.orchestration.tool.GitDiffResult;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * {@link WorkerWorkspaceDiffAccess} 单测：逐仓库调用 git/diff 并聚合 patch 与分隔符。纯 Mock。

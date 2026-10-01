@@ -2,10 +2,13 @@ package qg.qgent.sandboxworker.tool;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+
 import qg.qgent.sandboxworker.runtime.CommandExecutionResult;
 import qg.qgent.sandboxworker.runtime.CommandExecutor;
+import qg.qgent.sandboxworker.tool.ToolArguments;
+import qg.qgent.sandboxworker.tool.ToolContext;
+import qg.qgent.sandboxworker.tool.ToolResult;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 

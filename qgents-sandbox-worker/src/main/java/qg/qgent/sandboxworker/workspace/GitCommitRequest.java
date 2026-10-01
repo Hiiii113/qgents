@@ -1,10 +1,10 @@
 package qg.qgent.sandboxworker.workspace;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
-import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * 基于已审查 Diff 创建 Commit 的请求。

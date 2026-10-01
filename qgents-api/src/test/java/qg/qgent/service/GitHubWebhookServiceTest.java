@@ -1,40 +1,40 @@
 package qg.qgent.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.AbstractWrapper;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.SimpleTransactionStatus;
+
 import qg.qgent.api.ApiException;
+import qg.qgent.github.GitHubAppClient;
+import qg.qgent.github.GitHubRepositoryDetails;
 import qg.qgent.config.GitHubWebhookProperties;
 import qg.qgent.entity.GitHubInstallationEntity;
 import qg.qgent.entity.GitHubRepositoryEntity;
 import qg.qgent.entity.GitHubWebhookDeliveryEntity;
-import qg.qgent.entity.MergeRequestEntity;
-import qg.qgent.entity.ProjectEntity;
-import qg.qgent.entity.ProjectRepositoryEntity;
-import qg.qgent.github.GitHubAppClient;
-import qg.qgent.github.GitHubRepositoryDetails;
 import qg.qgent.mapper.GitHubInstallationMapper;
 import qg.qgent.mapper.GitHubRepositoryMapper;
 import qg.qgent.mapper.GitHubWebhookDeliveryMapper;
+import qg.qgent.entity.MergeRequestEntity;
 import qg.qgent.mapper.MergeRequestMapper;
+import qg.qgent.entity.ProjectEntity;
+import qg.qgent.entity.ProjectRepositoryEntity;
 import qg.qgent.mapper.ProjectRepositoryMapper;
+import qg.qgent.service.EventService;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;

@@ -6,6 +6,8 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+import qg.qgent.sandboxworker.persistence.ToolExecutionEntity;
+
 import java.time.LocalDateTime;
 import java.util.List;
 

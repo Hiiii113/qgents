@@ -2,16 +2,17 @@ package qg.qgent.service;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+
 import qg.qgent.api.ApiException;
 import qg.qgent.config.GitHubOAuthProperties;
 
-import javax.crypto.Cipher;
-import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Base64;
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 
 /** GitHub OAuth Token 的 AES-GCM 密文组件；密钥缺失或密文损坏时 fail-closed。 */
 @Component

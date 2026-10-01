@@ -3,6 +3,10 @@ package qg.qgent.sandboxworker.tool;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import qg.qgent.sandboxworker.tool.ToolArguments;
+import qg.qgent.sandboxworker.tool.ToolContext;
+import qg.qgent.sandboxworker.tool.ToolResult;
+
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;

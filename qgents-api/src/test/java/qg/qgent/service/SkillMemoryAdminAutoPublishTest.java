@@ -2,27 +2,29 @@ package qg.qgent.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.client.ChatClient;
+
+import qg.qgent.mapper.MessageMapper;
+import qg.qgent.mapper.RequirementGroupMapper;
 import qg.qgent.api.ApiException;
 import qg.qgent.dto.MemoryCreateRequest;
 import qg.qgent.dto.MemoryResponse;
-import qg.qgent.dto.SkillCreateRequest;
-import qg.qgent.dto.SkillResponse;
 import qg.qgent.entity.MemoryEntity;
-import qg.qgent.entity.SkillEntity;
 import qg.qgent.mapper.MemoryMapper;
 import qg.qgent.mapper.MemoryMessageSourceMapper;
-import qg.qgent.mapper.MessageMapper;
+import qg.qgent.service.MemoryService;
 import qg.qgent.mapper.ProjectMapper;
-import qg.qgent.mapper.RequirementGroupMapper;
+import qg.qgent.service.ProjectAccessService;
+import qg.qgent.service.EventService;
+import qg.qgent.dto.SkillCreateRequest;
+import qg.qgent.dto.SkillResponse;
+import qg.qgent.entity.SkillEntity;
 import qg.qgent.mapper.SkillMapper;
 import qg.qgent.mapper.UserMapper;
 
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;

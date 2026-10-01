@@ -7,7 +7,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
+
 import qg.qgent.api.ApiException;
+import qg.qgent.github.GitHubOAuthClient;
+import qg.qgent.github.GitHubRepositoryCreateRequest;
+import qg.qgent.github.GitHubRepositoryDetails;
 import qg.qgent.config.GitHubOAuthProperties;
 
 import java.util.Base64;

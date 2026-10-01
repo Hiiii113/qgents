@@ -13,7 +13,7 @@ spring:
           model: qwen3.7-flash
           temperature: 0.2
           # 限制单次输出上限：非流式请求必须等服务端生成完整个响应才返回，
-          # 过大的 max-tokens 会让超长输出（如 PLANNER 详细计划）超过服务端响应时限，
+          # 过大的 max-tokens 会让超长输出（如详细代码输出）超过服务端响应时限，
           # 表现为请求挂起数分钟后被取消（Canceled）。4096 对大多数编码/规划足够；
           # 若确需长输出，应改用流式而非放大本值。
           max-tokens: 4096
@@ -106,8 +106,7 @@ github:
     max-body-bytes: ${GITHUB_WEBHOOK_MAX_BODY_BYTES:1048576}
 
 app:
-  diff-snapshot-root: ${DIFF_SNAPSHOT_ROOT:./data/diff-snapshots}
-  # 本地 Workspace 代码根目录（真实 Sandbox 接入前的临时约定，未配置则 Plan Agent 读到空文件树）
+  # Worker 关闭时使用的本地 Workspace 代码根目录
   workspace:
     base-dir: ${WORKSPACE_BASE_DIR:}
   # 后端2 Sandbox Worker 客户端配置；enabled=true 时编排链路改走 Worker HTTP API
@@ -126,14 +125,15 @@ app:
     # 连接/响应硬超时：Worker 请求挂起时在此期限内转为 SANDBOX_WORKER_UNAVAILABLE，不占住编排线程
     connect-timeout: ${SANDBOX_WORKER_CONNECT_TIMEOUT:5s}
     response-timeout: ${SANDBOX_WORKER_RESPONSE_TIMEOUT:30s}
-  # Coding/Review Agent 与 LLM 的工具调用协议（阶段 B）：native=Spring AI 原生 Tool Calling（默认）；
-  # legacy=旧手写 JSON 文本协议（灰度期回退用，稳定后删除）
+  # 所有 Agent 共用工具循环；普通文本回复结束，不强制工具调用。
   agent:
-    protocol: ${APP_AGENT_PROTOCOL:native}
+    max-rounds: ${APP_AGENT_MAX_ROUNDS:30}
+    max-depth: ${APP_AGENT_MAX_DEPTH:3}
+    max-subagents: ${APP_AGENT_MAX_SUBAGENTS:8}
     context:
       # 全量注入 Agent 上下文的已批准 Memory 标题与正文总字符上限；超过时禁止批准。
       max-approved-memory-chars: ${APP_AGENT_CONTEXT_MAX_APPROVED_MEMORY_CHARS:12000}
-    # 每个 TaskRun 内 search_chat_history 检索工具调用次数上限（避免 Agent 反复刷检索撑爆上下文）
+    # 每个 AgentRun 内 search_chat_history 检索工具调用次数上限（避免 Agent 反复刷检索撑爆上下文）
     context-search:
       max-per-run: ${APP_AGENT_CONTEXT_SEARCH_MAX_PER_RUN:10}
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
@@ -156,7 +156,7 @@ app:
   # 附件大小上限（字节，默认 50MB）与临时下载地址有效期（秒，默认 900）
   attachment-max-size-bytes: ${APP_ATTACHMENT_MAX_SIZE_BYTES:52428800}
   attachment-download-expiry-seconds: ${APP_ATTACHMENT_DOWNLOAD_EXPIRY_SECONDS:900}
-  # Agent 默认预置：建团队事务内补齐团队默认 Agent（PLANNER/DEVELOPER/TESTER/REVIEWER + 编排助手）；
+  # Agent 默认预置：建团队事务内补齐团队默认 Agent（通用 Agent 和 Coding Agent）；
   # 启动时为存量 ACTIVE 团队幂等兜底（DefaultAgentProvisioner）
   agent-preseed:
     enabled: ${APP_AGENT_PRESEED_ENABLED:true}
@@ -194,28 +194,14 @@ sandbox:
   # 内部 Git 凭据接口没有安全默认值；生产与联调均必须显式注入随机 service token。
   backend-service-token: ${SANDBOX_BACKEND_SERVICE_TOKEN:}
 
-# Agent Run 单相位总时限与任务恢复相关配置
+# Agent 异步执行配置
 qgents:
   executor:
     # 保持当前默认容量；部署时可按 CPU、外部服务限流和实测队列调整。
-    orchestration:
-      core-size: ${QGENTS_ORCHESTRATION_CORE_SIZE:2}
-      max-size: ${QGENTS_ORCHESTRATION_MAX_SIZE:4}
-      queue-capacity: ${QGENTS_ORCHESTRATION_QUEUE_CAPACITY:100}
-    test-execution:
-      core-size: ${QGENTS_TEST_EXECUTION_CORE_SIZE:2}
-      max-size: ${QGENTS_TEST_EXECUTION_MAX_SIZE:4}
-      queue-capacity: ${QGENTS_TEST_EXECUTION_QUEUE_CAPACITY:100}
-    # 任务启动确认（TaskStartedNoticeListener）独立执行器：与分钟级编排池隔离，
-    # 保证「已收到你的需求」确认消息毫秒级插入，不被编排长任务排队拖后。
-    task-started-notice:
-      core-size: ${QGENTS_TASK_STARTED_NOTICE_CORE_SIZE:2}
-      max-size: ${QGENTS_TASK_STARTED_NOTICE_MAX_SIZE:4}
-      queue-capacity: ${QGENTS_TASK_STARTED_NOTICE_QUEUE_CAPACITY:100}
-    task-run-timeout:
-      core-size: ${QGENTS_TASK_RUN_TIMEOUT_CORE_SIZE:2}
-      max-size: ${QGENTS_TASK_RUN_TIMEOUT_MAX_SIZE:4}
-      queue-capacity: ${QGENTS_TASK_RUN_TIMEOUT_QUEUE_CAPACITY:64}
+    agent:
+      core-size: ${QGENTS_AGENT_CORE_SIZE:2}
+      max-size: ${QGENTS_AGENT_MAX_SIZE:4}
+      queue-capacity: ${QGENTS_AGENT_QUEUE_CAPACITY:100}
   push:
     # 移动端 FCM HTTP v1 离线推送默认关闭；服务账号密钥只允许由受控环境变量注入。
     enabled: ${QGENTS_PUSH_ENABLED:false}
@@ -225,19 +211,6 @@ qgents:
     token-encryption-key: ${QGENTS_PUSH_TOKEN_ENCRYPTION_KEY:}
     max-attempts: ${QGENTS_PUSH_MAX_ATTEMPTS:5}
     poll-interval-ms: ${QGENTS_PUSH_POLL_INTERVAL_MS:5000}
-  orchestration:
-    # 单次 agent.run() 的总时限；超时按基础设施失败落库（failureCode=AGENT_RUN_TIMEOUT）
-    coding-timeout: ${QGENTS_CODING_TIMEOUT:10m}
-    testing-timeout: ${QGENTS_TESTING_TIMEOUT:15m}
-    reviewing-timeout: ${QGENTS_REVIEWING_TIMEOUT:8m}
-  task-recovery:
-    # 恢复器回收陈旧活跃 Run 的阈值，必须大于最大的相位时限（testing-timeout）
-    stale-run-threshold: ${QGENTS_RECOVERY_STALE_RUN:20m}
-    poll-delay-ms: ${QGENTS_RECOVERY_POLL_DELAY_MS:30000}
-  conflict-resolution:
-    # 每个 Task 因合并冲突自动派发"解决冲突"续跑任务的上限；达到上限后改由人工处理。
-    max-continuations-per-task: ${QGENTS_CONFLICT_MAX_CONTINUATIONS:3}
-    poll-delay-ms: ${QGENTS_CONFLICT_POLL_DELAY_MS:15000}
 
 
 mybatis-plus:

@@ -11,12 +11,15 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.UUID;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-
 import qg.qgent.sandboxworker.api.WorkerException;
 import qg.qgent.sandboxworker.config.SandboxWorkerProperties;
+import qg.qgent.sandboxworker.workspace.GitStoreSyncRequest;
+import qg.qgent.sandboxworker.workspace.GitStoreSyncResponse;
+import qg.qgent.sandboxworker.workspace.GitStoreManager;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.UUID;
 
 /**
  * 仅供主后端调用的 Git Store 初始化和同步接口。

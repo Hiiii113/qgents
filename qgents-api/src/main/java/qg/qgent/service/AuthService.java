@@ -6,11 +6,33 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import qg.qgent.dto.AuthTokensResponse;
+import qg.qgent.dto.LoginRequest;
+import qg.qgent.dto.RegisterRequest;
+import qg.qgent.dto.ResetPasswordRequest;
+import qg.qgent.entity.EmailVerificationCodeEntity;
+import qg.qgent.entity.PasswordResetTokenEntity;
+import qg.qgent.entity.RefreshTokenEntity;
+import qg.qgent.auth.PasswordResetMailer;
+import qg.qgent.auth.VerificationCodeMailer;
+import qg.qgent.mapper.EmailVerificationCodeMapper;
+import qg.qgent.mapper.PasswordResetTokenMapper;
+import qg.qgent.mapper.RefreshTokenMapper;
+import qg.qgent.auth.UuidV7;
 import qg.qgent.api.ApiException;
-import qg.qgent.auth.*;
-import qg.qgent.dto.*;
-import qg.qgent.entity.*;
-import qg.qgent.mapper.*;
+import qg.qgent.dto.ProjectResponse;
+import qg.qgent.mapper.ProjectMapper;
+import qg.qgent.dto.TeamResponse;
+import qg.qgent.entity.TeamEntity;
+import qg.qgent.entity.TeamMemberEntity;
+import qg.qgent.mapper.TeamMapper;
+import qg.qgent.mapper.TeamMemberMapper;
+import qg.qgent.dto.MeResponse;
+import qg.qgent.dto.UserResponse;
+import qg.qgent.dto.UpdateMeRequest;
+import qg.qgent.entity.UserEntity;
+import qg.qgent.mapper.UserMapper;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -22,6 +44,9 @@ import java.time.ZoneOffset;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import qg.qgent.auth.RateLimiter;
+import qg.qgent.auth.RsaPasswordDecryptor;
+import qg.qgent.auth.TokenService;
 
 @Service
 public class AuthService {

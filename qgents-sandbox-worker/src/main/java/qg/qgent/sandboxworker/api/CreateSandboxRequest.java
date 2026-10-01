@@ -24,14 +24,9 @@ public class CreateSandboxRequest {
     private UUID sandboxId;
 
     /**
-     * 兼容既有调用方的会话关联编号；Task 编排路径中该值可能是 Task ID，不能据此推断真实 TaskRun。
+     * Sandbox 所属 Task 编号。
      */
     @NotNull
-    private UUID taskRunId;
-
-    /**
-     * Sandbox 所属 Task 编号。独立测试执行没有 Task，因此允许为空。
-     */
     private UUID taskId;
 
     /**

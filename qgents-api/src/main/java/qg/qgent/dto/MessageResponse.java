@@ -35,9 +35,9 @@ public class MessageResponse {
     private Long sequence;
 
     /**
-     * 消息类型：TEXT/CODE/IMAGE/FILE/DIFF/TASK_STATUS/SYSTEM/QUOTE。
+     * 消息类型：TEXT/CODE/IMAGE/FILE/SYSTEM/QUOTE。
      */
-    @Schema(description = "消息类型：TEXT/CODE/IMAGE/FILE/DIFF/TASK_STATUS/SYSTEM/QUOTE")
+    @Schema(description = "消息类型：TEXT/CODE/IMAGE/FILE/SYSTEM/QUOTE")
     private String type;
 
     /**

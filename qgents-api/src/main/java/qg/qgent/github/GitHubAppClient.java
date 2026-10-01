@@ -123,39 +123,4 @@ public interface GitHubAppClient {
      */
     GitHubPullRequestDetails getPullRequest(long installationId, String owner, String repo, int pullNumber);
 
-    /**
-     * 查询 Pull Request 的真实提交记录。实现必须读取 GitHub Provider，不能从本地 MR headCommit 推测。
-     *
-     * @param installationId GitHub App 安装 ID
-     * @param owner 仓库所有者
-     * @param repo 仓库名称
-     * @param pullNumber GitHub Pull Request 编号
-     * @param limit 返回条数，取值范围 1 到 100
-     * @return GitHub 返回的提交总数和当前提交列表
-     */
-    GitHubPullRequestCommitList getPullRequestCommits(long installationId, String owner, String repo,
-                                                      int pullNumber, int limit);
-
-    /**
-     * Gets check runs for a specific commit SHA. The result is GitHub data, not a Qgents quality-gate decision.
-     */
-    List<GitHubCheckRunDetails> getPullRequestChecks(long installationId, String owner, String repo, String headSha);
-
-    /**
-     * Gets GitHub reviews associated with the Pull Request.
-     */
-    List<GitHubReviewDetails> getPullRequestReviews(long installationId, String owner, String repo, int pullNumber);
-
-    /**
-     * 在 Pull Request 对应的 Issue 讨论中创建普通评论。行级评论由 Diff 审查接口负责。
-     */
-    GitHubPullRequestCommentDetails createPullRequestComment(long installationId, String owner, String repo,
-                                                              int pullNumber, GitHubPullRequestCommentRequest request);
-
-    /**
-     * Requests a GitHub merge and returns GitHub's explicit outcome. Callers must not mark a local MR merged when
-     * {@link GitHubPullRequestMergeResult#merged()} is false.
-     */
-    GitHubPullRequestMergeResult mergePullRequest(long installationId, String owner, String repo, int pullNumber,
-                                                  GitHubPullRequestMergeRequest request);
 }

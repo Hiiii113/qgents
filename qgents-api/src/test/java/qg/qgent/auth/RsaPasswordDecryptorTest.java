@@ -3,12 +3,14 @@ package qg.qgent.auth;
 import org.junit.jupiter.api.Test;
 import org.springframework.core.io.FileSystemResource;
 
-import javax.crypto.Cipher;
+import qg.qgent.api.ApiException;
+
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.KeyPairGenerator;
 import java.util.Base64;
+import javax.crypto.Cipher;
 
 import static org.assertj.core.api.Assertions.*;
 

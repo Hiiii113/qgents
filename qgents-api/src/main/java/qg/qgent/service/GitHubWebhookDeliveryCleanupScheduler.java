@@ -3,6 +3,7 @@ package qg.qgent.service;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+
 import qg.qgent.mapper.GitHubWebhookDeliveryMapper;
 
 import java.time.LocalDateTime;

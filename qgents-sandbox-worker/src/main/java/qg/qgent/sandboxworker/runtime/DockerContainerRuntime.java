@@ -9,9 +9,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
-import qg.qgent.sandboxworker.api.CreateSandboxRequest;
+
 import qg.qgent.sandboxworker.api.WorkerException;
 import qg.qgent.sandboxworker.config.SandboxWorkerProperties;
+import qg.qgent.sandboxworker.api.CreateSandboxRequest;
+import qg.qgent.sandboxworker.runtime.WorkspacePathResolver;
 
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -42,7 +44,6 @@ public class DockerContainerRuntime implements ContainerRuntime {
     private static final String MANAGED_LABEL = LABEL_PREFIX + "managed";
     private static final String WORKER_LABEL = LABEL_PREFIX + "worker-id";
     private static final String SANDBOX_LABEL = LABEL_PREFIX + "sandbox-id";
-    private static final String TASK_RUN_LABEL = LABEL_PREFIX + "task-run-id";
     private static final String TASK_LABEL = LABEL_PREFIX + "task-id";
     private static final String WORKSPACE_LABEL = LABEL_PREFIX + "workspace-storage-key";
     private static final String IMAGE_PROFILE_LABEL = LABEL_PREFIX + "image-profile";
@@ -106,9 +107,8 @@ public class DockerContainerRuntime implements ContainerRuntime {
             docker.startContainerCmd(containerId).exec();
             allocation.setRuntimeHandle(containerId);
             allocations.put(allocation.getId(), allocation);
-            log.info("sandbox container started sandboxId={} taskId={} taskRunId={} workspace={} containerId={}",
-                    allocation.getId(), allocation.getTaskId(), allocation.getTaskRunId(),
-                    allocation.getWorkspaceStorageKey(), containerId);
+            log.info("sandbox container started sandboxId={} taskId={} workspace={} containerId={}",
+                    allocation.getId(), allocation.getTaskId(), allocation.getWorkspaceStorageKey(), containerId);
             return allocation;
         } catch (RuntimeException exception) {
             log.warn("DOCKER_CREATE_FAILED sandboxId={} workspace={} category={}",
@@ -197,8 +197,8 @@ public class DockerContainerRuntime implements ContainerRuntime {
         }
         try {
             docker.removeContainerCmd(allocation.getRuntimeHandle()).withForce(true).withRemoveVolumes(true).exec();
-            log.info("sandbox container removed sandboxId={} taskId={} taskRunId={} containerId={}",
-                    sandboxId, allocation.getTaskId(), allocation.getTaskRunId(), allocation.getRuntimeHandle());
+            log.info("sandbox container removed sandboxId={} taskId={} containerId={}",
+                    sandboxId, allocation.getTaskId(), allocation.getRuntimeHandle());
         } catch (RuntimeException exception) {
             allocations.putIfAbsent(sandboxId, allocation);
             throw new WorkerException(BAD_GATEWAY, "DOCKER_DESTROY_FAILED", "Docker Engine 销毁沙箱失败");
@@ -241,7 +241,6 @@ public class DockerContainerRuntime implements ContainerRuntime {
     private SandboxAllocation allocationFrom(Container container) {
         Map<String, String> labels = container.getLabels();
         UUID sandboxId = UUID.fromString(requiredLabel(labels, SANDBOX_LABEL));
-        UUID taskRunId = UUID.fromString(requiredLabel(labels, TASK_RUN_LABEL));
         UUID taskId = optionalUuidLabel(labels, TASK_LABEL);
         Instant createdAt = Instant.parse(requiredLabel(labels, CREATED_AT_LABEL));
         Instant maxExpiresAt = Instant.parse(requiredLabel(labels, MAX_EXPIRES_AT_LABEL));
@@ -250,7 +249,7 @@ public class DockerContainerRuntime implements ContainerRuntime {
         if (recoveredExpiresAt.isAfter(maxExpiresAt)) {
             recoveredExpiresAt = maxExpiresAt;
         }
-        return new SandboxAllocation(sandboxId, taskRunId, taskId, requiredLabel(labels, WORKSPACE_LABEL),
+        return new SandboxAllocation(sandboxId, taskId, requiredLabel(labels, WORKSPACE_LABEL),
                 requiredLabel(labels, IMAGE_PROFILE_LABEL), "READY", "DOCKER", createdAt,
                 recoveredAt, recoveredExpiresAt, maxExpiresAt,
                 Duration.ofSeconds(Long.parseLong(requiredLabel(labels, EXECUTION_TIMEOUT_LABEL))), container.getId(),
@@ -262,7 +261,6 @@ public class DockerContainerRuntime implements ContainerRuntime {
         labels.put(MANAGED_LABEL, "true");
         labels.put(WORKER_LABEL, properties.getWorkerId());
         labels.put(SANDBOX_LABEL, allocation.getId().toString());
-        labels.put(TASK_RUN_LABEL, allocation.getTaskRunId().toString());
         if (allocation.getTaskId() != null) {
             labels.put(TASK_LABEL, allocation.getTaskId().toString());
         }

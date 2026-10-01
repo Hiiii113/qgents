@@ -2,9 +2,10 @@ package qg.qgent.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.*;
+
+import qg.qgent.entity.MessageEntity;
 import qg.qgent.dto.GroupLatestMessageRow;
 import qg.qgent.dto.GroupUnreadRow;
-import qg.qgent.entity.MessageEntity;
 import qg.qgent.handler.UuidBinaryTypeHandler;
 
 import java.util.List;

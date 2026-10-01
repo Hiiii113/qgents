@@ -4,6 +4,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import qg.qgent.sandboxworker.api.WorkerErrorResponse;
+
 /**
  * Worker 内部 API 的兜底路由。
  * <p>

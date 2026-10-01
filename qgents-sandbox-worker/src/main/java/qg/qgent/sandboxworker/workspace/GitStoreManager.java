@@ -4,7 +4,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+
 import qg.qgent.sandboxworker.api.WorkerException;
+import qg.qgent.sandboxworker.workspace.GitStoreSyncRequest;
+import qg.qgent.sandboxworker.workspace.GitStoreSyncResponse;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;

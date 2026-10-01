@@ -16,9 +16,16 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+
+import qg.qgent.sandboxworker.api.CreateSandboxRequest;
+import qg.qgent.sandboxworker.api.SandboxResponse;
 import qg.qgent.sandboxworker.service.SandboxService;
+import qg.qgent.sandboxworker.api.ExecutionLogsResponse;
+import qg.qgent.sandboxworker.api.ToolExecutionRequest;
+import qg.qgent.sandboxworker.api.ToolExecutionResponse;
 import qg.qgent.sandboxworker.service.ToolExecutionService;
-import qg.qgent.sandboxworker.service.TestExecutionService;
+import qg.qgent.sandboxworker.api.GitResolveRequest;
+import qg.qgent.sandboxworker.api.GitResolveResponse;
 import qg.qgent.sandboxworker.workspace.WorkspaceManagerService;
 
 import java.util.Map;
@@ -35,7 +42,6 @@ import java.util.UUID;
 public class InternalSandboxController {
     private final SandboxService sandboxService;
     private final ToolExecutionService toolExecutionService;
-    private final TestExecutionService testExecutionService;
     private final WorkspaceManagerService workspaceManagerService;
 
     /**
@@ -123,28 +129,6 @@ public class InternalSandboxController {
     public void destroySandbox(@PathVariable UUID sandboxId) {
         toolExecutionService.cancelBySandbox(sandboxId);
         sandboxService.destroy(sandboxId);
-    }
-
-    /**
-     * 同步执行一组已验证 Testset，返回脱敏结果。
-     */
-    @PostMapping("/test-executions")
-    public TestExecutionResponse executeTests(@Valid @RequestBody TestExecutionRequest request) {
-        return testExecutionService.execute(request);
-    }
-
-    /**
-     * 基于共享 Git Store 做只读合并预演，不创建 Commit。
-     */
-    @PostMapping("/merge-previews")
-    public MergePreviewResponse mergePreview(@Valid @RequestBody MergePreviewRequest request) {
-        if (!request.getSourceRef().matches("(?i)[0-9a-f]{40,64}")
-                || !request.getTargetCommit().matches("(?i)[0-9a-f]{40,64}")) {
-            throw new WorkerException(HttpStatus.UNPROCESSABLE_ENTITY, "GIT_COMMIT_SHA_REQUIRED",
-                    "Merge preview 只接受已固定的 commit SHA");
-        }
-        return workspaceManagerService.mergePreview(request.getRepositoryId(), request.getSourceRef(),
-                request.getTargetCommit());
     }
 
     /**

@@ -2,6 +2,8 @@ package qg.qgent.service;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import qg.qgent.api.ApiException;
 import qg.qgent.dto.ProjectSettings;
 import qg.qgent.dto.ProjectSettingsUpdateRequest;
 import qg.qgent.entity.ProjectEntity;

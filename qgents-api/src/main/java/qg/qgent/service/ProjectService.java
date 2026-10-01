@@ -1,24 +1,37 @@
 package qg.qgent.service;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import qg.qgent.api.ApiException;
+
+import qg.qgent.mapper.GroupMemberMapper;
+import qg.qgent.dto.PageInfo;
+import qg.qgent.dto.PageSlice;
 import qg.qgent.auth.UuidV7;
-import qg.qgent.dto.*;
+import qg.qgent.api.ApiException;
+import qg.qgent.service.GitHubRepositoryService;
+import qg.qgent.service.NotificationService;
+import qg.qgent.dto.CreateProjectRequest;
+import qg.qgent.dto.AddProjectMemberRequest;
+import qg.qgent.dto.ProjectMemberResponse;
+import qg.qgent.dto.UpdateProjectMemberRequest;
+import qg.qgent.dto.ProjectResponse;
+import qg.qgent.dto.UpdateProjectRequest;
 import qg.qgent.entity.ProjectEntity;
 import qg.qgent.entity.ProjectMemberEntity;
-import qg.qgent.entity.TeamEntity;
-import qg.qgent.entity.TeamMemberEntity;
-import qg.qgent.mapper.GroupMemberMapper;
+import qg.qgent.service.ProjectCreatedEvent;
 import qg.qgent.mapper.ProjectMapper;
 import qg.qgent.mapper.ProjectMemberMapper;
 import qg.qgent.mapper.ProjectRepositoryMapper;
+import qg.qgent.dto.ProjectMembershipView;
+import qg.qgent.service.EventService;
+import qg.qgent.entity.TeamEntity;
+import qg.qgent.entity.TeamMemberEntity;
 import qg.qgent.mapper.TeamMapper;
 import qg.qgent.mapper.TeamMemberMapper;
 

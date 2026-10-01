@@ -1,10 +1,42 @@
 package qg.qgent.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import qg.qgent.entity.*;
-import qg.qgent.mapper.*;
+
+import qg.qgent.entity.AgentEntity;
+import qg.qgent.entity.AgentRunEntity;
+import qg.qgent.mapper.AgentMapper;
+import qg.qgent.mapper.AgentRunMapper;
+import qg.qgent.entity.AttachmentEntity;
+import qg.qgent.mapper.AttachmentMapper;
+import qg.qgent.entity.RequirementGroupEntity;
+import qg.qgent.mapper.MessageMapper;
+import qg.qgent.mapper.RequirementGroupMapper;
+import qg.qgent.entity.GitHubInstallationEntity;
+import qg.qgent.entity.GitHubRepositoryEntity;
+import qg.qgent.mapper.GitHubInstallationMapper;
+import qg.qgent.mapper.GitHubRepositoryMapper;
+import qg.qgent.entity.MemoryEntity;
+import qg.qgent.mapper.MemoryMapper;
+import qg.qgent.entity.MergeRequestEntity;
+import qg.qgent.mapper.MergeRequestMapper;
+import qg.qgent.entity.NotificationEntity;
+import qg.qgent.mapper.NotificationMapper;
+import qg.qgent.entity.ProjectEntity;
+import qg.qgent.entity.ProjectRepositoryEntity;
+import qg.qgent.mapper.ProjectMapper;
+import qg.qgent.mapper.ProjectRepositoryMapper;
+import qg.qgent.entity.EventEntity;
+import qg.qgent.mapper.EventMapper;
+import qg.qgent.entity.SkillEntity;
+import qg.qgent.mapper.SkillMapper;
+import qg.qgent.entity.TaskEntity;
+import qg.qgent.mapper.TaskMapper;
+import qg.qgent.mapper.TeamMapper;
+import qg.qgent.entity.WorkspaceEntity;
+import qg.qgent.mapper.WorkspaceMapper;
 
 import java.util.List;
 import java.util.UUID;
@@ -16,62 +48,25 @@ import java.util.UUID;
  * 只负责数据清理，权限校验（Team Owner）与状态检查由 {@link TeamService#disband} 完成。
  */
 @Service
+@RequiredArgsConstructor
 public class TeamDisbandService {
     private final ProjectMapper projectMapper;
     private final NotificationMapper notificationMapper;
     private final EventMapper eventMapper;
     private final RequirementGroupMapper requirementGroupMapper;
     private final MessageMapper messageMapper;
-    private final DiffMapper diffMapper;
-    private final DiffReviewBatchMapper diffReviewBatchMapper;
     private final MemoryMapper memoryMapper;
     private final ProjectRepositoryMapper projectRepositoryMapper;
     private final MergeRequestMapper mergeRequestMapper;
-    private final TaskRunMapper taskRunMapper;
-    private final TestRunMapper testRunMapper;
-    private final DryRunMapper dryRunMapper;
+    private final AgentRunMapper agentRuns;
     private final TaskMapper taskMapper;
     private final WorkspaceMapper workspaceMapper;
-    private final TestsetMapper testsetMapper;
     private final SkillMapper skillMapper;
     private final AttachmentMapper attachmentMapper;
     private final GitHubRepositoryMapper githubRepositoryMapper;
     private final GitHubInstallationMapper githubInstallationMapper;
     private final AgentMapper agentMapper;
     private final TeamMapper teamMapper;
-
-    public TeamDisbandService(ProjectMapper projectMapper, NotificationMapper notificationMapper,
-                              EventMapper eventMapper, RequirementGroupMapper requirementGroupMapper, MessageMapper messageMapper,
-                              DiffMapper diffMapper, DiffReviewBatchMapper diffReviewBatchMapper, MemoryMapper memoryMapper,
-                              ProjectRepositoryMapper projectRepositoryMapper, MergeRequestMapper mergeRequestMapper,
-                              TaskRunMapper taskRunMapper, TestRunMapper testRunMapper, DryRunMapper dryRunMapper, TaskMapper taskMapper,
-                              WorkspaceMapper workspaceMapper, TestsetMapper testsetMapper, SkillMapper skillMapper,
-                              AttachmentMapper attachmentMapper, GitHubRepositoryMapper githubRepositoryMapper,
-                              GitHubInstallationMapper githubInstallationMapper, AgentMapper agentMapper,
-                              TeamMapper teamMapper) {
-        this.projectMapper = projectMapper;
-        this.notificationMapper = notificationMapper;
-        this.eventMapper = eventMapper;
-        this.requirementGroupMapper = requirementGroupMapper;
-        this.messageMapper = messageMapper;
-        this.diffMapper = diffMapper;
-        this.diffReviewBatchMapper = diffReviewBatchMapper;
-        this.memoryMapper = memoryMapper;
-        this.projectRepositoryMapper = projectRepositoryMapper;
-        this.mergeRequestMapper = mergeRequestMapper;
-        this.taskRunMapper = taskRunMapper;
-        this.testRunMapper = testRunMapper;
-        this.dryRunMapper = dryRunMapper;
-        this.taskMapper = taskMapper;
-        this.workspaceMapper = workspaceMapper;
-        this.testsetMapper = testsetMapper;
-        this.skillMapper = skillMapper;
-        this.attachmentMapper = attachmentMapper;
-        this.githubRepositoryMapper = githubRepositoryMapper;
-        this.githubInstallationMapper = githubInstallationMapper;
-        this.agentMapper = agentMapper;
-        this.teamMapper = teamMapper;
-    }
 
     /**
      * 删除团队及其全部归属数据：先逐项目清理项目下所有子表，再删 GitHub 仓库镜像
@@ -105,9 +100,9 @@ public class TeamDisbandService {
 
     /**
      * 删除单个项目及其全部归属数据。子表先于父表，引用关系严格按外键约束排序；
-     * 依赖库内级联的（project_members、project_repositories、task_steps、workspace_repositories、
-     * requirement_group_repositories、group_agents、diff_files/diff_comments、memory_message_sources、
-     * merge_request 子表、task_run 子表等）不在此重复删除。
+     * 依赖库内级联的（project_members、project_repositories、workspace_repositories、
+     * requirement_group_repositories、group_agents、memory_message_sources、
+     * merge_request 子表、agent_run 子表等）不在此重复删除。
      */
     private void deleteProject(UUID projectId) {
         // 引用 requirement_groups 且无级联的行须在 requirement_groups 删除前清理
@@ -118,16 +113,10 @@ public class TeamDisbandService {
         List<UUID> groupIds = requirementGroupMapper.selectList(Wrappers.<RequirementGroupEntity>lambdaQuery()
                         .eq(RequirementGroupEntity::getProjectId, projectId)).stream().map(RequirementGroupEntity::getId)
                 .toList();
-        // diffs 引用 diff_review_batches（review_batch_id），须先删 diffs（级联 diff_files/diff_comments）再删批次
-        diffMapper.delete(Wrappers.<DiffEntity>lambdaQuery().eq(DiffEntity::getProjectId, projectId));
-        diffReviewBatchMapper.delete(Wrappers.<DiffReviewBatchEntity>lambdaQuery()
-                .eq(DiffReviewBatchEntity::getProjectId, projectId));
-
         // memory_message_sources 由 memories 外键级联删除
         memoryMapper.delete(Wrappers.<MemoryEntity>lambdaQuery().eq(MemoryEntity::getProjectId, projectId));
 
         // merge_requests 引用 project_repositories/tasks/workspaces，须在三者之前删除
-        // （merge_request_groups/reviews、quality_check_results 由 merge_requests 外键级联）
         List<UUID> repoIds = projectRepositoryMapper.selectList(Wrappers.<ProjectRepositoryEntity>lambdaQuery()
                         .eq(ProjectRepositoryEntity::getProjectId, projectId)).stream().map(ProjectRepositoryEntity::getId)
                 .toList();
@@ -136,29 +125,9 @@ public class TeamDisbandService {
                     .in(MergeRequestEntity::getProjectRepositoryId, repoIds));
         }
 
-        // task_runs 引用 tasks/task_steps/agents，须先于 tasks 与团队级 agents 删除
-        // （execution_logs/input_requests 由 task_runs 外键级联）。task_runs 存在自引用外键
-        // fk_task_run_retry（retry_of_task_run_id -> id）且无级联、重试链可多级，单条批量 DELETE
-        // 无法在同一语句内删除互相引用的父子行，须逐层删除不再被引用的叶子运行直至清空。
+        agentRuns.delete(Wrappers.<AgentRunEntity>lambdaQuery().eq(AgentRunEntity::getProjectId, projectId));
         int deleted;
-        do {
-            deleted = taskRunMapper.deleteUnreferencedRuns(projectId);
-        } while (deleted > 0);
-        // test_runs 引用 tasks/task_steps，须先于 tasks 删除（无自引用，单条删除即可）
-        testRunMapper.delete(Wrappers.<TestRunEntity>lambdaQuery().eq(TestRunEntity::getProjectId, projectId));
-        // dry_runs 自引用外键 fk_dry_run_retry_source（retry_of_dry_run_id -> id）且无级联、
-        // 重试血缘可多级，同样须逐层删除不再被引用的叶子运行直至清空。
-        do {
-            deleted = dryRunMapper.deleteUnreferencedDryRuns(projectId);
-        } while (deleted > 0);
-
-        // tasks 引用 requirement_groups/workspaces/messages，须先于三者删除
-        // （task_steps/task_execution_artifacts/step 依赖表由 tasks 外键级联）。tasks 存在自引用外键
-        // fk_task_continuation（continuation_of_task_id -> id）且无级联、续跑链可多级，同样须逐层
-        // 删除不再被引用的叶子任务直至清空。
-        do {
-            deleted = taskMapper.deleteUnreferencedTasks(projectId);
-        } while (deleted > 0);
+        taskMapper.delete(Wrappers.<TaskEntity>lambdaQuery().eq(TaskEntity::getProjectId, projectId));
 
         // messages 引用 agents（agents 在团队级 deleteTeam 最后删除）；tasks.trigger_message_id
         // 经 fk_task_message 引用 messages，须先删 tasks 再删 messages；亦须在 requirement_groups 之前。
@@ -172,7 +141,6 @@ public class TeamDisbandService {
         // workspaces 引用 project；workspace_repositories 由 workspaces 外键级联
         workspaceMapper.delete(Wrappers.<WorkspaceEntity>lambdaQuery().eq(WorkspaceEntity::getProjectId, projectId));
 
-        testsetMapper.delete(Wrappers.<TestsetEntity>lambdaQuery().eq(TestsetEntity::getProjectId, projectId));
         skillMapper.delete(Wrappers.<SkillEntity>lambdaQuery().eq(SkillEntity::getProjectId, projectId));
         attachmentMapper.delete(Wrappers.<AttachmentEntity>lambdaQuery().eq(AttachmentEntity::getProjectId, projectId));
 
@@ -181,7 +149,7 @@ public class TeamDisbandService {
         requirementGroupMapper.delete(Wrappers.<RequirementGroupEntity>lambdaQuery()
                 .eq(RequirementGroupEntity::getProjectId, projectId));
 
-        // project 级联 project_members/project_repositories 及后续 branch configs 等
+        // project 级联 project_members/project_repositories
         projectMapper.deleteById(projectId);
     }
 }

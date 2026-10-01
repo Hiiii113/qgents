@@ -2,8 +2,10 @@ package qg.qgent.sandboxworker.runtime;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
 import qg.qgent.sandboxworker.api.WorkerException;
 import qg.qgent.sandboxworker.config.SandboxWorkerProperties;
+import qg.qgent.sandboxworker.runtime.SandboxAllocation;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -49,7 +51,7 @@ class WorkspacePathResolverTest {
         Path repository = Files.createDirectories(localRoot.resolve(workspaceId.toString()).resolve("backend"));
         Path hostRoot = temporaryDirectory.resolve("host-repos");
         WorkspacePathResolver resolver = resolver(localRoot, hostRoot);
-        SandboxAllocation allocation = new SandboxAllocation(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+        SandboxAllocation allocation = new SandboxAllocation(UUID.randomUUID(), UUID.randomUUID(),
                 "workspaces/" + workspaceId, "dev-tools", "READY", "FAKE", Instant.EPOCH,
                 Instant.EPOCH, Instant.EPOCH, Instant.EPOCH, Duration.ofMinutes(1), null,
                 Map.of(repositoryId, "backend"));

@@ -6,12 +6,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.util.UriComponentsBuilder;
+
+import qg.qgent.security.CurrentActorProvider;
 import qg.qgent.api.ApiException;
 import qg.qgent.api.ApiResponse;
 import qg.qgent.api.RequestIdFilter;
 import qg.qgent.dto.GitHubOAuthStartResponse;
 import qg.qgent.dto.GitHubOAuthStatusResponse;
-import qg.qgent.security.CurrentActorProvider;
 import qg.qgent.service.GitHubOAuthService;
 
 /** GitHub OAuth 用户授权接口；OAuth callback 不使用 Qgents JWT，仅信任一次性 state。 */

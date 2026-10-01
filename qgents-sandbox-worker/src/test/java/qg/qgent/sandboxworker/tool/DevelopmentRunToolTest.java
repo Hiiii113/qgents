@@ -1,9 +1,13 @@
 package qg.qgent.sandboxworker.tool;
 
 import org.junit.jupiter.api.Test;
+
 import qg.qgent.sandboxworker.api.WorkerException;
 import qg.qgent.sandboxworker.runtime.CommandExecutionResult;
 import qg.qgent.sandboxworker.runtime.CommandExecutor;
+import qg.qgent.sandboxworker.runtime.SandboxAllocation;
+import qg.qgent.sandboxworker.tool.ToolContext;
+import qg.qgent.sandboxworker.tool.ToolResult;
 
 import java.time.Duration;
 import java.util.List;

@@ -9,20 +9,20 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import qg.qgent.api.ApiException;
+
 import qg.qgent.auth.UuidV7;
+import qg.qgent.api.ApiException;
+import qg.qgent.github.GitHubOAuthClient;
 import qg.qgent.config.GitHubOAuthProperties;
 import qg.qgent.dto.GitHubOAuthStartResponse;
 import qg.qgent.dto.GitHubOAuthStatusResponse;
 import qg.qgent.entity.GitHubInstallationEntity;
 import qg.qgent.entity.GitHubOAuthStateEntity;
 import qg.qgent.entity.GitHubUserAuthorizationEntity;
-import qg.qgent.entity.TeamMemberEntity;
-import qg.qgent.github.GitHubOAuthClient;
 import qg.qgent.mapper.GitHubInstallationMapper;
 import qg.qgent.mapper.GitHubOAuthStateMapper;
 import qg.qgent.mapper.GitHubUserAuthorizationMapper;
+import qg.qgent.entity.TeamMemberEntity;
 import qg.qgent.mapper.TeamMemberMapper;
 
 import java.nio.charset.StandardCharsets;

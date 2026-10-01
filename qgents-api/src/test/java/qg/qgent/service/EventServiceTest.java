@@ -8,20 +8,22 @@ import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import qg.qgent.api.ApiException;
-import qg.qgent.entity.EventEntity;
-import qg.qgent.entity.NotificationEventEntity;
-import qg.qgent.entity.TeamEventEntity;
-import qg.qgent.mapper.EventMapper;
+
 import qg.qgent.mapper.GroupMemberMapper;
-import qg.qgent.mapper.NotificationEventMapper;
-import qg.qgent.mapper.ProjectMemberMapper;
-import qg.qgent.mapper.ProjectMapper;
 import qg.qgent.mapper.RequirementGroupMapper;
+import qg.qgent.api.ApiException;
+import qg.qgent.entity.NotificationEventEntity;
+import qg.qgent.mapper.NotificationEventMapper;
+import qg.qgent.mapper.ProjectMapper;
+import qg.qgent.mapper.ProjectMemberMapper;
+import qg.qgent.service.ProjectAccessService;
+import qg.qgent.entity.EventEntity;
+import qg.qgent.mapper.EventMapper;
+import qg.qgent.entity.TeamEventEntity;
 import qg.qgent.mapper.TeamEventMapper;
+import qg.qgent.mapper.TeamMapper;
 import qg.qgent.mapper.TeamMemberMapper;
 import qg.qgent.mapper.UserMapper;
-import qg.qgent.mapper.TeamMapper;
 
 import java.util.List;
 import java.util.Map;
@@ -30,10 +32,9 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
@@ -49,7 +50,7 @@ class EventServiceTest {
         when(events.nextSequence(projectId)).thenReturn(9L);
         EventService service = service(events, projects);
 
-        service.publish(projectId, null, "task-run.updated", "run-1", Map.of("status", "RUNNING"));
+        service.publish(projectId, null, "agent-run.updated", "run-1", Map.of("status", "RUNNING"));
 
         // 发布前先持有项目行锁，串行化同项目事件写入，避免并发 MAX+1 撞唯一键 500
         verify(projects).selectByIdForUpdate(projectId);
@@ -60,7 +61,7 @@ class EventServiceTest {
         EventEntity event = captured.getValue();
         assertEquals(9L, event.getSequenceNo());
         assertEquals(projectId, event.getProjectId());
-        assertEquals("task-run.updated", event.getEventType());
+        assertEquals("agent-run.updated", event.getEventType());
         assertNotNull(event.getCreatedAt());
         // 发布路径只能写入事件；过期清理由独立定时任务执行，不能参与调用方业务事务。
         verifyNoMoreInteractions(events);
@@ -170,7 +171,7 @@ class EventServiceTest {
         when(events.nextSequence(projectId)).thenReturn(1L);
         EventService service = productionService(events, projects, transactions);
 
-        service.publish(projectId, null, "task-run.updated", "run-1", Map.of("status", "FAILED"));
+        service.publish(projectId, null, "agent-run.updated", "run-1", Map.of("status", "FAILED"));
 
         verify(transactions, org.mockito.Mockito.times(3)).getTransaction(any(TransactionDefinition.class));
         verify(events, org.mockito.Mockito.times(3)).insert(any(EventEntity.class));

@@ -4,15 +4,18 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
+
+import qg.qgent.orchestration.tool.ExecutionResult;
+import qg.qgent.orchestration.tool.GitDiffResult;
 import qg.qgent.entity.WorkspaceRepositoryEntity;
 import qg.qgent.mapper.WorkspaceRepositoryMapper;
-import qg.qgent.service.WorkspaceService;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
+import qg.qgent.service.WorkspaceService;
 
 /**
  * {@link WorkspaceDiffAccess} 的真实本地实现：在工作区内的每个 Repository worktree 上执行
@@ -29,7 +32,7 @@ import java.util.UUID;
  *   <li>base 取 headCommit（非空）否则 baseCommit，二者均为真实 Git ref，经 rev-parse 解析为真实 SHA，
  *       不伪造 base/head commit。</li>
  * </ul>
- * 失败语义（与 ExecutionPort 端口一致）：Workspace 未就绪 / 无 worktree / 路径越界 / git 命令失败均返回
+ * 失败语义：Workspace 未就绪 / 无 worktree / 路径越界 / git 命令失败均返回
  * ok=false 与明确原因；Mapper 或文件系统异常向上传播，由 Review Agent 映射为 FAILED_INFRASTRUCTURE，
  * 不吞异常、不伪装成功。
  * <p>

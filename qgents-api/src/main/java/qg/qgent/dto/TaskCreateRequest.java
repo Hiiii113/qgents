@@ -33,14 +33,11 @@ public class TaskCreateRequest {
     private String requirement;
 
     @Size(max = 20)
-    @Schema(description = "Repositories for a new workspace; omit when reusing a workspace")
+    @Schema(description = "项目仓库 ID；不传则使用项目当前仓库")
     private List<@NotNull UUID> repositoryIds;
 
-    @Schema(description = "Existing workspace to reuse for a continuation task")
-    private UUID workspaceId;
-
-    @Schema(description = "Previous task continued by this task; required with workspaceId")
-    private UUID continuationOfTaskId;
+    @Schema(description = "执行该任务的 Agent；不传则使用通用 Agent")
+    private UUID agentId;
 
     @Size(max = 512)
     @Schema(description = "可选的公共基线分支名；不接受 commit SHA，缺省用项目仓库默认分支")
@@ -55,6 +52,4 @@ public class TaskCreateRequest {
     @Schema(description = "按仓库指定的基线分支映射（repositoryId → 分支名）；缺省回退公共 baseRef 或该仓库默认分支")
     private Map<UUID, String> baseRefs;
 
-    @Schema(description = "交付模式：DIFF_FIRST/MR_FIRST；不传则自动判定（Planner/规则），续作沿用源任务")
-    private String deliveryMode;
 }

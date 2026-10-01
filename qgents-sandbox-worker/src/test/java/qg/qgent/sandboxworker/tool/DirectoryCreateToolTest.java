@@ -3,7 +3,10 @@ package qg.qgent.sandboxworker.tool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
 import qg.qgent.sandboxworker.api.WorkerException;
+import qg.qgent.sandboxworker.tool.ToolContext;
+import qg.qgent.sandboxworker.tool.ToolResult;
 
 import java.io.IOException;
 import java.nio.file.Files;

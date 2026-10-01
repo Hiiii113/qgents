@@ -9,7 +9,7 @@ import lombok.Data;
  * 创建自定义 Agent 请求体（契约 §11.1，接口补充 v2.0.3 §2）。
  * <p>
  * 创建成功后固定为 {@code visibility=PRIVATE}、{@code status=ACTIVE}、{@code isDefault=false}。
- * role 只是调度与工具权限的角色标签，不是客户端可自行扩大的权限；prompt 不得包含凭据、
+ * role 仅用于展示用途，执行方式由模型和工具决定；prompt 不得包含凭据、
  * Token、私钥或宿主机敏感信息（服务端校验）。
  */
 @Data
@@ -27,8 +27,7 @@ public class CreateAgentRequest {
 
     @NotBlank(message = "role 不能为空白")
     @Size(max = 32, message = "role 最长 32 个字符")
-    @Schema(description = "角色标签：ORCHESTRATOR/PLANNER/DEVELOPER/TESTER/REVIEWER/GENERAL",
-            example = "DEVELOPER")
+    @Schema(description = "Agent 用途标签，仅用于展示，不决定执行阶段或工具权限", example = "CODING")
     private String role;
 
     @Size(max = 5000, message = "description 最长 5000 个字符")

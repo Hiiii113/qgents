@@ -4,7 +4,6 @@ import com.auth0.jwt.JWT;
 import com.auth0.jwt.JWTVerifier;
 import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.interfaces.DecodedJWT;
-import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
 import org.bouncycastle.openssl.PEMKeyPair;
@@ -18,7 +17,17 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
+
 import qg.qgent.api.ApiException;
+import qg.qgent.github.GitHubAppClient;
+import qg.qgent.github.GitHubBranchDetails;
+import qg.qgent.github.GitHubClient;
+import qg.qgent.github.GitHubInstallationDetails;
+import qg.qgent.github.GitHubInstallationState;
+import qg.qgent.github.GitHubPullRequestCreateRequest;
+import qg.qgent.github.GitHubPullRequestDetails;
+import qg.qgent.github.GitHubRepositoryCreateRequest;
+import qg.qgent.github.GitHubRepositoryDetails;
 import qg.qgent.config.GitHubAppProperties;
 
 import java.io.IOException;
@@ -328,17 +337,6 @@ public class RestGitHubAppClient implements GitHubAppClient {
                 "GitHub API is unavailable or rejected the integration credentials");
     }
 
-    private ApiException mergeRejected(RestClientResponseException exception) {
-        int status = exception.getStatusCode().value();
-        String providerMessage = extractProviderMessage(exception.getResponseBodyAsString());
-        String message = providerMessage == null || providerMessage.isBlank()
-                ? "GitHub 拒绝了合并请求（HTTP " + status + "）"
-                : "GitHub 拒绝了合并请求：" + providerMessage;
-        return new ApiException(HttpStatus.BAD_GATEWAY, "GITHUB_MERGE_REJECTED", message,
-                List.of(java.util.Map.of("providerStatus", status, "providerMessage",
-                        providerMessage == null ? "" : providerMessage)));
-    }
-
     private String extractProviderMessage(String body) {
         if (body == null || body.isBlank()) {
             return null;
@@ -550,137 +548,6 @@ public class RestGitHubAppClient implements GitHubAppClient {
         }
     }
 
-    @Override
-    public GitHubPullRequestCommitList getPullRequestCommits(long installationId, String owner, String repo,
-                                                              int pullNumber, int limit) {
-        requireConfigured();
-        if (limit < 1 || limit > 100) {
-            throw new IllegalArgumentException("limit must be between 1 and 100");
-        }
-        try {
-            PullRequestResponse pullRequest = client.get()
-                    .uri("/repos/{owner}/{repo}/pulls/{pullNumber}", owner, repo, pullNumber)
-                    .headers(headers -> githubHeaders(headers, installationTokenProvider.apply(installationId)))
-                    .retrieve()
-                    .body(PullRequestResponse.class);
-            if (pullRequest == null || pullRequest.commits() == null || pullRequest.commits() < 0) {
-                throw upstreamFailure();
-            }
-            PullRequestCommitResponse[] response = client.get()
-                    .uri(uriBuilder -> uriBuilder.path("/repos/{owner}/{repo}/pulls/{pullNumber}/commits")
-                            .queryParam("per_page", limit).build(owner, repo, pullNumber))
-                    .headers(headers -> githubHeaders(headers, installationTokenProvider.apply(installationId)))
-                    .retrieve()
-                    .body(PullRequestCommitResponse[].class);
-            if (response == null) {
-                throw upstreamFailure();
-            }
-            List<GitHubPullRequestCommitDetails> items = java.util.Arrays.stream(response)
-                    .map(this::toPullRequestCommit)
-                    .toList();
-            return new GitHubPullRequestCommitList(Math.max(pullRequest.commits(), items.size()), items);
-        } catch (RestClientException exception) {
-            throw upstreamFailure();
-        }
-    }
-
-    @Override
-    public List<GitHubCheckRunDetails> getPullRequestChecks(long installationId, String owner, String repo, String headSha) {
-        requireConfigured();
-        try {
-            CheckRunsResponse response = client.get()
-                    .uri(uriBuilder -> uriBuilder.path("/repos/{owner}/{repo}/commits/{headSha}/check-runs")
-                            .queryParam("per_page", 100).build(owner, repo, headSha))
-                    .headers(headers -> githubHeaders(headers, installationTokenProvider.apply(installationId)))
-                    .retrieve()
-                    .body(CheckRunsResponse.class);
-            if (response == null || response.checkRuns() == null) {
-                throw upstreamFailure();
-            }
-            return response.checkRuns().stream()
-                    .map(check -> new GitHubCheckRunDetails(check.id(), check.name(), check.status(), check.conclusion()))
-                    .toList();
-        } catch (RestClientException exception) {
-            throw upstreamFailure();
-        }
-    }
-
-    @Override
-    public List<GitHubReviewDetails> getPullRequestReviews(long installationId, String owner, String repo, int pullNumber) {
-        requireConfigured();
-        try {
-            ReviewResponse[] response = client.get()
-                    .uri(uriBuilder -> uriBuilder.path("/repos/{owner}/{repo}/pulls/{pullNumber}/reviews")
-                            .queryParam("per_page", 100).build(owner, repo, pullNumber))
-                    .headers(headers -> githubHeaders(headers, installationTokenProvider.apply(installationId)))
-                    .retrieve()
-                    .body(ReviewResponse[].class);
-            if (response == null) {
-                throw upstreamFailure();
-            }
-            return java.util.Arrays.stream(response)
-                    .map(review -> new GitHubReviewDetails(review.id(), review.state(), review.authorAssociation(),
-                            review.user() == null ? null : review.user().login()))
-                    .toList();
-        } catch (RestClientException exception) {
-            throw upstreamFailure();
-        }
-    }
-
-    @Override
-    public GitHubPullRequestCommentDetails createPullRequestComment(long installationId, String owner, String repo,
-                                                                      int pullNumber, GitHubPullRequestCommentRequest request) {
-        requireConfigured();
-        try {
-            CommentResponse response = client.post()
-                    .uri("/repos/{owner}/{repo}/issues/{pullNumber}/comments",
-                            owner, repo, pullNumber)
-                    .headers(headers -> githubHeaders(headers, installationTokenProvider.apply(installationId)))
-                    .body(request)
-                    .retrieve()
-                    .body(CommentResponse.class);
-            if (response == null || response.id() == 0 || response.body() == null) {
-                throw upstreamFailure();
-            }
-            return new GitHubPullRequestCommentDetails(response.id(), response.body(), response.htmlUrl(), response.createdAt());
-        } catch (RestClientResponseException exception) {
-            log.warn("GitHub createPullRequestComment rejected: owner={} repo={} number={} status={} body={}",
-                    owner, repo, pullNumber, exception.getStatusCode().value(), exception.getResponseBodyAsString());
-            throw upstreamFailure();
-        } catch (RestClientException exception) {
-            log.warn("GitHub createPullRequestComment failed: owner={} repo={} number={} {}",
-                    owner, repo, pullNumber, exception.getMessage());
-            throw upstreamFailure();
-        }
-    }
-
-    @Override
-    public GitHubPullRequestMergeResult mergePullRequest(long installationId, String owner, String repo, int pullNumber,
-                                                         GitHubPullRequestMergeRequest request) {
-        requireConfigured();
-        try {
-            MergeResponse response = client.put()
-                    .uri("/repos/{owner}/{repo}/pulls/{pullNumber}/merge", owner, repo, pullNumber)
-                    .headers(headers -> githubHeaders(headers, installationTokenProvider.apply(installationId)))
-                    .body(new MergeRequestBody(request.commitTitle(), request.commitMessage(), request.mergeMethod(),
-                            request.expectedHeadSha()))
-                    .retrieve()
-                    .body(MergeResponse.class);
-            if (response == null) {
-                throw upstreamFailure();
-            }
-            return new GitHubPullRequestMergeResult(response.merged(), response.sha(), response.message());
-        } catch (RestClientResponseException exception) {
-            log.warn("GitHub mergePullRequest rejected: owner={} repo={} number={} status={} body={}",
-                    owner, repo, pullNumber, exception.getStatusCode().value(), exception.getResponseBodyAsString());
-            throw mergeRejected(exception);
-        } catch (RestClientException exception) {
-            log.warn("GitHub mergePullRequest failed before receiving a response: owner={} repo={} number={} {}",
-                    owner, repo, pullNumber, exception.getMessage());
-            throw upstreamFailure();
-        }
-    }
-
     private GitHubPullRequestDetails requirePullRequest(PullRequestResponse response) {
         if (response == null || response.head() == null || response.base() == null || response.head().sha() == null
                 || response.head().ref() == null || response.base().ref() == null) {
@@ -691,59 +558,13 @@ public class RestGitHubAppClient implements GitHubAppClient {
                 response.htmlUrl(), response.mergeable(), response.mergeableState(), response.base().sha());
     }
 
-    private GitHubPullRequestCommitDetails toPullRequestCommit(PullRequestCommitResponse response) {
-        if (response == null || response.sha() == null || response.sha().isBlank() || response.commit() == null
-                || response.commit().message() == null || response.commit().message().isBlank()
-                || response.commit().author() == null || response.commit().author().name() == null
-                || response.commit().author().name().isBlank() || response.commit().author().date() == null
-                || response.commit().author().date().isBlank()) {
-            throw upstreamFailure();
-        }
-        return new GitHubPullRequestCommitDetails(response.sha(), response.commit().message(),
-                response.commit().author().name(), null, response.commit().author().date());
-    }
-
     private record PullRequestResponse(long id, int number, String state, String title,
                                        @JsonProperty("html_url") String htmlUrl, PullRequestRef head,
                                        PullRequestRef base, Boolean merged, Boolean mergeable,
-                                       @JsonProperty("mergeable_state") String mergeableState, Integer commits) {
+                                       @JsonProperty("mergeable_state") String mergeableState) {
     }
 
     private record PullRequestRef(String ref, String sha) {
-    }
-
-    private record CheckRunsResponse(@JsonProperty("check_runs") List<CheckRunResponse> checkRuns) {
-    }
-
-    private record CheckRunResponse(long id, String name, String status, String conclusion) {
-    }
-
-    private record ReviewResponse(long id, String state,
-                                  @JsonProperty("author_association") String authorAssociation, AccountResponse user) {
-    }
-
-    private record PullRequestCommitResponse(String sha, PullRequestCommitMetadata commit) {
-    }
-
-    private record PullRequestCommitMetadata(String message, GitCommitAuthor author) {
-    }
-
-    private record GitCommitAuthor(String name, String date) {
-    }
-
-
-    private record CommentResponse(long id, String body,
-                                   @JsonProperty("html_url") String htmlUrl,
-                                   @JsonProperty("created_at") String createdAt) {
-    }
-
-    @JsonInclude(JsonInclude.Include.NON_NULL)
-    private record MergeRequestBody(@JsonProperty("commit_title") String commitTitle,
-                                    @JsonProperty("commit_message") String commitMessage,
-                                    @JsonProperty("merge_method") String mergeMethod, String sha) {
-    }
-
-    private record MergeResponse(boolean merged, String sha, String message) {
     }
 
     private record BranchResponse(String name, CommitResponse commit) {

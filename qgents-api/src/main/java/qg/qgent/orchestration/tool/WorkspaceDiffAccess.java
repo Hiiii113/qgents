@@ -1,5 +1,7 @@
 package qg.qgent.orchestration.tool;
 
+import qg.qgent.orchestration.tool.GitDiffResult;
+
 import java.util.UUID;
 
 /**

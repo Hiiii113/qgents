@@ -2,18 +2,20 @@ package qg.qgent.service;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
-import qg.qgent.api.ApiException;
-import qg.qgent.dto.AgentResponse;
+
 import qg.qgent.dto.CreateAgentRequest;
+import qg.qgent.dto.AgentResponse;
 import qg.qgent.dto.UpdateAgentRequest;
 import qg.qgent.entity.AgentEntity;
+import qg.qgent.mapper.AgentMapper;
+import qg.qgent.mapper.AgentRunMapper;
+import qg.qgent.mapper.GroupAgentMapper;
+import qg.qgent.mapper.RequirementGroupMapper;
+import qg.qgent.api.ApiException;
+import qg.qgent.mapper.ProjectMapper;
+import qg.qgent.service.ProjectAccessService;
 import qg.qgent.entity.TeamEntity;
 import qg.qgent.entity.TeamMemberEntity;
-import qg.qgent.mapper.AgentMapper;
-import qg.qgent.mapper.GroupAgentMapper;
-import qg.qgent.mapper.ProjectMapper;
-import qg.qgent.mapper.RequirementGroupMapper;
-import qg.qgent.mapper.TaskRunMapper;
 import qg.qgent.mapper.TeamMapper;
 import qg.qgent.mapper.TeamMemberMapper;
 
@@ -37,11 +39,11 @@ class AgentServiceLifecycleTest {
     private final ProjectAccessService projectAccess = mock(ProjectAccessService.class);
     private final GroupAgentMapper groupAgents = mock(GroupAgentMapper.class);
     private final RequirementGroupMapper requirementGroups = mock(RequirementGroupMapper.class);
-    private final TaskRunMapper taskRuns = mock(TaskRunMapper.class);
+    private final AgentRunMapper agentRuns = mock(AgentRunMapper.class);
     private final ProjectMapper projects = mock(ProjectMapper.class);
     private final TeamMapper teams = mock(TeamMapper.class);
     private final AgentService service = new AgentService(agents, teamMembers, projectAccess, groupAgents,
-            requirementGroups, taskRuns, projects, teams);
+            requirementGroups, agentRuns, projects, teams);
 
     private final UUID teamId = UUID.randomUUID();
     private final UUID creator = UUID.randomUUID();
@@ -79,11 +81,11 @@ class AgentServiceLifecycleTest {
     }
 
     @Test
-    void createRejectsInvalidRole() {
+    void createRejectsBlankRole() {
         member(teamId, creator);
 
         ApiException error = assertThrows(ApiException.class,
-                () -> service.create(creator, teamId, createRequest("a", "HACKER", null, "p", null)));
+                () -> service.create(creator, teamId, createRequest("a", " ", null, "p", null)));
 
         assertEquals("AGENT_ROLE_INVALID", error.code());
         assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, error.status());
@@ -204,13 +206,13 @@ class AgentServiceLifecycleTest {
     }
 
     @Test
-    void updateRejectsInvalidRoleValue() {
+    void updateRejectsBlankRoleValue() {
         member(teamId, creator);
         AgentEntity agent = agent(agentId(), teamId, creator, "PRIVATE", "ACTIVE", false);
         when(agents.selectById(agent.getId())).thenReturn(agent);
 
         ApiException error = assertThrows(ApiException.class,
-                () -> service.update(creator, teamId, agent.getId(), patch("role", "HACKER")));
+                () -> service.update(creator, teamId, agent.getId(), patch("role", " ")));
 
         assertEquals("AGENT_ROLE_INVALID", error.code());
     }

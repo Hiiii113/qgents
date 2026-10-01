@@ -11,9 +11,7 @@ class ExecutorPerformancePropertiesTest {
     void defaultPoolsAreValid() {
         ExecutorPerformanceProperties properties = new ExecutorPerformanceProperties();
 
-        assertDoesNotThrow(() -> properties.getOrchestration().validate("orchestration"));
-        assertDoesNotThrow(() -> properties.getTestExecution().validate("test-execution"));
-        assertDoesNotThrow(() -> properties.getTaskRunTimeout().validate("task-run-timeout"));
+        assertDoesNotThrow(() -> properties.getAgent().validate("orchestration"));
     }
 
     @Test

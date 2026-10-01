@@ -68,8 +68,8 @@ public class NotificationResponse {
     private String groupId;
 
     /**
-     * 关联资源 ID（taskId/mrId/diffId），跳转定位用；可为空。
+     * 关联资源 ID（taskId/mrId），跳转定位用；可为空。
      */
-    @Schema(description = "关联资源 ID（taskId/mrId/diffId）")
+    @Schema(description = "关联资源 ID（taskId/mrId）")
     private String resourceId;
 }

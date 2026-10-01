@@ -4,8 +4,9 @@ import com.aliyun.oss.OSS;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
-import qg.qgent.api.ApiException;
+
 import qg.qgent.config.AliyunOssProperties;
+import qg.qgent.api.ApiException;
 
 import java.net.URL;
 import java.util.UUID;
@@ -13,7 +14,6 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;

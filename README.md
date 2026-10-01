@@ -2,8 +2,26 @@
 
 QG 工作室暑假末期考核项目。
 
-Qgents 是一个多 Agent 协作的代码交付平台：用户在项目群中提出需求，平台拆解为可追踪的执行层级、
-在受控沙箱中读写代码、独立执行测试与审查，最终以 Diff 或 MR 两种模式交付可核验的代码结果。
+Qgents 是一个支持群聊和代码交付的 Agent 平台。普通消息只用于聊天；`@Agent` 才启动对应 Agent。
+通用 Agent、Coding Agent 与自定义 Agent 共用项目自己的 loop：模型调用工具时执行并继续，
+没有工具调用的文本回复即结束，最多执行配置的轮次。模型按需调用 subagent，不设置固定的计划、编码、测试、审查阶段。
+
+模型调用 `prepare_workspace` 或用户显式调用 Task API 时创建 Task，并分配固定工作区。
+`list_tasks` / `use_workspace` 或 Task 的 `/start` API 继续已有工作，复用原工作区。
+代码工具复用沙箱 Worker。任务结束只回复执行结果；用户明确要求提交 MR 时，模型调用
+`workspace_repositories` / `create_merge_request` 提交当前修改、推送分支，并直接在 GitHub 创建或复用 PR。
+
+## Agent 实现
+
+- `runtime/AgentLoop` 管理模型调用、工具结果回传和轮次上限。
+- `runtime/AgentChatService` 管理聊天上下文、AgentRun、同步 subagent 和可选代码工作区。
+- Spring AI 仅提供底层 `ChatModel` 及工具 schema，不负责 loop、阶段调度或自动执行工具；已移除 LangGraph4j。
+- `list_agents` / `call_agent` 提供委托，子 Agent 有独立输入，共享根运行的工作区。
+- 文件、开发命令、技能与历史查询工具沿用现有实现；工作区工具在准备完成后的下一轮开放。
+- `app.agent.max-rounds`、`max-depth`、`max-subagents` 分别限制模型轮次、委托深度和总委托数。
+- 群内运行记录查询：`GET /api/v1/projects/{projectId}/groups/{groupId}/agent-runs`。
+
+本次改造以新的建表脚本为准，不保留旧阶段执行 API 的兼容行为。
 
 ## 仓库结构
 
@@ -30,7 +48,7 @@ Qgents/
 
 | 服务 | 职责 | 端口 | 数据库 |
 |---|---|---|---|
-| `qgents-api` | Team / Project 隔离、群聊与任务编排、GitHub 集成、Diff 与 MR 交付、鉴权与通知 | 8080（API）、8081（管理端点） | `qgents` |
+| `qgents-api` | Team / Project 隔离、群聊与任务编排、GitHub 集成、Task 工作区与 GitHub PR、鉴权与通知 | 8080（API）、8081（管理端点） | `qgents` |
 | `qgents-sandbox-worker` | Workspace Manager（bare Git Store 上的 linked worktree 与受控 Git 操作）、Sandbox Manager（沙箱创建与受限文件/命令工具） | 8091 | `qgents_sandbox_worker` |
 
 `qgents-sandbox-worker` 持有 Docker Socket 与工作区挂载权限，安全边界高于主后端，因此独立打包、

@@ -6,37 +6,38 @@ import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DeadlockLoserDataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.dao.DeadlockLoserDataAccessException;
-import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import qg.qgent.api.ApiException;
-import qg.qgent.auth.UuidV7;
+
+import qg.qgent.entity.RequirementGroupEntity;
+import qg.qgent.mapper.GroupMemberMapper;
+import qg.qgent.mapper.RequirementGroupMapper;
 import qg.qgent.config.MdcTaskDecorator;
 import qg.qgent.config.PerformanceMetrics;
-import qg.qgent.entity.EventEntity;
+import qg.qgent.auth.UuidV7;
+import qg.qgent.api.ApiException;
 import qg.qgent.entity.NotificationEventEntity;
-import qg.qgent.entity.ProjectEntity;
-import qg.qgent.entity.RequirementGroupEntity;
-import qg.qgent.entity.TeamEventEntity;
-import qg.qgent.mapper.EventMapper;
-import qg.qgent.mapper.GroupMemberMapper;
 import qg.qgent.mapper.NotificationEventMapper;
-import qg.qgent.mapper.ProjectMemberMapper;
 import qg.qgent.mapper.ProjectMapper;
-import qg.qgent.mapper.RequirementGroupMapper;
-import qg.qgent.mapper.TeamEventMapper;
-import qg.qgent.mapper.TeamMemberMapper;
-import qg.qgent.mapper.TeamMapper;
-import qg.qgent.mapper.UserMapper;
+import qg.qgent.mapper.ProjectMemberMapper;
+import qg.qgent.service.ProjectAccessService;
+import qg.qgent.entity.EventEntity;
+import qg.qgent.mapper.EventMapper;
 import qg.qgent.websocket.RealtimeFrame;
+import qg.qgent.entity.TeamEventEntity;
+import qg.qgent.mapper.TeamEventMapper;
+import qg.qgent.mapper.TeamMapper;
+import qg.qgent.mapper.TeamMemberMapper;
+import qg.qgent.mapper.UserMapper;
 
 import java.io.IOException;
 import java.sql.SQLException;
@@ -141,7 +142,7 @@ public class EventService {
         this.teamMapper = teamMapper;
         this.eventTransaction = transactionManager == null ? null : new TransactionTemplate(transactionManager);
         if (this.eventTransaction != null) {
-            // 事件不能加入已经写入 TaskRun/TaskStep 的业务事务。死锁重试必须从完整的新事务开始。
+            // 事件不能加入已经写入 AgentRun/Task 的业务事务。死锁重试必须从完整的新事务开始。
             this.eventTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         }
         this.metrics = metrics;
@@ -194,19 +195,19 @@ public class EventService {
      * 禁止包含 Token、密码、私钥等敏感信息。
      * <p>
      * 事件保留清理由独立的定时任务处理，不能放在调用方的业务事务中。否则清理 SQL 的死锁会
-     * 回滚 TaskRun、TaskStep 等关键业务写入，造成任务状态与运行记录不一致。
+     * 回滚 AgentRun、Task 等关键业务写入，造成任务状态与运行记录不一致。
      *
      * @param projectId  所属项目ID（调用方应已校验项目成员身份）
      * @param groupId    可选关联需求群ID，可为 null
-     * @param eventType  事件类型，如 task-run.updated / diff.created / merge-request.updated
-     * @param resourceId 关联资源ID字符串，如 taskRunId，可为 null
+     * @param eventType  事件类型，如 task.updated / merge-request.updated
+     * @param resourceId 关联资源ID字符串，如 agentRunId，可为 null
      * @param payload    脱敏事件载荷 JSON
      */
     public void publish(UUID projectId, UUID groupId, String eventType, String resourceId,
                         Map<String, Object> payload) {
         EventRequest request = new EventRequest(projectId, groupId, eventType, resourceId, payload);
         // 业务事实提交后才允许事件落库。这样 events 的行锁、外键检查或重试耗尽都不会把
-        // TaskRun/Task 等已经完成的业务写入标记为 rollback-only。
+        // AgentRun/Task 等已经完成的业务写入标记为 rollback-only。
         if (TransactionSynchronizationManager.isActualTransactionActive()
                 && TransactionSynchronizationManager.isSynchronizationActive()) {
             enqueueAfterCommit(request);
@@ -790,7 +791,7 @@ public class EventService {
 
     /**
      * 每日清理全库 24 小时前的过期事件。清理不参与事件发布所在的业务事务，避免清理死锁
-     * 回滚 TaskRun、TaskStep 等关键状态写入。
+     * 回滚 AgentRun、Task 等关键状态写入。
      * 依赖 Qgents 全局 {@code @EnableScheduling} 生效。
      */
     @Scheduled(cron = "0 15 3 * * *")

@@ -8,8 +8,23 @@ import org.springframework.http.MediaType;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
-import qg.qgent.api.ApiException;
+
 import qg.qgent.config.PerformanceMetrics;
+import qg.qgent.api.ApiException;
+import qg.qgent.orchestration.worker.WorkerCreateSandboxRequest;
+import qg.qgent.orchestration.worker.WorkerErrorResponse;
+import qg.qgent.orchestration.worker.WorkerGitCommitRequest;
+import qg.qgent.orchestration.worker.WorkerGitCommitResponse;
+import qg.qgent.orchestration.worker.WorkerGitDiff;
+import qg.qgent.orchestration.worker.WorkerGitPushRequest;
+import qg.qgent.orchestration.worker.WorkerGitPushResponse;
+import qg.qgent.orchestration.worker.WorkerGitStoreSyncRequest;
+import qg.qgent.orchestration.worker.WorkerGitStoreSyncResponse;
+import qg.qgent.orchestration.worker.WorkerSandbox;
+import qg.qgent.orchestration.worker.WorkerToolExecution;
+import qg.qgent.orchestration.worker.WorkerToolExecutionRequest;
+import qg.qgent.orchestration.worker.WorkerWorkspace;
+import qg.qgent.orchestration.worker.WorkerWorkspaceProvisionRequest;
 import qg.qgent.orchestration.ExecutionContentSanitizer;
 import qg.qgent.orchestration.tool.Sha256;
 
@@ -18,10 +33,7 @@ import java.net.NoRouteToHostException;
 import java.net.SocketTimeoutException;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.List;
 import java.util.UUID;
-import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
@@ -41,48 +53,27 @@ public class SandboxWorkerClient {
 
     private static final String BASE_PATH = "/internal/v1";
     private static final String WORKSPACES = BASE_PATH + "/workspaces/{workspaceId}";
-    private static final String GIT_STATUS = WORKSPACES + "/repositories/{repositoryId}/git/status";
     private static final String GIT_DIFF = WORKSPACES + "/repositories/{repositoryId}/git/diff";
     private static final String GIT_COMMIT = WORKSPACES + "/repositories/{repositoryId}/git/commit";
-    private static final String TEST_SNAPSHOT = WORKSPACES
-            + "/repositories/{repositoryId}/test-snapshots/{snapshotWorkspaceId}";
     private static final String SANDBOXES = BASE_PATH + "/sandboxes";
     private static final String SANDBOX = BASE_PATH + "/sandboxes/{sandboxId}";
     private static final String SANDBOX_LEASE_RENEW = SANDBOX + "/lease/renew";
     private static final String TOOL_EXECUTIONS = BASE_PATH + "/sandboxes/{sandboxId}/tool-executions";
     private static final String TOOL_EXECUTION = BASE_PATH + "/tool-executions/{executionId}";
-    private static final String TOOL_EXECUTION_LOGS = TOOL_EXECUTION + "/logs";
     private static final String GIT_STORE_SYNC = BASE_PATH + "/git-stores/{repositoryId}/sync";
     private static final String GIT_PUSH = WORKSPACES + "/repositories/{repositoryId}/git/push";
-    private static final String TEST_EXECUTIONS = BASE_PATH + "/test-executions";
-    private static final String MERGE_PREVIEWS = BASE_PATH + "/merge-previews";
-    private static final String GIT_RESOLUTIONS = BASE_PATH + "/git-resolutions";
 
     private final RestClient client;
     private final ObjectMapper objectMapper;
     private final PerformanceMetrics metrics;
-    /**
-     * Testset 接口是同步长连接；其读取超时必须覆盖本次已冻结的测试预算，不能复用普通
-     * Worker API 的短请求超时。
-     */
-    private final Function<Duration, RestClient> testExecutionClientFactory;
-
-    private static final Duration TEST_EXECUTION_TRANSPORT_MARGIN = Duration.ofMinutes(10);
-
     public SandboxWorkerClient(RestClient client, ObjectMapper objectMapper) {
         this(client, objectMapper, null);
     }
 
     public SandboxWorkerClient(RestClient client, ObjectMapper objectMapper, PerformanceMetrics metrics) {
-        this(client, objectMapper, metrics, null);
-    }
-
-    SandboxWorkerClient(RestClient client, ObjectMapper objectMapper, PerformanceMetrics metrics,
-                        Function<Duration, RestClient> testExecutionClientFactory) {
         this.client = client;
         this.objectMapper = objectMapper;
         this.metrics = metrics;
-        this.testExecutionClientFactory = testExecutionClientFactory;
     }
 
     /**
@@ -114,16 +105,6 @@ public class SandboxWorkerClient {
             client.delete().uri(WORKSPACES, workspaceId).retrieve().toBodilessEntity();
             return null;
         });
-    }
-
-    /**
-     * 查询仓库当前分支、HEAD 与结构化变更。
-     */
-    public WorkerGitStatus getWorkspaceGitStatus(UUID workspaceId, UUID repositoryId) {
-        return execute(() -> client.get()
-                .uri(GIT_STATUS, workspaceId, repositoryId)
-                .retrieve()
-                .body(WorkerGitStatus.class));
     }
 
     /**
@@ -266,75 +247,6 @@ public class SandboxWorkerClient {
                 .uri(TOOL_EXECUTION, executionId)
                 .retrieve()
                 .body(WorkerToolExecution.class));
-    }
-
-    /**
-     * 按递增游标查询工具执行日志。
-     */
-    public WorkerExecutionLogs getToolExecutionLogs(UUID executionId, long after, int limit) {
-        return execute(() -> client.get()
-                .uri(uri -> uri.path(TOOL_EXECUTION_LOGS)
-                        .queryParam("after", after)
-                        .queryParam("limit", limit)
-                        .build(executionId))
-                .retrieve()
-                .body(WorkerExecutionLogs.class));
-    }
-
-    /**
-     * 在 Worker 内固化当前未提交工作树，不读取或传输宿主机路径。
-     */
-    public WorkerWorkspace createTestSnapshot(UUID workspaceId, UUID repositoryId,
-                                              UUID snapshotWorkspaceId, UUID projectId,
-                                              String expectedHeadCommit) {
-        return execute(() -> client.post()
-                .uri(uri -> uri.path(TEST_SNAPSHOT).queryParam("projectId", projectId)
-                        .queryParam("expectedHeadCommit", expectedHeadCommit)
-                        .build(workspaceId, repositoryId, snapshotWorkspaceId))
-                .retrieve().body(WorkerWorkspace.class));
-    }
-
-    /**
-     * 同步执行已由主后端校验的 Testset 定义。
-     */
-    public WorkerTestExecutionResponse executeTests(WorkerTestExecutionRequest request) {
-        RestClient testClient = testExecutionClientFactory == null
-                ? client
-                : testExecutionClientFactory.apply(testExecutionTimeout(request));
-        return execute(() -> testClient.post().uri(TEST_EXECUTIONS).body(request).retrieve()
-                .body(WorkerTestExecutionResponse.class));
-    }
-
-    /**
-     * Worker 会串行运行本次 Testset。主后端因此要等待所有单项预算，而不是在默认 30 秒
-     * 响应超时后把仍在正常执行的 Maven/Gradle 误判为 Worker 不可用。
-     */
-    static Duration testExecutionTimeout(WorkerTestExecutionRequest request) {
-        List<WorkerTestExecutionItemRequest> testsets = request == null || request.getTestsets() == null
-                ? List.of() : request.getTestsets();
-        long seconds = testsets.stream()
-                .map(WorkerTestExecutionItemRequest::getTimeoutSeconds)
-                .filter(java.util.Objects::nonNull)
-                .mapToLong(Integer::longValue)
-                .filter(value -> value > 0)
-                .sum();
-        return Duration.ofSeconds(Math.max(1L, seconds)).plus(TEST_EXECUTION_TRANSPORT_MARGIN);
-    }
-
-    /**
-     * 解析真实 Git 引用并执行只读合并预演。
-     */
-    public WorkerMergePreviewResponse mergePreview(WorkerMergePreviewRequest request) {
-        return execute(() -> client.post().uri(MERGE_PREVIEWS).body(request).retrieve()
-                .body(WorkerMergePreviewResponse.class));
-    }
-
-    /**
-     * 在受控 Worker 中把 Git 引用解析为固定 commit SHA。
-     */
-    public WorkerGitResolveResponse resolveGitRef(WorkerGitResolveRequest request) {
-        return execute(() -> client.post().uri(GIT_RESOLUTIONS).body(request).retrieve()
-                .body(WorkerGitResolveResponse.class));
     }
 
     /**

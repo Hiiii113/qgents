@@ -4,9 +4,11 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
+
+import qg.qgent.orchestration.tool.ExecutionResult;
+import qg.qgent.orchestration.tool.GitDiffResult;
 import qg.qgent.entity.WorkspaceRepositoryEntity;
 import qg.qgent.mapper.WorkspaceRepositoryMapper;
-import qg.qgent.service.WorkspaceService;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -25,6 +27,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import qg.qgent.service.WorkspaceService;
 
 /**
  * LocalGitDiffAccess 测试。

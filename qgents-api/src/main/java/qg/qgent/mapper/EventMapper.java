@@ -3,8 +3,9 @@ package qg.qgent.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import org.apache.ibatis.annotations.*;
-import qg.qgent.entity.EventEntity;
+
 import qg.qgent.handler.UuidBinaryTypeHandler;
+import qg.qgent.entity.EventEntity;
 
 import java.time.LocalDateTime;
 import java.util.List;

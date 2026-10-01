@@ -5,9 +5,10 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+
+import qg.qgent.dto.RejectRequest;
 import qg.qgent.api.ApiResponse;
 import qg.qgent.api.RequestIdFilter;
-import qg.qgent.dto.RejectRequest;
 import qg.qgent.dto.SkillCreateRequest;
 import qg.qgent.dto.SkillUpdateRequest;
 import qg.qgent.service.SkillService;

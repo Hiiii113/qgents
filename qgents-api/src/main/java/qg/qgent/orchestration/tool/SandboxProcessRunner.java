@@ -1,5 +1,7 @@
 package qg.qgent.orchestration.tool;
 
+import qg.qgent.orchestration.tool.ExecutionResult;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;

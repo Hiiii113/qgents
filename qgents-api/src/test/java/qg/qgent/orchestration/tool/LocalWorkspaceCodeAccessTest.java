@@ -3,9 +3,10 @@ package qg.qgent.orchestration.tool;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import qg.qgent.orchestration.tool.WorkspaceFileReadResult;
 import qg.qgent.entity.WorkspaceEntity;
 import qg.qgent.mapper.WorkspaceMapper;
-import qg.qgent.service.WorkspaceService;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import qg.qgent.service.WorkspaceService;
 
 /**
  * LocalWorkspaceCodeAccess 单元测试：基于 {@code @TempDir} 的真实本地目录 + Mock Mapper，

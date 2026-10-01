@@ -7,6 +7,7 @@ import com.aliyun.oss.model.ObjectMetadata;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
+
 import qg.qgent.config.AliyunOssProperties;
 import qg.qgent.dto.UploadCredential;
 

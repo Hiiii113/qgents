@@ -6,21 +6,47 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+import qg.qgent.service.DefaultAgentProvisioner;
+import qg.qgent.auth.TokenService;
+import qg.qgent.mapper.GroupMemberMapper;
+import qg.qgent.dto.PageInfo;
+import qg.qgent.dto.PageSlice;
+import qg.qgent.auth.UuidV7;
 import qg.qgent.api.ApiException;
 import qg.qgent.api.PersistedApiException;
-import qg.qgent.auth.TeamInvitationMailer;
-import qg.qgent.auth.TokenService;
-import qg.qgent.auth.UuidV7;
-import qg.qgent.dto.*;
-import qg.qgent.entity.EventEntity;
 import qg.qgent.entity.MergeRequestEntity;
+import qg.qgent.mapper.MergeRequestMapper;
+import qg.qgent.service.NotificationService;
 import qg.qgent.entity.ProjectEntity;
+import qg.qgent.entity.ProjectMemberEntity;
+import qg.qgent.mapper.ProjectMapper;
+import qg.qgent.mapper.ProjectMemberMapper;
+import qg.qgent.entity.EventEntity;
+import qg.qgent.mapper.EventMapper;
+import qg.qgent.service.EventService;
 import qg.qgent.entity.TaskEntity;
+import qg.qgent.mapper.TaskMapper;
+import qg.qgent.dto.ActivityResponse;
+import qg.qgent.dto.ReceivedInvitationResponse;
+import qg.qgent.dto.CreateTeamRequest;
+import qg.qgent.dto.TeamInvitationResponse;
+import qg.qgent.dto.InviteTeamMemberRequest;
+import qg.qgent.dto.TeamMemberResponse;
+import qg.qgent.dto.UpdateTeamMemberRequest;
+import qg.qgent.dto.TeamResponse;
+import qg.qgent.dto.UpdateTeamRequest;
 import qg.qgent.entity.TeamEntity;
 import qg.qgent.entity.TeamInvitationEntity;
 import qg.qgent.entity.TeamMemberEntity;
+import qg.qgent.auth.TeamInvitationMailer;
+import qg.qgent.mapper.TeamInvitationMapper;
+import qg.qgent.mapper.TeamMapper;
+import qg.qgent.mapper.TeamMemberMapper;
+import qg.qgent.dto.TeamMemberView;
+import qg.qgent.dto.TeamMembershipView;
 import qg.qgent.entity.UserEntity;
-import qg.qgent.mapper.*;
+import qg.qgent.mapper.UserMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
@@ -603,25 +629,22 @@ public class TeamService {
 
     /**
      * 动态类型 → SQL 过滤片段白名单（event_type 与 payload.status 的 JSON 取值约束）。
-     * TASK_CREATED 复用创建任务时已发布的 task.updated(PLANNING)：PLANNING 仅出现在任务创建态，
-     * 后续状态转移不会回到 PLANNING，故可安全代表「任务已创建」，无需新增独立事件发布源。
+     * TASK_CREATED 复用创建任务时已发布的 task.updated(PENDING)：PENDING 仅出现在任务创建态，
+     * 后续状态转移不会回到 PENDING，故可安全代表「任务已创建」，无需新增独立事件发布源。
      * 仅由服务端常量引用，绝不拼接用户输入；{@link #activityFragments} 只挑选其中子集。
      */
     private static final Map<String, String> ACTIVITY_FRAGMENTS = Map.ofEntries(
             Map.entry("GROUP_CREATED", "e.event_type='project.created'"),
             Map.entry("TASK_CREATED", "e.event_type='task.updated' AND "
-                    + "JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.status'))='PLANNING'"),
+                    + "JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.status'))='PENDING'"),
             Map.entry("TASK_COMPLETED", "e.event_type='task.updated' AND "
                     + "JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.status'))='SUCCEEDED'"),
             Map.entry("TASK_FAILED", "e.event_type='task.updated' AND "
                     + "JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.status'))='FAILED'"),
-            Map.entry("DIFF_CREATED", "e.event_type='diff.created'"),
             Map.entry("MR_CREATED", "e.event_type='merge-request.updated' AND "
                     + "JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.status'))='OPEN'"),
             Map.entry("MR_MERGED", "e.event_type='merge-request.updated' AND "
-                    + "JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.status'))='MERGED'"),
-            Map.entry("TEST_RUN_FAILED", "e.event_type='test-run.updated' AND "
-                    + "JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.status'))='FAILED'"));
+                    + "JSON_UNQUOTE(JSON_EXTRACT(e.payload,'$.status'))='MERGED'"));
 
     /**
      * 将逗号分隔的 type 过滤参数映射为 SQL 片段集合；无参数返回全部。
@@ -674,13 +697,6 @@ public class TeamService {
                     default -> "已失败";
                 };
             }
-            case "DIFF_CREATED" -> {
-                UUID diffId = uuidOf(event.getPayload() == null ? null : event.getPayload().get("diffId"));
-                targetType = "DIFF";
-                targetId = diffId.toString();
-                targetTitle = taskTitle;
-                title = "任务「" + safe(taskTitle) + "」的 Diff 待验收";
-            }
             case "MR_CREATED", "MR_MERGED" -> {
                 UUID mrId = uuidOf(event.getResourceId());
                 MergeRequestEntity mr = mrId == null ? null : mergeRequests.get(mrId);
@@ -692,21 +708,6 @@ public class TeamService {
                 targetId = mrId == null ? null : mrId.toString();
                 targetTitle = "#" + mrNumber + " " + mrTitle;
                 title = mrTitle + " MR #" + mrNumber + ("MR_CREATED".equals(type) ? " 已创建" : " 已合并");
-                actorId = null;
-            }
-            case "TEST_RUN_FAILED" -> {
-                if (taskId != null) {
-                    targetType = "TASK";
-                    targetId = taskId.toString();
-                    targetTitle = taskTitle;
-                } else {
-                    UUID projectId = uuidOf(event.getPayload() == null ? null : event.getPayload().get("projectId"));
-                    ProjectEntity project = projectId == null ? null : projects.get(projectId);
-                    targetType = "PROJECT";
-                    targetId = projectId == null ? null : projectId.toString();
-                    targetTitle = project == null ? null : project.getName();
-                }
-                title = "测试运行失败";
                 actorId = null;
             }
             default -> throw new IllegalStateException("unmapped activity type: " + type);
@@ -726,19 +727,17 @@ public class TeamService {
         String status = payloadString(event, "status");
         return switch (eventType) {
             case "task.updated" -> switch (status) {
-                case "PLANNING" -> "TASK_CREATED";
+                case "PENDING" -> "TASK_CREATED";
                 case "SUCCEEDED" -> "TASK_COMPLETED";
                 case "FAILED" -> "TASK_FAILED";
                 default -> null;
             };
             case "project.created" -> "GROUP_CREATED";
-            case "diff.created" -> "DIFF_CREATED";
             case "merge-request.updated" -> switch (status) {
                 case "OPEN" -> "MR_CREATED";
                 case "MERGED" -> "MR_MERGED";
                 default -> null;
             };
-            case "test-run.updated" -> "FAILED".equals(status) ? "TEST_RUN_FAILED" : null;
             default -> null;
         };
     }
@@ -749,7 +748,7 @@ public class TeamService {
     }
 
     /**
-     * 事件关联的 Task id：task.updated/diff.created/test-run.updated 均在 payload.taskId 中携带。
+     * 事件关联的 Task id：task.updated/merge-request.updated 均在 payload.taskId 中携带。
      */
     private UUID taskIdOf(EventEntity event) {
         return uuidOf(event.getPayload() == null ? null : event.getPayload().get("taskId"));

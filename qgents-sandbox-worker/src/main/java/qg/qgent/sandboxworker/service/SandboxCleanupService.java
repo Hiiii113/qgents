@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import qg.qgent.sandboxworker.service.ToolExecutionService;
+
 /**
  * 定期取消过期执行并回收沙箱，作为控制层主动销毁之外的安全兜底。
  */

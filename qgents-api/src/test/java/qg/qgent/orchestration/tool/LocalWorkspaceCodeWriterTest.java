@@ -2,9 +2,12 @@ package qg.qgent.orchestration.tool;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
+import qg.qgent.orchestration.tool.WorkspaceDirectoryResult;
+import qg.qgent.orchestration.tool.WorkspaceWriteResult;
 import qg.qgent.entity.WorkspaceEntity;
 import qg.qgent.mapper.WorkspaceMapper;
-import qg.qgent.service.WorkspaceService;
+import qg.qgent.orchestration.tool.Sha256;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -16,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import qg.qgent.service.WorkspaceService;
 
 /**
  * LocalWorkspaceCodeWriter 单元测试：基于 {@code @TempDir} 的真实本地目录 + Mock Mapper，
@@ -182,7 +186,7 @@ class LocalWorkspaceCodeWriterTest {
 
         assertThat(result.isOk()).isFalse();
         assertThat(result.getError()).contains("root is not available");
-        // workspace 不可用属于基础设施失败，CodingAgent 应映射 FAILED_INFRASTRUCTURE。
+        // workspace 不可用属于基础设施失败，工具应返回基础设施错误。
         assertThat(result.isInfrastructureFailure()).isTrue();
         assertThat(Files.exists(baseDir.resolve("ws-1").resolve("A.java"))).isFalse();
     }

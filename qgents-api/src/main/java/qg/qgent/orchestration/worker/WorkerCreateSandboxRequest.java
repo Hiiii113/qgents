@@ -18,12 +18,6 @@ public class WorkerCreateSandboxRequest {
     private UUID sandboxId;
 
     /**
-     * 兼容既有 Worker 的会话关联编号。Task 编排在创建 Sandbox 时尚未生成 TaskRun，
-     * 因此不能将此字段视为真实的 TaskRun 编号。
-     */
-    private UUID taskRunId;
-
-    /**
      * Sandbox 所属 Task 编号，用于 Worker 生命周期和工具执行日志关联。
      */
     private UUID taskId;

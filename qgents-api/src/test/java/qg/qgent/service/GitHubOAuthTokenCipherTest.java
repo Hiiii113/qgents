@@ -1,6 +1,7 @@
 package qg.qgent.service;
 
 import org.junit.jupiter.api.Test;
+
 import qg.qgent.api.ApiException;
 import qg.qgent.config.GitHubOAuthProperties;
 

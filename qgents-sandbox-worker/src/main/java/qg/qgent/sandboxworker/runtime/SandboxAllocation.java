@@ -20,11 +20,7 @@ public class SandboxAllocation {
      */
     private UUID id;
     /**
-     * 兼容既有 Worker 协议的会话关联编号；Task 编排路径中该值可能是 Task ID。
-     */
-    private UUID taskRunId;
-    /**
-     * Sandbox 所属 Task 编号；旧容器和独立测试执行可以为空。
+     * Sandbox 所属 Task 编号；
      */
     private UUID taskId;
     /**

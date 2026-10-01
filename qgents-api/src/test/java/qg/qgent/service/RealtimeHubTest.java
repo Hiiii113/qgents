@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
+
 import qg.qgent.websocket.RealtimeFrame;
 
 import java.io.IOException;
@@ -82,13 +83,13 @@ class RealtimeHubTest {
 
         doThrow(new IOException("closed")).when(broken).sendMessage(org.mockito.ArgumentMatchers.any());
 
-        hub.broadcastToUsers(Set.of(userId), RealtimeFrame.of("diff.created", "project", null, null, null, null,
+        hub.broadcastToUsers(Set.of(userId), RealtimeFrame.of("task.updated", "project", null, null, null, null,
                 null, Map.of()));
 
         verify(healthy).sendMessage(org.mockito.ArgumentMatchers.any(TextMessage.class));
         // 失效连接被关闭并从注册表移除：再推送不应再尝试向其发送
         org.mockito.Mockito.reset(broken);
-        hub.broadcastToUsers(Set.of(userId), RealtimeFrame.of("diff.created", "project", null, null, null, null,
+        hub.broadcastToUsers(Set.of(userId), RealtimeFrame.of("task.updated", "project", null, null, null, null,
                 null, Map.of()));
         verify(broken, org.mockito.Mockito.never())
                 .sendMessage(org.mockito.ArgumentMatchers.any(TextMessage.class));

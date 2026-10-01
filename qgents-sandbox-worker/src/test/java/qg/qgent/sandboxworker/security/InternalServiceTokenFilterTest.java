@@ -5,9 +5,8 @@ import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
-import qg.qgent.sandboxworker.config.SandboxWorkerProperties;
 
-import java.nio.charset.StandardCharsets;
+import qg.qgent.sandboxworker.config.SandboxWorkerProperties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.mock;

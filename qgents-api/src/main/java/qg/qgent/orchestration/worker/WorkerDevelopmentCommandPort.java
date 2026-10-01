@@ -4,10 +4,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
+
+import qg.qgent.service.AgentWorkerExecutionService;
+import qg.qgent.orchestration.worker.SandboxWorkerClient;
+import qg.qgent.orchestration.worker.SandboxWorkerProperties;
+import qg.qgent.orchestration.worker.WorkerToolExecution;
+import qg.qgent.orchestration.tool.DevelopmentCommandResult;
 import qg.qgent.orchestration.tool.DevelopmentCommandId;
 import qg.qgent.orchestration.tool.DevelopmentCommandPort;
-import qg.qgent.orchestration.tool.DevelopmentCommandResult;
-import qg.qgent.service.TaskRunWorkerExecutionService;
 
 import java.time.Duration;
 import java.util.Map;
@@ -17,7 +21,7 @@ import java.util.UUID;
  * 通过 Worker {@code development.run} 执行 Coding Agent 的固定开发命令。
  * <p>
  * 请求只携带 commandId，仓库由当前 Workspace SandboxSession 绑定；本端不读取 Worker 日志，
- * 以免 stdout/stderr、argv 或构建环境细节回流到模型和 TaskRun。
+ * 以免 stdout/stderr、argv 或构建环境细节回流到模型和 AgentRun。
  */
 @Component
 @Slf4j
@@ -33,7 +37,7 @@ public class WorkerDevelopmentCommandPort extends AbstractWorkerToolPort impleme
     @Autowired
     public WorkerDevelopmentCommandPort(SandboxWorkerClient client, SandboxSessionManager sessions,
                                         SandboxWorkerProperties properties,
-                                        TaskRunWorkerExecutionService workerExecutionService) {
+                                        AgentWorkerExecutionService workerExecutionService) {
         super(client, sessions, properties, workerExecutionService);
     }
 

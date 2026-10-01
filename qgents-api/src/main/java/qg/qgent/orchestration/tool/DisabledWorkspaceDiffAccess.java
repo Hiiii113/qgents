@@ -2,6 +2,8 @@ package qg.qgent.orchestration.tool;
 
 import org.springframework.stereotype.Component;
 
+import qg.qgent.orchestration.tool.GitDiffResult;
+
 import java.util.UUID;
 
 /**

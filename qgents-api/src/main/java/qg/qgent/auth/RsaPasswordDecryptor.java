@@ -6,12 +6,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Component;
 
-import javax.crypto.Cipher;
+import qg.qgent.api.ApiException;
+
 import java.nio.charset.StandardCharsets;
 import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.Base64;
+import javax.crypto.Cipher;
 
 /**
  * 私钥解密器，用于解密客户端使用公钥加密的密码

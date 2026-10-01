@@ -3,13 +3,15 @@ package qg.qgent.service;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DuplicateKeyException;
+
 import qg.qgent.entity.NotificationEntity;
 import qg.qgent.mapper.NotificationMapper;
+import qg.qgent.service.EventService;
 
 import java.util.UUID;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class NotificationServiceTest {

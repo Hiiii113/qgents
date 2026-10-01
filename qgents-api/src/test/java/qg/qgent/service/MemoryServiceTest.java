@@ -2,16 +2,19 @@ package qg.qgent.service;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
+
+import qg.qgent.entity.MessageEntity;
+import qg.qgent.entity.RequirementGroupEntity;
+import qg.qgent.mapper.MessageMapper;
+import qg.qgent.mapper.RequirementGroupMapper;
 import qg.qgent.api.ApiException;
 import qg.qgent.dto.MemoryDraftRequest;
 import qg.qgent.entity.MemoryEntity;
-import qg.qgent.entity.MessageEntity;
-import qg.qgent.entity.RequirementGroupEntity;
 import qg.qgent.mapper.MemoryMapper;
 import qg.qgent.mapper.MemoryMessageSourceMapper;
-import qg.qgent.mapper.MessageMapper;
 import qg.qgent.mapper.ProjectMapper;
-import qg.qgent.mapper.RequirementGroupMapper;
+import qg.qgent.service.ProjectAccessService;
+import qg.qgent.service.EventService;
 import qg.qgent.mapper.UserMapper;
 
 import java.util.List;

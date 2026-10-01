@@ -3,13 +3,15 @@ package qg.qgent.service;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+
+import qg.qgent.dto.UploadCredential;
 import qg.qgent.api.ApiException;
 import qg.qgent.dto.AvatarConfirmRequest;
 import qg.qgent.dto.AvatarConfirmResponse;
 import qg.qgent.dto.AvatarCredentialResponse;
-import qg.qgent.dto.UploadCredential;
 import qg.qgent.entity.UserEntity;
 import qg.qgent.mapper.UserMapper;
+import qg.qgent.service.AvatarStorageService;
 
 import java.time.LocalDateTime;
 import java.util.Map;

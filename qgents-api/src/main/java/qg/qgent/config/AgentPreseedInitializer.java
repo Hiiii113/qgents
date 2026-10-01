@@ -7,9 +7,10 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
+
+import qg.qgent.service.DefaultAgentProvisioner;
 import qg.qgent.entity.TeamEntity;
 import qg.qgent.mapper.TeamMapper;
-import qg.qgent.service.DefaultAgentProvisioner;
 
 import java.util.List;
 

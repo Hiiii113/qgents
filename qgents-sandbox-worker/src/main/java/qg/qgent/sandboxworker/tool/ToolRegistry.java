@@ -1,7 +1,11 @@
 package qg.qgent.sandboxworker.tool;
 
 import org.springframework.stereotype.Component;
+
 import qg.qgent.sandboxworker.api.WorkerException;
+import qg.qgent.sandboxworker.tool.ToolContext;
+import qg.qgent.sandboxworker.tool.ToolResult;
+import qg.qgent.sandboxworker.tool.SandboxTool;
 
 import java.util.List;
 import java.util.Map;

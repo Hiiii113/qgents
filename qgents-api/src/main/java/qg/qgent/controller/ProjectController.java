@@ -5,14 +5,25 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+
+import qg.qgent.dto.PageSlice;
+import qg.qgent.service.IdempotencyService;
 import qg.qgent.api.ApiResponse;
 import qg.qgent.api.PagedApiResponse;
 import qg.qgent.api.RequestIdFilter;
-import qg.qgent.dto.*;
-import qg.qgent.service.IdempotencyService;
+import qg.qgent.dto.CreateProjectRequest;
+import qg.qgent.dto.AddProjectMemberRequest;
+import qg.qgent.dto.ProjectMemberResponse;
+import qg.qgent.dto.UpdateProjectMemberRequest;
+import qg.qgent.dto.ProjectResponse;
+import qg.qgent.dto.UpdateProjectRequest;
 import qg.qgent.service.ProjectAccessService;
-import qg.qgent.service.ProjectAvatarStorageService;
 import qg.qgent.service.ProjectService;
+import qg.qgent.service.ProjectAvatarStorageService;
+import qg.qgent.dto.AvatarConfirmRequest;
+import qg.qgent.dto.AvatarConfirmResponse;
+import qg.qgent.dto.AvatarCredentialRequest;
+import qg.qgent.dto.AvatarCredentialResponse;
 
 import java.util.List;
 import java.util.Map;

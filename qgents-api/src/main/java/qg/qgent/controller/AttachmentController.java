@@ -13,16 +13,17 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import qg.qgent.api.ApiException;
-import qg.qgent.api.ApiResponse;
-import qg.qgent.api.RequestIdFilter;
-import qg.qgent.auth.TokenService;
+
 import qg.qgent.dto.AttachmentCreateRequest;
 import qg.qgent.dto.AttachmentDownloadUrlResponse;
 import qg.qgent.dto.AttachmentStatusResponse;
-import qg.qgent.service.AttachmentContent;
 import qg.qgent.service.AttachmentService;
 import qg.qgent.service.AttachmentService.AttachmentPreviewContent;
+import qg.qgent.service.AttachmentContent;
+import qg.qgent.auth.TokenService;
+import qg.qgent.api.ApiException;
+import qg.qgent.api.ApiResponse;
+import qg.qgent.api.RequestIdFilter;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

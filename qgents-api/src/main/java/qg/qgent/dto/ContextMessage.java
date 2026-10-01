@@ -22,7 +22,7 @@ public class ContextMessage {
     private Long sequence;
 
     /**
-     * 消息类型：TEXT/CODE/IMAGE/FILE/DIFF/TASK_STATUS/QUOTE 等。
+     * 消息类型：TEXT/CODE/IMAGE/FILE/QUOTE 等。
      */
     @Schema(description = "消息类型")
     private String type;

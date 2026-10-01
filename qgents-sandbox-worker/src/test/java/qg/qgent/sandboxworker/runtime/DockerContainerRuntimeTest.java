@@ -8,8 +8,10 @@ import com.github.dockerjava.api.model.HostConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
-import qg.qgent.sandboxworker.api.CreateSandboxRequest;
+
 import qg.qgent.sandboxworker.config.SandboxWorkerProperties;
+import qg.qgent.sandboxworker.api.CreateSandboxRequest;
+import qg.qgent.sandboxworker.runtime.WorkspacePathResolver;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -77,11 +79,11 @@ class DockerContainerRuntimeTest {
 
         CreateSandboxRequest request = new CreateSandboxRequest();
         request.setSandboxId(UUID.randomUUID());
-        request.setTaskRunId(UUID.randomUUID());
+        request.setTaskId(UUID.randomUUID());
         request.setTaskId(UUID.randomUUID());
         request.setWorkspaceStorageKey("workspaces/" + workspaceId);
         request.setImageProfile("dev-tools");
-        SandboxAllocation allocation = new SandboxAllocation(request.getSandboxId(), request.getTaskRunId(), request.getTaskId(),
+        SandboxAllocation allocation = new SandboxAllocation(request.getSandboxId(), request.getTaskId(),
                 request.getWorkspaceStorageKey(), request.getImageProfile(), "READY", "DOCKER",
                 Instant.EPOCH, Instant.EPOCH, Instant.EPOCH, Instant.EPOCH, Duration.ofMinutes(1), null, Map.of());
 

@@ -5,13 +5,17 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
-import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.util.UriComponentsBuilder;
+
 import qg.qgent.api.ApiException;
+import qg.qgent.github.GitHubOAuthClient;
+import qg.qgent.github.GitHubRepositoryCreateRequest;
+import qg.qgent.github.GitHubRepositoryDetails;
 import qg.qgent.config.GitHubOAuthProperties;
+import qg.qgent.dto.UserResponse;
 
 import java.util.List;
 

@@ -1,8 +1,24 @@
 package qg.qgent.auth;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
+
+import qg.qgent.entity.IdempotencyRecordEntity;
+import qg.qgent.service.IdempotencyService;
+
+import java.io.IOException;
+import java.security.MessageDigest;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -11,25 +27,9 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import java.security.MessageDigest;
-import java.nio.charset.StandardCharsets;
-
-import java.io.IOException;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.mock.web.MockHttpServletResponse;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 class IdempotencyFilterTest {
 
@@ -72,11 +72,9 @@ class IdempotencyFilterTest {
     }
 
     @Test
-    void filtersAllProjectWriteEndpointsIncludingPreflightAndMergeRequestCreation() {
+    void filtersProjectTaskAndMergeRequestCreation() {
         IdempotencyFilter filter = new IdempotencyFilter(null, null);
 
-        assertFalse(filter.shouldNotFilter(new MockHttpServletRequest("POST", "/api/v1/projects/proj-1/dry-runs")));
-        assertFalse(filter.shouldNotFilter(new MockHttpServletRequest("POST", "/api/v1/projects/proj-1/dry-runs/run-1/cq-approvals")));
         assertFalse(filter.shouldNotFilter(new MockHttpServletRequest("POST", "/api/v1/projects/proj-1/merge-requests")));
         assertFalse(filter.shouldNotFilter(new MockHttpServletRequest("PATCH", "/api/v1/projects/proj-1/tasks/task-1")));
     }

@@ -5,7 +5,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
+
+import qg.qgent.sandboxworker.api.WorkerException;
 import qg.qgent.sandboxworker.config.SandboxWorkerProperties;
+import qg.qgent.sandboxworker.workspace.GitCommitRequest;
+import qg.qgent.sandboxworker.workspace.GitCommitResponse;
+import qg.qgent.sandboxworker.workspace.GitDiffFileResponse;
+import qg.qgent.sandboxworker.workspace.GitDiffResponse;
+import qg.qgent.sandboxworker.workspace.GitPushRequest;
+import qg.qgent.sandboxworker.workspace.GitStatusResponse;
 
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -22,80 +30,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GitRepositoryManagerTest {
     @TempDir Path root;
-
-    @Test
-    void copiesExactUncommittedSnapshotWithoutChangingLiveWorktreeAndCleanupIsIdempotent() throws Exception {
-        UUID repositoryId = UUID.randomUUID();
-        Path store = root.resolve("snapshot-store").resolve(repositoryId + ".git");
-        Path seed = root.resolve("snapshot-seed");
-        Files.createDirectories(store.getParent());
-        run(List.of("git", "init", "-b", "main", seed.toString()), root);
-        Files.writeString(seed.resolve("tracked.txt"), "base\n");
-        Files.writeString(seed.resolve("deleted.txt"), "delete me\n");
-        run(List.of("git", "-C", seed.toString(), "add", "-A"), root);
-        run(List.of("git", "-C", seed.toString(), "-c", "user.name=Test", "-c",
-                "user.email=test@example.com", "commit", "-m", "base"), root);
-        run(List.of("git", "clone", "--bare", seed.toString(), store.toString()), root);
-        SandboxWorkerProperties properties = new SandboxWorkerProperties();
-        properties.setGitStoreRoot(store.getParent().toString());
-        GitRepositoryManager manager = new GitRepositoryManager(properties);
-        Path live = root.resolve("live/repository"), snapshot = root.resolve("snapshot/repository");
-        manager.create(repositoryId, live, "main", "feat/live");
-        manager.create(repositoryId, snapshot, "main", "qgents-test-" + UUID.randomUUID());
-        Files.writeString(live.resolve("tracked.txt"), "changed\n");
-        Files.delete(live.resolve("deleted.txt"));
-        Files.writeString(live.resolve("untracked.txt"), "new\n");
-        String liveHash = manager.diff(live).getDiffHash();
-
-        try {
-            manager.copyWorkingTreeSnapshot(repositoryId, live, snapshot);
-
-            assertEquals(liveHash, manager.diff(snapshot).getDiffHash());
-            assertEquals("changed", Files.readString(live.resolve("tracked.txt")).trim());
-            assertFalse(Files.exists(snapshot.resolve("deleted.txt")));
-            assertEquals("new", Files.readString(snapshot.resolve("untracked.txt")).trim());
-        } finally {
-            manager.remove(repositoryId, snapshot);
-            manager.remove(repositoryId, snapshot);
-            manager.remove(repositoryId, live);
-        }
-    }
-
-    @Test
-    void mergePreviewReportsRealGitConflict() throws Exception {
-        UUID repositoryId = UUID.randomUUID();
-        Path store = root.resolve("merge-store").resolve(repositoryId + ".git");
-        Path source = root.resolve("merge-source");
-        Files.createDirectories(store.getParent());
-        run(List.of("git", "init", "-b", "main", source.toString()), root);
-        Files.writeString(source.resolve("value.txt"), "base\n");
-        run(List.of("git", "-C", source.toString(), "add", "-A"), root);
-        run(List.of("git", "-C", source.toString(), "-c", "user.name=Test", "-c",
-                "user.email=test@example.com", "commit", "-m", "base"), root);
-        run(List.of("git", "-C", source.toString(), "checkout", "-b", "feat/conflict"), root);
-        Files.writeString(source.resolve("value.txt"), "source\n");
-        run(List.of("git", "-C", source.toString(), "add", "-A"), root);
-        run(List.of("git", "-C", source.toString(), "-c", "user.name=Test", "-c",
-                "user.email=test@example.com", "commit", "-m", "source"), root);
-        run(List.of("git", "-C", source.toString(), "checkout", "main"), root);
-        Files.writeString(source.resolve("value.txt"), "target\n");
-        run(List.of("git", "-C", source.toString(), "add", "-A"), root);
-        run(List.of("git", "-C", source.toString(), "-c", "user.name=Test", "-c",
-                "user.email=test@example.com", "commit", "-m", "target"), root);
-        run(List.of("git", "clone", "--bare", source.toString(), store.toString()), root);
-
-        SandboxWorkerProperties properties = new SandboxWorkerProperties();
-        properties.setGitStoreRoot(store.getParent().toString());
-        GitRepositoryManager manager = new GitRepositoryManager(properties);
-
-        assertEquals(output(List.of("git", "--git-dir", store.toString(), "rev-parse", "main"), root).trim(),
-                manager.resolveRef(repositoryId, "main"));
-
-        var response = manager.mergePreview(repositoryId, "feat/conflict", "main");
-
-        assertFalse(response.isMergeable());
-        assertTrue(response.getConflicts().contains("value.txt"));
-    }
 
     @Test
     void createsLinkedWorktreeAndCommitsReviewedDiff() throws Exception {

@@ -7,11 +7,18 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
+
 import qg.qgent.api.ApiException;
+import qg.qgent.github.GitHubAppClient;
 import qg.qgent.entity.GitCredentialGrant;
 import qg.qgent.entity.GitCredentialPurpose;
-import qg.qgent.github.GitHubAppClient;
+import qg.qgent.entity.GitHubInstallationEntity;
+import qg.qgent.entity.GitHubRepositoryEntity;
 import qg.qgent.mapper.GitCredentialGrantMapper;
+import qg.qgent.mapper.GitHubInstallationMapper;
+import qg.qgent.mapper.GitHubRepositoryMapper;
+import qg.qgent.entity.ProjectRepositoryEntity;
+import qg.qgent.mapper.ProjectRepositoryMapper;
 
 import java.time.LocalDateTime;
 import java.util.UUID;

@@ -5,6 +5,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
+
 import qg.qgent.entity.WorkspaceEntity;
 
 import java.util.UUID;
@@ -30,9 +31,9 @@ public interface WorkspaceMapper extends BaseMapper<WorkspaceEntity> {
             + "or write_lease_expires_at <= UTC_TIMESTAMP(6) or (write_lease_task_id=#{taskId} "
             + "and write_lease_token=#{token}) or exists (select 1 from tasks owner_task "
             + "where owner_task.id=write_lease_task_id and owner_task.project_id=#{projectId} "
-            + "and owner_task.status in ('SUCCEEDED','FAILED','DELIVERY_FAILED','DIFF_REJECTED','CANCELLED') "
-            + "and not exists (select 1 from task_runs owner_run where owner_run.task_id=owner_task.id "
-            + "and owner_run.status in ('QUEUED','RUNNING','WAITING_INPUT','WAITING_APPROVAL'))))")
+            + "and owner_task.status in ('SUCCEEDED','FAILED','CANCELLED') "
+            + "and not exists (select 1 from agent_runs owner_run where owner_run.task_id=owner_task.id "
+            + "and owner_run.status in ('RUNNING'))))")
     int claimWriteLease(@Param("projectId") UUID projectId, @Param("workspaceId") UUID workspaceId,
                         @Param("taskId") UUID taskId, @Param("token") String token);
 
@@ -66,9 +67,9 @@ public interface WorkspaceMapper extends BaseMapper<WorkspaceEntity> {
             + "where id=#{workspaceId} and project_id=#{projectId} and write_lease_task_id=#{taskId} "
             + "and (write_lease_expires_at <= UTC_TIMESTAMP(6) or exists ("
             + "select 1 from tasks t where t.id=#{taskId} and t.project_id=#{projectId} "
-            + "and t.status in ('SUCCEEDED','FAILED','DELIVERY_FAILED','DIFF_REJECTED','CANCELLED') "
-            + "and not exists (select 1 from task_runs r where r.task_id=t.id "
-            + "and r.status in ('QUEUED','RUNNING','WAITING_INPUT','WAITING_APPROVAL')))))")
+            + "and t.status in ('SUCCEEDED','FAILED','CANCELLED') "
+            + "and not exists (select 1 from agent_runs r where r.task_id=t.id "
+            + "and r.status in ('RUNNING')))))")
     int releaseWriteLeaseForTerminalTask(@Param("projectId") UUID projectId,
                                          @Param("workspaceId") UUID workspaceId,
                                          @Param("taskId") UUID taskId);

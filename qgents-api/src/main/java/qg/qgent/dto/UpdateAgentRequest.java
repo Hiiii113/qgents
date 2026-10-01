@@ -8,8 +8,7 @@ import lombok.Data;
  * 编辑自定义 Agent 请求体（契约 §11.1，接口补充 v2.0.3 §3）。
  * <p>
  * 所有字段均为可选，但请求体至少包含一个字段（服务端校验）。
- * visibility/status/createdBy/isDefault 不允许由客户端修改；role 变更只影响后续新分配的
- * TaskStep，不改变已经定型的 TaskStep.assignedAgentId。
+ * visibility/status/createdBy/isDefault 不允许由客户端修改；role 仅作为用途展示标签。
  */
 @Data
 @Schema(description = "编辑自定义 Agent 请求")
@@ -24,7 +23,7 @@ public class UpdateAgentRequest {
     private String avatar;
 
     @Size(max = 32, message = "role 最长 32 个字符")
-    @Schema(description = "角色标签（可选），变更只影响后续新分配的 TaskStep")
+    @Schema(description = "用途标签（可选），不决定执行阶段或工具权限")
     private String role;
 
     @Size(max = 5000, message = "description 最长 5000 个字符")

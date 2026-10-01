@@ -2,7 +2,7 @@
 
 镜像包含 Java 21、Maven 3.9.11、Gradle 8.10.2、Node.js 22、npm、pnpm、Python、ripgrep、Android SDK Command-line Tools、Android Platform Tools、Android API 35 Platform 与 Build Tools 35.0.0。它支持 Android 的编译和本地 Gradle 单元测试，刻意不安装 Android Studio、Android Emulator、NDK、Git 和 OpenSSH 客户端。
 
-全部 Git 操作由 Sandbox 外的 Workspace Manager 执行；容器只接收当前 TaskRun 获得授权的仓库 worktree bind mount。
+全部 Git 操作由 Sandbox 外的 Workspace Manager 执行；容器只挂载当前 Task 工作区的仓库 worktree。
 
 镜像使用非 root 用户 `developer`（uid/gid 10001）。Android SDK 预置在镜像层的 `/opt/android-sdk`，通过 `ANDROID_HOME` 提供，并由 `developer` 拥有，使 Gradle 能在项目要求不同 `compileSdk` 或 Build Tools 时安装缺失组件；用户级 Android 状态位于 `/home/developer/.android`，由 `ANDROID_USER_HOME` 指定。Worker 默认使用可写 rootfs，并以容器级 tmpfs 挂载开发用户 HOME（默认 `8g`）、pnpm 全局目录（`1g`）以及 Maven、Gradle、npm 和通用缓存目录（默认分别为 `2g`、`3g`、`1g`、`512m`），同时开放 `/tmp`、`/var/tmp` 和 `/run` 的临时空间。Workspace 仍只通过 Worker 挂载当前任务授权的 Repository。项目自带 Wrapper 优先，Wrapper 没有 executable bit 时使用 `sh ./gradlew` 或 `sh ./mvnw` 启动。
 

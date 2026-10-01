@@ -6,11 +6,12 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+
 import qg.qgent.api.ApiException;
-import qg.qgent.entity.GitCredentialPurpose;
 import qg.qgent.github.GitHubAppClient;
+import qg.qgent.entity.GitCredentialPurpose;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -43,12 +44,6 @@ public class GitCredentialServiceIntegrationTest {
 
     @MockitoBean
     private GitHubAppClient githubAppClient;
-
-    @MockitoBean
-    private TaskRunRecoveryScheduler taskRunRecoveryScheduler;
-
-    @MockitoBean
-    private TestRunRecoveryScheduler testRunRecoveryScheduler;
 
     private final UUID teamId = UUID.randomUUID();
     private final UUID projectId = UUID.randomUUID();

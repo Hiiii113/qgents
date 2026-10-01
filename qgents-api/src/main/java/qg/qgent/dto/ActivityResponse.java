@@ -6,9 +6,9 @@ import lombok.NoArgsConstructor;
 
 /**
  * 团队最近动态条目（聚合自项目事件，覆盖最近 24 小时保留窗口）。
- * type 枚举：TASK_COMPLETED/TASK_FAILED/DIFF_CREATED/MR_CREATED/MR_MERGED/TEST_RUN_FAILED。
+ * type 枚举：GROUP_CREATED/TASK_CREATED/TASK_COMPLETED/TASK_FAILED/MR_CREATED/MR_MERGED。
  * 按前端约定后端只回 target.type + target.id，link 由前端自行拼前端路由；
- * actor 无可靠来源（MR 事件、无 task 关联的测试失败）时为 null。
+ * actor 无可靠来源（如 MR 事件）时为 null。
  * createdAt 为 ISO8601 UTC 时间字符串。
  */
 @Data
@@ -37,7 +37,7 @@ public class ActivityResponse {
     }
 
     /**
-     * 动态关联目标；type 取值 GROUP/TASK/MR/PROJECT/DIFF，title 为展示用标题。
+     * 动态关联目标；type 取值 GROUP/TASK/MR/PROJECT，title 为展示用标题。
      */
     @Data
     @NoArgsConstructor

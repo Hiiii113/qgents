@@ -2,8 +2,11 @@ package qg.qgent.sandboxworker.workspace;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+
 import qg.qgent.sandboxworker.api.WorkerException;
 import qg.qgent.sandboxworker.config.SandboxWorkerProperties;
+import qg.qgent.sandboxworker.workspace.GitStoreSyncRequest;
+import qg.qgent.sandboxworker.workspace.GitStoreSyncResponse;
 
 import java.nio.file.Files;
 import java.nio.file.Path;

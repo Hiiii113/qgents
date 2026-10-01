@@ -2,7 +2,10 @@ package qg.qgent.orchestration.tool;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
-import qg.qgent.service.WorkspaceService;
+
+import qg.qgent.orchestration.tool.WorkspaceDirectoryResult;
+import qg.qgent.orchestration.tool.WorkspaceWriteResult;
+import qg.qgent.orchestration.tool.Sha256;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -16,6 +19,7 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.UUID;
+import qg.qgent.service.WorkspaceService;
 
 /**
  * WorkspaceCodeWriter 的本地最小实现，安全约束即本类的核心：

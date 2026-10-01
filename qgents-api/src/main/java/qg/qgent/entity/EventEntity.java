@@ -34,11 +34,11 @@ public class EventEntity {
      */
     private Long sequenceNo;
     /**
-     * 事件类型，如 task-run.updated / diff.created / merge-request.updated。
+     * 事件类型，如 task.updated / merge-request.updated。
      */
     private String eventType;
     /**
-     * 关联资源ID字符串，如 taskRunId。
+     * 关联资源ID字符串，如 agentRunId。
      */
     private String resourceId;
     /**

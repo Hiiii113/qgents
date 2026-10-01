@@ -4,12 +4,21 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import qg.qgent.api.ApiException;
-import qg.qgent.auth.TokenService;
-import qg.qgent.auth.UuidV7;
-import qg.qgent.dto.*;
+
+import qg.qgent.dto.AttachmentCreateRequest;
+import qg.qgent.dto.AttachmentDownloadUrlResponse;
+import qg.qgent.dto.AttachmentPreviewUrlResponse;
+import qg.qgent.dto.AttachmentStatusResponse;
+import qg.qgent.dto.AttachmentUploadCredentialResponse;
+import qg.qgent.dto.UploadCredential;
 import qg.qgent.entity.AttachmentEntity;
 import qg.qgent.mapper.AttachmentMapper;
+import qg.qgent.service.AttachmentContent;
+import qg.qgent.service.AttachmentStorageStrategy;
+import qg.qgent.auth.TokenService;
+import qg.qgent.auth.UuidV7;
+import qg.qgent.api.ApiException;
+import qg.qgent.service.ProjectAccessService;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
