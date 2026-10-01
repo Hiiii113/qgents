@@ -42,7 +42,7 @@ public class AttachmentController {
     private final ObjectMapper objectMapper;
 
     public AttachmentController(AttachmentService attachmentService, TokenService tokenService,
-                                ObjectMapper objectMapper) {
+            ObjectMapper objectMapper) {
         this.attachmentService = attachmentService;
         this.tokenService = tokenService;
         this.objectMapper = objectMapper;
@@ -52,14 +52,14 @@ public class AttachmentController {
     @PostMapping("/projects/{projectId}/attachments")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<?> createCredential(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
-                                           @Valid @RequestBody AttachmentCreateRequest body, HttpServletRequest request) {
+            @Valid @RequestBody AttachmentCreateRequest body, HttpServletRequest request) {
         return ok(attachmentService.createCredential(userId, projectId, body), request);
     }
 
     @Operation(summary = "确认附件上传完成", description = "客户端上传文件后调用，服务端检查文件存在并置 READY。")
     @PostMapping("/projects/{projectId}/attachments/{attachmentId}/confirm")
     public ApiResponse<?> confirm(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
-                                  @PathVariable UUID attachmentId, HttpServletRequest request) {
+            @PathVariable UUID attachmentId, HttpServletRequest request) {
         AttachmentStatusResponse data = attachmentService.confirmUpload(userId, projectId, attachmentId);
         return ok(data, request);
     }
@@ -68,16 +68,16 @@ public class AttachmentController {
     @PutMapping("/projects/{projectId}/attachments/{attachmentId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void upload(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
-                       @PathVariable UUID attachmentId,
-                       @RequestHeader(value = HttpHeaders.CONTENT_TYPE, required = false) String contentType,
-                       HttpServletRequest request) throws IOException {
+            @PathVariable UUID attachmentId,
+            @RequestHeader(value = HttpHeaders.CONTENT_TYPE, required = false) String contentType,
+            HttpServletRequest request) throws IOException {
         attachmentService.uploadBytes(userId, projectId, attachmentId, request.getInputStream(), contentType);
     }
 
     @Operation(summary = "获取附件临时下载地址", description = "返回短期有效的预签名 GET 地址，客户端据此下载/预览文件；过期需重新签发。")
     @GetMapping("/projects/{projectId}/attachments/{attachmentId}/download-url")
     public ApiResponse<?> downloadUrl(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
-                                      @PathVariable UUID attachmentId, HttpServletRequest request) {
+            @PathVariable UUID attachmentId, HttpServletRequest request) {
         AttachmentDownloadUrlResponse data = attachmentService.downloadUrl(userId, projectId, attachmentId);
         return ok(data, request);
     }
@@ -85,7 +85,7 @@ public class AttachmentController {
     @Operation(summary = "获取附件预览元数据与签名预览地址", description = "返回预览类型与短期签名预览地址（带 token），前端可直接交给 img/iframe/系统查看器打开。")
     @GetMapping("/projects/{projectId}/attachments/{attachmentId}/preview-url")
     public ApiResponse<?> previewUrl(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
-                                     @PathVariable UUID attachmentId, HttpServletRequest request) {
+            @PathVariable UUID attachmentId, HttpServletRequest request) {
         return ok(attachmentService.previewUrl(userId, projectId, attachmentId), request);
     }
 
@@ -175,7 +175,7 @@ public class AttachmentController {
                 }
                 end = Math.min(end, total - 1);
             }
-            return new long[]{start, end};
+            return new long[] { start, end };
         } catch (NumberFormatException e) {
             return null;
         }
