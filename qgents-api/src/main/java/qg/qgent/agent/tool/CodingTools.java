@@ -12,9 +12,7 @@ import qg.qgent.workspace.service.DevelopmentCommandId;
 import qg.qgent.workspace.service.DevelopmentCommandPort;
 import qg.qgent.workspace.service.WorkspaceCodeAccess;
 import qg.qgent.workspace.service.WorkspaceCodeWriter;
-import qg.qgent.workspace.service.WorkspaceInfraException;
 
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -29,11 +27,6 @@ import java.util.UUID;
 @Slf4j
 public class CodingTools {
 
-    /**
-     * apply_patch 对同一文件连续失败的阈值；达到后强制切换为带 Hash 校验的整文件替换。
-     */
-    static final int PATCH_FAILURE_ESCALATION_THRESHOLD = 3;
-
     private final UUID workspaceId;
     private final WorkspaceCodeAccess codeAccess;
     private final WorkspaceCodeWriter writer;
@@ -43,29 +36,13 @@ public class CodingTools {
      * 已确认的文件最新 sha256 快照（read_file / 成功写后更新），用于省略重复读取。
      */
     private final Map<String, String> latestSha256 = new HashMap<>();
-    /**
-     * apply_patch 对同一文件连续失败的次数。达到 {@link #PATCH_FAILURE_ESCALATION_THRESHOLD}
-     * 后要求模型使用 replace_file，避免严格 patcher 在模型反复重放时进入死循环。
-     */
-    private final Map<String, Integer> patchFailuresByPath = new HashMap<>();
-    private final WorkspacePathPolicy pathPolicy;
-
-    public CodingTools(UUID workspaceId, WorkspaceCodeAccess codeAccess, WorkspaceCodeWriter writer) {
-        this(workspaceId, codeAccess, writer, List.of());
-    }
 
     public CodingTools(UUID workspaceId, WorkspaceCodeAccess codeAccess, WorkspaceCodeWriter writer,
-                       Collection<String> allowedPaths) {
-        this(workspaceId, codeAccess, writer, allowedPaths, DevelopmentCommandPort.unavailable());
-    }
-
-    public CodingTools(UUID workspaceId, WorkspaceCodeAccess codeAccess, WorkspaceCodeWriter writer,
-                       Collection<String> allowedPaths, DevelopmentCommandPort developmentCommands) {
+                       DevelopmentCommandPort developmentCommands) {
         this.workspaceId = workspaceId;
         this.codeAccess = codeAccess;
         this.writer = writer;
         this.developmentCommands = developmentCommands;
-        this.pathPolicy = WorkspacePathPolicy.of(allowedPaths);
     }
 
     /**
@@ -73,12 +50,12 @@ public class CodingTools {
      * 工具结果直接返回给模型。
      */
     private void recordOutcome(String toolName, String path, boolean ok, boolean changed,
-                               String errorCode, boolean retryable, String error) {
+                               String errorCode, String error) {
         if (ok) {
             log.info("CODING_TOOL_RESULT tool={} path={} ok=true changed={}", toolName, path, changed);
         } else {
-            log.warn("CODING_TOOL_RESULT tool={} path={} ok=false errorCode={} retryable={} error={}",
-                    toolName, path, errorCode, retryable, error);
+            log.warn("CODING_TOOL_RESULT tool={} path={} ok=false errorCode={} error={}",
+                    toolName, path, errorCode, error);
         }
     }
 
@@ -168,14 +145,14 @@ public class CodingTools {
         if (path == null || path.isBlank()) {
             return error("create_directory requires non-empty 'path'");
         }
-        String denied = ensureDirectoryPath(path);
+        String denied = ensureWritablePath(path);
         if (denied != null) {
             return error(denied);
         }
         WorkspaceDirectoryResult result = writer.createDirectory(workspaceId, path);
         if (result.isOk()) {
             recordOutcome("create_directory", result.getPath() == null ? path : result.getPath(),
-                    true, result.isChanged(), null, false, null);
+                    true, result.isCreated(), null, null);
             Map<String, Object> ok = new LinkedHashMap<>();
             ok.put("ok", true);
             ok.put("path", result.getPath());
@@ -183,22 +160,22 @@ public class CodingTools {
             return ok;
         }
         if (result.isInfrastructureFailure()) {
-            throw new WorkspaceInfraException(
+            throw new IllegalStateException(
                     "create_directory infrastructure failure: " + (result.getError() == null
                             ? "workspace unavailable" : result.getError()));
         }
         String message = result.getError() == null ? "directory creation failed" : result.getError();
         recordOutcome("create_directory", result.getPath() == null ? path : result.getPath(), false, false,
-                classifyError(result.getFailureCode(), message), isRetryable(result.getFailureCode(), message), message);
+                result.getFailureCode(), message);
         return error(result.getFailureCode(), message);
     }
 
     @Tool(name = "apply_patch", description = "对已有文本文件精确应用统一 Diff（不能用于创建新文件）；"
             + "expectedHash 可省略——省略时使用本会话已确认的最新哈希，否则先 read_file 获取；"
-            + "同一文件连续失败 " + PATCH_FAILURE_ESCALATION_THRESHOLD + " 次后必须改用 replace_file")
+            + "补丁失败时可重新读取文件并修正补丁，或使用 replace_file")
     public Map<String, Object> applyPatch(
             @ToolParam(description = "工作区内的相对路径") String path,
-            @ToolParam(description = "可选：期望的当前文件 64 位十六进制 sha256，省略则用已确认的最新哈希") String expectedHash,
+            @ToolParam(description = "可选：期望的当前文件 64 位十六进制 sha256，省略则用已确认的最新哈希", required = false) String expectedHash,
             @ToolParam(description = "统一 Diff 文本") String patch) {
         if (path == null || path.isBlank()) {
             return error("apply_patch requires non-empty 'path'");
@@ -222,10 +199,8 @@ public class CodingTools {
         }
         WorkspaceWriteResult result = writer.patchFile(workspaceId, path, expectedHash, patch);
         if (result.isOk()) {
-            // 成功应用后重置该文件的连续失败计数，避免历史失败把后续成功误判为升级。
-            patchFailuresByPath.remove(path);
             latestSha256.put(path, result.getNewSha256());
-            recordOutcome("apply_patch", path, true, result.isChanged(), null, false, null);
+            recordOutcome("apply_patch", path, true, result.isChanged(), null, null);
             Map<String, Object> ok = new LinkedHashMap<>();
             ok.put("ok", true);
             ok.put("path", path);
@@ -235,34 +210,16 @@ public class CodingTools {
             return ok;
         }
         if (result.isInfrastructureFailure()) {
-            throw new WorkspaceInfraException(
+            throw new IllegalStateException(
                     "apply_patch infrastructure failure: " + (result.getError() == null
                             ? "workspace unavailable" : result.getError()));
         }
-        return patchFailed(path, result.getFailureCode(), result.getError() == null ? "patch failed" : result.getError());
+        String message = result.getError() == null ? "patch failed" : result.getError();
+        recordOutcome("apply_patch", path, false, false, result.getFailureCode(), message);
+        return error(result.getFailureCode(), message);
     }
 
-    /**
-     * apply_patch 工具级失败：按文件累计连续失败次数，达到阈值后要求使用
-     * replace_file，并返回带专门 nextAction 的错误；每次失败都记录脱敏结果。
-     */
-    private Map<String, Object> patchFailed(String path, String failureCode, String error) {
-        int failures = patchFailuresByPath.merge(path, 1, Integer::sum);
-        String message;
-        if (failures >= PATCH_FAILURE_ESCALATION_THRESHOLD) {
-            message = "该文件已连续 " + PATCH_FAILURE_ESCALATION_THRESHOLD + " 次补丁失败（" + error
-                    + "），请停止生成 Patch，先 read_file 获取最新内容和 sha256，再调用 replace_file 提供完整文件内容";
-            recordOutcome("apply_patch", path, false, false, "TOOL_PATCH_REPAIR_REQUIRED", true, message);
-            return error("TOOL_PATCH_REPAIR_REQUIRED", message);
-        } else {
-            message = error;
-        }
-        recordOutcome("apply_patch", path, false, false, classifyError(failureCode, message),
-                isRetryable(failureCode, message), message);
-        return error(failureCode, message);
-    }
-
-    @Tool(name = "replace_file", description = "对已有 UTF-8 文本文件执行带 expectedHash 校验的整文件原子替换；仅在 apply_patch 连续失败后使用，不能创建新文件")
+    @Tool(name = "replace_file", description = "对已有 UTF-8 文本文件执行带 expectedHash 校验的整文件原子替换；不能创建新文件")
     public Map<String, Object> replaceFile(
             @ToolParam(description = "工作区内的相对路径") String path,
             @ToolParam(description = "read_file 返回的 64 位十六进制 sha256") String expectedHash,
@@ -282,9 +239,8 @@ public class CodingTools {
         }
         WorkspaceWriteResult result = writer.replaceFile(workspaceId, path, expectedHash, content);
         if (result.isOk()) {
-            patchFailuresByPath.remove(path);
             latestSha256.put(path, result.getNewSha256());
-            recordOutcome("replace_file", path, true, result.isChanged(), null, false, null);
+            recordOutcome("replace_file", path, true, result.isChanged(), null, null);
             Map<String, Object> ok = new LinkedHashMap<>();
             ok.put("ok", true);
             ok.put("path", path);
@@ -294,12 +250,11 @@ public class CodingTools {
             return ok;
         }
         if (result.isInfrastructureFailure()) {
-            throw new WorkspaceInfraException("replace_file infrastructure failure: "
+            throw new IllegalStateException("replace_file infrastructure failure: "
                     + (result.getError() == null ? "workspace unavailable" : result.getError()));
         }
         String message = result.getError() == null ? "replace failed" : result.getError();
-        recordOutcome("replace_file", path, false, false, classifyError(result.getFailureCode(), message),
-                isRetryable(result.getFailureCode(), message), message);
+        recordOutcome("replace_file", path, false, false, result.getFailureCode(), message);
         return error(result.getFailureCode(), message);
     }
 
@@ -320,14 +275,13 @@ public class CodingTools {
         if (exists(path)) {
             String message = "write_file only creates new files; '" + path
                     + "' already exists, use apply_patch or replace_file";
-            recordOutcome("write_file", path, false, false, classifyError(null, message),
-                    isRetryable(null, message), message);
-            return error(message);
+            recordOutcome("write_file", path, false, false, "FILE_ALREADY_EXISTS", message);
+            return error("FILE_ALREADY_EXISTS", message);
         }
         WorkspaceWriteResult result = writer.writeFile(workspaceId, path, content);
         if (result.isOk()) {
             latestSha256.put(path, result.getNewSha256());
-            recordOutcome("write_file", path, true, result.isChanged(), null, false, null);
+            recordOutcome("write_file", path, true, result.isChanged(), null, null);
             Map<String, Object> ok = new LinkedHashMap<>();
             ok.put("ok", true);
             ok.put("path", path);
@@ -337,20 +291,19 @@ public class CodingTools {
             return ok;
         }
         if (result.isInfrastructureFailure()) {
-            throw new WorkspaceInfraException(
+            throw new IllegalStateException(
                     "write_file infrastructure failure: " + (result.getError() == null
                             ? "workspace unavailable" : result.getError()));
         }
         String message = result.getError() == null ? "write failed" : result.getError();
-        recordOutcome("write_file", path, false, false, classifyError(result.getFailureCode(), message),
-                isRetryable(result.getFailureCode(), message), message);
+        recordOutcome("write_file", path, false, false, result.getFailureCode(), message);
         return error(result.getFailureCode(), message);
     }
 
     @Tool(name = "ensure_trailing_newline", description = "确保已有文本文件以换行结尾：文件当前不以换行结尾时，按 read_file 返回的 expectedHash 校验后追加一个换行（保持原换行风格）；已在文件末尾时幂等返回 changed=false；expectedHash 可省略——省略时使用本会话已确认的最新哈希，否则先 read_file 获取")
     public Map<String, Object> ensureTrailingNewline(
             @ToolParam(description = "工作区内的相对路径") String path,
-            @ToolParam(description = "可选：期望的当前文件 64 位十六进制 sha256，省略则用已确认的最新哈希") String expectedHash) {
+            @ToolParam(description = "可选：期望的当前文件 64 位十六进制 sha256，省略则用已确认的最新哈希", required = false) String expectedHash) {
         if (path == null || path.isBlank()) {
             return error("ensure_trailing_newline requires non-empty 'path'");
         }
@@ -370,9 +323,8 @@ public class CodingTools {
         }
         WorkspaceWriteResult result = writer.ensureTrailingNewline(workspaceId, path, expectedHash);
         if (result.isOk()) {
-            patchFailuresByPath.remove(path);
             latestSha256.put(path, result.getNewSha256());
-            recordOutcome("ensure_trailing_newline", path, true, result.isChanged(), null, false, null);
+            recordOutcome("ensure_trailing_newline", path, true, result.isChanged(), null, null);
             Map<String, Object> ok = new LinkedHashMap<>();
             ok.put("ok", true);
             ok.put("path", path);
@@ -381,13 +333,12 @@ public class CodingTools {
             return ok;
         }
         if (result.isInfrastructureFailure()) {
-            throw new WorkspaceInfraException("ensure_trailing_newline infrastructure failure: "
+            throw new IllegalStateException("ensure_trailing_newline infrastructure failure: "
                     + (result.getError() == null ? "workspace unavailable" : result.getError()));
         }
         String message = result.getError() == null ? "ensure trailing newline failed" : result.getError();
         recordOutcome("ensure_trailing_newline", path, false, false,
-                classifyError(result.getFailureCode(), message),
-                isRetryable(result.getFailureCode(), message), message);
+                result.getFailureCode(), message);
         return error(result.getFailureCode(), message);
     }
 
@@ -404,126 +355,19 @@ public class CodingTools {
         if (WorkspacePathPolicy.normalize(path) == null) {
             return "path is invalid or escapes the workspace";
         }
-        if (!pathPolicy.allows(path)) {
-            return "path is outside the configured workspace paths";
-        }
-        return null;
-    }
-
-    private String ensureDirectoryPath(String path) {
-        if (WorkspacePathPolicy.normalize(path) == null) {
-            return "path is invalid or escapes the workspace";
-        }
-        if (!pathPolicy.allowsDirectory(path)) {
-            return "path is outside the configured workspace paths";
-        }
         return null;
     }
 
     private Map<String, Object> error(String message) {
-        return error(null, message);
+        return error("TOOL_ARGUMENT_INVALID", message);
     }
 
     private Map<String, Object> error(String failureCode, String message) {
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("ok", false);
-        result.put("errorCode", classifyError(failureCode, message));
-        result.put("retryable", isRetryable(failureCode, message));
+        result.put("errorCode", failureCode == null ? "TOOL_FAILED" : failureCode);
         result.put("error", message);
-        result.put("nextAction", nextAction(failureCode, message));
         return result;
     }
 
-    private String classifyError(String message) {
-        return classifyError(null, message);
-    }
-
-    private String classifyError(String failureCode, String message) {
-        if (failureCode != null) {
-            return switch (failureCode) {
-                case "FILE_PATCH_FAILED" -> "TOOL_PATCH_FORMAT_INVALID";
-                case "TOOL_PATCH_REPAIR_REQUIRED" -> "TOOL_PATCH_REPAIR_REQUIRED";
-                case "FILE_HASH_MISMATCH" -> "TOOL_CONFLICT";
-                case "TOOL_PATH_INVALID" -> "TOOL_PATH_INVALID";
-                case "TOOL_ARGUMENT_INVALID", "COMMAND_NOT_ALLOWED" -> "TOOL_ARGUMENT_INVALID";
-                default -> "TOOL_EXECUTION_FAILED";
-            };
-        }
-        if (message == null) {
-            return "TOOL_EXECUTION_FAILED";
-        }
-        if (message.contains("UTF-8") || message.contains("exceeds")) {
-            return "TOOL_CONTENT_INVALID";
-        }
-        if (message.contains("FILE_PATCH_FAILED") || message.contains("PATCH_")
-                || message.contains("补丁") || message.contains("hunk")) {
-            return "TOOL_PATCH_FORMAT_INVALID";
-        }
-        if (message.contains("outside") || message.contains("escapes") || message.contains("invalid")) {
-            return "TOOL_PATH_INVALID";
-        }
-        if (message.contains("FILE_HASH_MISMATCH") || message.contains("hash") || message.contains("changed since read")) {
-            return "TOOL_CONFLICT";
-        }
-        if (message.contains("requires") || message.contains("non-empty")) {
-            return "TOOL_ARGUMENT_INVALID";
-        }
-        return "TOOL_EXECUTION_FAILED";
-    }
-
-    private boolean isRetryable(String message) {
-        return isRetryable(null, message);
-    }
-
-    private boolean isRetryable(String failureCode, String message) {
-        if (failureCode != null) {
-            return "FILE_PATCH_FAILED".equals(failureCode) || "FILE_HASH_MISMATCH".equals(failureCode)
-                    || "TOOL_PATCH_REPAIR_REQUIRED".equals(failureCode);
-        }
-        if (message != null && (message.contains("FILE_PATCH_FAILED") || message.contains("PATCH_")
-                || message.contains("补丁") || message.contains("hunk"))) {
-            return true;
-        }
-        return message != null && !message.contains("outside") && !message.contains("escapes")
-                && !message.contains("invalid") && !message.contains("already exists")
-                && !message.contains("exceeds") && !message.contains("UTF-8");
-    }
-
-    private String nextAction(String message) {
-        return nextAction(null, message);
-    }
-
-    private String nextAction(String failureCode, String message) {
-        if ("TOOL_PATCH_REPAIR_REQUIRED".equals(failureCode)
-                || (message != null && message.contains("请停止生成 Patch"))) {
-            return "该文件已连续 " + PATCH_FAILURE_ESCALATION_THRESHOLD
-                    + " 次补丁失败；请先用 read_file 获取最新内容，再调用 replace_file 提供完整文件内容";
-        }
-        if ("FILE_PATCH_FAILED".equals(failureCode)) {
-            return "不要重复原 patch；先 read_file 获取最新内容和 sha256，再按实际内容重新生成完整 unified diff；新文件改用 write_file";
-        }
-        if ("FILE_HASH_MISMATCH".equals(failureCode)) {
-            return "先重新 read_file 获取当前 sha256，再用 apply_patch";
-        }
-        if (message == null) {
-            return "检查工具参数和工作区状态后再试一次";
-        }
-        if (message.contains("FILE_PATCH_FAILED") || message.contains("PATCH_")
-                || message.contains("补丁") || message.contains("hunk")) {
-            return "不要重复原 patch；先 read_file 获取最新内容和 sha256，再按实际内容重新生成完整 unified diff；新文件改用 write_file";
-        }
-        if (message.contains("FILE_HASH_MISMATCH") || message.contains("hash") || message.contains("changed since read")) {
-            return "先重新 read_file 获取当前 sha256，再用 apply_patch";
-        }
-        if (message.contains("only creates new files") || message.contains("already exists")) {
-            return "已有文件必须使用 apply_patch，不要用 write_file 覆盖";
-        }
-        if (message.contains("exceeds") || message.contains("UTF-8")) {
-            return "缩小内容或使用 UTF-8 文本后再调用，不要原样重试";
-        }
-        if (message.contains("outside") || message.contains("escapes") || message.contains("invalid")) {
-            return "改用当前工作区内的相对路径，不要重试越界路径";
-        }
-        return "根据 error 修正参数后重试一次，不要原样重复失败调用";
-    }
 }

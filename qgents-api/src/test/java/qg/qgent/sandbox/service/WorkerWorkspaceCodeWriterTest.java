@@ -44,7 +44,7 @@ class WorkerWorkspaceCodeWriterTest {
     void setUp() {
         client = mock(SandboxWorkerClient.class);
         sessions = mock(SandboxSessionManager.class);
-        writer = new WorkerWorkspaceCodeWriter(client, sessions, new SandboxWorkerProperties());
+        writer = new WorkerWorkspaceCodeWriter(client, sessions, new SandboxWorkerProperties(), mock(qg.qgent.agent.service.AgentWorkerExecutionService.class));
     }
 
     private SandboxSession session() {
@@ -96,7 +96,7 @@ class WorkerWorkspaceCodeWriterTest {
                 execution.setResult(Map.of("path", request.getArguments().get("path"), "sha256", "current-hash"));
             } else {
                 execution.setResult(Map.of("path", request.getArguments().get("path"),
-                        "sha256", "new-hash", "bytes", 5));
+                        "sha256", "new-hash", "bytes", 5, "changed", true));
             }
             return execution;
         });
@@ -104,7 +104,6 @@ class WorkerWorkspaceCodeWriterTest {
         WorkspaceWriteResult result = writer.writeFile(WORKSPACE, "repo-1/src/Foo.java", "hello");
 
         assertThat(result.isOk()).isTrue();
-        // 兼容旧 Worker：缺少 changed 时，按写入前后的 SHA 推断为真实变更。
         assertThat(result.getNewSha256()).isEqualTo("new-hash");
         assertThat(result.isChanged()).isTrue();
         ArgumentCaptor<WorkerToolExecutionRequest> captor =
@@ -139,13 +138,13 @@ class WorkerWorkspaceCodeWriterTest {
     }
 
     @Test
-    void writeFileTreatsMissingChangedAsUnchangedWhenShaIsIdentical() {
+    void writeFilePassesThroughUnchangedResult() {
         when(sessions.require(WORKSPACE)).thenReturn(session());
         stubToolExecution(request -> {
             WorkerToolExecution execution = new WorkerToolExecution();
             execution.setStatus("SUCCEEDED");
             execution.setResult(Map.of("path", request.getArguments().get("path"),
-                    "sha256", "same-hash", "bytes", 5));
+                    "sha256", "same-hash", "bytes", 5, "changed", false));
             return execution;
         });
 
@@ -238,32 +237,17 @@ class WorkerWorkspaceCodeWriterTest {
     }
 
     @Test
-    void patchFileTreatsLegacyWorkerFailureWithoutCodeAsToolFailure() {
+    void patchFileTreatsUnclassifiedFailureAsInfrastructureFailure() {
         when(sessions.require(WORKSPACE)).thenReturn(session());
-        WorkerToolExecution legacyFailure = failed(null, null);
-        legacyFailure.setTool("file.patch");
-        stubToolExecution(request -> legacyFailure);
+        WorkerToolExecution failure = failed(null, null);
+        failure.setTool("file.patch");
+        stubToolExecution(request -> failure);
 
         WorkspaceWriteResult result = writer.patchFile(WORKSPACE, "repo-1/src/Foo.java", HASH,
                 "@@ -1,1 +1,1 @@\n-a\n+b\n");
 
         assertThat(result.isOk()).isFalse();
-        assertThat(result.isInfrastructureFailure()).isFalse();
-    }
-
-    @Test
-    void patchFileTreatsLegacyWorkerFailureWithoutToolNameAsToolFailure() {
-        when(sessions.require(WORKSPACE)).thenReturn(session());
-        // Old Worker versions may omit both failureCode and tool; the caller still knows this
-        // operation was file.patch and must preserve a model-repairable failure classification.
-        stubToolExecution(request -> failed(null, null));
-
-        WorkspaceWriteResult result = writer.patchFile(WORKSPACE, "repo-1/src/Foo.java", HASH,
-                "@@ -1,1 +1,1 @@\n-a\n+b\n");
-
-        assertThat(result.isOk()).isFalse();
-        assertThat(result.isInfrastructureFailure()).isFalse();
-        assertThat(result.getFailureCode()).isEqualTo("FILE_PATCH_FAILED");
+        assertThat(result.isInfrastructureFailure()).isTrue();
     }
 
     @Test

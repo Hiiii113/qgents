@@ -1,6 +1,8 @@
 package qg.qgent.agent.tool;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.support.ToolCallbacks;
 
 import qg.qgent.workspace.dto.DevelopmentCommandResult;
 import qg.qgent.workspace.dto.WorkspaceDirectoryResult;
@@ -10,7 +12,6 @@ import qg.qgent.workspace.service.DevelopmentCommandId;
 import qg.qgent.workspace.service.DevelopmentCommandPort;
 import qg.qgent.workspace.service.WorkspaceCodeAccess;
 import qg.qgent.workspace.service.WorkspaceCodeWriter;
-import qg.qgent.workspace.service.WorkspaceInfraException;
 
 import java.util.List;
 import java.util.Map;
@@ -31,6 +32,34 @@ import static org.mockito.Mockito.when;
  */
 class CodingToolsTest {
 
+    @Test
+    void cachedHashParametersAreOptionalInModelToolSchema() throws Exception {
+        var json = new ObjectMapper();
+        var callbacks = ToolCallbacks.from(tools());
+        for (var callback : callbacks) {
+            var definition = callback.getToolDefinition();
+            if (definition.name().equals("apply_patch") || definition.name().equals("ensure_trailing_newline")) {
+                var required = json.readTree(definition.inputSchema()).get("required");
+                assertThat(required.toString()).contains("path").doesNotContain("expectedHash");
+            }
+        }
+    }
+
+    @Test
+    void repeatedPatchFailuresPreserveWorkerCodeAndLeaveRecoveryToModel() {
+        when(writer.patchFile(workspaceId, "src/X.java", HASH, "bad patch"))
+                .thenReturn(WorkspaceWriteResult.fail("src/X.java", "FILE_PATCH_FAILED", "hunk 不匹配"));
+        CodingTools tools = tools();
+        for (int attempt = 0; attempt < 4; attempt++) {
+            assertThat(tools.applyPatch("src/X.java", HASH, "bad patch"))
+                    .containsEntry("ok", false)
+                    .containsEntry("errorCode", "FILE_PATCH_FAILED")
+                    .containsEntry("error", "hunk 不匹配")
+                    .doesNotContainKeys("nextAction", "retryable");
+        }
+        verify(writer, never()).replaceFile(any(), any(), any(), any());
+    }
+
     private static final String HASH = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     private static final String NEW_HASH = "1111111111111111111111111111111111111111111111111111111111111111";
     private static final String NEWER_HASH = "2222222222222222222222222222222222222222222222222222222222222222";
@@ -40,11 +69,7 @@ class CodingToolsTest {
     private final UUID workspaceId = UUID.randomUUID();
 
     private CodingTools tools() {
-        return new CodingTools(workspaceId, codeAccess, writer);
-    }
-
-    private CodingTools scopedTools(String... allowedPaths) {
-        return new CodingTools(workspaceId, codeAccess, writer, List.of(allowedPaths));
+        return new CodingTools(workspaceId, codeAccess, writer, mock(DevelopmentCommandPort.class));
     }
 
     @Test
@@ -53,7 +78,7 @@ class CodingToolsTest {
         when(commands.run(workspaceId, "repo-1", DevelopmentCommandId.MAVEN_TEST))
                 .thenReturn(new DevelopmentCommandResult(false, "MAVEN_TEST", 1,
                         "PROCESS_EXIT_NONZERO", "固定开发命令执行失败"));
-        CodingTools tools = new CodingTools(workspaceId, codeAccess, writer, List.of(), commands);
+        CodingTools tools = new CodingTools(workspaceId, codeAccess, writer, commands);
 
         Map<String, Object> result = tools.runDevelopmentCommand("MAVEN_TEST", "repo-1");
 
@@ -67,7 +92,7 @@ class CodingToolsTest {
     @Test
     void developmentCommandRejectsUnknownIdBeforeCallingPort() {
         DevelopmentCommandPort commands = mock(DevelopmentCommandPort.class);
-        CodingTools tools = new CodingTools(workspaceId, codeAccess, writer, List.of(), commands);
+        CodingTools tools = new CodingTools(workspaceId, codeAccess, writer, commands);
 
         Map<String, Object> result = tools.runDevelopmentCommand("GIT_STATUS", null);
 
@@ -246,7 +271,7 @@ class CodingToolsTest {
                 .thenReturn(WorkspaceWriteResult.infraFail("src/main/java/X.java", "workspace root is not available"));
 
         assertThatThrownBy(() -> tools().applyPatch("src/main/java/X.java", HASH, "patch"))
-                .isInstanceOf(WorkspaceInfraException.class)
+                .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("apply_patch infrastructure failure");
     }
 
@@ -278,34 +303,7 @@ class CodingToolsTest {
     }
 
     @Test
-    void configuredPathsRejectWriteOutsideWorkspaceScope() {
-        CodingTools tools = scopedTools("repo-2/what the fox said.txt");
-
-        Map<String, Object> result = tools.writeFile("repo-3/holy shit.txt", "wrong step");
-
-        assertThat(result.get("ok")).isEqualTo(false);
-        assertThat((String) result.get("error")).contains("outside the configured workspace paths");
-        verify(writer, never()).writeFile(any(), any(), any());
-    }
-
-    @Test
-    void scopedStepAllowsDeclaredFileAndRejectsTraversal() {
-        when(codeAccess.listFiles(workspaceId)).thenReturn(List.of());
-        when(writer.writeFile(workspaceId, "repo-2/what the fox said.txt", "ok"))
-                .thenReturn(WorkspaceWriteResult.ok("repo-2/what the fox said.txt", NEW_HASH, true));
-        CodingTools tools = scopedTools("repo-2/what the fox said.txt");
-
-        Map<String, Object> allowed = tools.writeFile("repo-2/what the fox said.txt", "ok");
-        Map<String, Object> traversal = tools.writeFile("repo-2/../repo-3/holy shit.txt", "wrong");
-
-        assertThat(allowed.get("ok")).isEqualTo(true);
-        assertThat(traversal.get("ok")).isEqualTo(false);
-        verify(writer).writeFile(workspaceId, "repo-2/what the fox said.txt", "ok");
-        verify(writer, never()).writeFile(workspaceId, "repo-3/holy shit.txt", "wrong");
-    }
-
-    @Test
-    void legacyEmptyPolicyRemainsCompatible() {
+    void writeFileAcceptsWorkspaceRelativePath() {
         when(codeAccess.listFiles(workspaceId)).thenReturn(List.of());
         when(writer.writeFile(workspaceId, "legacy.txt", "ok"))
                 .thenReturn(WorkspaceWriteResult.ok("legacy.txt", NEW_HASH, true));
@@ -334,7 +332,7 @@ class CodingToolsTest {
                 .thenReturn(WorkspaceWriteResult.infraFail("src/main/java/Y.java", "workspace root is not available"));
 
         assertThatThrownBy(() -> tools().writeFile("src/main/java/Y.java", "code"))
-                .isInstanceOf(WorkspaceInfraException.class)
+                .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("write_file infrastructure failure");
     }
 
@@ -368,22 +366,20 @@ class CodingToolsTest {
                 .thenReturn(WorkspaceDirectoryResult.infraFail("src/main/java", "workspace unavailable"));
 
         assertThatThrownBy(() -> tools().createDirectory("src/main/java"))
-                .isInstanceOf(WorkspaceInfraException.class)
+                .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("create_directory infrastructure failure");
     }
 
     @Test
-    void patchFormatFailureReturnsStructuredRecoveryGuidance() {
+    void patchFailureReturnsOriginalError() {
         when(writer.patchFile(workspaceId, "src/main/java/X.java", HASH, "bad patch"))
-                .thenReturn(WorkspaceWriteResult.fail("src/main/java/X.java",
-                        "FILE_PATCH_FAILED: hunk 声明行数与正文不一致"));
+                .thenReturn(WorkspaceWriteResult.fail("src/main/java/X.java", "FILE_PATCH_FAILED",
+                        "hunk 声明行数与正文不一致"));
 
         Map<String, Object> result = tools().applyPatch("src/main/java/X.java", HASH, "bad patch");
 
         assertThat(result).containsEntry("ok", false)
-                .containsEntry("errorCode", "TOOL_PATCH_FORMAT_INVALID")
-                .containsEntry("retryable", true)
-                .containsEntry("nextAction", "不要重复原 patch；先 read_file 获取最新内容和 sha256，再按实际内容重新生成完整 unified diff；新文件改用 write_file");
+                .containsEntry("errorCode", "FILE_PATCH_FAILED");
     }
 
     @Test
@@ -395,9 +391,7 @@ class CodingToolsTest {
         Map<String, Object> result = tools().applyPatch("src/main/java/X.java", HASH, "bad patch");
 
         assertThat(result).containsEntry("ok", false)
-                .containsEntry("errorCode", "TOOL_PATCH_FORMAT_INVALID")
-                .containsEntry("retryable", true)
-                .containsEntry("nextAction", "不要重复原 patch；先 read_file 获取最新内容和 sha256，再按实际内容重新生成完整 unified diff；新文件改用 write_file");
+                .containsEntry("errorCode", "FILE_PATCH_FAILED");
     }
 
     @Test
@@ -409,15 +403,11 @@ class CodingToolsTest {
         Map<String, Object> result = tools().applyPatch("src/main/java/X.java", HASH, "patch");
 
         assertThat(result).containsEntry("ok", false)
-                .containsEntry("errorCode", "TOOL_CONFLICT")
-                .containsEntry("retryable", true)
-                .containsEntry("nextAction", "先重新 read_file 获取当前 sha256，再用 apply_patch");
+                .containsEntry("errorCode", "FILE_HASH_MISMATCH");
     }
 
-    // ---------- apply_patch 连续失败升级：切换为带 Hash 校验的 replace_file ----------
-
     @Test
-    void applyPatchConsecutiveFailuresRequireReplaceFile() {
+    void modelCanChooseReplaceFileAfterPatchFailure() {
         when(codeAccess.listFiles(workspaceId)).thenReturn(List.of("src/main/java/X.java"));
         when(writer.patchFile(workspaceId, "src/main/java/X.java", HASH, "patch"))
                 .thenReturn(WorkspaceWriteResult.fail("src/main/java/X.java", "FILE_PATCH_FAILED",
@@ -426,75 +416,13 @@ class CodingToolsTest {
                 .thenReturn(WorkspaceWriteResult.ok("src/main/java/X.java", NEW_HASH, true));
         CodingTools tools = tools();
 
-        for (int i = 0; i < CodingTools.PATCH_FAILURE_ESCALATION_THRESHOLD; i++) {
-            assertThat(tools.applyPatch("src/main/java/X.java", HASH, "patch").get("ok")).isEqualTo(false);
-        }
+        assertThat(tools.applyPatch("src/main/java/X.java", HASH, "patch").get("ok")).isEqualTo(false);
 
         Map<String, Object> overwrite = tools.replaceFile("src/main/java/X.java", HASH, "full content");
 
         assertThat(overwrite.get("ok")).isEqualTo(true);
         assertThat(overwrite.get("changed")).isEqualTo(true);
         verify(writer).replaceFile(workspaceId, "src/main/java/X.java", HASH, "full content");
-    }
-
-    @Test
-    void applyPatchFailuresBelowThresholdKeepWriteFileRejected() {
-        when(codeAccess.listFiles(workspaceId)).thenReturn(List.of("src/main/java/X.java"));
-        when(writer.patchFile(workspaceId, "src/main/java/X.java", HASH, "patch"))
-                .thenReturn(WorkspaceWriteResult.fail("src/main/java/X.java", "FILE_PATCH_FAILED",
-                        "hunk 声明行数与正文不一致"));
-        CodingTools tools = tools();
-
-        for (int i = 0; i < CodingTools.PATCH_FAILURE_ESCALATION_THRESHOLD - 1; i++) {
-            tools.applyPatch("src/main/java/X.java", HASH, "patch");
-        }
-
-        Map<String, Object> result = tools.writeFile("src/main/java/X.java", "overwrite");
-
-        assertThat(result.get("ok")).isEqualTo(false);
-        assertThat((String) result.get("error")).contains("only creates new files");
-        verify(writer, never()).writeFile(any(), any(), any());
-    }
-
-    @Test
-    void applyPatchSuccessResetsConsecutiveFailureCounter() {
-        when(codeAccess.listFiles(workspaceId)).thenReturn(List.of("src/main/java/X.java"));
-        when(writer.patchFile(workspaceId, "src/main/java/X.java", HASH, "bad"))
-                .thenReturn(WorkspaceWriteResult.fail("src/main/java/X.java", "FILE_PATCH_FAILED",
-                        "hunk 声明行数与正文不一致"));
-        when(writer.patchFile(workspaceId, "src/main/java/X.java", HASH, "good"))
-                .thenReturn(WorkspaceWriteResult.ok("src/main/java/X.java", NEW_HASH, true));
-        CodingTools tools = tools();
-
-        tools.applyPatch("src/main/java/X.java", HASH, "bad");
-        tools.applyPatch("src/main/java/X.java", HASH, "bad");
-        tools.applyPatch("src/main/java/X.java", HASH, "good"); // 成功，重置连续失败计数
-        tools.applyPatch("src/main/java/X.java", HASH, "bad");
-        tools.applyPatch("src/main/java/X.java", HASH, "bad"); // 成功后又失败 2 次 < 3
-
-        Map<String, Object> result = tools.writeFile("src/main/java/X.java", "overwrite");
-
-        assertThat(result.get("ok")).isEqualTo(false);
-        verify(writer, never()).writeFile(any(), any(), any());
-    }
-
-    @Test
-    void applyPatchEscalationMessageDirectsFullFileRewrite() {
-        when(writer.patchFile(workspaceId, "src/main/java/X.java", HASH, "patch"))
-                .thenReturn(WorkspaceWriteResult.fail("src/main/java/X.java", "FILE_PATCH_FAILED",
-                        "hunk 声明行数与正文不一致"));
-        CodingTools tools = tools();
-
-        Map<String, Object> result = null;
-        for (int i = 0; i < CodingTools.PATCH_FAILURE_ESCALATION_THRESHOLD; i++) {
-            result = tools.applyPatch("src/main/java/X.java", HASH, "patch");
-        }
-
-        assertThat(result).containsEntry("ok", false)
-                .containsEntry("errorCode", "TOOL_PATCH_REPAIR_REQUIRED")
-                .containsEntry("retryable", true);
-        assertThat((String) result.get("error")).contains("replace_file");
-        assertThat((String) result.get("nextAction")).contains("replace_file").contains("完整文件内容");
     }
 
     @Test
@@ -506,8 +434,7 @@ class CodingToolsTest {
         Map<String, Object> result = tools().replaceFile("src/main/java/X.java", HASH, "full content");
 
         assertThat(result).containsEntry("ok", false)
-                .containsEntry("errorCode", "TOOL_CONFLICT")
-                .containsEntry("retryable", true);
+                .containsEntry("errorCode", "FILE_HASH_MISMATCH");
         verify(writer).replaceFile(workspaceId, "src/main/java/X.java", HASH, "full content");
     }
 
@@ -520,13 +447,11 @@ class CodingToolsTest {
                         "file changed since read"));
         CodingTools tools = tools();
 
-        for (int i = 0; i < CodingTools.PATCH_FAILURE_ESCALATION_THRESHOLD; i++) {
-            tools.applyPatch("src/main/java/X.java", HASH, "patch");
-        }
+        tools.applyPatch("src/main/java/X.java", HASH, "patch");
         Map<String, Object> result = tools.replaceFile("src/main/java/X.java", HASH, "full content");
 
         assertThat(result.get("ok")).isEqualTo(false);
-        assertThat(result.get("errorCode")).isEqualTo("TOOL_CONFLICT");
+        assertThat(result.get("errorCode")).isEqualTo("FILE_HASH_MISMATCH");
     }
 
 }

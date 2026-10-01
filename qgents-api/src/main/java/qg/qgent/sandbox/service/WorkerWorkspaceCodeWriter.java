@@ -1,6 +1,5 @@
 package qg.qgent.sandbox.service;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -50,13 +49,6 @@ public class WorkerWorkspaceCodeWriter extends AbstractWorkerToolPort implements
             "FILE_HASH_MISMATCH", "FILE_PATCH_FAILED", "TOOL_ARGUMENT_INVALID", "TOOL_PATH_INVALID",
             "TOOL_NOT_SUPPORTED", "COMMAND_NOT_ALLOWED");
 
-    /** 兼容无 Spring 容器的端口单元测试；生产装配使用带诊断持久化服务的构造器。 */
-    public WorkerWorkspaceCodeWriter(SandboxWorkerClient client, SandboxSessionManager sessions,
-                                     SandboxWorkerProperties properties) {
-        super(client, sessions, properties);
-    }
-
-    @Autowired
     public WorkerWorkspaceCodeWriter(SandboxWorkerClient client, SandboxSessionManager sessions,
                                      SandboxWorkerProperties properties,
                                      AgentWorkerExecutionService workerExecutionService) {
@@ -112,7 +104,7 @@ public class WorkerWorkspaceCodeWriter extends AbstractWorkerToolPort implements
                     Map.of("path", target.relativePath(), "expectedHash", expectedHash, "content", content),
                     TOOL_TIMEOUT);
             if ("SUCCEEDED".equals(execution.getStatus())) {
-                return okResult(path, execution, expectedHash);
+                return okResult(path, execution);
             }
             return writeFailure(path, execution, "write failed");
         } catch (RuntimeException e) {
@@ -145,7 +137,7 @@ public class WorkerWorkspaceCodeWriter extends AbstractWorkerToolPort implements
                     Map.of("path", target.relativePath(), "expectedHash", expectedHash, "content", content),
                     TOOL_TIMEOUT);
             if ("SUCCEEDED".equals(execution.getStatus())) {
-                return okResult(path, execution, expectedHash);
+                return okResult(path, execution);
             }
             return writeFailure(path, execution, "replace failed");
         } catch (RuntimeException e) {
@@ -176,9 +168,9 @@ public class WorkerWorkspaceCodeWriter extends AbstractWorkerToolPort implements
                     Map.of("path", target.relativePath(), "expectedHash", expectedHash, "patch", patch),
                     TOOL_TIMEOUT);
             if ("SUCCEEDED".equals(execution.getStatus())) {
-                return okResult(path, execution, expectedHash);
+                return okResult(path, execution);
             }
-            return writeFailure(path, execution, "patch failed", "file.patch");
+            return writeFailure(path, execution, "patch failed");
         } catch (RuntimeException e) {
             return WorkspaceWriteResult.infraFail(path, "patch failed: " + exceptionDetail(e));
         }
@@ -201,32 +193,19 @@ public class WorkerWorkspaceCodeWriter extends AbstractWorkerToolPort implements
                     "file.ensure_trailing_newline",
                     Map.of("path", target.relativePath(), "expectedHash", expectedHash), TOOL_TIMEOUT);
             if ("SUCCEEDED".equals(execution.getStatus())) {
-                return okResult(path, execution, expectedHash);
+                return okResult(path, execution);
             }
-            return writeFailure(path, execution, "ensure trailing newline failed", "file.ensure_trailing_newline");
+            return writeFailure(path, execution, "ensure trailing newline failed");
         } catch (RuntimeException e) {
             return WorkspaceWriteResult.infraFail(path, "ensure trailing newline failed: " + exceptionDetail(e));
         }
     }
 
-    /**
-     * 透传 Worker file.write / file.patch 成功结果中的新 sha256 与 changed；
-     * 兼容旧 Worker 缺少 changed 字段的情况，用写入前后的 SHA 做保守推断。
-     */
-    private static WorkspaceWriteResult okResult(String path, WorkerToolExecution execution, String expectedHash) {
+    /** 透传当前 Worker 写入契约。 */
+    private static WorkspaceWriteResult okResult(String path, WorkerToolExecution execution) {
         Map<String, Object> result = resultOf(execution);
-        Object sha = result.get("sha256");
-        String newSha256 = sha == null ? null : String.valueOf(sha);
-        Object changedValue = result.get("changed");
-        boolean changed;
-        if (changedValue instanceof Boolean value) {
-            changed = value;
-        } else {
-            // 兼容旧 Worker：旧版本没有返回 changed 时，用写入前后的 SHA 判断。
-            changed = newSha256 != null && expectedHash != null
-                    && !newSha256.equalsIgnoreCase(expectedHash);
-        }
-        return WorkspaceWriteResult.ok(path, newSha256, changed);
+        return WorkspaceWriteResult.ok(path, (String) result.get("sha256"),
+                Boolean.TRUE.equals(result.get("changed")));
     }
 
     /**
@@ -275,17 +254,9 @@ public class WorkerWorkspaceCodeWriter extends AbstractWorkerToolPort implements
     }
 
     private static WorkspaceWriteResult writeFailure(String path, WorkerToolExecution execution, String fallback) {
-        return writeFailure(path, execution, fallback, null);
-    }
-
-    private static WorkspaceWriteResult writeFailure(String path, WorkerToolExecution execution, String fallback,
-                                                     String operation) {
-        String failureCode = effectiveFailureCode(execution, operation);
-        String reason = failureReason(execution,
-                "FILE_PATCH_FAILED".equals(failureCode)
-                        ? "补丁无法应用，请重新读取文件后重试" : fallback);
-        return isToolFailure(execution, operation) ? WorkspaceWriteResult.fail(path, failureCode, reason)
-                : WorkspaceWriteResult.infraFail(path, failureCode, reason);
+        String reason = failureReason(execution, fallback);
+        return isToolFailure(execution) ? WorkspaceWriteResult.fail(path, execution.getFailureCode(), reason)
+                : WorkspaceWriteResult.infraFail(path, execution.getFailureCode(), reason);
     }
 
     private static String failureReason(WorkerToolExecution execution, String fallback) {
@@ -304,39 +275,9 @@ public class WorkerWorkspaceCodeWriter extends AbstractWorkerToolPort implements
         String message = exception.getMessage();
         return message == null || message.isBlank() ? exception.getClass().getSimpleName() : message;
     }
-
     private static boolean isToolFailure(WorkerToolExecution execution) {
-        return isToolFailure(execution, null);
+        return "FAILED".equals(execution.getStatus()) && execution.getFailureCode() != null
+                && RECOVERABLE_TOOL_FAILURE_CODES.contains(execution.getFailureCode());
     }
 
-    private static boolean isToolFailure(WorkerToolExecution execution, String operation) {
-        if (!"FAILED".equals(execution.getStatus())) {
-            return false;
-        }
-        String failureCode = effectiveFailureCode(execution, operation);
-        if (RECOVERABLE_TOOL_FAILURE_CODES.contains(failureCode)) {
-            return true;
-        }
-        // 兼容尚未部署 failureCode/failureReason 字段的旧 Worker：file.patch 的失败只能
-        // 通过结构化工具结果回灌模型修复。其它工具不能按工具名猜测，避免把 Worker/网络故障
-        // 错误降级成可重试的业务参数错误。
-        return (failureCode == null || failureCode.isBlank())
-                && "file.patch".equals(operation == null ? execution.getTool() : operation);
-    }
-
-    private static String effectiveFailureCode(WorkerToolExecution execution) {
-        return effectiveFailureCode(execution, null);
-    }
-
-    private static String effectiveFailureCode(WorkerToolExecution execution, String operation) {
-        if (execution == null) {
-            return null;
-        }
-        if (execution.getFailureCode() != null && !execution.getFailureCode().isBlank()) {
-            return execution.getFailureCode();
-        }
-        return "FAILED".equals(execution.getStatus())
-                && "file.patch".equals(operation == null ? execution.getTool() : operation)
-                ? "FILE_PATCH_FAILED" : null;
-    }
 }

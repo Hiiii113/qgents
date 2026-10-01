@@ -6,7 +6,7 @@ import lombok.Data;
  * Workspace 目录创建结果。目录创建是可持久化的工作树变更，但不会伪装成 Git 文件 Diff。
  */
 @Data
-public class WorkspaceDirectoryResult implements WorkspaceChangeResult {
+public class WorkspaceDirectoryResult {
     private boolean ok;
     private String path;
     private boolean created;
@@ -16,11 +16,6 @@ public class WorkspaceDirectoryResult implements WorkspaceChangeResult {
      */
     private String failureCode;
     private boolean infrastructureFailure;
-
-    @Override
-    public boolean isChanged() {
-        return created;
-    }
 
     public static WorkspaceDirectoryResult ok(String path, boolean created) {
         WorkspaceDirectoryResult result = new WorkspaceDirectoryResult();

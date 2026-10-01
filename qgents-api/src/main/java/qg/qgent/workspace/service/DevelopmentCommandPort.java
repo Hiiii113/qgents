@@ -11,7 +11,4 @@ public interface DevelopmentCommandPort {
 
     DevelopmentCommandResult run(UUID workspaceId, String repositoryPath, DevelopmentCommandId commandId);
 
-    static DevelopmentCommandPort unavailable() {
-        return (workspaceId, repositoryPath, commandId) -> DevelopmentCommandResult.unavailable(commandId);
-    }
 }

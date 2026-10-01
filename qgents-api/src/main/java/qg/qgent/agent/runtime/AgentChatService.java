@@ -363,7 +363,7 @@ public class AgentChatService {
             UUID taskId = UUID.fromString(work.task.getId());
             UUID workspaceId = UUID.fromString(work.task.getWorkspaceId());
             sessions.acquire(taskId, work.event.projectId(), workspaceId);
-            work.codingTools = new CodingTools(workspaceId, codeAccess, writer, List.of(), commands);
+            work.codingTools = new CodingTools(workspaceId, codeAccess, writer, commands);
             tasks.updateStatus(taskId, "RUNNING");
             run.setTaskId(taskId);
             runs.updateById(run);

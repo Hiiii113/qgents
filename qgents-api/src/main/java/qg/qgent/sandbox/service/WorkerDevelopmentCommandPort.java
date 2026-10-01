@@ -1,7 +1,6 @@
 package qg.qgent.sandbox.service;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -28,13 +27,7 @@ import java.util.UUID;
 @ConditionalOnProperty(name = "app.worker.enabled", havingValue = "true")
 public class WorkerDevelopmentCommandPort extends AbstractWorkerToolPort implements DevelopmentCommandPort {
 
-    public WorkerDevelopmentCommandPort(SandboxWorkerClient client, SandboxSessionManager sessions,
-                                        SandboxWorkerProperties properties) {
-        super(client, sessions, properties);
-    }
-
     /** 生产装配保留受控执行记录（executionId、工具名、状态、exitCode），不持久化输出。 */
-    @Autowired
     public WorkerDevelopmentCommandPort(SandboxWorkerClient client, SandboxSessionManager sessions,
                                         SandboxWorkerProperties properties,
                                         AgentWorkerExecutionService workerExecutionService) {
@@ -54,14 +47,14 @@ public class WorkerDevelopmentCommandPort extends AbstractWorkerToolPort impleme
                         "WORKSPACE_REPOSITORY_NOT_FOUND", "未找到工作区绑定的仓库");
             }
             WorkerToolExecution execution = executeTool(workspaceId, repositoryId, "development.run",
-                    Map.of("commandId", commandId.name()), timeout(commandId));
+                    Map.of("commandId", commandId.name()), Duration.ofMinutes(10));
             if (execution.getExitCode() != null) {
                 return new DevelopmentCommandResult(execution.getExitCode() == 0, commandId.name(),
                         execution.getExitCode(), execution.getExitCode() == 0 ? null : "PROCESS_EXIT_NONZERO",
                         execution.getExitCode() == 0 ? null : "固定开发命令执行失败");
             }
             return new DevelopmentCommandResult(false, commandId.name(), null,
-                    safeCode(), safeReason());
+                    "DEVELOPMENT_COMMAND_FAILED", "固定开发命令执行失败，请查看受控执行记录");
         } catch (RuntimeException exception) {
             log.warn("CODING_DEVELOPMENT_COMMAND_FAILED workspaceId={} repositoryId={} commandId={} category={}",
                     workspaceId, repositoryId, commandId, exception.getClass().getSimpleName());
@@ -78,18 +71,4 @@ public class WorkerDevelopmentCommandPort extends AbstractWorkerToolPort impleme
         return current.repositoryByPath() == null ? null : current.repositoryByPath().get(repositoryPath);
     }
 
-    private Duration timeout(DevelopmentCommandId commandId) {
-        return switch (commandId) {
-            case MAVEN_TEST, MAVEN_PACKAGE, MAVEN_WRAPPER_TEST, GRADLE_TEST, GRADLE_WRAPPER_TEST, NPM_TEST ->
-                    Duration.ofMinutes(10);
-        };
-    }
-
-    private String safeCode() {
-        return "DEVELOPMENT_COMMAND_FAILED";
-    }
-
-    private String safeReason() {
-        return "固定开发命令执行失败，请查看受控执行记录";
-    }
 }

@@ -37,7 +37,7 @@ class WorkerDevelopmentCommandPortTest {
     void setUp() {
         client = mock(SandboxWorkerClient.class);
         sessions = mock(SandboxSessionManager.class);
-        port = new WorkerDevelopmentCommandPort(client, sessions, new SandboxWorkerProperties());
+        port = new WorkerDevelopmentCommandPort(client, sessions, new SandboxWorkerProperties(), mock(qg.qgent.agent.service.AgentWorkerExecutionService.class));
     }
 
     @Test

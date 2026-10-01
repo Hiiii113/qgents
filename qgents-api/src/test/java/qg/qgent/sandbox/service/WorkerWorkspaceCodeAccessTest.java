@@ -41,7 +41,7 @@ class WorkerWorkspaceCodeAccessTest {
     void setUp() {
         client = mock(SandboxWorkerClient.class);
         sessions = mock(SandboxSessionManager.class);
-        access = new WorkerWorkspaceCodeAccess(client, sessions, new SandboxWorkerProperties());
+        access = new WorkerWorkspaceCodeAccess(client, sessions, new SandboxWorkerProperties(), mock(qg.qgent.agent.service.AgentWorkerExecutionService.class));
     }
 
     private SandboxSession session() {
