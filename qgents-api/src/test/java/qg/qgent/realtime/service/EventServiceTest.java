@@ -1,6 +1,14 @@
 package qg.qgent.realtime.service;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import org.springframework.test.util.ReflectionTestUtils;
+import java.io.IOException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.LongFunction;
 import org.springframework.dao.DeadlockLoserDataAccessException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -40,6 +48,61 @@ import static org.mockito.Mockito.when;
 
 /** 事件发布与过期清理的事务边界测试。 */
 class EventServiceTest {
+
+    @ParameterizedTest
+    @ValueSource(strings = {"project", "team", "notification"})
+    void allStreamsRejectNegativeAndExpiredCursorsWithoutOccupyingSlots(String scope) {
+        EventMapper events = mock(EventMapper.class);
+        NotificationEventMapper notifications = mock(NotificationEventMapper.class);
+        TeamEventMapper teams = mock(TeamEventMapper.class);
+        when(events.minSequence(any())).thenReturn(2L);
+        when(notifications.minSequence(any())).thenReturn(2L);
+        when(teams.minSequence(any())).thenReturn(2L);
+        EventService service = fullService(events, notifications, teams, mock(UserMapper.class), mock(TeamMapper.class));
+        UUID owner = UUID.randomUUID(), user = UUID.randomUUID();
+        java.util.function.Function<Long, SseEmitter> connect = cursor -> switch (scope) {
+            case "project" -> service.stream(owner, user, cursor);
+            case "team" -> service.teamStream(owner, user, cursor);
+            default -> service.notificationStream(user, cursor);
+        };
+        var negative = org.junit.jupiter.api.Assertions.assertThrows(ApiException.class, () -> connect.apply(-1L));
+        assertEquals("INVALID_EVENT_CURSOR", negative.code());
+        var expired = org.junit.jupiter.api.Assertions.assertThrows(ApiException.class, () -> connect.apply(1L));
+        assertEquals("EVENT_CURSOR_EXPIRED", expired.code());
+        AtomicInteger active = (AtomicInteger) ReflectionTestUtils.getField(service, "activeSseConnections");
+        assertEquals(0, active.get());
+    }
+
+    @Test
+    void pollSkipsHiddenEventsAndReleasesConnectionOnSendFailure() throws Exception {
+        EventService service = service(mock(EventMapper.class), mock(ProjectMapper.class));
+        SseEmitter emitter = mock(SseEmitter.class);
+        org.mockito.Mockito.doThrow(new IOException("disconnected")).when(emitter).send(any(SseEmitter.SseEventBuilder.class));
+        var eventClass = Class.forName(EventService.class.getName() + "$SseEvent");
+        var constructor = eventClass.getDeclaredConstructor(long.class, String.class, Map.class, boolean.class);
+        constructor.setAccessible(true);
+        Object hidden = constructor.newInstance(1L, "message.created", Map.of(), false);
+        Object visible = constructor.newInstance(2L, "task.updated", Map.of("status", "DONE"), true);
+        AtomicInteger active = (AtomicInteger) ReflectionTestUtils.getField(service, "activeSseConnections");
+        active.set(1);
+        AtomicBoolean closed = new AtomicBoolean();
+        LongFunction<List<?>> load = cursor -> {
+            assertEquals(0L, cursor);
+            return List.of(hidden, visible);
+        };
+
+        ReflectionTestUtils.invokeMethod(service, "pump", emitter, 0L, load, false, closed);
+
+        var captured = org.mockito.ArgumentCaptor.forClass(SseEmitter.SseEventBuilder.class);
+        verify(emitter).send(captured.capture());
+        String frame = captured.getValue().build().stream().map(item -> String.valueOf(item.getData()))
+                .collect(java.util.stream.Collectors.joining());
+        org.junit.jupiter.api.Assertions.assertTrue(frame.contains("id:2"));
+        org.junit.jupiter.api.Assertions.assertTrue(frame.contains("event:task.updated"));
+        verify(emitter).complete();
+        assertEquals(0, active.get());
+        org.junit.jupiter.api.Assertions.assertTrue(closed.get());
+    }
 
     @Test
     void publishLocksProjectThenUsesConcurrentSafeNextSequence() {

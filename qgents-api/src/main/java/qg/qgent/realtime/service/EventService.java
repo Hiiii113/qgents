@@ -44,7 +44,6 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -52,48 +51,28 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+import java.util.function.LongFunction;
+import java.util.function.Supplier;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
-/**
- * 项目级实时事件（SSE 数据源）服务。
- * 写接口在状态变更时调用 {@link #publish} 持久化事件，客户端通过项目事件流订阅；
- * 事件至少保留 24 小时，支持 Last-Event-ID 断线续传，游标过期返回 409 EVENT_CURSOR_EXPIRED。
- * publish 在业务事务提交后才以独立短事务写入；序号分配并发安全：短事务内先对 projects 行加
- * 排他锁（FOR UPDATE）串行化同项目事件写入，再以锁定读（{@code EventMapper#nextSequence}）取当前已提交的最大序号 + 1，
- * 避免并发「MAX+1」撞 {@code uk_event_seq(project_id, sequence_no)} 唯一键 500；
- * stream 用独立轮询线程拉取增量事件，通过 SseEmitter 推送，
- * 客户端断开时以 send 失败退出线程并自动清理。
- */
+/** 保存项目、团队和通知事件，通过 WebSocket 和 SSE 推送给对应用户。 */
 @Service
 public class EventService {
     private static final Logger log = LoggerFactory.getLogger(EventService.class);
 
-    /**
-     * SSE 连接保活心跳间隔（秒），契约约定每 15 秒一次。
-     */
+    /** SSE 连接保活心跳间隔（秒），每 15 秒一次。 */
     private static final long HEARTBEAT_SECONDS = 15;
-    /**
-     * 增量事件轮询间隔（毫秒）。
-     */
+    /** 增量事件轮询间隔（毫秒）。 */
     private static final long POLL_INTERVAL_MS = 2000;
-    /**
-     * 单次轮询批量拉取上限。
-     */
+    /** 单次轮询批量拉取上限。 */
     private static final int BATCH_SIZE = 100;
-    /**
-     * 事件保留时长（小时），过期事件不再可续传。
-     */
+    /** 事件保留时长（小时），过期事件不再可续传。 */
     private static final int RETENTION_HOURS = 24;
-    /**
-     * 单连接空闲超时（毫秒）：心跳会保活，超时后线程退出、客户端按 Last-Event-ID 重连。
-     */
+    /** 单连接空闲超时（毫秒）：心跳会保活，超时后线程退出、客户端按 Last-Event-ID 重连。 */
     private static final long SSE_TIMEOUT_MS = 30 * 60 * 1000L;
-    /**
-     * 最大并发 SSE 连接数（项目级 + 通知级 + 团队级合计）：每个连接占用一个泵线程（固定 8 线程池
-     * 排队）。超过上限时拒绝建立新连接（返回 429），防止连接堆积耗尽泵线程与数据库连接。
-     */
+    /** 三类 SSE 共用的连接上限；超过时返回 429。 */
     private static final int MAX_SSE_CONNECTIONS = 128;
     /** 同一项目事件写入发生死锁时的最大新事务重试次数。 */
     private static final int EVENT_DEADLOCK_RETRIES = 3;
@@ -160,9 +139,7 @@ public class EventService {
         }
     }
 
-    /**
-     * 保留测试与既有直接构造调用；生产 Spring Bean 始终使用包含用户、团队锁 Mapper 的构造器。
-     */
+    /** 保留测试与既有直接构造调用；生产 Spring Bean 始终使用包含用户、团队锁 Mapper 的构造器。 */
     public EventService(EventMapper eventMapper, ProjectAccessService projectAccess,
                         NotificationEventMapper notificationEventMapper, TeamEventMapper teamEventMapper,
                         RealtimeHub realtimeHub,
@@ -186,20 +163,7 @@ public class EventService {
                 userMapper, teamMapper, null, null);
     }
 
-    /**
-     * 发布一条项目级事件并持久化。
-     * 事件以项目内单调递增的 sequenceNo 排序，作为 SSE 游标；payload 必须为已脱敏内容，
-     * 禁止包含 Token、密码、私钥等敏感信息。
-     * <p>
-     * 事件保留清理由独立的定时任务处理，不能放在调用方的业务事务中。否则清理 SQL 的死锁会
-     * 回滚 AgentRun、Task 等关键业务写入，造成任务状态与运行记录不一致。
-     *
-     * @param projectId  所属项目ID（调用方应已校验项目成员身份）
-     * @param groupId    可选关联项目群聊ID，可为 null
-     * @param eventType  事件类型，如 task.updated / agent-run.updated
-     * @param resourceId 关联资源ID字符串，如 agentRunId，可为 null
-     * @param payload    脱敏事件载荷 JSON
-     */
+    /** 业务事务提交后，独立保存项目事件并推送；事件失败不回滚业务。 */
     public void publish(UUID projectId, UUID groupId, String eventType, String resourceId,
                         Map<String, Object> payload) {
         EventRequest request = new EventRequest(projectId, groupId, eventType, resourceId, payload);
@@ -244,12 +208,12 @@ public class EventService {
     private void persistAfterCommit(EventRequest request) {
         for (int attempt = 0; attempt < EVENT_DEADLOCK_RETRIES; attempt++) {
             try {
-                PendingFan pending = eventTransaction == null
+                Set<UUID> recipients = eventTransaction == null
                         ? persistInNewTransaction(request)
                         : eventTransaction.execute(status -> persistInNewTransaction(request));
-                if (pending != null) {
+                if (recipients != null) {
                     // TransactionTemplate 已在返回前完成 commit；不得让浏览器看到领先于数据库的刷新信号。
-                    broadcast(pending.userIds, "project", id(request.projectId), id(request.groupId), null, null,
+                    broadcast(recipients, "project", id(request.projectId), id(request.groupId), null, null,
                             request.resourceId, request.eventType, request.payload);
                 }
                 return;
@@ -284,7 +248,7 @@ public class EventService {
     }
 
     /** 在 REQUIRES_NEW 事务中分配项目序号、写入事件并返回提交后 fan-out 所需的信息。 */
-    private PendingFan persistInNewTransaction(EventRequest request) {
+    private Set<UUID> persistInNewTransaction(EventRequest request) {
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         EventEntity event = new EventEntity();
         event.setId(UuidV7.next());
@@ -293,18 +257,14 @@ public class EventService {
         // 并发安全：先持有项目行锁，把同项目事件写入串行化；再以锁定读取当前已提交的
         // 最大序号 + 1。缺少项目行锁时，REPEATABLE READ 的普通快照 MAX 会读到旧值，
         // 多个并发发布撞 uk_event_seq 唯一键 → 整体 500（群成员多选邀请等场景）。
-        lockProject(request.projectId);
+        projectMapper.selectByIdForUpdate(request.projectId);
         event.setSequenceNo(eventMapper.nextSequence(request.projectId));
         event.setEventType(request.eventType);
         event.setResourceId(request.resourceId);
         event.setPayload(request.payload);
         event.setCreatedAt(now);
         eventMapper.insert(event);
-        // 推送目标（契约 2026-08-17 群成员可见性收紧）：
-        //   groupId 为空（项目级事件）→ 本项目全部成员；
-
-        //   groupId 为项目群聊 → 仅该群显式成员。
-        return new PendingFan(broadcastMembers(request.projectId, request.groupId));
+        return projectMembers(request.projectId);
     }
 
     private boolean isDeadlock(Throwable failure) {
@@ -332,37 +292,12 @@ public class EventService {
         }
     }
 
-    /**
-     * 持有项目行锁（FOR UPDATE），将同项目的事件写入串行化。
-     * <p>
-     * {@code uk_event_seq(project_id, sequence_no)} 是项目级作用域，因此锁必须升到
-     * 项目级，与消息发送 {@code lockGroup}（群行锁保证消息 sequence 单调）同思路。
-     * 本方法只由项目事件的独立短事务调用；项目不存在时
-     * 返回 null（锁对不存在的行不生效），由后续事件插入的外键/唯一约束兜底。
-     */
-    private void lockProject(UUID projectId) {
-        projectMapper.selectByIdForUpdate(projectId);
-    }
-
-
-    private Set<UUID> broadcastMembers(UUID projectId, UUID groupId) {
-        return projectMembers(projectId);
-    }
-
     private Set<UUID> projectMembers(UUID projectId) {
         return projectMemberMapper.selectMembers(projectId).stream()
                 .map(m -> m.getUserId()).collect(Collectors.toSet());
     }
 
-    /**
-     * 发布一条通知级事件（前端 SSE 需求清单 ③：/notifications/events）。
-     * 按用户维度分配单调递增序号；payload 必须为已脱敏内容。
-     *
-     * @param recipientUserId 接收通知的用户 ID
-     * @param notificationId  关联通知 ID（可为 null）
-     * @param eventType       通知事件名，例如 notification.created 或 notification.removed
-     * @param payload         脱敏事件载荷
-     */
+    /** 发布一条通知级事件。 按用户维度分配单调递增序号；payload 必须为已脱敏内容。 */
     @Transactional
     public void publishNotification(UUID recipientUserId, UUID notificationId, String eventType,
                                     Map<String, Object> payload) {
@@ -387,84 +322,17 @@ public class EventService {
                 eventType, payload);
     }
 
-    /**
-     * 建立通知级 SSE 事件流（当前用户维度，无需额外鉴权——用户即本人）。
-     * 支持 Last-Event-ID 续传；无事件或游标过期时按 409 拒绝（与项目级一致）。
-     */
+    /** 订阅当前用户的通知事件，支持 Last-Event-ID 续传。 */
     public SseEmitter notificationStream(UUID userId, Long lastEventId) {
-        if (lastEventId != null && lastEventId < 0) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_EVENT_CURSOR", "Last-Event-ID 必须为非负序号");
-        }
-        Long minSeq = null;
-        if (lastEventId != null) {
-            minSeq = notificationEventMapper.minSequence(userId);
-            if (minSeq == null || minSeq > lastEventId) {
-                throw new ApiException(HttpStatus.CONFLICT, "EVENT_CURSOR_EXPIRED",
-                        "续传点已过期，请重新拉取相关资源");
-            }
-        }
-        long cursor = lastEventId != null ? lastEventId
-                : notificationEventMapper.maxSequence(userId);
-        if (!acquireSseSlot()) {
-            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "SSE_CONNECTION_LIMIT_EXCEEDED",
-                    "当前实时连接过多，请稍后重试");
-        }
-        SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
-        AtomicBoolean connectionClosed = new AtomicBoolean();
-        emitter.onTimeout(() -> {
-            closeSseConnection(connectionClosed);
-            log.info("SSE notification timeout, userId={}, cursor={}", userId, cursor);
-        });
-        emitter.onError(e -> {
-            closeSseConnection(connectionClosed);
-            log.info("SSE notification error, userId={}: {}", userId, e.getMessage());
-        });
-        emitter.onCompletion(() -> {
-            closeSseConnection(connectionClosed);
-            log.info("SSE notification completed, userId={}, cursor={}", userId, cursor);
-        });
-        executor.execute(() -> notificationPump(emitter, userId, cursor));
-        return emitter;
+        long cursor = resolveCursor(lastEventId, () -> notificationEventMapper.minSequence(userId),
+                () -> notificationEventMapper.maxSequence(userId));
+        return openStream("notification", userId, cursor, after ->
+                notificationEventMapper.listAfter(userId, after, BATCH_SIZE).stream()
+                        .map(event -> new SseEvent(event.getSequenceNo(), notificationEventType(event.getKind()),
+                                event.getPayload(), true)).toList(), false);
     }
 
-    private void notificationPump(SseEmitter emitter, UUID userId, long startCursor) {
-        long cursor = startCursor;
-        LocalDateTime lastHeartbeat = LocalDateTime.now(ZoneOffset.UTC);
-        try {
-            while (true) {
-                List<NotificationEventEntity> events = notificationEventMapper.listAfter(userId, cursor, BATCH_SIZE);
-                for (NotificationEventEntity event : events) {
-                    if (!send(emitter, SseEmitter.event()
-                            .id(String.valueOf(event.getSequenceNo()))
-                            .name(notificationEventType(event.getKind()))
-                            .data(event.getPayload()))) {
-                        return;
-                    }
-                    cursor = event.getSequenceNo();
-                }
-                LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
-                if (Duration.between(lastHeartbeat, now).getSeconds() >= HEARTBEAT_SECONDS) {
-                    if (!send(emitter, SseEmitter.event().comment("heartbeat"))) {
-                        return;
-                    }
-                    lastHeartbeat = now;
-                }
-                Thread.sleep(POLL_INTERVAL_MS);
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    /**
-     * 发布一条团队级事件（前端 SSE 需求清单 ②：/teams/{teamId}/events）。
-     * 按团队维度分配单调递增序号；payload 必须为已脱敏内容。
-     *
-     * @param teamId     所属团队 ID（调用方应已校验团队归属）
-     * @param eventType  事件类型（project.member.added/team.member.updated/activity.created）
-     * @param resourceId 关联资源 ID（可为 null）
-     * @param payload    脱敏事件载荷
-     */
+    /** 发布一条团队级事件。 按团队维度分配单调递增序号；payload 必须为已脱敏内容。 */
     @Transactional
     public void publishTeamEvent(UUID teamId, String eventType, String resourceId, Map<String, Object> payload) {
         if (teamId == null) {
@@ -489,165 +357,91 @@ public class EventService {
         fan(members, "team", null, null, id(teamId), null, resourceId, eventType, payload);
     }
 
-    /**
-     * 建立团队级 SSE 事件流（需调用者为团队成员）。
-     * 支持 Last-Event-ID 续传；游标过期返回 409。
-     */
+    /** 订阅团队事件；调用者必须是团队成员。 */
     public SseEmitter teamStream(UUID teamId, UUID userId, Long lastEventId) {
         projectAccess.requireTeamMember(teamId, userId);
-        if (lastEventId != null && lastEventId < 0) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_EVENT_CURSOR", "Last-Event-ID 必须为非负序号");
-        }
-        Long minSeq = null;
-        if (lastEventId != null) {
-            minSeq = teamEventMapper.minSequence(teamId);
-            if (minSeq == null || minSeq > lastEventId) {
-                throw new ApiException(HttpStatus.CONFLICT, "EVENT_CURSOR_EXPIRED",
-                        "续传点已过期，请重新拉取相关资源");
-            }
-        }
-        long cursor = lastEventId != null ? lastEventId : teamEventMapper.maxSequence(teamId);
-        if (!acquireSseSlot()) {
-            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "SSE_CONNECTION_LIMIT_EXCEEDED",
-                    "当前实时连接过多，请稍后重试");
-        }
-        SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
-        AtomicBoolean connectionClosed = new AtomicBoolean();
-        emitter.onTimeout(() -> {
-            closeSseConnection(connectionClosed);
-            log.info("SSE team timeout, teamId={}, cursor={}", teamId, cursor);
-        });
-        emitter.onError(e -> {
-            closeSseConnection(connectionClosed);
-            log.info("SSE team error, teamId={}: {}", teamId, e.getMessage());
-        });
-        emitter.onCompletion(() -> {
-            closeSseConnection(connectionClosed);
-            log.info("SSE team completed, teamId={}, cursor={}", teamId, cursor);
-        });
-        executor.execute(() -> teamPump(emitter, teamId, cursor));
-        return emitter;
+        long cursor = resolveCursor(lastEventId, () -> teamEventMapper.minSequence(teamId),
+                () -> teamEventMapper.maxSequence(teamId));
+        return openStream("team", teamId, cursor, after ->
+                teamEventMapper.listAfter(teamId, after, BATCH_SIZE).stream()
+                        .map(event -> new SseEvent(event.getSequenceNo(), event.getEventType(),
+                                event.getPayload(), true)).toList(), false);
     }
 
-    private void teamPump(SseEmitter emitter, UUID teamId, long startCursor) {
-        long cursor = startCursor;
-        LocalDateTime lastHeartbeat = LocalDateTime.now(ZoneOffset.UTC);
-        try {
-            while (true) {
-                List<TeamEventEntity> events = teamEventMapper.listAfter(teamId, cursor, BATCH_SIZE);
-                for (TeamEventEntity event : events) {
-                    if (!send(emitter, SseEmitter.event()
-                            .id(String.valueOf(event.getSequenceNo()))
-                            .name(event.getEventType())
-                            .data(event.getPayload()))) {
-                        return;
-                    }
-                    cursor = event.getSequenceNo();
-                }
-                LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
-                if (Duration.between(lastHeartbeat, now).getSeconds() >= HEARTBEAT_SECONDS) {
-                    if (!send(emitter, SseEmitter.event().comment("heartbeat"))) {
-                        return;
-                    }
-                    lastHeartbeat = now;
-                }
-                Thread.sleep(POLL_INTERVAL_MS);
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    /**
-     * 建立项目级 SSE 事件流连接。
-     * 先校验调用者是项目成员；若提供 Last-Event-ID 且该游标已超出 24 小时保留窗口
-     * （无事件或最小保留序号大于游标），抛出 409 EVENT_CURSOR_EXPIRED 拒绝续传。
-     * 连接后每 2 秒轮询增量事件推送，每 15 秒发送心跳；断线或超时后自动清理。
-     *
-     * @param projectId   所属项目ID
-     * @param userId      已认证用户ID，用于成员鉴权
-     * @param lastEventId Last-Event-ID 续传游标（项目内事件序号），无续传需求时为 null
-     * @return 已建立的 SseEmitter，事件以 eventType 作为 event name、sequenceNo 作为 id 推送
-     */
+    /** 订阅项目事件；保留项目群聊过滤和轮询耗时统计。 */
     public SseEmitter stream(UUID projectId, UUID userId, Long lastEventId) {
         projectAccess.requireProjectMember(projectId, userId);
-        if (lastEventId != null && lastEventId < 0) {
+        long cursor = resolveCursor(lastEventId, () -> eventMapper.minSequence(projectId),
+                () -> eventMapper.maxSequence(projectId));
+        Set<UUID> visibleGroups = groupMapper.selectList(Wrappers.<ChatGroupEntity>lambdaQuery()
+                        .eq(ChatGroupEntity::getProjectId, projectId)).stream()
+                .map(ChatGroupEntity::getId).collect(Collectors.toSet());
+        return openStream("project", projectId, cursor, after ->
+                eventMapper.listAfter(projectId, after, BATCH_SIZE).stream()
+                        .map(event -> new SseEvent(event.getSequenceNo(), event.getEventType(), event.getPayload(),
+                                event.getGroupId() == null || visibleGroups.contains(event.getGroupId())))
+                        .toList(), true);
+    }
+
+    /** 不传游标时从最新事件开始；无效或过期的续传点拒绝连接。 */
+    private long resolveCursor(Long lastEventId, Supplier<Long> minimum, Supplier<Long> maximum) {
+        if (lastEventId == null) return maximum.get();
+        if (lastEventId < 0) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_EVENT_CURSOR", "Last-Event-ID 必须为非负序号");
         }
-        Long minSeq = null;
-        if (lastEventId != null) {
-            minSeq = eventMapper.minSequence(projectId);
-            if (minSeq == null || minSeq > lastEventId) {
-                // 游标超出保留窗口：事件已过期或从未存在，拒绝续传
-                throw new ApiException(HttpStatus.CONFLICT, "EVENT_CURSOR_EXPIRED",
-                        "续传点已过期，请重新拉取相关资源");
-            }
+        Long min = minimum.get();
+        if (min == null || min > lastEventId) {
+            throw new ApiException(HttpStatus.CONFLICT, "EVENT_CURSOR_EXPIRED", "续传点已过期，请重新拉取相关资源");
         }
-        long cursor = lastEventId != null ? lastEventId : eventMapper.maxSequence(projectId);
+        return lastEventId;
+    }
 
+    /** 三类事件共用连接计数、关闭回调和轮询；业务查询由调用方提供。 */
+    private SseEmitter openStream(String scope, UUID ownerId, long cursor,
+                                 LongFunction<List<SseEvent>> loadEvents, boolean measurePoll) {
         if (!acquireSseSlot()) {
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "SSE_CONNECTION_LIMIT_EXCEEDED",
                     "当前实时连接过多，请稍后重试");
         }
         SseEmitter emitter = new SseEmitter(SSE_TIMEOUT_MS);
         AtomicBoolean connectionClosed = new AtomicBoolean();
-
         emitter.onTimeout(() -> {
             closeSseConnection(connectionClosed);
-            log.info("SSE timeout, projectId={}, cursor={}", projectId, cursor);
+            log.info("SSE {} timeout, ownerId={}, cursor={}", scope, ownerId, cursor);
         });
-        emitter.onError(e -> {
+        emitter.onError(error -> {
             closeSseConnection(connectionClosed);
-            log.info("SSE error, projectId={}: {}", projectId, e.getMessage());
+            log.info("SSE {} error, ownerId={}: {}", scope, ownerId, error.getMessage());
         });
         emitter.onCompletion(() -> {
             closeSseConnection(connectionClosed);
-            log.info("SSE completed, projectId={}, cursor={}", projectId, cursor);
+            log.info("SSE {} completed, ownerId={}, cursor={}", scope, ownerId, cursor);
         });
-
-        // 群成员可见性（契约 2026-08-17 严格收紧）：SSE 仅推送用户可见群（主群 + 已加入项目群聊）的事件
-        Set<UUID> visibleGroups = new HashSet<>();
-        groupMapper.selectList(Wrappers.<ChatGroupEntity>lambdaQuery()
-                        .eq(ChatGroupEntity::getProjectId, projectId))
-                .forEach(group -> visibleGroups.add(group.getId()));
-
-        executor.execute(() -> pump(emitter, projectId, cursor, visibleGroups, connectionClosed));
+        executor.execute(() -> pump(emitter, cursor, loadEvents, measurePoll, connectionClosed));
         return emitter;
     }
 
-    /**
-     * 轮询推送增量事件。线程退出条件：客户端断开/超时导致 send 失败，或线程被中断。
-     * 游标本地推进，成功发送的事件序号即新的续传点；不可见群的事件跳过发送但同样推进游标
-     * （不可见事件无需重试，避免重复拉取同一批）。
-     */
-    private void pump(SseEmitter emitter, UUID projectId, long startCursor, Set<UUID> visibleGroups,
-                      AtomicBoolean connectionClosed) {
-        long cursor = startCursor;
+    /** 每两秒拉取增量，每十五秒发送心跳；跳过不可见事件时仍推进游标。 */
+    private void pump(SseEmitter emitter, long cursor, LongFunction<List<SseEvent>> loadEvents,
+                      boolean measurePoll, AtomicBoolean connectionClosed) {
         LocalDateTime lastHeartbeat = LocalDateTime.now(ZoneOffset.UTC);
         try {
-            while (true) {
-                Timer.Sample pollTimer = metrics == null ? null : metrics.start();
-                List<EventEntity> events = eventMapper.listAfter(projectId, cursor, BATCH_SIZE);
-                if (metrics != null) {
+            while (!connectionClosed.get()) {
+                Timer.Sample pollTimer = measurePoll && metrics != null ? metrics.start() : null;
+                List<SseEvent> events = loadEvents.apply(cursor);
+                if (measurePoll && metrics != null) {
                     metrics.stop(pollTimer, "qgents.sse.poll.duration", "event_poll", "succeeded");
                 }
-                for (EventEntity event : events) {
-                    cursor = event.getSequenceNo();
-                    if (event.getGroupId() == null
-                            || visibleGroups.contains(event.getGroupId())) {
-                        if (!send(emitter, SseEmitter.event()
-                                .id(String.valueOf(event.getSequenceNo()))
-                                .name(event.getEventType())
-                                .data(event.getPayload()))) {
-                            return;
-                        }
+                for (SseEvent event : events) {
+                    if (event.visible && !send(emitter, SseEmitter.event()
+                            .id(String.valueOf(event.sequenceNo)).name(event.type).data(event.payload))) {
+                        return;
                     }
+                    cursor = event.sequenceNo;
                 }
                 LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
                 if (Duration.between(lastHeartbeat, now).getSeconds() >= HEARTBEAT_SECONDS) {
-                    if (!send(emitter, SseEmitter.event().comment("heartbeat"))) {
-                        return;
-                    }
+                    if (!send(emitter, SseEmitter.event().comment("heartbeat"))) return;
                     lastHeartbeat = now;
                 }
                 Thread.sleep(POLL_INTERVAL_MS);
@@ -659,9 +453,10 @@ public class EventService {
         }
     }
 
-    /**
-     * 兼容旧数据：早期创建事件曾错误持久化业务通知类型，SSE 协议仍须使用通知事件名。
-     */
+    private record SseEvent(long sequenceNo, String type, Map<String, Object> payload, boolean visible) {
+    }
+
+    /** 兼容旧数据：早期创建事件曾错误持久化业务通知类型，SSE 协议仍须使用通知事件名。 */
     String notificationEventType(String kind) {
         return kind != null && kind.startsWith("notification.") ? kind : "notification.created";
     }
@@ -689,11 +484,7 @@ public class EventService {
         }
     }
 
-    /**
-     * 尝试占用一个 SSE 连接槽位。超过 {@link #MAX_SSE_CONNECTIONS} 时返回 false，
-     * 调用方应拒绝建立新连接（429），避免连接堆积耗尽泵线程（固定 8 线程池排队）
-     * 与数据库连接（每个泵线程周期性查询事件表）。
-     */
+    /** 尝试占用一个 SSE 连接槽位。超过 {@link #MAX_SSE_CONNECTIONS} 时返回 false， 调用方应拒绝建立新连接（429），避免连接堆积耗尽泵线程（固定 8 线程池排队） 与数据库连接（每个泵线程周期性查询事件表）。 */
     private boolean acquireSseSlot() {
         while (true) {
             int current = activeSseConnections.get();
@@ -713,22 +504,7 @@ public class EventService {
         }
     }
 
-    /**
-     * 将一条已落库事件按目标用户聚合推送到其全部在线 WebSocket 连接（单连接 + 用户级聚合流）。
-     * <p>
-     * 实时推送失败只记 warn，不向调用方（可能处于业务事务中）抛出，确保 WS fan-out 不影响业务写入；
-     * 事件仅作「刷新界面」信号，不在此续传（断线后由前端以 REST 兜底）。
-     *
-     * @param userIds      目标用户 ID 集（项目成员 / 团队成员 / 通知接收人）
-     * @param scope        作用域：project / team / notification
-     * @param projectId    项目 ID（scope=project 时非空）
-     * @param groupId      关联项目群聊 ID（可为 null）
-     * @param teamId       团队 ID（scope=team 时非空）
-     * @param recipientUserId 通知接收人 ID（scope=notification 时非空）
-     * @param resourceId   关联资源 ID（可为 null）
-     * @param eventType    事件类型（对应 SSE eventType）
-     * @param payload      脱敏业务载荷
-     */
+    /** 提交后向目标用户的全部在线连接推送；失败只记日志。 */
     private void fan(Set<UUID> userIds, String scope, String projectId, String groupId, String teamId,
                      String recipientUserId, String resourceId, String eventType, Map<String, Object> payload) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
@@ -770,15 +546,7 @@ public class EventService {
         private final List<EventRequest> requests = new ArrayList<>();
     }
 
-    /** 数据库提交后 WebSocket fan-out 所需的已解析目标成员。 */
-    private record PendingFan(Set<UUID> userIds) {
-    }
-
-    /**
-     * 每日清理全库 24 小时前的过期事件。清理不参与事件发布所在的业务事务，避免清理死锁
-     * 回滚 AgentRun、Task 等关键状态写入。
-     * 依赖 Qgents 全局 {@code @EnableScheduling} 生效。
-     */
+    /** 每日清理超过 24 小时的项目事件，与业务事务分开执行。 */
     @Scheduled(cron = "0 15 3 * * *")
     public void purgeExpired() {
         try {

@@ -16,16 +16,7 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
-/**
- * WebSocket 实时连接注册表（单连接 + 用户级聚合流，契约 §12.1 补充）。
- * <p>
- * 以 {@code userId → 在线连接集合} 维护每个用户的全部 WebSocket 会话（支持同一账号多设备/多标签
- * 同时在线，都收到聚合推送）。事件发布方（{@link EventService}）通过
- * {@link #broadcastToUsers} 将脱敏事件以 JSON 文本帧推送给目标用户的全部在线连接。
- * <p>
- * 本注册表仅承载「在线实时推送」；事件不在此落库续传（断线后由前端以 REST 查询兜底）。
- * 注册表内会话集合使用并发容器，并容忍发送失败时主动关闭并清理失效连接，避免泄漏。
- */
+/** 保存每个用户的在线连接并推送事件；断线后由客户端重新查询数据。 */
 @Service
 public class RealtimeHub {
     private static final Logger log = LoggerFactory.getLogger(RealtimeHub.class);
@@ -37,22 +28,12 @@ public class RealtimeHub {
         this.mapper = mapper;
     }
 
-    /**
-     * 注册一个用户的新在线连接（多设备/多标签各自独立 session）。
-     *
-     * @param userId  已鉴权用户 ID
-     * @param session 已建立的 WebSocket 会话
-     */
+    /** 注册一个用户的新在线连接（多设备/多标签各自独立 session）。 */
     public void register(UUID userId, WebSocketSession session) {
         sessionsByUser.computeIfAbsent(userId, k -> ConcurrentHashMap.newKeySet()).add(session);
     }
 
-    /**
-     * 注销一个连接（连接关闭时由 Handler 调用）。
-     *
-     * @param userId  用户 ID
-     * @param session 关闭的 WebSocket 会话
-     */
+    /** 注销一个连接（连接关闭时由 Handler 调用）。 */
     public void unregister(UUID userId, WebSocketSession session) {
         Set<WebSocketSession> sessions = sessionsByUser.get(userId);
         if (sessions != null) {
@@ -63,15 +44,7 @@ public class RealtimeHub {
         }
     }
 
-    /**
-     * 向一组用户的全部在线连接推送一条实时帧。
-     * <p>
-     * 逐个 session 发送；发送失败/连接失效的连接被关闭并清理。串行化帧若失败仅记错误，
-     * 不向调用方（业务事务）抛出，保证实时推送失败不影响业务写入。
-     *
-     * @param userIds 目标用户 ID 集合
-     * @param frame   待推送的脱敏实时帧
-     */
+    /** 向一组用户的全部在线连接推送一条实时帧。 逐个 session 发送；发送失败/连接失效的连接被关闭并清理。串行化帧若失败仅记错误， 不向调用方（业务事务）抛出，保证实时推送失败不影响业务写入。 */
     public void broadcastToUsers(Set<UUID> userIds, RealtimeFrame frame) {
         if (userIds == null || userIds.isEmpty()) {
             return;
@@ -107,11 +80,7 @@ public class RealtimeHub {
         }
     }
 
-    /**
-     * 遍历当前所有在线连接（供心跳/统计使用，不修改注册表）。
-     *
-     * @param visitor 对每个在线会话执行的动作
-     */
+    /** 遍历当前所有在线连接（供心跳/统计使用，不修改注册表）。 */
     public void forEachSession(Consumer<WebSocketSession> visitor) {
         sessionsByUser.values().forEach(
                 sessions -> sessions.forEach(session -> {

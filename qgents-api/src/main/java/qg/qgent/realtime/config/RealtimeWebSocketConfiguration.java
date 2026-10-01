@@ -8,12 +8,7 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 import qg.qgent.realtime.websocket.RealtimeAuthInterceptor;
 import qg.qgent.realtime.websocket.WebSocketRealtimeHandler;
 
-/**
- * WebSocket 实时通道配置（单连接 + 用户级聚合流，契约 §12.1 补充）。
- * <p>
- * 注册 {@code /api/v1/ws/realtime} 端点：客户端以 {@code ?token=<accessToken>} 完成握手鉴权后，
- * 服务端将当前用户可见项目/团队事件与本人通知聚合并经单条连接实时推送（SSE 三端点保留兼容）。
- */
+/** 注册统一 WebSocket 事件接口及握手鉴权。 */
 @Configuration
 @EnableWebSocket
 public class RealtimeWebSocketConfiguration implements WebSocketConfigurer {

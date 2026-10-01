@@ -16,23 +16,12 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.UUID;
 
-/**
- * 实时 WebSocket 处理器（单连接 + 用户级聚合流，契约 §12.1 补充）。
- * <p>
- * 连接建立时从握手会话属性读取已鉴权 {@code userId}，登记到 {@link RealtimeHub}；此后服务端把该用户
- * 可见项目/团队事件与本人通知聚合推送到此单条连接。客户端上行数据一般不是必需（实时推送单向），
- * 预留 handleTextMessage 供心跳/查询类扩展。
- * <p>
- * 心跳沿用 SSE 的 15 秒约定：定时向每条在线连接发送 WebSocket PingMessage 保活；连接断开或发送失败
- * 时主动关闭并注销，避免失效连接残留。
- */
+/** 注册在线连接、发送连接确认和心跳，断线时移除连接。 */
 @Component
 public class WebSocketRealtimeHandler extends TextWebSocketHandler {
     private static final Logger log = LoggerFactory.getLogger(WebSocketRealtimeHandler.class);
 
-    /**
-     * 心跳间隔（毫秒），对齐 SSE 每 15 秒心跳。
-     */
+    /** 心跳间隔（毫秒），对齐 SSE 每 15 秒心跳。 */
     private static final long HEARTBEAT_MS = 15_000L;
 
     private final RealtimeHub hub;
@@ -71,20 +60,14 @@ public class WebSocketRealtimeHandler extends TextWebSocketHandler {
         log.debug("realtime transport error, userId={}: {}", userId, exception.getMessage());
     }
 
-    /**
-     * 预留的客户端上行入口：当前实时通道为服务端单向推送，一般忽略客户端文本；后续如需
-     * 心跳应答、按需订阅或查询扩展可在此解析处理。
-     */
+    /** 预留的客户端上行入口：当前实时通道为服务端单向推送，一般忽略客户端文本；后续如需 心跳应答、按需订阅或查询扩展可在此解析处理。 */
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
         // 预留；当前协议不定义客户端上行载荷，忽略（记 debug 便于排查异常上行）
         log.debug("realtime unsolicited client frame ignored, session={}", session.getId());
     }
 
-    /**
-     * 定时心跳：对每条在线连接发送 PingMessage 保活；发送失败则关闭并注销该连接。
-     * 依赖 Qgents 全局 {@code @EnableScheduling} 生效。
-     */
+    /** 定时心跳：对每条在线连接发送 PingMessage 保活；发送失败则关闭并注销该连接。 依赖 Qgents 全局 {@code @EnableScheduling} 生效。 */
     @Scheduled(fixedRate = HEARTBEAT_MS)
     public void heartbeat() {
         hub.forEachSession(session -> {

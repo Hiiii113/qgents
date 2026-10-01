@@ -13,21 +13,10 @@ import qg.qgent.auth.service.TokenService;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * WebSocket 握手鉴权拦截器（契约 §12.1 补充）。
- * <p>
- * 浏览器 WebSocket 升级握手无法携带 Authorization 头，故 access token 走握手 URL 的
- * {@code ?token=<accessToken>} 查询参数。这里用 {@link TokenService#verifyAccess} 校验 token，
- * 通过则将 {@code userId} 放入会话属性（后续 Handler 读取建立连接）；token 缺失或无效则拒绝握手。
- * <p>
- * 安全约束：该 token 为短期 access token，与现有 JWT 生命周期一致；调用方不得把完整握手 URL
- * （含 token）打入日志或异常信息，避免凭证进日志。
- */
+/** 校验握手 URL 中的 access token，并把用户 ID 保存到会话。 */
 @Component
 public class RealtimeAuthInterceptor implements HandshakeInterceptor {
-    /**
-     * 会话属性中存放已鉴权用户 ID 的键。
-     */
+    /** 会话属性中存放已鉴权用户 ID 的键。 */
     public static final String USER_ID_ATTR = "realtimeUserId";
 
     private final TokenService tokenService;
