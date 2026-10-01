@@ -5,14 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/**
- * 通知中心视图（A 联调约定 §1）。
- * <p>
- * 返回当前登录用户的持久化通知；kind 枚举：
- * TASK_COMPLETED/TASK_FAILED/AGENT_INPUT_REQUIRED/DELIVERABLE_PENDING/MR_PENDING/
- * INVITED/TEAM_JOINED/PROJECT_ADDED。
- * SSE 只负责实时提醒，本视图承担历史列表与已读状态。
- */
+/** 通知列表响应，包含通知内容、已读状态与跳转资源。 */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -25,10 +18,9 @@ public class NotificationResponse {
     private String id;
 
     /**
-     * 通知类型：TASK_COMPLETED/TASK_FAILED/AGENT_INPUT_REQUIRED/DELIVERABLE_PENDING/MR_PENDING/
-     * INVITED/TEAM_JOINED/PROJECT_ADDED。
+     * 通知类型：MESSAGE_MENTION/MR_PENDING/INVITED/TEAM_JOINED/PROJECT_ADDED。
      */
-    @Schema(description = "通知类型：TASK_COMPLETED/TASK_FAILED/AGENT_INPUT_REQUIRED/DELIVERABLE_PENDING/MR_PENDING/INVITED/TEAM_JOINED/PROJECT_ADDED")
+    @Schema(description = "通知类型：MESSAGE_MENTION/MR_PENDING/INVITED/TEAM_JOINED/PROJECT_ADDED")
     private String kind;
 
     /**

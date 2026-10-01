@@ -41,7 +41,7 @@ public class SandboxWorkerProperties {
     /**
      * 「同步 Git Store + 准备 Workspace」阶段的最大尝试次数（含首次）。
      * 初始化阶段的瞬态失败（Worker 不可达、远程仓库未同步等）在此上限内自动重试，
-     * 耗尽后才进入 Task 的 failStartup 失败链路。
+     * 耗尽后向 Agent loop 返回工作区准备失败。
      */
     private int acquireMaxAttempts = 3;
 

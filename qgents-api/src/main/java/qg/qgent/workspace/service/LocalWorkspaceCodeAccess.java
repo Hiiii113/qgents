@@ -15,13 +15,7 @@ import java.util.Locale;
 import java.util.UUID;
 import java.util.stream.Stream;
 
-/**
- * WorkspaceCodeAccess 的最小本地实现，供 Plan/Coding/Review Agent 在真实 Sandbox 落地前读取代码。
- * <p>
- * 工作区根目录由 {@link WorkspaceService} 统一解析（app.workspace.base-dir/{storageKey}，
- * 含存在性与越界校验）；目录未就绪时如实返回空结果，绝不返回编造的文件内容。真实 Sandbox
- * 接入后由沙箱内代码访问实现替换本类，接口与安全边界保持不变。
- */
+/** Worker 关闭时，从固定工作区读取文件和检索代码。 */
 @Component
 @ConditionalOnProperty(name = "app.worker.enabled", havingValue = "false", matchIfMissing = true)
 public class LocalWorkspaceCodeAccess implements WorkspaceCodeAccess {

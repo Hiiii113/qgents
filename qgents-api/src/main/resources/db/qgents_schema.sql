@@ -607,7 +607,7 @@ CREATE TABLE IF NOT EXISTS
         recipient_user_id BINARY(16) NOT NULL COMMENT '接收通知的用户ID',
         project_id BINARY(16) NULL COMMENT '关联项目ID；系统级通知为空',
         requirement_group_id BINARY(16) NULL COMMENT '关联需求群ID；非群通知为空',
-        kind VARCHAR(64) NOT NULL COMMENT '通知类型枚举：TASK_COMPLETED/TASK_FAILED/AGENT_INPUT_REQUIRED/DELIVERABLE_PENDING/MR_PENDING',
+        kind VARCHAR(64) NOT NULL COMMENT '通知类型：MESSAGE_MENTION/MR_PENDING/INVITED/TEAM_JOINED/PROJECT_ADDED',
         title VARCHAR(255) NOT NULL COMMENT '一行通知标题',
         description TEXT NULL COMMENT '通知描述正文',
         resource_id VARCHAR(128) NULL COMMENT '关联资源ID字符串，如taskId/mrId',

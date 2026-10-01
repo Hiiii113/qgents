@@ -10,8 +10,7 @@ import java.util.UUID;
  * Agent 准备工作区后，通过本端口修改工作区内的代码。
  * <p>
  * 实现必须保证：路径限制在 Workspace 根目录内、拒绝路径穿越、限制单文件大小、
- * 失败时返回明确错误。当前本地实现写入 {@code app.workspace.base-dir}/{storageKey}，
- * 真实 Sandbox 接入后由沙箱内实现替换。
+ * 失败时返回明确错误。按 Worker 开关选择本地或远程实现。
  */
 public interface WorkspaceCodeWriter {
 
@@ -36,8 +35,7 @@ public interface WorkspaceCodeWriter {
 
     /**
      * 对 Workspace 内已有 UTF-8 文本文件执行带 expectedHash 校验的整文件原子替换。
-     * 该操作只允许替换已有普通文件，不允许借此创建新文件；通常在严格 patch 连续失败
-     * 后由 Agent 使用，避免模型反复生成无法应用的 unified diff。
+     * 该操作只替换已有普通文件，是否使用由模型决定。
      *
      * @param workspaceId 目标 Workspace。
      * @param path 相对路径。
@@ -63,8 +61,7 @@ public interface WorkspaceCodeWriter {
     /**
      * 受控的「确保文件以换行结尾」修复动作：按 expectedHash 校验当前内容后，若文件不以换行
      * 结尾则追加一个换行（与文件既有换行风格一致）；已以换行结尾时幂等返回 changed=false。
-     * 这是质量修复链路的确定性动作，供编排器执行 ENSURE_TRAILING_NEWLINE 修复，避免 AI 手工
-     * 重拼完整文件或反复生成错误的 unified patch。
+     * 模型按需要调用此工具修正末尾换行。
      *
      * @param workspaceId  目标 Workspace。
      * @param path         相对路径。

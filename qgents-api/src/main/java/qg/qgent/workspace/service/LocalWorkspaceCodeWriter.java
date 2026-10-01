@@ -20,23 +20,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.UUID;
 
-/**
- * WorkspaceCodeWriter 的本地最小实现，安全约束即本类的核心：
- * <ul>
- *   <li>工作区根目录由 {@link WorkspaceService} 统一解析（app.workspace.base-dir/{storageKey}），
- *       只接受 found 的 workspace，未配置 base-dir 或 Workspace 不存在时直接拒绝；</li>
- *   <li>路径归一化后必须仍位于 Workspace 根目录内，拒绝绝对路径与 {@code ..} 越界（防路径穿越）；</li>
- *   <li>单文件内容上限 256KB，拒绝超大写入；</li>
- *   <li>父目录不存在时按约定自动创建（mkdirs）；</li>
- *   <li>写入失败返回明确错误，绝不静默丢弃。</li>
- *   <li>patchFile 只修改已有普通文本文件：拒绝符号链接（含父目录符号链接越界）、目录、
- *       二进制/非法 UTF-8，严格按 {@link UnifiedPatchApplier} 应用统一 Diff，hash 或上下文
- *       不匹配时原文件保持不变；写回采用临时文件 + 原子替换，失败时原文件不被截断；</li>
- *   <li>workspace 不可解析或文件系统写入异常属于基础设施失败（{@link WorkspaceWriteResult#infraFail}），
- *       应由 Agent 映射 FAILED_INFRASTRUCTURE；参数/路径/大小/补丁错误属于工具级失败，可回灌模型纠正。</li>
- * </ul>
- * 真实 Sandbox 接入后由沙箱内实现替换本类，安全边界保持不变。
- */
+/** Worker 关闭时，修改固定工作区中的文本文件。检查路径、内容大小及预期哈希，以临时文件原子替换。 */
 @Component
 @ConditionalOnProperty(name = "app.worker.enabled", havingValue = "false", matchIfMissing = true)
 public class LocalWorkspaceCodeWriter implements WorkspaceCodeWriter {

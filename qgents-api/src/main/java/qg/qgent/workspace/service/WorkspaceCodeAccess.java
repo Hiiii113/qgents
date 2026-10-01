@@ -5,13 +5,7 @@ import qg.qgent.workspace.dto.WorkspaceFileReadResult;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * Agent 对 Workspace 代码的只读访问端口（list_files / read_file / search_code）。
- * <p>
- * 接口刻意只暴露读取能力：没有创建、修改、删除或执行接口，从结构上保证实现方
- * （当前为本地最小实现，后续替换为真实 Sandbox）无法被 Plan Agent 用于改写代码。
- * 所有路径均为相对路径，禁止向调用方暴露宿主机绝对路径。
- */
+/** 工作区代码读取：文件列表、文本与哈希、关键字检索。按 Worker 开关选择本地或远程实现。 */
 public interface WorkspaceCodeAccess {
 
     /**

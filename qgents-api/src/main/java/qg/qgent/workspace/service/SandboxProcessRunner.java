@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit;
  *   <li>超时后强制销毁进程并返回明确的超时结果（含已捕获的 partial 输出），不无限等待；</li>
  *   <li>启动失败（命令不存在等）返回明确的 launch failed 结果，不抛异常。</li>
  * </ul>
- * 本类不感知命令白名单；白名单由 {@link SandboxCommandPolicy} 在端口层强制执行。
+ * Git diff 调用方负责构造参数。
  */
 class SandboxProcessRunner {
 
