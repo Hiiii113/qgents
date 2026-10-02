@@ -46,6 +46,7 @@ replay_pid*
 /docs/*
 !/docs/target.md
 !/docs/github-app.md
+!/docs/sandbox-tools.md
 
 # 环境变量文件（本地运行配置，一律不入库）
 .env
