@@ -7,11 +7,9 @@ import org.springframework.context.annotation.Import;
 import qg.qgent.agent.service.AgentWorkerExecutionService;
 import qg.qgent.sandbox.client.SandboxWorkerClient;
 import qg.qgent.sandbox.service.SandboxSessionManager;
-import qg.qgent.sandbox.service.WorkerDevelopmentCommandPort;
 import qg.qgent.sandbox.service.WorkerWorkspaceCodeAccess;
 import qg.qgent.sandbox.service.WorkerWorkspaceCodeWriter;
 import qg.qgent.sandbox.service.WorkerWorkspaceCommands;
-import qg.qgent.workspace.service.DevelopmentCommandPort;
 import qg.qgent.workspace.service.WorkspaceCodeAccess;
 import qg.qgent.workspace.service.WorkspaceCodeWriter;
 import qg.qgent.workspace.service.WorkspaceCommands;
@@ -31,18 +29,16 @@ class WorkerPortSelectionTest {
                 .withUserConfiguration(Ports.class)
                 .run(context -> {
                     assertThat(context).hasSingleBean(WorkspaceCodeAccess.class)
-                            .hasSingleBean(WorkspaceCodeWriter.class).hasSingleBean(WorkspaceCommands.class)
-                            .hasSingleBean(DevelopmentCommandPort.class);
+                            .hasSingleBean(WorkspaceCodeWriter.class).hasSingleBean(WorkspaceCommands.class);
                     assertThat(context.getBean(WorkspaceCodeAccess.class)).isInstanceOf(WorkerWorkspaceCodeAccess.class);
                     assertThat(context.getBean(WorkspaceCodeWriter.class)).isInstanceOf(WorkerWorkspaceCodeWriter.class);
                     assertThat(context.getBean(WorkspaceCommands.class)).isInstanceOf(WorkerWorkspaceCommands.class);
-                    assertThat(context.getBean(DevelopmentCommandPort.class)).isInstanceOf(WorkerDevelopmentCommandPort.class);
                 });
     }
 
     @Configuration
     @Import({WorkerWorkspaceCodeAccess.class, WorkerWorkspaceCodeWriter.class,
-            WorkerWorkspaceCommands.class, WorkerDevelopmentCommandPort.class})
+            WorkerWorkspaceCommands.class})
     static class Ports {
     }
 }

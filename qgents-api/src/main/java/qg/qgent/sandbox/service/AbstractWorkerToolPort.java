@@ -69,9 +69,16 @@ abstract class AbstractWorkerToolPort {
 
     protected WorkerToolExecution executeTool(UUID workspaceId, String tool,
                                               Map<String,Object> arguments, Duration timeout,Map<String,String> environment) {
+        WorkerToolExecution submitted = submitTool(workspaceId, tool, arguments, timeout, environment);
+        WorkerToolExecution execution = awaitTool(workspaceId, submitted.getId(), properties.getPollTimeout(), true);
+        return execution;
+    }
+
+    protected WorkerToolExecution submitTool(UUID workspaceId, String tool, Map<String, Object> arguments,
+            Duration timeout, Map<String, String> environment) {
         SandboxSession session = session(workspaceId);
         // 先续持久 Workspace 写租约，再续 Sandbox；二者都成功后才允许提交可能改动文件的工具。
-        // 固定开发命令当前仍可能生成测试报告或构建缓存，因此保守地走同一护栏。
+        // 命令可能生成报告和构建缓存，使用同一工作区租约。
         sessions.renewWriteLease(workspaceId);
         UUID sandboxId = session.sandboxId();
         client.renewSandbox(sandboxId);
@@ -85,10 +92,7 @@ abstract class AbstractWorkerToolPort {
         WorkerToolExecution submitted = client.submitToolExecution(sandboxId, request);
         // 提交成功后立即记录 ID：即使后续轮询超时或线程被取消，运维仍可定位 Worker 日志。
         persistDiagnostic(submitted);
-        WorkerToolExecution execution = pollUntilTerminal(sandboxId, submitted.getId());
-        // 同一 ID 的终态会覆盖 QUEUED/RUNNING 摘要。
-        persistDiagnostic(execution);
-        return execution;
+        return submitted;
     }
 
     private void persistDiagnostic(WorkerToolExecution execution) {
@@ -98,8 +102,9 @@ abstract class AbstractWorkerToolPort {
         }
     }
 
-    private WorkerToolExecution pollUntilTerminal(UUID sandboxId, UUID executionId) {
-        long deadline = nanoTimeSupplier.get() + properties.getPollTimeout().toNanos();
+    protected WorkerToolExecution awaitTool(UUID workspaceId, UUID executionId, Duration wait, boolean requireTerminal) {
+        UUID sandboxId = session(workspaceId).sandboxId();
+        long deadline = nanoTimeSupplier.get() + wait.toNanos();
         long renewIntervalNanos = properties.leaseRenewInterval().toNanos();
         long nextRenewAt = nanoTimeSupplier.get() + renewIntervalNanos;
 
@@ -108,11 +113,10 @@ abstract class AbstractWorkerToolPort {
             if (execution == null) {
                 throw new IllegalStateException("tool execution not found: " + executionId);
             }
-            if (isTerminal(execution.getStatus())) {
-                return execution;
-            }
+            if (isTerminal(execution.getStatus())) { persistDiagnostic(execution); return execution; }
             long now = nanoTimeSupplier.get();
             if (now >= deadline) {
+                if (!requireTerminal) return execution;
                 throw new IllegalStateException("tool execution did not finish within poll timeout: " + executionId);
             }
             if (now >= nextRenewAt) {
@@ -123,7 +127,7 @@ abstract class AbstractWorkerToolPort {
         }
     }
 
-    private static boolean isTerminal(String status) {
+    protected static boolean isTerminal(String status) {
         return "SUCCEEDED".equals(status) || "FAILED".equals(status) || "TIMED_OUT".equals(status)
                 || "CANCELLED".equals(status) || "INTERRUPTED".equals(status);
     }

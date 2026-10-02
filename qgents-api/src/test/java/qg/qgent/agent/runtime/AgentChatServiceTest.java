@@ -69,10 +69,42 @@ class AgentChatServiceTest {
         when(attachments.load(actor, projectId, List.of())).thenReturn(new AttachmentMediaLoader.Result(List.of(), ""));
         when(workspaces.create(projectId)).thenReturn(workspace(workspaceId));
         when(workspaces.require(projectId, workspaceId)).thenReturn(workspace(workspaceId));
-        when(commands.run(any(), any(), anyList(), anyMap())).thenReturn(Map.of("ok", true, "exitCode", 0));
+        when(commands.start(any(), any(), anyList(), anyInt(), anyInt())).thenReturn(Map.of("ok", true, "exitCode", 0));
         service = new AgentChatService(new GitHubCapability(commands, repositories), commands, workspaces,
                 loop, agents, runs, projects, context, messages, runService, sessions, code,
-                mock(WorkspaceCodeWriter.class), attachments, mock(DevelopmentCommandPort.class), new ObjectMapper(), 3, 8);
+                mock(WorkspaceCodeWriter.class), attachments, new ObjectMapper(), 3, 8);
+    }
+
+    @Test
+    void commandControlDoesNotCreateEnvironmentWithoutAnExecution() {
+        runTools(available -> assertThatThrownBy(() -> find(available, "command_output")
+                .call("{\"executionId\":\"" + UUID.randomUUID() + "\"}"))
+                .hasStackTraceContaining("请先 run_command"));
+        reply("读取命令输出");
+        verifyNoInteractions(workspaces, sessions, commands);
+    }
+
+    @Test
+    void commandControlCallbacksUseRunningHandleAndOutputCursors() {
+        UUID execution = UUID.randomUUID();
+        when(commands.start(any(), any(), anyList(), anyInt(), anyInt()))
+                .thenReturn(Map.of("ok", true, "running", true, "executionId", execution.toString()));
+        when(commands.output(workspaceId, execution, 30, 40, 16000, 0))
+                .thenReturn(Map.of("ok", true, "running", true, "stdout", Map.of("text", "progress", "nextOffset", 38)));
+        when(commands.cancel(workspaceId, execution)).thenReturn(Map.of("ok", false, "status", "CANCELLED"));
+        runTools(available -> {
+            assertThat(find(available, "run_command").call("{\"command\":[\"npm\",\"test\"],\"waitSeconds\":0}"))
+                    .contains(execution.toString());
+            assertThat(find(available, "command_output").call("{\"executionId\":\"" + execution
+                    + "\",\"stdoutOffset\":30,\"stderrOffset\":40,\"waitSeconds\":0}"))
+                    .contains("progress", "nextOffset");
+            assertThat(find(available, "cancel_command").call("{\"executionId\":\"" + execution + "\"}"))
+                    .contains("CANCELLED");
+        });
+        reply("执行并取消");
+        verify(commands).start(workspaceId, null, List.of("npm", "test"), 600, 0);
+        verify(commands).output(workspaceId, execution, 30, 40, 16000, 0);
+        verify(commands).cancel(workspaceId, execution);
     }
 
     @Test
@@ -121,12 +153,12 @@ class AgentChatServiceTest {
 
     @Test
     void firstCodeCallCreatesEnvironmentOnceAndPreservesCommandFailure() {
-        when(commands.run(eq(workspaceId), eq("chosen"), anyList(), eq(Map.of())))
+        when(commands.start(eq(workspaceId), eq("chosen"), anyList(), eq(600), eq(10)))
                 .thenReturn(Map.of("ok", false, "exitCode", 1, "stderr", "build failed"));
         runTools(available -> {
             assertThat(find(available, "run_command").call("{\"command\":[\"git\",\"status\"],\"directory\":\"chosen\"}"))
                     .contains("build failed");
-            find(available, "list_files").call("{}");
+            find(available, "glob_files").call("{}");
         });
         reply("实现功能");
         verify(workspaces).create(projectId);
@@ -202,7 +234,7 @@ class AgentChatServiceTest {
                 assertThat(qg.qgent.sandbox.dto.WorkerExecutionTraceContext.currentAgentRunId()).isEqualTo(rootRunId);
             } else {
                 assertThat(qg.qgent.sandbox.dto.WorkerExecutionTraceContext.currentAgentRunId()).isNotEqualTo(rootRunId);
-                find(available, "list_files").call("{}");
+                find(available, "glob_files").call("{}");
                 verify(sessions, never()).release(any(), any());
             }
             return new AgentLoop.Result(true, "结果", 1);
@@ -233,7 +265,7 @@ class AgentChatServiceTest {
             return new AgentLoop.Result(true, "不应作为完成结果", 1);
         });
         reply("修改代码");
-        verify(commands).run(any(), any(), anyList(), anyMap());
+        verify(commands).start(any(), any(), anyList(), anyInt(), anyInt());
         verify(sessions).release(workspaceId, rootRunId);
         verify(runs, atLeastOnce()).updateById(argThat((AgentRunEntity run) -> "CANCELLED".equals(run.getStatus())));
         verify(messages).sendAsAgent(eq(groupId), eq(agentId),

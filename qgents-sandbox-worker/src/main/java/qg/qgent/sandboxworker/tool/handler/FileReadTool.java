@@ -2,87 +2,109 @@ package qg.qgent.sandboxworker.tool.handler;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-
 import qg.qgent.sandboxworker.tool.dto.ToolArguments;
 import qg.qgent.sandboxworker.tool.dto.ToolContext;
 import qg.qgent.sandboxworker.tool.dto.ToolResult;
-
+import java.io.BufferedReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 分页读取 UTF-8 文本文件并返回内容哈希。
- */
+/** 流式读取 UTF-8 文件，返回有行号的有界窗口和原始字节哈希。 */
 @Component
 @RequiredArgsConstructor
 public class FileReadTool implements SandboxTool {
+    private static final int MAX_WINDOW_BYTES = 64 * 1024;
+    private static final int MAX_LINE_CHARS = 4000;
     private final RepositoryFileResolver files;
+    public String name() { return "file.read"; }
 
-    @Override
-    public String name() {
-        return "file.read";
-    }
-
-
-    @Override
     public ToolResult execute(ToolContext context, Map<String, Object> arguments) {
-        String relativePath = ToolArguments.string(arguments, "path", 1024);
-        int startLine = ToolArguments.integer(arguments, "startLine", 1, 1, Integer.MAX_VALUE);
-        int lineCount = ToolArguments.integer(arguments, "lineCount", 200, 1, 1000);
-        Path file = files.resolveExisting(context.getLocalWorkspace(), relativePath);
+        String path = ToolArguments.string(arguments, "path", 1024);
+        int start = ToolArguments.integer(arguments, "startLine", 1, 1, Integer.MAX_VALUE);
+        int count = ToolArguments.integer(arguments, "lineCount", 200, 1, 1000);
+        Path file = files.resolveExisting(context.getLocalWorkspace(), path);
         try {
-            byte[] bytes = Files.readAllBytes(file);
-            if (bytes.length > 2 * 1024 * 1024) {
-                throw new IllegalArgumentException("文件超过 2 MiB，不能一次读取");
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            boolean hasLf = false, hasCrlf = false;
+            int previous = -1;
+            try (var input = Files.newInputStream(file)) {
+                byte[] buffer = new byte[8192];
+                int size;
+                while ((size = input.read(buffer)) != -1) {
+                    digest.update(buffer, 0, size);
+                    for (int i = 0; i < size; i++) {
+                        int value = buffer[i] & 255;
+                        if (value == 10) { hasLf = true; if (previous == 13) hasCrlf = true; }
+                        previous = value;
+                    }
+                    if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
+                }
             }
-            String content = new String(bytes, StandardCharsets.UTF_8);
-            List<String> allLines = content.lines().toList();
-            int from = Math.min(startLine - 1, allLines.size());
-            int to = Math.min(from + lineCount, allLines.size());
-            boolean endsWithNewline = bytes.length > 0 && (bytes[bytes.length - 1] == '\n');
-            String newlineStyle = detectNewlineStyle(bytes);
-            return ToolResult.value(Map.of(
-                    "path", relativePath,
-                    "sha256", sha256(bytes),
-                    "startLine", startLine,
-                    "totalLines", allLines.size(),
-                    "lines", allLines.subList(from, to),
-                    "truncated", to < allLines.size(),
-                    "endsWithNewline", endsWithNewline,
-                    "newlineStyle", newlineStyle));
+            List<Map<String, Object>> lines = new ArrayList<>();
+            int total = 0, bytes = 0;
+            boolean clipped = false, windowFull = false;
+            // 逐字符读取，避免单个超长行先占用无界内存。
+            try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+                StringBuilder line = new StringBuilder();
+                boolean any = false, lastCr = false, lineClipped = false;
+                int value;
+                while ((value = reader.read()) != -1) {
+                    if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
+                    if (value == '\n' && lastCr) { lastCr = false; continue; }
+                    lastCr = value == '\r';
+                    if (value == '\r' || value == '\n') {
+                        total++;
+                        if (total >= start && lines.size() < count && !windowFull) {
+                            String text = line.toString();
+                            int size = text.getBytes(StandardCharsets.UTF_8).length;
+                            if (bytes + size > MAX_WINDOW_BYTES) windowFull = true;
+                            else { lines.add(Map.of("number", total, "text", text, "truncated", lineClipped)); bytes += size; clipped |= lineClipped; }
+                        }
+                        line.setLength(0); any = false; lineClipped = false;
+                    } else {
+                        any = true;
+                        if (line.length() < MAX_LINE_CHARS) line.append((char) value); else lineClipped = true;
+                    }
+                }
+                if (any) {
+                    total++;
+                    if (total >= start && lines.size() < count && !windowFull) {
+                        String text = line.toString();
+                        if (bytes + text.getBytes(StandardCharsets.UTF_8).length <= MAX_WINDOW_BYTES) {
+                            lines.add(Map.of("number", total, "text", text, "truncated", lineClipped)); clipped |= lineClipped;
+                        }
+                    }
+                }
+            }
+            int next = start + lines.size();
+            return ToolResult.value(Map.of("path", path, "sha256", HexFormat.of().formatHex(digest.digest()),
+                    "startLine", start, "totalLines", total, "lines", lines, "truncated", clipped || next <= total,
+                    "nextLine", next, "endsWithNewline", previous == 10, "newlineStyle", hasCrlf ? "CRLF" : hasLf ? "LF" : "NONE"));
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("读取已取消", exception);
         } catch (Exception exception) {
-            throw new IllegalStateException("读取文件失败", exception);
+            throw new IllegalStateException("读取 UTF-8 文件失败：" + exception.getMessage(), exception);
         }
     }
 
     static String sha256(byte[] content) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
-        } catch (Exception exception) {
-            throw new IllegalStateException("计算文件哈希失败", exception);
-        }
+        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content)); }
+        catch (Exception exception) { throw new IllegalStateException("计算文件哈希失败", exception); }
     }
 
-    /**
-     * 检测文件换行风格：含 CRLF 序列记为 CRLF；否则含 LF 记为 LF；都不含记为 NONE（无换行符）。
-     * 只做保守方向检测——CRLF 与 LF 混用时记为 CRLF（存在 CRLF 即说明文件是 CRLF 风格的），
-     * 供模型在改写文件时保持原风格。
-     */
     static String detectNewlineStyle(byte[] bytes) {
-        boolean hasLf = false;
-        for (int i = 0; i < bytes.length; i++) {
-            if (bytes[i] == '\n') {
-                if (i > 0 && bytes[i - 1] == '\r') {
-                    return "CRLF";
-                }
-                hasLf = true;
-            }
+        boolean lf = false;
+        for (int i = 0; i < bytes.length; i++) if (bytes[i] == 10) {
+            if (i > 0 && bytes[i - 1] == 13) return "CRLF";
+            lf = true;
         }
-        return hasLf ? "LF" : "NONE";
+        return lf ? "LF" : "NONE";
     }
 }

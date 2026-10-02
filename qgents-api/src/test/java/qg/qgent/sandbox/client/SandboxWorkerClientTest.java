@@ -18,6 +18,24 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 class SandboxWorkerClientTest {
     @Test
+    void commandOutputUsesIndependentByteCursorsAndCancelUsesPost() {
+        UUID id = UUID.randomUUID();
+        var builder = RestClient.builder().baseUrl("http://worker");
+        var server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo("http://worker/internal/v1/tool-executions/" + id
+                        + "/output?stdoutOffset=30&stderrOffset=40&maxBytes=16000"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"stdout\":{\"text\":\"next\",\"nextOffset\":34}}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo("http://worker/internal/v1/tool-executions/" + id + "/cancel"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("{\"id\":\"" + id + "\",\"status\":\"CANCELLED\"}", MediaType.APPLICATION_JSON));
+        var client = new SandboxWorkerClient(builder.build(), new ObjectMapper());
+        assertThat(client.getCommandOutput(id, 30, 40, 16000)).containsKey("stdout");
+        assertThat(client.cancelToolExecution(id).getStatus()).isEqualTo("CANCELLED");
+        server.verify();
+    }
+
+    @Test
     void provisioningOnlySendsProjectIdAndReturnsStorageKey() {
         UUID id = UUID.randomUUID(), project = UUID.randomUUID();
         var builder = RestClient.builder().baseUrl("http://worker");

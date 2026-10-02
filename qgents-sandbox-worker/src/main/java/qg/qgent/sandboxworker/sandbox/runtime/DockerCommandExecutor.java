@@ -47,6 +47,12 @@ public class DockerCommandExecutor implements CommandExecutor {
     @Override
     public CommandExecutionResult execute(SandboxAllocation sandbox,String workingDirectory,List<String> command,
                                           Duration timeout,java.util.Map<String,String> environment) throws InterruptedException {
+        return execute(sandbox, workingDirectory, command, timeout, environment, null);
+    }
+
+    @Override
+    public CommandExecutionResult execute(SandboxAllocation sandbox, String workingDirectory, List<String> command,
+            Duration timeout, java.util.Map<String, String> environment, java.nio.file.Path outputDirectory) throws InterruptedException {
         if (sandbox.getRuntimeHandle() == null) {
             throw new IllegalStateException("沙箱缺少底层容器编号");
         }
@@ -54,7 +60,7 @@ public class DockerCommandExecutor implements CommandExecutor {
                 new ReentrantLock());
         lock.lockInterruptibly();
         try {
-            return executeLocked(sandbox, workingDirectory, command, timeout, environment);
+            return executeLocked(sandbox, workingDirectory, command, timeout, environment, outputDirectory);
         } finally {
             lock.unlock();
         }
@@ -65,7 +71,7 @@ public class DockerCommandExecutor implements CommandExecutor {
      * 取消或超时需要重启容器，因此同一 Sandbox 内的容器命令必须串行，避免误杀其他正在运行的命令。
      */
     private CommandExecutionResult executeLocked(SandboxAllocation sandbox, String workingDirectory,
-                                                  List<String> command, Duration timeout,java.util.Map<String,String> environment) throws InterruptedException {
+                                                  List<String> command, Duration timeout,java.util.Map<String,String> environment, java.nio.file.Path outputDirectory) throws InterruptedException {
         String execId;
         try {
             execId = docker.execCreateCmd(sandbox.getRuntimeHandle())
@@ -78,9 +84,9 @@ public class DockerCommandExecutor implements CommandExecutor {
         } catch (RuntimeException exception) {
             throw dockerFailure("create", sandbox, exception);
         }
-        LimitedOutputStream stdout = new LimitedOutputStream(properties.getMaxOutputBytes());
-        LimitedOutputStream stderr = new LimitedOutputStream(properties.getMaxOutputBytes());
-        try (ExecStartResultCallback callback = new ExecStartResultCallback(stdout, stderr)) {
+        LimitedOutputStream stdout = new LimitedOutputStream(properties.getMaxOutputBytes(), outputDirectory == null ? null : outputDirectory.resolve("stdout"));
+        LimitedOutputStream stderr = new LimitedOutputStream(properties.getMaxOutputBytes(), outputDirectory == null ? null : outputDirectory.resolve("stderr"));
+        try (stdout; stderr; ExecStartResultCallback callback = new ExecStartResultCallback(stdout, stderr)) {
             boolean completed = docker.execStartCmd(execId).exec(callback)
                     .awaitCompletion(timeout.toMillis(), TimeUnit.MILLISECONDS);
             if (!completed) {
@@ -126,18 +132,24 @@ public class DockerCommandExecutor implements CommandExecutor {
         return value.isEmpty() ? List.of() : Arrays.asList(value.split("\\R"));
     }
 
-    private static final class LimitedOutputStream extends OutputStream {
+    static final class LimitedOutputStream extends OutputStream {
         private final int limit;
         private final ByteArrayOutputStream delegate;
         private boolean truncated;
+        private final OutputStream fullOutput;
 
-        private LimitedOutputStream(int limit) {
+        LimitedOutputStream(int limit, java.nio.file.Path path) {
             this.limit = limit;
+            try {
+                if (path != null) java.nio.file.Files.createDirectories(path.getParent());
+                fullOutput = path == null ? OutputStream.nullOutputStream() : java.nio.file.Files.newOutputStream(path);
+            } catch (IOException exception) { throw new IllegalStateException("无法创建输出文件", exception); }
             this.delegate = new ByteArrayOutputStream(Math.min(limit, 8192));
         }
 
         @Override
-        public void write(int value) {
+        public void write(int value) throws IOException {
+            fullOutput.write(value);
             if (delegate.size() < limit) {
                 delegate.write(value);
             } else {
@@ -147,6 +159,8 @@ public class DockerCommandExecutor implements CommandExecutor {
 
         @Override
         public void write(byte[] values, int offset, int length) throws IOException {
+            fullOutput.write(values, offset, length);
+            fullOutput.flush();
             int writable = Math.min(length, Math.max(0, limit - delegate.size()));
             if (writable > 0) {
                 delegate.write(values, offset, writable);
@@ -154,11 +168,14 @@ public class DockerCommandExecutor implements CommandExecutor {
             truncated |= writable < length;
         }
 
-        private String value() {
+        @Override
+        public void close() throws IOException { fullOutput.close(); }
+
+        String value() {
             return delegate.toString(StandardCharsets.UTF_8);
         }
 
-        private boolean isTruncated() {
+        boolean isTruncated() {
             return truncated;
         }
     }

@@ -24,13 +24,15 @@ class CommandRunToolTest {
         Files.createDirectory(root.resolve("selected"));
         var executor = mock(CommandExecutor.class);
         var context = new ToolContext(null, root, "/workspace", Duration.ofSeconds(10));
+        context.setExecutionId(java.util.UUID.randomUUID());
         context.setEnvironment(Map.of("GIT_CONFIG_COUNT", "1", "GIT_CONFIG_VALUE_0", "very-secret-value"));
         when(executor.execute(any(), anyString(), anyList(), any(), anyMap()))
                 .thenReturn(new CommandExecutionResult(17, List.of("101 results"), List.of("failed very-secret-value")));
         var result = new CommandRunTool(executor).execute(context,
                 Map.of("directory", "selected", "command", List.of("git", "status")));
         assertThat(result.getExitCode()).isEqualTo(17);
-        assertThat(result.getResult()).containsEntry("stdout", "101 results").containsEntry("stderr", "failed [redacted]");
+        assertThat((Map<String,Object>) result.getResult().get("stdout")).containsEntry("text", "101 results");
+        assertThat((Map<String,Object>) result.getResult().get("stderr")).containsEntry("text", "failed [redacted]");
         verify(executor).execute(null, "/workspace/selected", List.of("git", "status"), context.getTimeout(), context.getEnvironment());
         assertThatThrownBy(() -> new CommandRunTool(executor).execute(context,
                 Map.of("directory", "..", "command", List.of("git", "status")))).isInstanceOf(IllegalArgumentException.class);

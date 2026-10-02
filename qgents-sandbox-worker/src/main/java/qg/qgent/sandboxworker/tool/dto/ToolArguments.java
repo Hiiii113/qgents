@@ -40,6 +40,8 @@ public final class ToolArguments {
         if (!(value instanceof Number number)) {
             throw invalid(name);
         }
+        if (!Double.isFinite(number.doubleValue()) || number.doubleValue() != Math.rint(number.doubleValue())
+                || number.doubleValue() < min || number.doubleValue() > max) throw invalid(name);
         int result = number.intValue();
         if (result < min || result > max) {
             throw invalid(name);

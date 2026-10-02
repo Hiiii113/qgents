@@ -6,7 +6,6 @@ import org.junit.jupiter.api.io.TempDir;
 import qg.qgent.sandboxworker.common.web.WorkerException;
 import qg.qgent.sandboxworker.tool.dto.ToolContext;
 import qg.qgent.sandboxworker.tool.dto.ToolResult;
-import qg.qgent.sandboxworker.tool.handler.DirectoryCreateTool;
 import qg.qgent.sandboxworker.tool.handler.FilePatchTool;
 import qg.qgent.sandboxworker.tool.handler.RepositoryFileResolver;
 
@@ -43,15 +42,6 @@ class ToolRegistryTest {
 
         assertEquals("one\nTWO\nthree\n", Files.readString(file));
         assertEquals(0, result.getExitCode());
-    }
-
-    @Test
-    void discoversDirectoryCreate() throws Exception {
-        ToolRegistry registry = new ToolRegistry(List.of(new DirectoryCreateTool(new RepositoryFileResolver())));
-
-        ToolResult result = registry.execute("directory.create", context(), Map.of("path", "new/dir"));
-
-        assertEquals(true, result.getResult().get("created"));
     }
 
     @Test

@@ -54,40 +54,6 @@ public class RepositoryFileResolver {
         }
     }
 
-    /**
-     * 解析仓库内目录创建目标。目标可以不存在，但已存在的父路径必须真实位于仓库内，
-     * 且不能通过符号链接绕出仓库边界。
-     */
-    public Path resolveForDirectoryCreate(Path repository, String relativePath) {
-        Path candidate = resolve(repository, relativePath);
-        try {
-            validateExistingChain(repository, candidate);
-            return candidate;
-        } catch (WorkerException exception) {
-            throw exception;
-        } catch (Exception exception) {
-            throw invalid("无法解析目录路径");
-        }
-    }
-
-    /**
-     * 目录创建后再次确认路径链未被替换为符号链接且真实路径仍在仓库内。
-     */
-    public void verifyCreatedPath(Path repository, Path target) {
-        validateExistingChain(repository, target);
-        try {
-            Path realRepository = repository.toRealPath();
-            Path realTarget = target.toRealPath();
-            if (!realTarget.startsWith(realRepository)) {
-                throw invalid("文件路径越过仓库边界");
-            }
-        } catch (WorkerException exception) {
-            throw exception;
-        } catch (Exception exception) {
-            throw invalid("路径创建后无法确认仓库边界");
-        }
-    }
-
     private Path resolve(Path repository, String relativePath) {
         if (relativePath == null || relativePath.isBlank()) {
             throw invalid("文件路径必须是仓库内相对路径");

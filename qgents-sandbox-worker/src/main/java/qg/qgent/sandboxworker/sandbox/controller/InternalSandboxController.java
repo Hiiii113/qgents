@@ -95,9 +95,16 @@ public class InternalSandboxController {
         return toolExecutionService.cancel(executionId);
     }
 
-    /**
-     * 按递增游标查询工具执行日志。
-     */
+    /** 分页读取完整命令输出；运行中也可读取已写入的内容。 */
+    @GetMapping("/tool-executions/{executionId}/output")
+    public Map<String, Object> output(@PathVariable UUID executionId,
+            @RequestParam(defaultValue = "0") @Min(0) long stdoutOffset,
+            @RequestParam(defaultValue = "0") @Min(0) long stderrOffset,
+            @RequestParam(defaultValue = "16000") @Min(4) @Max(64000) int maxBytes) {
+        return toolExecutionService.output(executionId, stdoutOffset, stderrOffset, maxBytes);
+    }
+
+    /** 按递增游标查询工具执行日志。 */
     @GetMapping("/tool-executions/{executionId}/logs")
     public ExecutionLogsResponse getToolExecutionLogs(
             @PathVariable UUID executionId,

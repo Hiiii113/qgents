@@ -161,9 +161,17 @@ public class SandboxWorkerClient {
                 .body(WorkerToolExecution.class));
     }
 
-    /**
-     * 统一执行调用并做错误映射，不让 RestClient 原始异常泄漏到上层。
-     */
+    public WorkerToolExecution cancelToolExecution(UUID id) {
+        return execute(() -> client.post().uri(TOOL_EXECUTION + "/cancel", id).retrieve().body(WorkerToolExecution.class));
+    }
+
+    public java.util.Map<String, Object> getCommandOutput(UUID id, long stdoutOffset, long stderrOffset, int count) {
+        return execute(() -> client.get().uri(builder -> builder.path(TOOL_EXECUTION + "/output")
+                .queryParam("stdoutOffset", stdoutOffset).queryParam("stderrOffset", stderrOffset).queryParam("maxBytes", count).build(id))
+                .retrieve().body(new org.springframework.core.ParameterizedTypeReference<java.util.Map<String, Object>>() { }));
+    }
+
+    /** 统一执行调用并做错误映射，不让 RestClient 原始异常泄漏到上层。 */
     private <T> T execute(Supplier<T> call) {
         Timer.Sample timer = metrics == null ? null : metrics.start();
         try {

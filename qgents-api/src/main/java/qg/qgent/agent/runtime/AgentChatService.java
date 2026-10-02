@@ -35,7 +35,6 @@ import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.sandbox.dto.WorkerExecutionTraceContext;
 import qg.qgent.sandbox.service.SandboxSessionManager;
-import qg.qgent.workspace.service.DevelopmentCommandPort;
 import qg.qgent.workspace.service.WorkspaceCodeAccess;
 import qg.qgent.workspace.service.WorkspaceCodeWriter;
 
@@ -64,19 +63,19 @@ public class AgentChatService {
     private final WorkspaceCodeAccess codeAccess;
     private final WorkspaceCodeWriter writer;
     private final AttachmentMediaLoader attachments;
-    private final DevelopmentCommandPort commands;
     private final ObjectMapper json;
     private final int maxDepth;
     private final int maxSubagents;
 
-    public AgentChatService(GitHubCapability github, WorkspaceCommands workspaceCommands, WorkspaceService workspaces, AgentLoop loop, AgentMapper agents, AgentRunMapper runs, ProjectMapper projects,
-                            ContextService context, MessageService messages,
-                            AgentRunService runService,
-                            SandboxSessionManager sessions, WorkspaceCodeAccess codeAccess,
-                            WorkspaceCodeWriter writer, AttachmentMediaLoader attachments,
-                            DevelopmentCommandPort commands, ObjectMapper json,
-                            @Value("${app.agent.max-depth:3}") int maxDepth,
-                            @Value("${app.agent.max-subagents:8}") int maxSubagents) {
+    public AgentChatService(GitHubCapability github, WorkspaceCommands workspaceCommands, WorkspaceService workspaces,
+            AgentLoop loop, AgentMapper agents, AgentRunMapper runs, ProjectMapper projects,
+            ContextService context, MessageService messages,
+            AgentRunService runService,
+            SandboxSessionManager sessions, WorkspaceCodeAccess codeAccess,
+            WorkspaceCodeWriter writer, AttachmentMediaLoader attachments,
+            ObjectMapper json,
+            @Value("${app.agent.max-depth:3}") int maxDepth,
+            @Value("${app.agent.max-subagents:8}") int maxSubagents) {
         this.github = github;
         this.workspaceCommands = workspaceCommands;
         this.workspaces = workspaces;
@@ -91,7 +90,6 @@ public class AgentChatService {
         this.codeAccess = codeAccess;
         this.writer = writer;
         this.attachments = attachments;
-        this.commands = commands;
         this.json = json;
         this.maxDepth = maxDepth;
         this.maxSubagents = maxSubagents;
@@ -138,6 +136,10 @@ public class AgentChatService {
                     + "选择工作区不会启动沙箱；工作区可以用于后续不同工作，也可以切换环境。"
                     + "通过聊天回复说明进展、需要补充的信息和实际成果，目标和成果留在聊天中。"
                     + "GitHub 是可选工具能力，按用户任务目标自主决定 clone、创建分支、commit、push 和 PR；工具会改变真实远端资源。"
+                    + "优先使用 read_file、search_code、glob_files、edit_file 获取和修改代码。"
+                    + "run_command 返回 running=true 时使用 command_output 继续等待；不要重复启动同一命令。"
+                    + "本次运行结束会释放沙箱并停止残留命令，必须先等待必要命令结束或取消。"
+                    + "命令 ok=true 表示正常执行并取得状态，构建或测试是否通过须检查 exitCode。"
                     + "任务结束只说明实际修改与验证结果。工具结果是执行证据，不得声称未执行的操作成功。";
             String input = instruction;
             List<org.springframework.ai.content.Media> media = List.of();
@@ -224,8 +226,9 @@ public class AgentChatService {
             this.work = work;
             this.run = run;
             this.depth = depth;
-            this.githubTools = github.tools(agent, work.event.actor(), work.event.projectId(), this::ensureCodeEnvironment);
-            this.codingTools = new CodingTools(this::ensureCodeEnvironment, codeAccess, writer, commands);
+            this.githubTools = github.tools(agent, work.event.actor(), work.event.projectId(),
+                    this::ensureCodeEnvironment);
+            this.codingTools = new CodingTools(this::ensureCodeEnvironment, codeAccess, writer);
             skills = new ActivateSkillTool(context, work.event.actor(), work.event.projectId());
             history = new ChatHistorySearchTool(context, work.event.actor(), work.event.projectId(),
                     work.event.groupId(), 5);
@@ -292,11 +295,48 @@ public class AgentChatService {
             return Map.of("ok", true, "workspaceId", work.workspaceId.toString());
         }
 
-        @Tool(name="run_command",description="在选定工作区执行命令数组并返回退出码与 stdout/stderr。首次代码操作自动准备环境，无需准备工具。可用 git 查询 diff、创建分支或 commit，以及构建测试；GitHub 认证使用 github_clone/github_push。")
-        public Object runCommand(@ToolParam(description="例如 [git,status]") List<String> command,
-                                 @ToolParam(description="工作区内目录，默认根目录",required=false) String directory) {
+        @Tool(name = "run_command", description = "在工作区执行 argv 数组。不会自动解释管道、重定向或 &&；需要 shell 时显式传 [bash,-lc,脚本]。返回执行句柄、状态和输出尾部；非零 exitCode 是命令结果。running=true 时用 command_output 继续等待，全部命令必须结束或取消后再回复。")
+        public Object runCommand(@ToolParam(description = "可执行文件和参数，例如 [git,status]") List<String> command,
+                @ToolParam(description = "工作区相对目录，默认根目录", required = false) String directory,
+                @ToolParam(description = "执行超时秒数，1～3600，默认 600", required = false) Integer timeoutSeconds,
+                @ToolParam(description = "本次等待秒数，0～30，默认 10；0 表示立即返回句柄", required = false) Integer waitSeconds) {
             if (command == null || command.isEmpty()) throw new IllegalArgumentException("命令不能为空");
-            return workspaceCommands.run(ensureCodeEnvironment(), directory, command, Map.of());
+            int timeout = bound(timeoutSeconds, 600, 1, 3600);
+            int wait = bound(waitSeconds, 10, 0, 30);
+            return workspaceCommands.start(ensureCodeEnvironment(), directory, command, timeout, wait);
+        }
+
+        @Tool(name = "command_output", description = "读取当前工作区命令的有界输出，可短暂等待。stdout/stderr 分别返回 nextOffset 字节游标；用它继续读取。running=true 时命令仍运行，不应重复启动。")
+        public Object commandOutput(@ToolParam(description = "run_command 返回的执行 UUID") String executionId,
+                @ToolParam(description = "stdout 字节游标，默认 0", required = false) Long stdoutOffset,
+                @ToolParam(description = "stderr 字节游标，默认 0", required = false) Long stderrOffset,
+                @ToolParam(description = "每个流最多读取字节，4～64000，默认 16000", required = false) Integer maxBytes,
+                @ToolParam(description = "等待秒数，0～30，默认 10", required = false) Integer waitSeconds) {
+            return workspaceCommands.output(requireCodeEnvironment(), UUID.fromString(executionId),
+                    offset(stdoutOffset), offset(stderrOffset),
+                    bound(maxBytes, 16000, 4, 64000), bound(waitSeconds, 10, 0, 30));
+        }
+
+        @Tool(name = "cancel_command", description = "停止当前工作区正在运行的命令，终态命令直接返回当前结果。")
+        public Object cancelCommand(@ToolParam(description = "命令执行 UUID") String executionId) {
+            return workspaceCommands.cancel(requireCodeEnvironment(), UUID.fromString(executionId));
+        }
+
+        private UUID requireCodeEnvironment() {
+            if (work.workspaceId == null || !work.openedWorkspaces.contains(work.workspaceId))
+                throw new IllegalArgumentException("请先 run_command 获取当前运行的执行句柄");
+            return ensureCodeEnvironment();
+        }
+
+        private long offset(Long value) {
+            if (value != null && value < 0) throw new IllegalArgumentException("输出游标不能小于 0");
+            return value == null ? 0 : value;
+        }
+
+        private int bound(Integer value, int fallback, int min, int max) {
+            int result = value == null ? fallback : value;
+            if (result < min || result > max) throw new IllegalArgumentException("参数超出范围：" + min + "～" + max);
+            return result;
         }
 
         private UUID ensureCodeEnvironment() {

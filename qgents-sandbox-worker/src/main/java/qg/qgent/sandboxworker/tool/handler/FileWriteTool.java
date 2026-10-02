@@ -51,10 +51,14 @@ public class FileWriteTool implements SandboxTool {
     public ToolResult execute(ToolContext context, Map<String, Object> arguments) {
         String relativePath = ToolArguments.string(arguments, "path", 1024);
         String expectedHash = ToolArguments.string(arguments, "expectedHash", 64);
+        String mode = ToolArguments.string(arguments, "mode", 16);
+        if (!java.util.Set.of("create", "replace").contains(mode)) throw new IllegalArgumentException("mode 必须为 create 或 replace");
         String content = ToolArguments.optionalString(arguments, "content", "", 2 * 1024 * 1024);
         Path target = files.resolveForWrite(context.getLocalWorkspace(), relativePath);
         try {
             boolean existed = Files.exists(target);
+            if ("create".equals(mode) && existed) throw new WorkerException(CONFLICT, "FILE_ALREADY_EXISTS", "文件已存在，请先读取再修改");
+            if ("replace".equals(mode) && !existed) throw new WorkerException(CONFLICT, "FILE_NOT_FOUND", "文件不存在，请使用新建写入");
             if (existed && (Files.isSymbolicLink(target)
                     || !Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS))) {
                 throw new WorkerException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,

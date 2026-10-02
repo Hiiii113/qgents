@@ -65,7 +65,7 @@ class ToolExecutionServiceTest {
                 new ObjectMapper().findAndRegisterModules(), properties, pool, Clock.systemUTC());
         ToolExecutionRequest request = new ToolExecutionRequest();
         request.setExecutionId(executionId);
-        request.setTool("development.run");
+        request.setTool("file.read");
         request.setEnvironment(Map.of("GIT_CONFIG_VALUE_0", "temporary-secret"));
 
         String submitted = service.submit(sandboxId, request).getStatus();
@@ -136,6 +136,28 @@ class ToolExecutionServiceTest {
     }
 
     @Test
+    void nonzeroCommandExitIsACompletedResult() throws Exception {
+        ToolExecutionFixture fixture = fixture();
+        fixture.request().setTool("command.run");
+        when(fixture.tools().execute(anyString(), any(), any())).thenReturn(new ToolResult(7, Map.of("stdout", "diagnostic"), List.of(), List.of()));
+        fixture.service().submit(fixture.sandboxId(), fixture.request());
+        awaitTerminal(fixture.rows(), fixture.executionId());
+        assertEquals("SUCCEEDED", fixture.service().find(fixture.executionId()).getStatus());
+        assertEquals(7, fixture.service().find(fixture.executionId()).getExitCode());
+        assertEquals(null, fixture.service().find(fixture.executionId()).getFailureCode());
+    }
+
+    @Test
+    void invalidArgumentsAreReturnedWithUsefulReason() throws Exception {
+        ToolExecutionFixture fixture = fixture();
+        when(fixture.tools().execute(anyString(), any(), any())).thenThrow(new IllegalArgumentException("command 必须是非空参数数组"));
+        fixture.service().submit(fixture.sandboxId(), fixture.request());
+        awaitTerminal(fixture.rows(), fixture.executionId());
+        assertEquals("TOOL_ARGUMENT_INVALID", fixture.service().find(fixture.executionId()).getFailureCode());
+        assertEquals("command 必须是非空参数数组", fixture.service().find(fixture.executionId()).getFailureReason());
+    }
+
+    @Test
     void unclassifiedFailurePersistsGenericCodeAndReason() throws Exception {
         ToolExecutionFixture fixture = fixture();
         when(fixture.tools().execute(anyString(), any(), any())).thenThrow(new IllegalStateException("internal detail"));
@@ -178,7 +200,7 @@ class ToolExecutionServiceTest {
                 new ObjectMapper().findAndRegisterModules(), properties, waitingPool, Clock.systemUTC());
         ToolExecutionRequest request = new ToolExecutionRequest();
         request.setExecutionId(executionId);
-        request.setTool("development.run");
+        request.setTool("file.read");
 
         service.submit(sandboxId, request);
 
@@ -327,7 +349,7 @@ class ToolExecutionServiceTest {
     private ToolExecutionRequest request(UUID executionId) {
         ToolExecutionRequest request = new ToolExecutionRequest();
         request.setExecutionId(executionId);
-        request.setTool("development.run");
+        request.setTool("file.read");
         return request;
     }
 
@@ -336,7 +358,7 @@ class ToolExecutionServiceTest {
         entity.setId(executionId.toString());
         entity.setOwnerWorkerId("local");
         entity.setSandboxId(sandboxId.toString());
-        entity.setToolName("development.run");
+        entity.setToolName("file.read");
         entity.setStatus("QUEUED");
         entity.setCreatedAt(java.time.LocalDateTime.now());
         return entity;

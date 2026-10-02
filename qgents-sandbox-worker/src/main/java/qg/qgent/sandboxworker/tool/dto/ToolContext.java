@@ -19,6 +19,7 @@ public class ToolContext {
     private Path localWorkspace;
     private String containerWorkspace;
     private Duration timeout;
+    private UUID executionId;
     @lombok.Setter
     private java.util.Map<String, String> environment = java.util.Map.of();
     public ToolContext(SandboxAllocation sandbox, Path localWorkspace, String containerWorkspace, Duration timeout) {

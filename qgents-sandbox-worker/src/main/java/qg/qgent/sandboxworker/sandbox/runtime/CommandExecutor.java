@@ -27,4 +27,15 @@ public interface CommandExecutor {
         if (!environment.isEmpty()) throw new IllegalStateException("此命令运行器不支持凭证环境");
         return execute(sandbox,directory,command,timeout);
     }
+    /** 保存完整输出，供长执行查询；不支持流式输出的运行器在结束后保存。 */
+    default CommandExecutionResult execute(SandboxAllocation sandbox, String directory, List<String> command,
+            Duration timeout, java.util.Map<String, String> environment, java.nio.file.Path outputDirectory) throws InterruptedException {
+        CommandExecutionResult result = execute(sandbox, directory, command, timeout, environment);
+        try {
+            java.nio.file.Files.createDirectories(outputDirectory);
+            java.nio.file.Files.writeString(outputDirectory.resolve("stdout"), String.join("\n", result.getStandardOutput()));
+            java.nio.file.Files.writeString(outputDirectory.resolve("stderr"), String.join("\n", result.getStandardError()));
+        } catch (java.io.IOException exception) { throw new IllegalStateException("保存命令输出失败", exception); }
+        return result;
+    }
 }

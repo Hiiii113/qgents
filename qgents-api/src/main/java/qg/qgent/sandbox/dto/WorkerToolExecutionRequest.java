@@ -20,9 +20,7 @@ public class WorkerToolExecutionRequest {
     @lombok.ToString.Exclude
     private Map<String,String> environment = Map.of();
 
-    /**
-     * 工具名，形如 {@code file.read} / {@code development.run}。
-     */
+    // 工具名，形如 file.read / command.run。
     private String tool;
 
     /**

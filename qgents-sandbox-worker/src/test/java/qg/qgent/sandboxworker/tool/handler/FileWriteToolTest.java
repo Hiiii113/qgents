@@ -30,7 +30,7 @@ class FileWriteToolTest {
         FileWriteTool tool = new FileWriteTool(new RepositoryFileResolver());
         String expectedHash = FileReadTool.sha256(Files.readAllBytes(file));
 
-        ToolResult result = tool.execute(context(), Map.of("path", "example.txt", "expectedHash", expectedHash,
+        ToolResult result = tool.execute(context(), Map.of("mode", "replace", "path", "example.txt", "expectedHash", expectedHash,
                 "content", "新内容"));
 
         assertEquals("新内容", Files.readString(file));
@@ -45,7 +45,7 @@ class FileWriteToolTest {
         FileWriteTool tool = new FileWriteTool(new RepositoryFileResolver());
         String expectedHash = FileReadTool.sha256(Files.readAllBytes(file));
 
-        ToolResult result = tool.execute(context(), Map.of("path", "example.txt", "expectedHash", expectedHash,
+        ToolResult result = tool.execute(context(), Map.of("mode", "replace", "path", "example.txt", "expectedHash", expectedHash,
                 "content", "原内容"));
 
         assertEquals(false, result.getResult().get("changed"));
@@ -55,7 +55,7 @@ class FileWriteToolTest {
     void createsEmptyNewFileReportsChanged() throws Exception {
         FileWriteTool tool = new FileWriteTool(new RepositoryFileResolver());
 
-        ToolResult result = tool.execute(context(), Map.of("path", "empty.txt",
+        ToolResult result = tool.execute(context(), Map.of("mode", "create", "path", "empty.txt",
                 "expectedHash", FileReadTool.sha256(new byte[0]), "content", ""));
 
         // 新建空文件：previous 与 next 都为空字节数组，但存在性已变化，必须记为真实变更
@@ -68,7 +68,7 @@ class FileWriteToolTest {
     void createsMissingParentDirectories() throws Exception {
         FileWriteTool tool = new FileWriteTool(new RepositoryFileResolver());
 
-        ToolResult result = tool.execute(context(), Map.of("path", "src/main/App.java",
+        ToolResult result = tool.execute(context(), Map.of("mode", "create", "path", "src/main/App.java",
                 "expectedHash", FileReadTool.sha256(new byte[0]), "content", "class App {}"));
 
         assertEquals("class App {}", Files.readString(repository.resolve("src/main/App.java")));
@@ -85,7 +85,7 @@ class FileWriteToolTest {
         }
 
         FileWriteTool tool = new FileWriteTool(new RepositoryFileResolver());
-        WorkerException error = assertThrows(WorkerException.class, () -> tool.execute(context(), Map.of(
+        WorkerException error = assertThrows(WorkerException.class, () -> tool.execute(context(), Map.of("mode", "replace",
                 "path", "linked/escape.txt",
                 "expectedHash", FileReadTool.sha256(new byte[0]),
                 "content", "must not escape")));
@@ -99,7 +99,7 @@ class FileWriteToolTest {
         Files.writeString(repository.resolve("example.txt"), "已经变化", StandardCharsets.UTF_8);
         FileWriteTool tool = new FileWriteTool(new RepositoryFileResolver());
 
-        assertThrows(WorkerException.class, () -> tool.execute(context(), Map.of("path", "example.txt",
+        assertThrows(WorkerException.class, () -> tool.execute(context(), Map.of("mode", "replace", "path", "example.txt",
                 "expectedHash", FileReadTool.sha256("旧内容".getBytes(StandardCharsets.UTF_8)), "content", "新内容")));
     }
 
@@ -115,7 +115,7 @@ class FileWriteToolTest {
                 PosixFilePermission.OWNER_WRITE));
         FileWriteTool tool = new FileWriteTool(new RepositoryFileResolver());
 
-        tool.execute(context(), Map.of("path", "example.txt", "expectedHash",
+        tool.execute(context(), Map.of("mode", "replace", "path", "example.txt", "expectedHash",
                 FileReadTool.sha256(Files.readAllBytes(file)), "content", "new"));
 
         assertEquals(10001L, ((Number) Files.getAttribute(file, "unix:uid")).longValue());

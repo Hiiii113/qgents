@@ -27,7 +27,7 @@ class ToolExecutionRequestValidationTest {
     void acceptsRegisteredToolWithUnderscoreInOperationName() {
         ToolExecutionRequest request = new ToolExecutionRequest();
         request.setExecutionId(UUID.randomUUID());
-        request.setTool("file.ensure_trailing_newline");
+        request.setTool("file.edit");
 
         assertTrue(validator.validate(request).isEmpty());
     }

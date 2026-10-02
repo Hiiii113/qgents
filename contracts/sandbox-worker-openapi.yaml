@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
   title: Qgents Workspace 与 Sandbox Worker 内部接口
-  version: 1.0.0
-  description: 系统管理空工作区、沙箱和工具执行。仓库由 Agent 自主 clone；command.run 接收 command 参数数组与工作区相对
-    directory。environment 仅用于本次执行，不持久化。内部接口需服务 Bearer Token。
+  version: 2.0.0
+  description: Workspace 与临时 Sandbox 的内部协议。文件工具按窗口或匹配结果返回，command.run 执行 argv 数组；正常命令的非零
+    exitCode 仍是完成结果。完整命令输出可按字节游标读取。environment 只用于本次执行，不持久化。
 paths:
   /internal/v1/health:
     get:
@@ -182,6 +182,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ToolExecution'
+  /internal/v1/tool-executions/{executionId}/output:
+    parameters:
+    - $ref: '#/components/parameters/ExecutionId'
+    get:
+      operationId: getCommandOutput
+      parameters:
+      - name: stdoutOffset
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: stderrOffset
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      - name: maxBytes
+        in: query
+        schema:
+          type: integer
+          minimum: 4
+          default: 16000
+          maximum: 64000
+      responses:
+        '200':
+          description: 命令已写入的有界输出窗口；独立字节游标避免丢失运行中的半行
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommandOutput'
 components:
   parameters:
     WorkspaceId:
@@ -364,18 +396,22 @@ components:
         tool:
           type: string
           enum:
-          - process.exec
           - file.read
-          - file.list
+          - file.glob
           - file.search
           - file.write
+          - file.edit
           - file.patch
-          - directory.create
           - command.run
         arguments:
-          type: object
-          maxProperties: 64
-          description: 各工具的结构化参数（如 ProcessExecArguments、FilePatchArguments）
+          oneOf:
+          - $ref: '#/components/schemas/FileReadArguments'
+          - $ref: '#/components/schemas/FileGlobArguments'
+          - $ref: '#/components/schemas/FileSearchArguments'
+          - $ref: '#/components/schemas/FileWriteArguments'
+          - $ref: '#/components/schemas/FileEditArguments'
+          - $ref: '#/components/schemas/FilePatchArguments'
+          - $ref: '#/components/schemas/CommandRunArguments'
         timeoutSeconds:
           type: integer
           minimum: 1
@@ -385,21 +421,6 @@ components:
           additionalProperties:
             type: string
           description: 临时进程环境，不持久化；由可信 API 调用方提供。
-    ProcessExecArguments:
-      type: object
-      required:
-      - command
-      properties:
-        command:
-          type: array
-          minItems: 1
-          maxItems: 64
-          description: 参数向量；允许常规构建工具和 sh ./gradlew 或 sh ./mvnw Wrapper，不允许 sh -c、bash
-            -c 或任意脚本路径
-          items:
-            type: string
-            minLength: 1
-            maxLength: 4096
     FilePatchArguments:
       type: object
       required:
@@ -434,27 +455,6 @@ components:
           type: integer
         changed:
           type: boolean
-    DirectoryCreateArguments:
-      type: object
-      required:
-      - path
-      properties:
-        path:
-          type: string
-          minLength: 1
-          maxLength: 1024
-          description: Repository 内相对目录路径，禁止绝对路径与 .. 越界
-    DirectoryCreateResult:
-      type: object
-      required:
-      - path
-      - created
-      properties:
-        path:
-          type: string
-        created:
-          type: boolean
-          description: 目录是否由本次调用实际创建
     ToolExecution:
       type: object
       properties:
@@ -478,6 +478,7 @@ components:
           - TIMED_OUT
           - CANCELLED
           - INTERRUPTED
+          description: command.run 正常取得退出码后为 SUCCEEDED，包括非零退出码；超时、取消和基础设施失败另行记录。
         exitCode:
           type:
           - integer
@@ -534,6 +535,286 @@ components:
         nextCursor:
           type: integer
           format: int64
+    FileReadArguments:
+      type: object
+      additionalProperties: false
+      required:
+      - path
+      properties:
+        path: &id001
+          type: string
+          minLength: 1
+          maxLength: 1024
+        startLine:
+          type: integer
+          minimum: 1
+          default: 1
+        lineCount:
+          type: integer
+          minimum: 1
+          default: 200
+          maximum: 1000
+    FileGlobArguments:
+      type: object
+      additionalProperties: false
+      required: []
+      properties:
+        path:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          default: .
+        glob:
+          type: string
+          default: '**'
+          maxLength: 512
+        limit:
+          type: integer
+          minimum: 1
+          default: 200
+          maximum: 1000
+    FileSearchArguments:
+      type: object
+      additionalProperties: false
+      required:
+      - query
+      properties:
+        query:
+          type: string
+          minLength: 1
+          maxLength: 512
+        path:
+          type: string
+          minLength: 1
+          maxLength: 1024
+          default: .
+        glob:
+          type: string
+          default: '**'
+          maxLength: 512
+        limit:
+          type: integer
+          minimum: 1
+          default: 100
+          maximum: 1000
+    FileWriteArguments:
+      type: object
+      additionalProperties: false
+      required:
+      - path
+      - expectedHash
+      - mode
+      - content
+      properties:
+        path: *id001
+        expectedHash: &id002
+          type: string
+          pattern: ^[0-9a-fA-F]{64}$
+        mode:
+          type: string
+          enum:
+          - create
+          - replace
+        content: &id003
+          type: string
+    FileEditArguments:
+      type: object
+      additionalProperties: false
+      required:
+      - path
+      - expectedHash
+      - oldText
+      - newText
+      properties:
+        path: *id001
+        expectedHash: *id002
+        oldText:
+          type: string
+          minLength: 1
+        newText: *id003
+        replaceAll:
+          type: boolean
+          default: false
+    CommandRunArguments:
+      type: object
+      additionalProperties: false
+      required:
+      - command
+      properties:
+        command:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        directory:
+          type: string
+          default: .
+    FileReadResult:
+      type: object
+      additionalProperties: false
+      required:
+      - path
+      - sha256
+      - startLine
+      - totalLines
+      - lines
+      - truncated
+      - nextLine
+      - endsWithNewline
+      - newlineStyle
+      properties:
+        path: *id003
+        sha256: *id002
+        startLine:
+          type: integer
+          minimum: 1
+          default: 1
+        totalLines:
+          type: integer
+          minimum: 0
+        lines:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - number
+            - text
+            - truncated
+            properties:
+              number:
+                type: integer
+                minimum: 1
+                default: 1
+              text: *id003
+              truncated: &id004
+                type: boolean
+        truncated: *id004
+        nextLine:
+          type: integer
+          minimum: 1
+          default: 1
+        endsWithNewline: *id004
+        newlineStyle:
+          type: string
+          enum:
+          - LF
+          - CRLF
+          - NONE
+    FileGlobResult:
+      type: object
+      additionalProperties: false
+      required:
+      - files
+      - truncated
+      properties:
+        files:
+          type: array
+          items: *id003
+        truncated: *id004
+    FileSearchResult:
+      type: object
+      additionalProperties: false
+      required:
+      - matches
+      - truncated
+      properties:
+        matches:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - path
+            - lineNumber
+            - text
+            - truncated
+            properties:
+              path: *id003
+              lineNumber:
+                type: integer
+                minimum: 1
+                default: 1
+              text: *id003
+              truncated: *id004
+        truncated: *id004
+    FileWriteResult:
+      type: object
+      additionalProperties: false
+      required:
+      - path
+      - sha256
+      - bytes
+      - changed
+      properties:
+        path: *id003
+        sha256: *id002
+        bytes:
+          type: integer
+          minimum: 0
+        changed: *id004
+    FileEditResult:
+      type: object
+      additionalProperties: false
+      required:
+      - path
+      - sha256
+      - changed
+      - oldText
+      - newText
+      properties:
+        path: *id003
+        sha256: *id002
+        changed: *id004
+        oldText: *id003
+        newText: *id003
+    CommandStreamTail:
+      type: object
+      additionalProperties: false
+      required:
+      - text
+      - truncated
+      properties:
+        text: *id003
+        truncated: *id004
+    CommandStreamWindow:
+      type: object
+      additionalProperties: false
+      required:
+      - text
+      - nextOffset
+      - truncated
+      properties:
+        text: *id003
+        nextOffset:
+          type: integer
+          format: int64
+          minimum: 0
+        truncated: *id004
+    CommandResult:
+      type: object
+      additionalProperties: false
+      required:
+      - stdout
+      - stderr
+      - outputAvailable
+      properties:
+        stdout:
+          $ref: '#/components/schemas/CommandStreamTail'
+        stderr:
+          $ref: '#/components/schemas/CommandStreamTail'
+        outputAvailable: *id004
+    CommandOutput:
+      type: object
+      additionalProperties: false
+      required:
+      - stdout
+      - stderr
+      properties:
+        stdout:
+          $ref: '#/components/schemas/CommandStreamWindow'
+        stderr:
+          $ref: '#/components/schemas/CommandStreamWindow'
   securitySchemes:
     InternalServiceToken:
       type: http

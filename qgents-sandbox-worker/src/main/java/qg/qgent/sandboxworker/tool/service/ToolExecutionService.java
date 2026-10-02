@@ -167,9 +167,19 @@ public class ToolExecutionService {
         });
     }
 
-    /**
-     * 按执行内递增序号分页读取日志。
-     */
+    /** 读取命令当前输出；执行记录限定输出目录，不接受外部路径。 */
+    public Map<String, Object> output(UUID executionId, long stdoutOffset, long stderrOffset, int count) {
+        ToolExecutionEntity execution = require(executionId);
+        if (!"command.run".equals(execution.getToolName())) throw new WorkerException(HttpStatus.UNPROCESSABLE_ENTITY,
+                "NOT_COMMAND_EXECUTION", "只有命令执行提供输出窗口");
+        var sandbox = sandboxes.findAllocation(UUID.fromString(execution.getSandboxId()));
+        var directory = qg.qgent.sandboxworker.tool.handler.CommandOutput.directory(
+                paths.resolveLocal(sandbox.getWorkspaceStorageKey()), executionId);
+        return Map.of("stdout", qg.qgent.sandboxworker.tool.handler.CommandOutput.read(directory, "stdout", stdoutOffset, count),
+                "stderr", qg.qgent.sandboxworker.tool.handler.CommandOutput.read(directory, "stderr", stderrOffset, count));
+    }
+
+    /** 按执行内递增序号分页读取日志。 */
     public ExecutionLogsResponse logs(UUID executionId, long after, int limit) {
         require(executionId);
         List<ExecutionLogEntryResponse> items = logMapper
@@ -206,13 +216,15 @@ public class ToolExecutionService {
         try {
             Duration timeout = timeout(request.getTimeoutSeconds(), sandbox.getExecutionTimeout());
             ToolContext context = context(sandbox, timeout);
+            context.setExecutionId(id);
             context.setEnvironment(request.getEnvironment() == null ? Map.of() : request.getEnvironment());
             ToolResult result = tools.execute(request.getTool(), context, request.getArguments());
             result.getStandardOutput().forEach(line -> append(executionId, "STDOUT", line));
             result.getStandardError().forEach(line -> append(executionId, "STDERR", line));
             exitCode = result.getExitCode();
             resultJson = json(result.getResult());
-            status = exitCode == null || exitCode == 0 ? "SUCCEEDED" : "FAILED";
+            // 命令正常取得退出码即完成执行；非零退出码由模型判断，不冒充基础设施失败。
+            status = "command.run".equals(request.getTool()) || exitCode == null || exitCode == 0 ? "SUCCEEDED" : "FAILED";
             if ("FAILED".equals(status)) {
                 failureCode = PROCESS_EXIT_NONZERO;
                 failureReason = "工具进程以非零退出码结束";
@@ -316,13 +328,14 @@ public class ToolExecutionService {
         if (exception instanceof WorkerException workerException) {
             return workerException.getCode();
         }
+        if (exception instanceof IllegalArgumentException) return "TOOL_ARGUMENT_INVALID";
         return TOOL_EXECUTION_FAILED;
     }
 
     private String failureReason(RuntimeException exception) {
-        if (exception instanceof WorkerException workerException
-                && workerException.getMessage() != null && !workerException.getMessage().isBlank()) {
-            return sanitizeFailureReason(workerException.getMessage());
+        if ((exception instanceof WorkerException || exception instanceof IllegalArgumentException)
+                && exception.getMessage() != null && !exception.getMessage().isBlank()) {
+            return sanitizeFailureReason(exception.getMessage());
         }
         return "工具执行失败";
     }

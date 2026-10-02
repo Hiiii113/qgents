@@ -9,7 +9,7 @@ import java.util.UUID;
 
 /**
  * Worker 返回的工具执行持久化结果（镜像 Worker 的 ToolExecution）。
- * stdout/stderr 不在此结构内，需通过 {@code /logs} 接口按游标读取。
+ * 命令结果保留输出尾部，完整输出通过 {@code /output} 按字节游标读取。
  */
 @Data
 @NoArgsConstructor
