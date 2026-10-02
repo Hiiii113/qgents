@@ -28,6 +28,17 @@ class CodingToolsTest {
         assertThat(definitions).allSatisfy(d -> assertThat(d.inputSchema()).doesNotContain("expectedHash"));
         assertThat(definitions.stream().filter(d -> d.name().equals("read_file")).findFirst().orElseThrow().inputSchema()).contains("startLine", "lineCount");
     }
+    @Test void parallelMetadataPreservesSchemaAndLeavesWritesExclusive() {
+        var nativeCallbacks = ToolCallbacks.from(tools);
+        var classified = ParallelToolCallback.from(tools);
+        for (var callback : classified) {
+            var original = java.util.Arrays.stream(nativeCallbacks)
+                    .filter(c -> c.getToolDefinition().name().equals(callback.getToolDefinition().name())).findFirst().orElseThrow();
+            assertThat(callback.getToolDefinition()).isEqualTo(original.getToolDefinition());
+            boolean read = java.util.Set.of("read_file", "glob_files", "search_code").contains(callback.getToolDefinition().name());
+            assertThat(callback instanceof ParallelToolCallback).isEqualTo(read);
+        }
+    }
     @Test void readWindowDoesNotReadMorePages() {
         var result = Map.<String,Object>of("ok", true, "sha256", hash, "truncated", true, "nextLine", 501);
         when(code.readFile(id, "big.java", 301, 200)).thenReturn(result);

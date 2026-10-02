@@ -48,6 +48,23 @@
 
 命令归根 AgentRun 的 Sandbox 生命周期所有。当前控制工具只支持本次运行内的执行，不支持运行结束后继续后台执行；结束或取消根运行时销毁 Sandbox 并停止残留命令。完整输出存于 Worker 存储，不通过新的用户运行记录查询 API 暴露。
 
+## Agent loop 工具并行
+
+参考 DeepSeek 的有界并行池与独占屏障，在工具方法上通过 `@ParallelTool` 显式声明并行能力；未标记的工具默认串行。模型工具 schema 和原生调用格式保持不变。同一步里连续的可并行调用最多同时执行 4 个，任意一个完成就补入下一调用；遇到串行调用先等前面的调用全部结束，执行完它才处理后续调用。结果按原始 `tool_call` 顺序和 ID 回传，不按完成速度重排。
+
+`app.agent.max-parallel-tool-calls` / `APP_AGENT_MAX_PARALLEL_TOOL_CALLS` 可设 1～16，默认 4，设为 1 时串行执行。上限属于每个 loop 当前工具组，不是全系统吞吐上限；Worker 自身执行池仍影响实际并发。子 Agent 保持同步委托，不同时修改根运行的共享工作环境。
+
+| 可并行 | 串行屏障 |
+| --- | --- |
+| `read_file`、`glob_files`、`search_code` | `write_file`、`edit_file`、`apply_patch` |
+| `search_chat_history`、`read_chat_message` | `activate_skill`（有激活预算和状态） |
+| `list_agents`、`list_workspaces`、`github_repositories` | `create_workspace`、`use_workspace`、`call_agent`、`cancel_agent` |
+| `command_output` | `run_command`、`cancel_command`、所有其他 GitHub 工具 |
+
+首次需要代码环境时，只有环境初始化部分串行，实际文件和搜索请求在锁外执行。并行线程显式传递 AgentRun 身份与 MDC，文件版本缓存和聊天检索预算支持并发。工具失败单独回传错误，不丢失同组其他结果。取消后不再补入新调用，已启动调用结算后才释放 Sandbox；这不等于已经实现对阻塞模型请求或所有在途工具的即时中断。
+
+调度只并行模型同一次回复中显式提出的独立调用。需要前一个结果才能确定参数时，模型必须分轮调用；调度器不推测工具间的数据依赖。通过 `run_command` 启动的长命令仍可能与后续工具同时运行，它沿用执行句柄控制，并不因串行调度就保证进程已经退出。
+
 ## 双方已有的对应能力
 
 以下是 DeepSeek 官方工具目录的并集，不意味着每个预设都启用全部工具。

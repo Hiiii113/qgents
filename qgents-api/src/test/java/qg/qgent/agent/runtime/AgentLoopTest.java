@@ -27,7 +27,7 @@ class AgentLoopTest {
 
     private AgentLoop loop(int rounds) {
         when(model.getOptions()).thenReturn(OpenAiChatOptions.builder().model("test-model").build());
-        return new AgentLoop(model, new ObjectMapper(), rounds);
+        return new AgentLoop(model, new ObjectMapper(), rounds, 4);
     }
 
     @Test
@@ -89,6 +89,29 @@ class AgentLoopTest {
         verify(model, times(2)).call(requests.capture());
         ToolResponseMessage response = (ToolResponseMessage) requests.getAllValues().get(1).getInstructions().getLast();
         assertThat(response.getResponses().getFirst().responseData()).contains("TOOL_NOT_FOUND");
+    }
+
+    @Test
+    void annotatedParallelResultsArePassedBackWithOriginalCallIds() {
+        AgentLoop loop = loop(3);
+        AssistantMessage batch = AssistantMessage.builder().content("")
+                .toolCalls(List.of(new AssistantMessage.ToolCall("read-a", "function", "read", "{}"),
+                        new AssistantMessage.ToolCall("read-b", "function", "read", "{}"))).build();
+        when(model.call(any(Prompt.class))).thenReturn(new ChatResponse(List.of(new Generation(batch))), reply("完成"));
+        var callbacks = qg.qgent.agent.tool.ParallelToolCallback.from(new ReadTools());
+        var result = loop.run("Agent", List.of(new UserMessage("读取")), () -> Arrays.asList(callbacks), () -> false);
+        assertThat(result.success()).isTrue();
+        ArgumentCaptor<Prompt> requests = ArgumentCaptor.forClass(Prompt.class);
+        verify(model, times(2)).call(requests.capture());
+        ToolResponseMessage response = (ToolResponseMessage) requests.getAllValues().get(1).getInstructions().getLast();
+        assertThat(response.getResponses()).extracting(r -> r.id()).containsExactly("read-a", "read-b");
+        assertThat(response.getResponses()).allSatisfy(r -> assertThat(r.responseData()).contains("content"));
+    }
+
+    public static class ReadTools {
+        @qg.qgent.agent.tool.ParallelTool
+        @Tool(name = "read", description = "读取")
+        public String read() { return "content"; }
     }
 
     private ChatResponse reply(String text) {

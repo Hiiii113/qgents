@@ -4,7 +4,6 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
@@ -20,6 +19,8 @@ import qg.qgent.agent.tool.ActivateSkillTool;
 import qg.qgent.agent.tool.AttachmentMediaLoader;
 import qg.qgent.agent.tool.ChatHistorySearchTool;
 import qg.qgent.agent.tool.CodingTools;
+import qg.qgent.agent.tool.ParallelTool;
+import qg.qgent.agent.tool.ParallelToolCallback;
 import qg.qgent.agent.tool.GitHubTools;
 import qg.qgent.agent.tool.GitHubCapability;
 import qg.qgent.workspace.service.WorkspaceCommands;
@@ -136,6 +137,7 @@ public class AgentChatService {
                     + "选择工作区不会启动沙箱；工作区可以用于后续不同工作，也可以切换环境。"
                     + "通过聊天回复说明进展、需要补充的信息和实际成果，目标和成果留在聊天中。"
                     + "GitHub 是可选工具能力，按用户任务目标自主决定 clone、创建分支、commit、push 和 PR；工具会改变真实远端资源。"
+                    + "独立的只读操作可以在同一回复中调用多个工具，系统会按并行标记执行；有依赖的操作分轮调用。"
                     + "优先使用 read_file、search_code、glob_files、edit_file 获取和修改代码。"
                     + "run_command 返回 running=true 时使用 command_output 继续等待；不要重复启动同一命令。"
                     + "本次运行结束会释放沙箱并停止残留命令，必须先等待必要命令结束或取消。"
@@ -235,13 +237,18 @@ public class AgentChatService {
         }
 
         private List<ToolCallback> callbacks() {
-            if (runCancelled(work)) throw new IllegalStateException("Agent 运行已取消");
-            List<ToolCallback> tools = new ArrayList<>(Arrays.asList(ToolCallbacks.from(this, skills, history)));
-            if (githubTools != null) tools.addAll(Arrays.asList(ToolCallbacks.from(githubTools)));
-            tools.addAll(Arrays.asList(ToolCallbacks.from(codingTools)));
+            if (runCancelled(work)) {
+                throw new IllegalStateException("Agent 运行已取消");
+            }
+            List<ToolCallback> tools = new ArrayList<>(Arrays.asList(ParallelToolCallback.from(this, skills, history)));
+            if (githubTools != null) {
+                tools.addAll(Arrays.asList(ParallelToolCallback.from(githubTools)));
+            }
+            tools.addAll(Arrays.asList(ParallelToolCallback.from(codingTools)));
             return tools;
         }
 
+        @ParallelTool
         @Tool(name = "list_agents", description = "列出当前用户可委托的 Agent 的 ID、名称和用途")
         public Map<String, Object> listAgents() {
             UUID teamId = projects.selectById(work.event.projectId()).getTeamId();
@@ -276,6 +283,7 @@ public class AgentChatService {
             return Map.of("ok", true, "cancelledRuns", cancelled);
         }
 
+        @ParallelTool
         @Tool(name = "list_workspaces", description = "列出当前项目可选择的独立工作区，不启动沙箱")
         public Map<String, Object> listWorkspaces() {
             return Map.of("ok", true, "workspaces", workspaces.list(work.event.projectId()).stream()
@@ -306,6 +314,7 @@ public class AgentChatService {
             return workspaceCommands.start(ensureCodeEnvironment(), directory, command, timeout, wait);
         }
 
+        @ParallelTool
         @Tool(name = "command_output", description = "读取当前工作区命令的有界输出，可短暂等待。stdout/stderr 分别返回 nextOffset 字节游标；用它继续读取。running=true 时命令仍运行，不应重复启动。")
         public Object commandOutput(@ToolParam(description = "run_command 返回的执行 UUID") String executionId,
                 @ToolParam(description = "stdout 字节游标，默认 0", required = false) Long stdoutOffset,
@@ -340,17 +349,24 @@ public class AgentChatService {
         }
 
         private UUID ensureCodeEnvironment() {
-            if (runCancelled(work)) throw new IllegalStateException("Agent 运行已取消");
-            if (work.workspaceId == null) work.workspaceId = workspaces.create(work.event.projectId()).getId();
-            if (!work.workspaceId.equals(run.getWorkspaceId())) {
-                run.setWorkspaceId(work.workspaceId);
-                runs.updateById(run);
+            // 并行只读工具只串行准备环境，实际 Worker 请求在锁外执行。
+            synchronized (work) {
+                if (runCancelled(work)) {
+                    throw new IllegalStateException("Agent 运行已取消");
+                }
+                if (work.workspaceId == null) {
+                    work.workspaceId = workspaces.create(work.event.projectId()).getId();
+                }
+                if (!work.workspaceId.equals(run.getWorkspaceId())) {
+                    run.setWorkspaceId(work.workspaceId);
+                    runs.updateById(run);
+                }
+                if (!work.openedWorkspaces.contains(work.workspaceId)) {
+                    sessions.acquire(work.rootRunId, work.event.projectId(), work.workspaceId);
+                    work.openedWorkspaces.add(work.workspaceId);
+                }
+                return work.workspaceId;
             }
-            if (!work.openedWorkspaces.contains(work.workspaceId)) {
-                sessions.acquire(work.rootRunId, work.event.projectId(), work.workspaceId);
-                work.openedWorkspaces.add(work.workspaceId);
-            }
-            return work.workspaceId;
         }
     }
 }

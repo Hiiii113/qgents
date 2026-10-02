@@ -55,4 +55,27 @@ class ChatHistorySearchToolTest {
         assertThat(tool.searchChatHistory("another", null)).containsEntry("ok", false);
         verify(contextService).searchChatHistory(actor, projectId, groupId, "key", 10);
     }
+    @Test
+    void parallelSearchesCannotExceedTheSharedRunBudget() throws Exception {
+        ChatHistorySearchTool tool = new ChatHistorySearchTool(contextService, actor, projectId, groupId, 1);
+        when(contextService.searchChatHistory(actor, projectId, groupId, "key", 10)).thenReturn(List.of());
+        var ready = new java.util.concurrent.CountDownLatch(8);
+        var start = new java.util.concurrent.CountDownLatch(1);
+        try (var pool = java.util.concurrent.Executors.newFixedThreadPool(8)) {
+            var calls = new ArrayList<java.util.concurrent.Future<Map<String, Object>>>();
+            for (int index = 0; index < 8; index++) calls.add(pool.submit(() -> {
+                ready.countDown();
+                assertThat(start.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                return tool.searchChatHistory("key", null);
+            }));
+            try { assertThat(ready.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue(); }
+            finally { start.countDown(); }
+            int success = 0;
+            for (var call : calls) if (Boolean.TRUE.equals(call.get(5, java.util.concurrent.TimeUnit.SECONDS).get("ok"))) success++;
+            assertThat(success).isEqualTo(1);
+            verify(contextService).searchChatHistory(actor, projectId, groupId, "key", 10);
+            assertThat(tool.searchChatHistory("key", null)).containsEntry("ok", false);
+        }
+    }
+
 }

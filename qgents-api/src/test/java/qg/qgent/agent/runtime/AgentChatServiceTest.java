@@ -297,6 +297,39 @@ class AgentChatServiceTest {
         verifyNoInteractions(workspaces, sessions, commands);
     }
 
+    @Test
+    void parallelReadsPrepareOneEnvironmentAndKeepTheirRunIdentity() {
+        var bothReading = new java.util.concurrent.CountDownLatch(2);
+        when(code.readFile(eq(workspaceId), anyString(), eq(1), eq(200))).thenAnswer(invocation -> {
+            assertThat(qg.qgent.sandbox.dto.WorkerExecutionTraceContext.currentAgentRunId()).isEqualTo(rootRunId);
+            bothReading.countDown();
+            assertThat(bothReading.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+            verify(sessions, never()).release(any(), any());
+            return Map.of("ok", true, "sha256", "a".repeat(64));
+        });
+        runTools(available -> {
+            var callbacks = new java.util.LinkedHashMap<String, ToolCallback>();
+            available.get().forEach(tool -> callbacks.put(tool.getToolDefinition().name(), tool));
+            assertThat(callbacks.get("read_file")).isInstanceOf(qg.qgent.agent.tool.ParallelToolCallback.class);
+            assertThat(callbacks.get("write_file")).isNotInstanceOf(qg.qgent.agent.tool.ParallelToolCallback.class);
+            assertThat(callbacks.get("call_agent")).isNotInstanceOf(qg.qgent.agent.tool.ParallelToolCallback.class);
+            assertThat(callbacks.get("run_command")).isNotInstanceOf(qg.qgent.agent.tool.ParallelToolCallback.class);
+            var results = new ToolCallExecutor(new ObjectMapper(), 2).execute(List.of(
+                    new org.springframework.ai.chat.messages.AssistantMessage.ToolCall("read-a", "function", "read_file", "{\"path\":\"a.txt\"}"),
+                    new org.springframework.ai.chat.messages.AssistantMessage.ToolCall("read-b", "function", "read_file", "{\"path\":\"b.txt\"}")),
+                    callbacks, () -> false);
+            assertThat(results.cancelled()).isFalse();
+            assertThat(results.responses()).allSatisfy(r -> assertThat(r.responseData()).contains("\"ok\":true"));
+        });
+        reply("读取两个文件");
+        verify(workspaces).create(projectId);
+        verify(sessions).acquire(rootRunId, projectId, workspaceId);
+        verify(sessions).release(workspaceId, rootRunId);
+        verify(code).readFile(workspaceId, "a.txt", 1, 200);
+        verify(code).readFile(workspaceId, "b.txt", 1, 200);
+        assertThat(qg.qgent.sandbox.dto.WorkerExecutionTraceContext.currentAgentRunId()).isNull();
+    }
+
     private void runTools(java.util.function.Consumer<Supplier<List<ToolCallback>>> action) {
         when(loop.run(anyString(), anyList(), any(), any())).thenAnswer(invocation -> {
             action.accept(invocation.getArgument(2));

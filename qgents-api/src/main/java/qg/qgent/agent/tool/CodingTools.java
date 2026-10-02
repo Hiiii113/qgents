@@ -5,7 +5,7 @@ import org.springframework.ai.tool.annotation.ToolParam;
 import qg.qgent.workspace.dto.WorkspaceWriteResult;
 import qg.qgent.workspace.service.WorkspaceCodeAccess;
 import qg.qgent.workspace.service.WorkspaceCodeWriter;
-import java.util.HashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -16,13 +16,14 @@ public class CodingTools {
     private final Supplier<UUID> workspace;
     private final WorkspaceCodeAccess code;
     private final WorkspaceCodeWriter writer;
-    private final Map<String, String> hashes = new HashMap<>();
+    private final Map<String, String> hashes = new ConcurrentHashMap<>();
     private UUID selected;
 
     public CodingTools(Supplier<UUID> workspace, WorkspaceCodeAccess code, WorkspaceCodeWriter writer) {
         this.workspace = workspace; this.code = code; this.writer = writer;
     }
 
+    @ParallelTool
     @Tool(name = "glob_files", description = "按 glob 发现工作区文件，包含隐藏配置，排除版本库元数据和常见构建目录。结果有上限；truncated=true 时缩小 path 或 glob。")
     public Map<String, Object> globFiles(
             @ToolParam(description = "工作区相对路径，默认根目录", required = false) String path,
@@ -31,6 +32,7 @@ public class CodingTools {
         return code.listFiles(workspaceId(), path == null ? "." : path, glob == null ? "**" : glob, number(limit, 200, 1000));
     }
 
+    @ParallelTool
     @Tool(name = "read_file", description = "按行读取 UTF-8 文件，返回行号、总行数和截断信息。用 nextLine 继续读取。修改前先读取；文件版本由系统保存，无需复制哈希。")
     public Map<String, Object> readFile(@ToolParam(description = "工作区相对文件路径") String path,
             @ToolParam(description = "起始行号，从 1 开始，默认 1", required = false) Integer startLine,
@@ -41,6 +43,7 @@ public class CodingTools {
         return result;
     }
 
+    @ParallelTool
     @Tool(name = "search_code", description = "用 ripgrep 正则搜索文件正文，返回路径、行号和命中行。无匹配是成功的空结果，失败返回错误。truncated=true 时缩小范围。")
     public Map<String, Object> searchCode(@ToolParam(description = "ripgrep 正则表达式") String pattern,
             @ToolParam(description = "工作区相对文件或目录，默认根目录", required = false) String path,
@@ -92,7 +95,7 @@ public class CodingTools {
         return value;
     }
 
-    private UUID workspaceId() {
+    private synchronized UUID workspaceId() {
         UUID id = workspace.get();
         if (!id.equals(selected)) { hashes.clear(); selected = id; }
         return id;

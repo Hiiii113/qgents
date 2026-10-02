@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 当前项目群聊的历史聊天检索工具。
@@ -31,7 +32,7 @@ public class ChatHistorySearchTool {
     private final UUID projectId;
     private final UUID groupId;
     private final int maxSearches;
-    private int searchesUsed;
+    private final AtomicInteger searchesUsed = new AtomicInteger();
 
     public ChatHistorySearchTool(ContextService contextService, UUID actor, UUID projectId, UUID groupId,
                                  int maxSearches) {
@@ -42,9 +43,8 @@ public class ChatHistorySearchTool {
         this.maxSearches = Math.max(0, maxSearches);
     }
 
-    /**
-     * 按关键词搜索当前项目群聊较早的聊天记录。
-     */
+    /** 按关键词检索当前群聊的历史消息。 */
+    @ParallelTool
     @Tool(name = "search_chat_history", description = "仅在当前项目群聊的历史聊天记录中按关键字检索；"
             + "当最近消息窗口缺少所需讨论时调用。query 必填，每个 AgentRun 的调用次数有限")
     public Map<String, Object> searchChatHistory(
@@ -57,11 +57,10 @@ public class ChatHistorySearchTool {
         if (groupId == null) {
             return error(result, "search_chat_history 当前运行未关联项目群聊，无法检索聊天记录");
         }
-        if (searchesUsed >= maxSearches) {
-            return error(result, "search_chat_history 检索预算已用尽（已调用 " + searchesUsed + "/" + maxSearches
+        if (searchesUsed.getAndUpdate(used -> Math.min(used + 1, maxSearches)) >= maxSearches) {
+            return error(result, "search_chat_history 检索预算已用尽（已调用 " + searchesUsed.get() + "/" + maxSearches
                     + " 次），请基于已有上下文继续");
         }
-        searchesUsed++;
         int messageLimit = Math.max(1, Math.min(limit == null ? DEFAULT_LIMIT : limit, MAX_LIMIT));
         final List<ContextMessage> messages;
         try {
@@ -72,10 +71,10 @@ public class ChatHistorySearchTool {
             return error(result, "search_chat_history 检索失败: " + safeMessage(exception));
         }
         result.put("ok", true);
-        result.put("budget", "used " + searchesUsed + "/" + maxSearches);
+        result.put("budget", "used " + searchesUsed.get() + "/" + maxSearches);
         result.put("messages", formatMessages(messages));
         log.info("chat history searched projectId={} groupId={} returned={} used={}", projectId, groupId,
-                Math.min(messages.size(), MAX_RETURNED_MESSAGES), searchesUsed);
+                Math.min(messages.size(), MAX_RETURNED_MESSAGES), searchesUsed.get());
         return result;
     }
 
@@ -95,6 +94,7 @@ public class ChatHistorySearchTool {
         return formatted;
     }
 
+    @ParallelTool
     @Tool(name = "read_chat_message", description = "按消息 ID 读取当前群消息全文及 replyToId；用于展开搜索命中或读取回复的原消息，不需要沙箱")
     public ContextMessage readChatMessage(@ToolParam(description = "消息 UUID，来自上下文、搜索结果或 replyToId") String messageId) {
         return contextService.readChatMessage(actor, projectId, groupId, UUID.fromString(messageId));

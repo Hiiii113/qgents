@@ -80,6 +80,8 @@ public class GitHubTools {
         argv.addAll(command);
         return commands.run(workspace.get(), directory, argv, gitEnvironment(token));
     }
+
+    @ParallelTool
     @Tool(name = "github_repositories", description = "列出当前项目已导入的 GitHub 仓库及默认分支；不创建沙箱")
     public Object repositories() {
         return repositories.get();

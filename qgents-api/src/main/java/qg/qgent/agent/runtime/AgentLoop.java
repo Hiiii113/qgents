@@ -1,6 +1,5 @@
 package qg.qgent.agent.runtime;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -25,13 +24,14 @@ import java.util.function.Supplier;
 @Component
 public class AgentLoop {
     private final ChatModel model;
-    private final ObjectMapper json;
+    private final ToolCallExecutor toolCalls;
     private final int maxRounds;
 
     public AgentLoop(ChatModel model, ObjectMapper json,
-                     @Value("${app.agent.max-rounds:30}") int maxRounds) {
+                     @Value("${app.agent.max-rounds:30}") int maxRounds,
+                     @Value("${app.agent.max-parallel-tool-calls:4}") int maxParallelToolCalls) {
         this.model = model;
-        this.json = json;
+        this.toolCalls = new ToolCallExecutor(json, maxParallelToolCalls);
         if (maxRounds < 1) throw new IllegalArgumentException("max-rounds 必须大于 0");
         this.maxRounds = maxRounds;
     }
@@ -82,36 +82,11 @@ public class AgentLoop {
             }
             // 保留原始消息及供应商元数据，下一轮完整回传 tool_calls/reasoning_content。
             history.add(assistant);
-            List<ToolResponseMessage.ToolResponse> results = new ArrayList<>();
-            for (AssistantMessage.ToolCall call : assistant.getToolCalls()) {
-                if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
-                    return new Result(false, "Agent 运行已取消", round);
-                }
-                String result;
-                ToolCallback callback = callbacks.get(call.name());
-                if (callback == null) {
-                    result = error("TOOL_NOT_FOUND", "本轮没有工具：" + call.name());
-                } else {
-                    try {
-                        result = callback.call(call.arguments());
-                    } catch (RuntimeException exception) {
-                        result = error("TOOL_FAILED", exception.getMessage() == null
-                                ? "工具执行失败" : exception.getMessage());
-                    }
-                }
-                results.add(new ToolResponseMessage.ToolResponse(call.id(), call.name(), result));
-            }
-            history.add(ToolResponseMessage.builder().responses(results).build());
+            ToolCallExecutor.Result results = toolCalls.execute(assistant.getToolCalls(), callbacks, cancelled);
+            if (results.cancelled()) return new Result(false, "Agent 运行已取消", round);
+            history.add(ToolResponseMessage.builder().responses(results.responses()).build());
         }
         return new Result(false, "Agent 已达到最大调用轮次（" + maxRounds + "），请缩小问题范围后重试", maxRounds);
-    }
-
-    private String error(String code, String message) {
-        try {
-            return json.writeValueAsString(Map.of("ok", false, "errorCode", code, "error", message));
-        } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("无法编码工具结果", exception);
-        }
     }
 
     public record Result(boolean success, String text, int rounds) { }

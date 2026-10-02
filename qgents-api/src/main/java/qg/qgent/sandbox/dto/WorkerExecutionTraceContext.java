@@ -2,7 +2,7 @@ package qg.qgent.sandbox.dto;
 
 import java.util.UUID;
 
-/** 当前同步 Agent loop 的运行身份，供 Worker 回执关联；子运行结束后恢复父身份。 */
+/** 当前工具线程的 AgentRun 身份；并行调度显式传递，子运行结束后恢复父身份。 */
 public final class WorkerExecutionTraceContext {
     private static final ThreadLocal<UUID> CURRENT = new ThreadLocal<>();
 
