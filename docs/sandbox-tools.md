@@ -16,16 +16,16 @@
 | 能力 | Qgents 行为 |
 | --- | --- |
 | 文件读取 | `read_file(path, startLine?, lineCount?)` 返回行号、窗口、总行数、原始字节哈希和截断信息；不在后端自动读完整文件。默认 200 行，最多 1000 行、64KiB 窗口，单行预览最多 4000 字符。 |
-| 文件发现 | `glob_files(path?, glob?, limit?)` 由 Worker 一次遍历；保留隐藏配置，排除版本库元数据和常见构建目录。默认 200 个，最多 1000 个，超过上限返回 `truncated=true`。不声称截断结果是完整列表。 |
+| 文件发现 | `glob_files(path?, glob?, limit?)` 由 Sandbox 模块 一次遍历；保留隐藏配置，排除版本库元数据和常见构建目录。默认 200 个，最多 1000 个，超过上限返回 `truncated=true`。不声称截断结果是完整列表。 |
 | 正文检索 | `search_code(pattern, path?, glob?, limit?)` 使用 ripgrep JSON 输出，保留路径、行号与命中正文。默认 100 个命中、最多 1000 个；每行预览最多 2000 字符。无匹配是成功空结果，执行失败保留错误。 |
 | 文本编辑 | `edit_file(path, oldText, newText, replaceAll?)` 默认唯一匹配，多处或未匹配时返回明确原因；允许空替换删除文本，沿用 CRLF 文件行尾。文件版本由本次 Agent 工具实例缓存。 |
-| 完整写入 | `write_file(path, content)` 自动创建父目录；未读取文件走 Worker 的创建模式，已读取文件按缓存版本替换。Worker 分别检查存在性，不通过发现列表判断。新建不能覆盖隐藏文件，替换不能借空文件哈希创建缺失文件。 |
+| 完整写入 | `write_file(path, content)` 自动创建父目录；未读取文件走 Sandbox 模块 的创建模式，已读取文件按缓存版本替换。Sandbox 模块 分别检查存在性，不通过发现列表判断。新建不能覆盖隐藏文件，替换不能借空文件哈希创建缺失文件。 |
 | 补丁 | 保留 `apply_patch(path, patch)`，从内部版本缓存取哈希。无需模型复制哈希；精确补丁失败可改用文本编辑。 |
-| 命令 | `run_command(command, directory?, timeoutSeconds?, waitSeconds?)` 保留 argv 数组。默认执行预算 600 秒、等待 10 秒；预算仍受 Worker/Sandbox 上限约束，等待可设 0～30 秒。管道与重定向必须显式调用 shell。 |
+| 命令 | `run_command(command, directory?, timeoutSeconds?, waitSeconds?)` 保留 argv 数组。默认执行预算 600 秒、等待 10 秒；预算仍受 Sandbox 模块/Sandbox 上限约束，等待可设 0～30 秒。管道与重定向必须显式调用 shell。 |
 | 长执行 | 等待结束但命令未结束时返回 `executionId`、`status`、`running=true`。`command_output` 可继续等待并读取；`cancel_command` 停止执行。句柄只允许操作当前运行已打开工作区的 Sandbox 中的命令。 |
-| 输出 | 普通命令完整输出保存在 Worker 的工作区旁侧目录，不污染仓库；模型先取得每个流最多约 16KB 的诊断尾部，通过独立字节游标继续读取。UTF-8 字符不在分页边界拆断，运行中的半行和超长单行可以继续读取。带凭证的内部 Git 命令沿用有界输出及脱敏后保存，不把原始凭证输出落盘。 |
+| 输出 | 普通命令完整输出保存在 Sandbox 模块 的工作区旁侧目录，不污染仓库；模型先取得每个流最多约 16KB 的诊断尾部，通过独立字节游标继续读取。UTF-8 字符不在分页边界拆断，运行中的半行和超长单行可以继续读取。带凭证的内部 Git 命令沿用有界输出及脱敏后保存，不把原始凭证输出落盘。 |
 | 错误语义 | 命令正常运行并取得非零退出码仍是完成的命令结果，`ok=true`、`exitCode!=0`；是否构建或测试通过由退出码判断。参数、基础设施、超时和取消保留错误/状态。 |
-| 工具协议 | 继续通过 Spring AI `@Tool` 生成模型输入 schema，项目 loop 负责工具调用与 tool response 配对。Worker 内部协议同步维护具体参数与结果。 |
+| 工具协议 | 继续通过 Spring AI `@Tool` 生成模型输入 schema，项目 loop 负责工具调用与 tool response 配对。Sandbox 模块 内部协议同步维护具体参数与结果。 |
 
 ### 命令结果示例
 
@@ -46,13 +46,13 @@
 
 文件读取超过窗口时可从 `nextLine` 继续；单行预览截断单独标记在该行的 `truncated` 中。检索和文件发现不会保存一份完整结果再回给模型，超过上限时缩小条件。检索底层输出超过运行器上限且不能解析时返回失败，不伪造完整搜索结果。
 
-命令归根 AgentRun 的 Sandbox 生命周期所有。当前控制工具只支持本次运行内的执行，不支持运行结束后继续后台执行；结束或取消根运行时销毁 Sandbox 并停止残留命令。完整输出存于 Worker 存储，不通过新的用户运行记录查询 API 暴露。
+命令归根 AgentRun 的 Sandbox 生命周期所有。当前控制工具只支持本次运行内的执行，不支持运行结束后继续后台执行；结束或取消根运行时销毁 Sandbox 并停止残留命令。完整输出存于 Sandbox 模块 存储，不通过新的用户运行记录查询 API 暴露。
 
 ## Agent loop 工具并行
 
 参考 DeepSeek 的有界并行池与独占屏障，在工具方法上通过 `@ParallelTool` 显式声明并行能力；未标记的工具默认串行。模型工具 schema 和原生调用格式保持不变。同一步里连续的可并行调用最多同时执行 4 个，任意一个完成就补入下一调用；遇到串行调用先等前面的调用全部结束，执行完它才处理后续调用。结果按原始 `tool_call` 顺序和 ID 回传，不按完成速度重排。
 
-`app.agent.max-parallel-tool-calls` / `APP_AGENT_MAX_PARALLEL_TOOL_CALLS` 可设 1～16，默认 4，设为 1 时串行执行。上限属于每个 loop 当前工具组，不是全系统吞吐上限；Worker 自身执行池仍影响实际并发。子 Agent 保持同步委托，不同时修改根运行的共享工作环境。
+`app.agent.max-parallel-tool-calls` / `APP_AGENT_MAX_PARALLEL_TOOL_CALLS` 可设 1～16，默认 4，设为 1 时串行执行。上限属于每个 loop 当前工具组，不是全系统吞吐上限；Sandbox 模块 自身执行池仍影响实际并发。子 Agent 保持同步委托，不同时修改根运行的共享工作环境。
 
 | 可并行 | 串行屏障 |
 | --- | --- |
@@ -76,7 +76,7 @@
 | `glob` | `glob_files` | 已补齐路径模式发现。 |
 | `edit` | `edit_file` | 已补齐唯一文本替换。 |
 | `write` | `write_file` | 已收拢整文件写入，保留读取版本检查。 |
-| `bash`、`pwsh` | `run_command` | 能力对应；云端 Linux Worker 用 argv，需要 shell 时显式调用，未增加 Windows 执行后端。 |
+| `bash`、`pwsh` | `run_command` | 能力对应；云端 Linux Sandbox 模块 用 argv，需要 shell 时显式调用，未增加 Windows 执行后端。 |
 | `job_output`、`job_kill` | `command_output`、`cancel_command` | 已补命令句柄控制；不把命令、子 Agent 和业务 Task 混成统一平台。 |
 | `subagent` | `call_agent` | 已有独立子 Agent loop 和根环境复用。 |
 | `skill` | `activate_skill` | 已有按需读取完整 Skill。 |
@@ -89,7 +89,7 @@
 | `ask_user_question` | 有价值；需要接入 IM 的可持续补充消息和执行恢复，不能只增加空工具。此次未实现。 |
 | `read_image` | 有价值；当前能加载聊天图片附件，但没有读取 Workspace 图片的模型工具。需要图片模型输入链路，此次未实现。 |
 | `web_search`、`web_fetch` | 有价值；需实际检索/抓取服务，此次没有新增外部服务，也未假装可用。 |
-| `lsp` | 大型代码任务有价值；需要 Worker 语言服务器支持，后续按实际语言需求接入。 |
+| `lsp` | 大型代码任务有价值；需要 Sandbox 模块 语言服务器支持，后续按实际语言需求接入。 |
 | `terminal_open/read/send/signal/close/list`、持久 Bash/PowerShell | 适合交互命令和开发服务器；当前完成非交互长命令控制，未新增 PTY。 |
 | `job_list` | 命令输出与取消已经补齐；当前命令句柄由返回结果提供，暂未增加统一后台执行列表。 |
 | `send_message`、`interrupt_agent`、后台 subagent | 多 Agent 持续协作时有价值；当前仍为同步 `call_agent`，没有新增消息邮箱或调度平台。 |
@@ -119,12 +119,18 @@
 | `apply_patch` | 保留已有能力。DeepSeek 默认编辑工具没有同名 unified diff 入口，但文本替换与精确补丁各有用途，不能只因名称不同删除。 |
 | `list_files` | 移除，替换为带条件、上限和截断信息的 `glob_files`。 |
 | `replace_file` | 移除独立模型入口，合并到已读取文件的 `write_file`。内部创建与替换语义继续分开。 |
-| `create_directory` | 移除独立工具和 Worker handler；写文件自动创建父目录，需要空目录时可执行 `mkdir`。 |
-| `ensure_trailing_newline` | 移除独立工具和 Worker handler；通过文本编辑或写入完成。 |
-| `run_development_command` | 移除固定枚举、端口、Worker handler、DTO 和旧测试；构建测试统一使用 `run_command`，返回实际诊断。 |
+| `create_directory` | 移除独立工具和 Sandbox 模块 handler；写文件自动创建父目录，需要空目录时可执行 `mkdir`。 |
+| `ensure_trailing_newline` | 移除独立工具和 Sandbox 模块 handler；通过文本编辑或写入完成。 |
+| `run_development_command` | 移除固定枚举、端口、Sandbox 模块 handler、DTO 和旧测试；构建测试统一使用 `run_command`，返回实际诊断。 |
 
 ## 验证边界
 
-回归覆盖读取窗口、隐藏配置发现、创建/替换存在性、版本冲突、CRLF 文本编辑、唯一匹配、搜索错误、命令句柄、输出字节分页、完整输出保存、取消与真实 HTTP 客户端路径。
+回归覆盖读取窗口、隐藏配置发现、创建/替换存在性、版本冲突、CRLF 文本编辑、唯一匹配、搜索错误、命令句柄、输出字节分页、完整输出保存、取消与进程内工具调用。
 
 本地编译和单元测试不等于真实 Docker、MySQL 和模型联调。前端聊天成果卡片、跨运行后台执行、Web/LSP/PTY 等仍未实现。
+
+## 单服务执行方式
+
+聊天、Agent 与 Sandbox 使用同一个 Spring Boot 应用，代码位于根 `src`。文件工具在调用线程直接执行；命令在线程池执行，按 executionId 等待进程内完成通知、读取字节输出窗口或取消。内部 HTTP 客户端、轮询、服务 Token、独立启动入口与数据库已移除。
+
+工具定义和模型返回格式保持一致，Docker 沙箱、按需准备代码环境、Workspace 持久化、根运行共享环境及有界工具并行仍保留。执行记录只保存一份，关联实际调用的 AgentRun 与 Workspace，使用应用主数据源。

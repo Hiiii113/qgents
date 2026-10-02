@@ -21,7 +21,7 @@ Qgents 是一个支持群聊和代码交付的 Agent 平台。普通消息只用
 工作目标与成果保留在聊天消息中，AgentRun 记录执行状态，不维护独立 Task。
 继续工作时读取引用消息及聊天历史，再按需选择已有 Workspace。
 `cancel_agent` 工具和消息的 `cancel-agent` 接口可停止该消息已启动的执行。
-AgentRun 保存最近使用的 Workspace，Worker 执行记录保存每次实际使用的环境。
+AgentRun 保存最近使用的 Workspace，Sandbox 执行记录保存每次实际使用的环境。
 `run_command` 在工作区中执行参数数组命令，并返回真实 stdout/stderr 和退出码。
 分支、commit、push 和 PR 由 Agent 按用户目标调用工具完成，系统不自动执行 Git 交付。
 
@@ -49,92 +49,77 @@ App 凭证每次操作按安装和目标仓库获取，不进入提示词或工�
 - `agent/runtime/AgentChatService` 管理聊天上下文、AgentRun、同步 subagent 和可选代码工作区。
 - Spring AI 仅提供底层 `ChatModel` 及工具 schema，不负责 loop、阶段调度或自动执行工具；已移除 LangGraph4j。
 - `list_agents` / `call_agent` 提供委托，子 Agent 有独立输入，共享根运行的工作区。
-- 文件、命令和 Git 工具通过 Worker 共享按需沙箱环境入口；技能及历史检索直接执行。`read_chat_message` 可展开消息全文及回复关系。
+- 文件、命令和 Git 工具通过 Sandbox 模块共享按需沙箱环境入口；技能及历史检索直接执行。`read_chat_message` 可展开消息全文及回复关系。
 - `app.agent.max-rounds`、`max-depth`、`max-subagents` 分别限制模型轮次、委托深度和总委托数。
 
 本次改造以新的建表脚本为准，不保留旧阶段执行 API 的兼容行为。
 
 ## 仓库结构
 
-本仓库是一个 Maven 多模块工程，包含**两个独立部署的 Spring Boot 服务**，二者运行期不共享类路径，
-只通过 OpenAPI 契约进行 HTTP 交互。
+一个 Spring Boot 应用；聊天、Agent 和 Sandbox 按业务分包，工具直接调用 Java 服务。
 
 ```text
 Qgents/
-├── pom.xml                       # 父 POM（qgents-parent）：聚合模块 + 统一依赖/插件版本
-├── qgents-api/                   # 主后端服务（对外唯一 API）
-│   ├── pom.xml
-│   └── src/                      # 包 qg.qgent.*
-├── qgents-sandbox-worker/        # 沙箱执行面服务（内部接口）
-│   ├── pom.xml
-│   ├── src/                      # 包 qg.qgent.sandboxworker.*
-│   └── Dockerfile.production
-├── contracts/                    # 跨服务契约（sandbox-worker-openapi.yaml）
-├── sandbox-images/dev-tools/     # 沙箱内开发工具镜像
-├── Dockerfile.production         # 主后端镜像
-└── docker-compose.production.yml # 生产编排
+├── pom.xml                         # 单应用依赖与构建
+├── src/main/java/qg/qgent/
+│   ├── agent/                      # Agent loop、模型工具和运行记录
+│   ├── chat/                       # 群聊、消息和上下文
+│   ├── workspace/                  # 工作区业务记录与写入租约
+│   ├── sandbox/
+│   │   ├── config/                 # Docker、执行线程池和资源配置
+│   │   ├── runtime/                # 容器创建、命令执行和回收
+│   │   ├── service/                # 会话与 Workspace 工具适配
+│   │   ├── execution/              # 工具处理器、执行记录、完成通知和日志
+│   │   └── filesystem/             # 工作目录、路径和补丁操作
+│   └── ...                         # 其他现有业务领域
+├── src/main/resources/             # 统一配置和数据库建表语句
+├── src/test/                       # 测试与源码包路径一致
+├── sandbox-images/dev-tools/       # 用户代码所在的沙箱镜像
+├── Dockerfile.production
+└── docker-compose.production.yml
 ```
 
-### Java 分包
+业务内部按需使用 `controller`、`service`、`dto`、`entity`、`mapper`、`config` 等子包。
+文件工具在调用线程执行；命令使用独立线程池，短等待后返回句柄，后续可读取输出或取消。
+等待使用进程内完成通知，执行记录与其他业务使用同一个 MySQL 数据源。
 
-源码按业务组织，每个业务内部按需使用 `controller`、`service`、`dto`、`entity`、`mapper`、`config` 等子包。测试与被测代码保持相同包路径。
-
-- API：`agent`（loop、Agent 管理和模型工具）、`chat`（群组、消息、上下文）、`workspace`、`sandbox`（Worker 客户端）、`team`、`project`、`auth`、`user`、`attachment`、`skill`、`memory`、`notification`、`realtime`。
-- Worker：`sandbox`（容器和租约）、`workspace`（空工作区管理）、`tool`（文件和开发命令工具）。
-- `common`：跨业务的响应、异常、UUID、幂等处理和基础配置；业务代码放回所属业务包。
-
-### 两个服务的职责边界
-
-| 服务 | 职责 | 端口 | 数据库 |
-|---|---|---|---|
-| `qgents-api` | Team / Project 隔离、群聊、Agent loop 与独立工作区、鉴权与通知 | 8080（API）、8081（管理端点） | `qgents` |
-| `qgents-sandbox-worker` | 空工作区、沙箱创建与文件/命令执行 | 8091 | `qgents_sandbox_worker` |
-
-`qgents-sandbox-worker` 持有 Docker Socket 与工作区挂载权限，安全边界高于主后端，因此独立打包、
-独立数据库、独立部署。Agent 沙箱镜像安装 Git，命令在沙箱中执行。
+应用负责管理 Docker 容器，用户命令仍在 Sandbox 容器内运行。首次代码工具才准备环境，运行结束销毁容器并保留 Workspace。
+应用容器需要 Docker Socket 组权限及工作目录挂载；应用重启会影响聊天和正在进行的 Agent 执行。
 
 ## 环境要求
 
-- JDK 21（项目统一 Java 21，不得降级）
-- Maven 3.9+，或直接使用仓库自带的 `mvnw` / `mvnw.cmd`
-- MySQL 8.0.16+、Redis（本地开发）
-- Docker（仅构建/运行沙箱执行面时需要）
+- JDK 21、Maven 3.9+，或仓库自带的 `mvnw` / `mvnw.cmd`。
+- MySQL 8.0.16+、Redis；用 `src/main/resources/db/qgents_schema.sql` 初始化一个 `qgents` 数据库，包含 Sandbox 执行表。
+- Docker 用于实际代码环境。`SANDBOX_RUNTIME=fake` 仅用于不使用真实容器的测试与联调。
 
 ## 构建与测试
 
-在仓库根目录执行，父 POM 会统一管理两个模块：
+在仓库根目录执行：
 
 ```powershell
-# 构建全部模块
-.\mvnw.cmd clean package -DskipTests
+.\mvnw.cmd clean test
+.\mvnw.cmd package -DskipTests
 
-# 只构建单个模块
-.\mvnw.cmd -pl qgents-api clean package -DskipTests
-.\mvnw.cmd -pl qgents-sandbox-worker clean package -DskipTests
-
-# 运行单元测试（不要求数据库和 Docker）
-.\mvnw.cmd test
-.\mvnw.cmd -pl qgents-sandbox-worker test
-
-# 外部服务集成测试需初始化新版数据库，并显式启用
+# 外部服务集成测试需初始化数据库并显式启用。
 $env:QGENTS_INTEGRATION_TESTS="true"
-.\mvnw.cmd -pl qgents-api -Dtest=FixedAccountAuthIntegrationTest test
+.\mvnw.cmd -Dtest=FixedAccountAuthIntegrationTest test
 ```
+
+产物为 `target/qgents-0.0.1-SNAPSHOT.jar`。
 
 ## 运行
 
-两个服务都通过环境变量注入配置，各模块工作目录下可放置独立 `.env`（`spring.config.import`
-按相对工作目录解析 `.env`，该文件不入版本控制）：
+从根目录加载 `.env`（不入版本控制），统一配置数据库、模型、GitHub 和 Sandbox。
+本地执行 `.\mvnw.cmd spring-boot:run`，或 `java -jar target/qgents-0.0.1-SNAPSHOT.jar`。
+真实代码工具还需要先构建开发镜像：`docker build -t qgents/sandbox-dev-tools:0.2.0 sandbox-images/dev-tools`。
 
-- 主后端：工作目录为 `qgents-api/`，读取 `qgents-api/.env`
-- Worker：工作目录为 `qgents-sandbox-worker/`，读取 `qgents-sandbox-worker/.env`
-
-生产部署使用 `docker-compose.production.yml`，其变量替换读取**仓库根目录**的 `.env`；
-可用 `.env.example` 作为模板。主后端与 Worker 所需密钥必须通过环境变量或受控注入提供，
-不得写入配置文件或提交。
+生产部署使用 `docker-compose.production.yml`，以根目录 `.env.example` 为配置模板。
+Compose 中 API 管理沙箱并挂载持久工作目录；`QGENTS_DATA_ROOT` 必须是宿主机绝对路径，`DOCKER_GID` 对应宿主机 Docker 组。
+应用端口为 8080，管理端点端口为 8081；保留 Redis、代理与开发镜像相关服务。
 
 ## 文档
 
-- Worker 内部契约：`contracts/sandbox-worker-openapi.yaml`
-- Worker 使用说明：`qgents-sandbox-worker/README.md`
-- Agent 协作与工程约束：`AGENTS.md`
+- 产品愿景与实现差距：`docs/target.md`
+- Sandbox 工具与 DeepSeek Harness 对照：`docs/sandbox-tools.md`
+- GitHub App 接入：`docs/github-app.md`
+- 协作约定：`AGENTS.md`

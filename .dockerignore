@@ -2,14 +2,10 @@
 .env
 .env.*
 github_app.pem
-qgents-api/src/main/resources/rsa/private_key.pem
-# 各模块构建产物：多模块结构下 target 位于模块目录内，必须按模块排除
+src/main/resources/rsa/private_key.pem
+# 单服务构建产物和本地运行文件
 target
-qgents-api/target
-qgents-sandbox-worker/target
 logs
-qgents-api/logs
-qgents-sandbox-worker/logs
 data
 *.log
 Dockerfile.production

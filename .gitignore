@@ -52,23 +52,20 @@ replay_pid*
 .env
 .env.*
 
-# Worker 服务本地环境变量（与根 .env 键冲突，保持独立）
-.env.worker
-
 # RSA 私钥（只留后端，勿提交；公钥 public_key.pem 可提交）
-qgents-api/src/main/resources/rsa/private_key.pem
+src/main/resources/rsa/private_key.pem
 
 # Private keys
 *.pem
 
 # 例外必须放在 *.pem 之后：git 以最后一条匹配规则为准
 # 主后端 RSA 公钥公开无风险，允许提交
-!qgents-api/src/main/resources/rsa/public_key.pem
+!src/main/resources/rsa/public_key.pem
 # 环境变量配置示例允许提交
 !.env.example
 
 # 数据库迁移脚本仍在开发中，当前不纳入版本控制
-/qgents-api/src/main/resources/db/migrations/
+/src/main/resources/db/migrations/
 
 # 沙箱/工具临时目录
 .codex-test-tmp/
