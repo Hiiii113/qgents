@@ -115,7 +115,7 @@ public class AgentController {
             @PathVariable UUID teamId, @PathVariable UUID agentId,
             @Valid @RequestBody AgentGithubCapabilityRequest body,
             HttpServletRequest request) {
-        return ApiResponse.ok(service.configureGithub(actor, teamId, agentId, body.getCredentialRef()),
+        return ApiResponse.ok(service.configureGithub(actor, teamId, agentId, body.getEnabled()),
                 (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
     }
 

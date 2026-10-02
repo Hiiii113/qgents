@@ -43,18 +43,18 @@ PUT /api/v1/teams/{teamId}/agents/{agentId}/github-capability
 ```
 
 ```json
-{"credentialRef":"github-app"}
+{"enabled":true}
 ```
 
-空字符串禁用 GitHub 能力。默认 Agent 由团队所有者配置，自定义 Agent 沿用现有编辑权限。
+`enabled=false` 关闭 GitHub 能力，默认关闭。创建或编辑自定义 Agent 时使用 `githubEnabled` 布尔字段。默认 Agent 由团队所有者配置，自定义 Agent 沿用现有编辑权限。
 
 ## Agent 工具
 
 - `github_repositories`：读取当前项目的导入仓库和默认分支，不启动沙箱。
-- `github_request`：使用 `/repos/owner/repo/...` 调用远端 API，支持查询、创建、编辑和合并 PR；App 模式目标仓库必须已导入当前项目。例如创建 PR 使用 POST `/repos/owner/repo/pulls`，正文包含 title、head、base。
+- `github_request`：使用 `/repos/owner/repo/...` 调用远端 API，支持查询、创建、编辑和合并 PR；目标仓库必须已导入当前项目。例如创建 PR 使用 POST `/repos/owner/repo/pulls`，正文包含 title、head、base。
 - `github_clone`：首次需要代码环境时才准备选定 Workspace 和沙箱，未指定基线时 clone 远端默认分支。
 - `github_push`：推送当前 HEAD 到指定分支，不自动 commit 或创建 PR。
-- `github_git`：带 App 认证执行 fetch/pull 等 Git 操作，App 模式需传入目标 `repository: "owner/repo"`。
+- `github_git`：带 App 认证执行 fetch/pull 等 Git 操作，需传入目标 `repository: "owner/repo"`。
 
 每次操作从 App 安装取得仅授权目标仓库的短期 Token；不保存 Token 到消息、提示词、remote URL 或仓库配置。Agent 依用户目标决定是否执行写操作。
 

@@ -123,7 +123,7 @@ public class AgentService {
         agent.setRole(request.getRole());
         agent.setDescription(blankToNull(request.getDescription()));
         agent.setPrompt(request.getPrompt());
-        agent.setGithubCredentialRef(blankToNull(request.getGithubCredentialRef()));
+        agent.setGithubEnabled(request.isGithubEnabled());
         agent.setVisibility("PRIVATE");
         agent.setStatus("ACTIVE");
         agent.setIsDefault(false);
@@ -160,7 +160,7 @@ public class AgentService {
         if (request.getDescription() != null) {
             agent.setDescription(blankToNull(request.getDescription()));
         }
-        if (request.getGithubCredentialRef() != null) agent.setGithubCredentialRef(blankToNull(request.getGithubCredentialRef()));
+        if (request.getGithubEnabled() != null) agent.setGithubEnabled(request.getGithubEnabled());
         if (request.getPrompt() != null) {
             validatePrompt(request.getPrompt());
             agent.setPrompt(request.getPrompt());
@@ -170,7 +170,7 @@ public class AgentService {
     }
 
     @Transactional
-    public AgentResponse configureGithub(UUID actor, UUID teamId, UUID agentId, String reference) {
+    public AgentResponse configureGithub(UUID actor, UUID teamId, UUID agentId, boolean enabled) {
         requireTeamMember(teamId, actor);
         AgentEntity agent = requireAgentInTeam(teamId, agentId);
         if (Boolean.TRUE.equals(agent.getIsDefault())) {
@@ -178,7 +178,7 @@ public class AgentService {
         } else {
             requireEditable(agent, actor);
         }
-        agent.setGithubCredentialRef(blankToNull(reference));
+        agent.setGithubEnabled(enabled);
         agentMapper.updateById(agent);
         return toResponse(agent, true);
     }
@@ -368,7 +368,7 @@ public class AgentService {
     }
 
     private boolean isEmptyPatch(AgentUpdateRequest request) {
-        return request.getGithubCredentialRef() == null && request.getName() == null && request.getAvatar() == null && request.getRole() == null
+        return request.getGithubEnabled() == null && request.getName() == null && request.getAvatar() == null && request.getRole() == null
                 && request.getDescription() == null && request.getPrompt() == null;
     }
 
@@ -439,7 +439,7 @@ public class AgentService {
                 Boolean.TRUE.equals(agent.getIsDefault()));
         // 审核字段：拒绝原因仅创建者可见；审核人/时间团队内可见（Team Owner 审核需要看到历史）
         response.setReviewReason(owner ? agent.getReviewReason() : null);
-        response.setGithubCredentialRef(agent.getGithubCredentialRef());
+        response.setGithubEnabled(Boolean.TRUE.equals(agent.getGithubEnabled()));
         response.setReviewedBy(agent.getReviewedBy() == null ? null : agent.getReviewedBy().toString());
         response.setReviewedAt(agent.getReviewedAt() == null ? null
                 : agent.getReviewedAt().toInstant(java.time.ZoneOffset.UTC).toString());

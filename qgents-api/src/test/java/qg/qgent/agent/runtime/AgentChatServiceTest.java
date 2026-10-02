@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.tool.ToolCallback;
-import org.springframework.mock.env.MockEnvironment;
 import qg.qgent.agent.entity.AgentEntity;
 import qg.qgent.agent.entity.AgentRunEntity;
 import qg.qgent.agent.service.AgentRunService;
@@ -45,7 +44,7 @@ class AgentChatServiceTest {
     private final AgentRunMapper runs = mock(AgentRunMapper.class);
     private final MessageService messages = mock(MessageService.class);
     private final AgentEntity agent = new AgentEntity();
-    private final MockEnvironment environment = new MockEnvironment();
+    private final qg.qgent.github.service.GitHubRepositoryService repositories = mock(qg.qgent.github.service.GitHubRepositoryService.class);
     private AgentChatService service;
     private UUID rootRunId;
 
@@ -71,7 +70,7 @@ class AgentChatServiceTest {
         when(workspaces.create(projectId)).thenReturn(workspace(workspaceId));
         when(workspaces.require(projectId, workspaceId)).thenReturn(workspace(workspaceId));
         when(commands.run(any(), any(), anyList(), anyMap())).thenReturn(Map.of("ok", true, "exitCode", 0));
-        service = new AgentChatService(new GitHubCapability(environment, commands, mock(qg.qgent.github.service.GitHubRepositoryService.class)), commands, workspaces,
+        service = new AgentChatService(new GitHubCapability(commands, repositories), commands, workspaces,
                 loop, agents, runs, projects, context, messages, runService, sessions, code,
                 mock(WorkspaceCodeWriter.class), attachments, mock(DevelopmentCommandPort.class), new ObjectMapper(), 3, 8);
     }
@@ -111,10 +110,10 @@ class AgentChatServiceTest {
 
     @Test
     void localGithubToolPreparesEnvironmentLazily() {
-        agent.setGithubCredentialRef("personal");
-        environment.withProperty("app.agent.github.personal.token", "test-token");
+        agent.setGithubEnabled(true);
+        when(repositories.repositoryToken(actor, projectId, agent.getTeamId(), "owner/repo")).thenReturn("test-token");
         runTools(available -> find(available, "github_git")
-                .call("{\"command\":[\"status\"],\"directory\":\".\"}"));
+                .call("{\"command\":[\"status\"],\"directory\":\".\",\"repository\":\"owner/repo\"}"));
         reply("检查仓库");
         verify(sessions).acquire(rootRunId, projectId, workspaceId);
         verify(commands).run(eq(workspaceId), eq("."), eq(List.of("git", "status")), anyMap());
@@ -173,9 +172,9 @@ class AgentChatServiceTest {
 
     @Test
     void unavailableGithubCapabilityDoesNotBreakChatOrPrepareEnvironment() {
-        agent.setGithubCredentialRef("missing");
+        agent.setGithubEnabled(true);
         runTools(available -> assertThatThrownBy(() -> find(available, "github_request")
-                .call("{\"method\":\"GET\",\"path\":\"/user\"}"))
+                .call("{\"method\":\"GET\",\"path\":\"/repos/owner/repo\"}"))
                 .hasStackTraceContaining("凭证未配置"));
         reply("查仓库");
         verifyNoInteractions(workspaces, sessions, commands);

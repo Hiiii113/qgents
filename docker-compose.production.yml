@@ -97,7 +97,6 @@ services:
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:?Set DASHSCOPE_API_KEY}
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
       SANDBOX_WORKER_URL: http://sandbox-worker:8091
-      AGENT_GITHUB_TOKEN: ${AGENT_GITHUB_TOKEN:-}
       GITHUB_APP_ID: ${GITHUB_APP_ID:-}
       GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
       GITHUB_APP_PRIVATE_KEY_PATH: /run/qgents/github/private-key.pem

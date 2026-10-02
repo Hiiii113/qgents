@@ -292,7 +292,7 @@ CREATE TABLE IF NOT EXISTS agents (
     id BINARY(16) PRIMARY KEY, team_id BINARY(16) NOT NULL, created_by BINARY(16) NULL,
     name VARCHAR(255) NOT NULL, role VARCHAR(32) NOT NULL,
     avatar TEXT NULL COMMENT 'Agent 头像URL', description TEXT NULL COMMENT 'Agent 用途描述',
-    github_credential_ref VARCHAR(64) NULL COMMENT 'Agent GitHub能力的部署凭证引用',
+    github_enabled TINYINT NOT NULL DEFAULT 0 COMMENT '是否开启 GitHub 能力',
     prompt TEXT NULL COMMENT 'Agent 系统提示词',
     review_reason TEXT NULL COMMENT '发布审核拒绝原因（Team Owner 填写；批准为空）',
     reviewed_by BINARY(16) NULL COMMENT '发布审核人（Team Owner）ID',

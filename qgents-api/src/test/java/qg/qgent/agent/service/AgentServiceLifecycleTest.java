@@ -52,10 +52,10 @@ class AgentServiceLifecycleTest {
         UUID id = agentId();
         AgentEntity agent = agent(id, teamId, owner, "TEAM", "ACTIVE", true);
         when(agents.selectById(id)).thenReturn(agent);
-        assertEquals("default", service.configureGithub(owner, teamId, id, "default").getGithubCredentialRef());
-        assertNull(service.configureGithub(owner, teamId, id, "").getGithubCredentialRef());
+        assertEquals(true, service.configureGithub(owner, teamId, id, true).isGithubEnabled());
+        assertEquals(false, service.configureGithub(owner, teamId, id, false).isGithubEnabled());
         member(teamId, other);
-        assertThrows(ApiException.class, () -> service.configureGithub(other, teamId, id, "default"));
+        assertThrows(ApiException.class, () -> service.configureGithub(other, teamId, id, true));
     }
 
     @Test
@@ -69,11 +69,31 @@ class AgentServiceLifecycleTest {
         assertEquals("PRIVATE", response.getVisibility());
         assertEquals("ACTIVE", response.getStatus());
         assertFalse(response.getIsDefault());
+        assertFalse(response.isGithubEnabled());
         assertEquals(creator.toString(), response.getCreatedBy());
         assertEquals("Java 后端 Agent", response.getName());
         assertEquals("DEVELOPER", response.getRole());
         assertEquals("遵循项目 API 规范。", response.getPrompt());
         verify(agents).insert(any(AgentEntity.class));
+    }
+
+    @Test
+    void githubPatchDistinguishesOmittedFieldFromExplicitFalse() {
+        member(teamId, creator);
+        AgentEntity agent = agent(agentId(), teamId, creator, "PRIVATE", "ACTIVE", false);
+        when(agents.selectById(agent.getId())).thenReturn(agent);
+        AgentUpdateRequest request = new AgentUpdateRequest();
+        request.setGithubEnabled(true);
+        assertEquals(true, service.update(creator, teamId, agent.getId(), request).isGithubEnabled());
+
+        request = new AgentUpdateRequest();
+        request.setName("新名称");
+        assertEquals(true, service.update(creator, teamId, agent.getId(), request).isGithubEnabled());
+
+        request = new AgentUpdateRequest();
+        request.setGithubEnabled(false);
+        assertEquals(false, service.update(creator, teamId, agent.getId(), request).isGithubEnabled());
+        assertEquals(false, agent.getGithubEnabled());
     }
 
     @Test

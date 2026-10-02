@@ -29,10 +29,9 @@ AgentRun 保存最近使用的 Workspace，Worker 执行记录保存每次实际
 
 团队通过 GitHub App 安装连接 GitHub，再选择授权仓库导入项目。通过
 `PUT /api/v1/teams/{teamId}/agents/{agentId}/github-capability` 设置
-`{"credentialRef":"github-app"}`，授权 Agent 使用当前项目导入仓库的 App 安装凭证；空字符串禁用能力。默认 Agent 由 Team Owner 配置，
-自定义 Agent 由创建者配置，也可在创建或编辑时提供 `githubCredentialRef`。
+`{"enabled":true}` 开启 GitHub 能力，使用当前项目导入仓库的 App 安装凭证；`false` 关闭能力。默认 Agent 由 Team Owner 配置，
+自定义 Agent 由创建者配置，也可在创建或编辑时提供 `githubEnabled`。
 安装配置、接口和操作示例见 [GitHub App 与仓库导入](docs/github-app.md)。不提供个人 OAuth。
-仍支持部署凭证：`AGENT_GITHUB_TOKEN` 对应引用 `default`；其他引用读取 `app.agent.github.<ref>.token`。
 App 凭证每次操作按安装和目标仓库获取，不进入提示词或工具参数。
 
 - `github_request` 访问 GitHub REST API，如查询仓库、创建 PR、查询或合并 PR。

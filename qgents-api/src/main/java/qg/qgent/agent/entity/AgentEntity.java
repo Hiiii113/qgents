@@ -13,8 +13,8 @@ import java.util.UUID;
 @Data
 @TableName(value = "agents", autoResultMap = true)
 public class AgentEntity {
-    /** Agent 可选 GitHub 凭证引用。 */
-    private String githubCredentialRef;
+    // 是否开启 GitHub 能力，凭证由团队 GitHub App 提供
+    private Boolean githubEnabled = false;
 
     /**
      * UUIDv7 Agent identifier.

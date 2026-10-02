@@ -9,16 +9,13 @@ import java.util.*;
 import java.util.function.Supplier;
 import java.util.function.Function;
 
-/** Agent 的可选 GitHub 工具；App 模式按项目导入仓库获取短期凭证，不保存 PR 镜像。 */
+/** Agent 的可选 GitHub 工具；按项目导入仓库获取短期凭证，不保存 PR 镜像。 */
 public class GitHubTools {
     private final RestClient http;
     private final Function<String, String> credential;
     private final Supplier<?> repositories;
     private final WorkspaceCommands commands;
     private final Supplier<UUID> workspace;
-    public GitHubTools(RestClient http, String token, WorkspaceCommands commands, Supplier<UUID> workspace) {
-        this(http, repository -> token, commands, workspace, null);
-    }
     public GitHubTools(RestClient http, Function<String, String> credential, WorkspaceCommands commands,
                        Supplier<UUID> workspace, Supplier<?> repositories) {
         this.http = http;
@@ -27,15 +24,15 @@ public class GitHubTools {
         this.commands = commands;
         this.workspace = workspace;
     }
-    @Tool(name = "github_request", description = "调用当前 Agent 的 GitHub 能力。path 是相对 API 路径，例如 GET /repos/owner/repo、POST /repos/owner/repo/pulls。App 模式只能操作当前项目已导入仓库，仓库清单通过 github_repositories 查询。写请求按用户任务目标决定调用。创建 PR body 需 title/head/base，可选 body。支持分页 query。")
+    @Tool(name = "github_request", description = "调用当前 Agent 的 GitHub 能力。path 是相对 API 路径，例如 GET /repos/owner/repo、POST /repos/owner/repo/pulls。只能操作当前项目已导入仓库，仓库清单通过 github_repositories 查询。写请求按用户任务目标决定调用。创建 PR body 需 title/head/base，可选 body。支持分页 query。")
     public Object request(@ToolParam(description = "GET/POST/PATCH/PUT/DELETE") String method,
                           @ToolParam(description = "GitHub API 相对路径，可含 query") String path,
                           @ToolParam(description = "JSON 请求正文", required = false) Map<String, Object> body) {
-        if (path == null || !path.matches("/(?:repos/|user(?:/repos|[?]|$)|orgs/|search/).*" ) || path.contains("..") || path.contains("://") || path.contains("#"))
+        if (path == null || path.contains("..") || path.contains("://") || path.contains("#"))
             throw new IllegalArgumentException("不支持的 GitHub API 路径");
         String repository = repositoryFromPath(path);
-        if (repositories != null && repository == null)
-            throw new IllegalArgumentException("App 模式请使用 /repos/owner/repo 路径；仓库清单通过 github_repositories 查询");
+        if (repository == null)
+            throw new IllegalArgumentException("请使用 /repos/owner/repo 路径；仓库清单通过 github_repositories 查询");
         String token = token(repository);
         var request = http.method(HttpMethod.valueOf(method.toUpperCase(Locale.ROOT))).uri(path)
                 .header("Authorization","Bearer "+token).header("Accept","application/vnd.github+json")
@@ -43,7 +40,7 @@ public class GitHubTools {
         if (body != null) request.body(body);
         return request.retrieve().body(Object.class);
     }
-    @Tool(name = "github_clone", description = "将 Agent 选择的 GitHub 仓库 clone 到当前选择的工作区。App 模式需先导入当前项目。base 省略时使用远端默认分支；不自动创建工作分支，后续通过 run_command 使用 git switch -c。")
+    @Tool(name = "github_clone", description = "将 Agent 选择的 GitHub 仓库 clone 到当前选择的工作区。需先导入当前项目。base 省略时使用远端默认分支；不自动创建工作分支，后续通过 run_command 使用 git switch -c。")
     public Object cloneRepository(@ToolParam(description = "owner/repo") String repository,
                                   @ToolParam(description = "工作区内新目录") String directory,
                                   @ToolParam(description = "基线分支，省略使用远端默认分支", required = false) String base) {
@@ -71,11 +68,11 @@ public class GitHubTools {
             throw new IllegalArgumentException("仓库名称应为 owner/repo");
     }
 
-    @Tool(name = "github_git", description = "在工作区内执行带当前 Agent GitHub 认证的 Git 参数数组，例如 fetch、pull 或 ls-remote；App 模式需指定已导入仓库。远端操作按用户目标决定。command 不包含开头的 git。")
+    @Tool(name = "github_git", description = "在工作区内执行带当前 Agent GitHub 认证的 Git 参数数组，例如 fetch、pull 或 ls-remote；需指定已导入仓库。远端操作按用户目标决定。command 不包含开头的 git。")
     public Object git(@ToolParam(description = "例如 [fetch,origin]") List<String> command,
                       @ToolParam(description = "工作区内目录", required = false) String directory,
-                      @ToolParam(description = "目标 owner/repo；App 模式必填且必须已导入当前项目", required = false) String repository) {
-        if (repositories != null) requireRepository(repository);
+                      @ToolParam(description = "目标 owner/repo，必须已导入当前项目") String repository) {
+        requireRepository(repository);
         String token = token(repository);
         if (command == null || command.isEmpty()) throw new IllegalArgumentException("Git 命令不能为空");
         List<String> argv = new ArrayList<>();
@@ -85,7 +82,7 @@ public class GitHubTools {
     }
     @Tool(name = "github_repositories", description = "列出当前项目已导入的 GitHub 仓库及默认分支；不创建沙箱")
     public Object repositories() {
-        return repositories == null ? request("GET", "/user/repos", null) : repositories.get();
+        return repositories.get();
     }
     private String token(String repository) {
         String token = credential.apply(repository);

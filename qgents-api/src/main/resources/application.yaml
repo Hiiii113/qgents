@@ -88,9 +88,6 @@ app:
     response-timeout: ${SANDBOX_WORKER_RESPONSE_TIMEOUT:30s}
   # 所有 Agent 共用工具循环；普通文本回复结束，不强制工具调用。
   agent:
-    github:
-      default:
-        token: ${AGENT_GITHUB_TOKEN:}
     max-rounds: ${APP_AGENT_MAX_ROUNDS:30}
     max-depth: ${APP_AGENT_MAX_DEPTH:3}
     max-subagents: ${APP_AGENT_MAX_SUBAGENTS:8}

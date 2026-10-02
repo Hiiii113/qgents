@@ -13,10 +13,8 @@ import lombok.Data;
 @Data
 @Schema(description = "编辑自定义 Agent 请求")
 public class AgentUpdateRequest {
-    /** 可选 GitHub 能力：github-app 使用导入仓库的 App 授权，其他引用读取部署配置。 */
-    @jakarta.validation.constraints.Pattern(regexp="[A-Za-z0-9_-]*")
-    @jakarta.validation.constraints.Size(max=64)
-    private String githubCredentialRef;
+    @Schema(description = "是否开启 GitHub 能力，使用团队 GitHub App 授权")
+    private Boolean githubEnabled;
 
 
     @Size(max = 255, message = "name 最长 255 个字符")
