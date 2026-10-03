@@ -6,7 +6,7 @@ IM 聊天、可选 GitHub App 集成和云端 Agent Harness。普通消息仅用
 
 ## 本地开发
 
-1. 将 `.env.example` 复制为 `.env`，填写数据库、Redis、`DASHSCOPE_API_KEY`、SMTP 和 JWT 配置。Spring 自动读取 `.env`。
+1. 将 `.env.example` 复制为 `.env`，填写数据库、Redis、`DEEPSEEK_API_KEY`、SMTP 和 JWT 配置。Spring 自动读取 `.env`。
 2. 启动 Docker Desktop（Linux containers），执行 `docker compose up -d --wait`，启动 MySQL 8.4 和 Redis。应用数据库用户使用 `qgents` 等非 root 用户。首次创建 MySQL 数据卷时自动执行 `src/main/resources/db/qgents_schema.sql`；复用已有数据卷不会重新建表。默认映射到本机 13306 和 16379，分别对应 `MYSQL_HOST_PORT`、`REDIS_HOST_PORT`，本机 API 的 `DB_URL` 与 `REDIS_PORT` 须使用这两个端口。
 3. 将已有登录 RSA 私钥放到 `RSA_PRIVATE_KEY_PATH` 指定位置，前端公钥和 keyId 须与其对应。项目公钥位于 `src/main/resources/rsa/public_key.pem`，仅有公钥无法生成对应私钥。
 4. Windows Docker Desktop 使用 `SANDBOX_DOCKER_HOST=npipe:////./pipe/docker_engine`；本地运行时两个 Workspace 根目录指向同一实际目录。
@@ -18,7 +18,7 @@ API 为 `http://localhost:8080/api/v1`，Swagger 为 `http://localhost:8080/swag
 
 ## 配置
 
-- 模型通过 DashScope 的 OpenAI 兼容接口调用，使用 `AI_BASE_URL`、`AI_MODEL`、`AI_MAX_TOKENS` 配置地址、模型和输出上限。
+- 默认使用 [DeepSeek 官方接口](https://api-docs.deepseek.com/zh-cn/)的 `deepseek-flash`，通过 `DEEPSEEK_API_KEY` 鉴权；使用 `AI_BASE_URL`、`AI_MODEL`、`AI_MAX_TOKENS` 配置地址、模型和输出上限。
 - 附件默认保存到 `ATTACHMENT_LOCAL_ROOT`，也支持 OSS；头像直传需要配置 OSS 公共访问地址。
 - GitHub App 可选，Agent 的 GitHub 能力默认关闭。配置见 [docs/github-app.md](docs/github-app.md)，导入仓库不自动 clone 或绑定 Workspace。
 - `FRONTEND_URL` 为页面入口；独立 API 域名部署时将页面来源加入 `CORS_ALLOWED_ORIGINS`。

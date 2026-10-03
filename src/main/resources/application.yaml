@@ -3,12 +3,12 @@ spring:
     import: optional:file:.env[.properties]
   ai:
     openai:
-      # 通过 DashScope 的 OpenAI 兼容接口调用多模态模型。
-      api-key: ${DASHSCOPE_API_KEY}
-      base-url: ${AI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+      # 通过 DeepSeek 的 OpenAI 兼容接口调用模型。
+      api-key: ${DEEPSEEK_API_KEY}
+      base-url: ${AI_BASE_URL:https://api.deepseek.com}
       chat:
         options:
-          model: ${AI_MODEL:qwen3.7-flash}
+          model: ${AI_MODEL:deepseek-flash}
           temperature: 0.2
           # 非流式响应需等待生成结束；限制输出长度以控制响应耗时。
           max-tokens: ${AI_MAX_TOKENS:4096}

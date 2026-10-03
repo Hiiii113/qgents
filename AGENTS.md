@@ -178,3 +178,4 @@
 ## 本地启动方式
 
 - 当前 Windows 开发环境在本机运行前后端，MySQL、Redis 和沙箱使用 Docker；数据库以当前建表脚本初始化。
+- 当前模型使用 DeepSeek 官方 OpenAI 兼容接口的 `deepseek-flash`，环境模板和部署配置保持一致。
