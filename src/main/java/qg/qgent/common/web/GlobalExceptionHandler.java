@@ -18,10 +18,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 全局异常处理
- * GlobalExceptionHandler
- */
+/** 将业务异常、请求校验错误和未预期异常转换为统一响应。 */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -37,12 +34,10 @@ public class GlobalExceptionHandler {
     // 处理请求参数校验异常
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<?> validation(MethodArgumentNotValidException ex, HttpServletRequest request) {
-        // 获取请求参数校验异常的详细信息
         var details = ex.getBindingResult().getFieldErrors().stream()
                 .map(f -> Map.of("field", f.getField(), "message", message(f))).toList();
         log.warn("Validation rejected [{}]: {}", request.getRequestURI(), details);
 
-        // 返回 400 错误
         return ResponseEntity
                 .badRequest()
                 .body(error("INVALID_ARGUMENT", "请求参数不合法", details, request));
@@ -52,7 +47,6 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     ResponseEntity<?> typeMismatch(MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
         log.warn("Type mismatch [{}]: parameter={}", request.getRequestURI(), ex.getName());
-        // 返回 400 错误
         return ResponseEntity
                 .badRequest()
                 .body(error("INVALID_ARGUMENT", "请求参数格式不正确", List.of(), request));
@@ -63,7 +57,6 @@ public class GlobalExceptionHandler {
     ResponseEntity<?> unreadable(HttpMessageNotReadableException ex, HttpServletRequest request) {
         log.warn("Unreadable body [{}]: {}", request.getRequestURI(),
                 ex.getMostSpecificCause().getMessage());
-        // 返回 400 错误
         return ResponseEntity
                 .badRequest()
                 .body(error("INVALID_ARGUMENT", "请求体格式不正确", List.of(), request));
@@ -104,18 +97,16 @@ public class GlobalExceptionHandler {
             return null;
         }
         log.error("Unexpected error [{}]", request.getRequestURI(), ex);
-        // 返回 500 错误
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(error("INTERNAL_ERROR", "服务暂时不可用", List.of(), request));
     }
 
-    // 获取error的message，如果没有则返回默认值"不合法"
+    // 提取校验提示；未提供时使用默认文案。
     private String message(FieldError error) {
         return error.getDefaultMessage() == null ? "不合法" : error.getDefaultMessage();
     }
 
-    // 按照指定格式返回错误信息
     private Map<String, Object> error(String code, String message, List<?> details, HttpServletRequest request) {
         return Map.of("error", Map.of("code", code, "message", message, "details", details),
                 "requestId", request.getAttribute(RequestIdFilter.ATTRIBUTE));

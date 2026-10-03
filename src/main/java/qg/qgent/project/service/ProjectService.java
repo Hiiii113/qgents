@@ -69,7 +69,7 @@ public class ProjectService {
             insertMember(project.getId(), userId, "PROJECT_MEMBER");
         }
         eventPublisher.publishEvent(new ProjectCreatedEvent(project.getId(), project.getName(), actor));
-        // 项目创建动态事件：供「团队最近动态」聚合展示，与项目同事务落库
+        // 项目创建事务提交后保存事件，供团队最近动态展示。
         eventService.publish(project.getId(), null, "project.created", project.getId().toString(),
                 Map.of("projectId", project.getId(), "name", project.getName(), "createdBy", actor));
         return response(project, "PROJECT_ADMIN");

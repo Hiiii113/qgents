@@ -29,7 +29,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** 自定义 Agent 生命周期管理接口（契约 §11.1 接口补充 v2.0.3 §2-§6）授权与状态转换规则测试。 */
+/** 自定义 Agent 的权限、发布审核和归档状态转换测试。 */
 class AgentServiceLifecycleTest {
     private final AgentMapper agents = mock(AgentMapper.class);
     private final TeamMemberMapper teamMembers = mock(TeamMemberMapper.class);

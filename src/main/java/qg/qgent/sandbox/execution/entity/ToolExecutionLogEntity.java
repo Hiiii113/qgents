@@ -5,9 +5,7 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 
-/**
- * 映射 tool_execution_logs 表的一条执行日志。
- */
+/** 映射 tool_execution_logs 表的一条执行日志。 */
 @Data
 @TableName("tool_execution_logs")
 public class ToolExecutionLogEntity {

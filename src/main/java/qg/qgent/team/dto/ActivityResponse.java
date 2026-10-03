@@ -28,7 +28,7 @@ public class ActivityResponse {
         private String avatar;
     }
 
-    /** 动态关联的项目或任务。 */
+    /** 动态关联的项目。 */
     @Data
     @NoArgsConstructor
     @AllArgsConstructor

@@ -8,23 +8,17 @@ import lombok.Data;
 
 import java.util.UUID;
 
-/**
- * 消息提及对象（契约 §7 mentions）。
- */
+/** 消息提及对象，记录被提及的用户或 Agent。 */
 @Data
 public class Mention {
 
-    /**
-     * 提及对象类型枚举：USER / AGENT。
-     */
+    // 提及对象类型枚举：USER / AGENT。
     @NotBlank
     @Size(max = 16)
     @Schema(description = "提及对象类型：USER / AGENT", maxLength = 16, requiredMode = Schema.RequiredMode.REQUIRED)
     private String type;
 
-    /**
-     * 被提及的用户或 Agent ID。
-     */
+    // 被提及的用户或 Agent ID。
     @NotNull
     @Schema(description = "被提及的用户或 Agent ID", requiredMode = Schema.RequiredMode.REQUIRED)
     private UUID id;

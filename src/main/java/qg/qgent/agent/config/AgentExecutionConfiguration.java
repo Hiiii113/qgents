@@ -9,7 +9,7 @@ import qg.qgent.common.config.MdcTaskDecorator;
 
 import java.util.concurrent.Executor;
 
-/** 聊天请求提交后异步执行 Agent，subagent 在同一执行线程中调用。 */
+/** Agent 异步执行线程池。 */
 @Configuration
 @EnableConfigurationProperties(AgentExecutorProperties.class)
 public class AgentExecutionConfiguration {

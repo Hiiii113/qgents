@@ -16,7 +16,7 @@ import java.util.UUID;
 /** 校验握手 URL 中的 access token，并把用户 ID 保存到会话。 */
 @Component
 public class RealtimeAuthInterceptor implements HandshakeInterceptor {
-    /** 会话属性中存放已鉴权用户 ID 的键。 */
+    // 会话属性中存放已鉴权用户 ID 的键。
     public static final String USER_ID_ATTR = "realtimeUserId";
 
     private final TokenService tokenService;

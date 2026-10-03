@@ -26,10 +26,8 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * 群聊上下文组装（点3：聊天上下文管理）。
- * <p>
- * 把项目群聊的历史消息、需求、关联仓库、已发布 Skill 目录与已批准 Memory 组装为 Agent 输入上下文，
- * 供 Agent loop 作为 prompt 输入。
+ * 将近期聊天消息、已发布 Skill 目录与已批准 Memory 组装为 Agent loop 的输入上下文。
+ * 提供内部消息检索与读取，以及显式选择 Skill 后的正文读取能力。
  */
 @Service
 public class ContextService {
@@ -58,7 +56,6 @@ public class ContextService {
 
     /**
      * 组装项目群聊的 Agent 输入上下文。
-     *
      * @param actor     当前用户 ID
      * @param projectId 项目 ID
      * @param groupId   项目群聊 ID
@@ -93,9 +90,7 @@ public class ContextService {
                 conversation, skills, memories);
     }
 
-    /**
-     * 在指定项目群聊内按关键字检索历史聊天记录。Skill 与 Memory 不属于聊天检索范围。
-     */
+    /** 在指定项目群聊内按关键字检索历史聊天记录。Skill 与 Memory 不属于聊天检索范围。 */
     public List<ContextMessage> searchChatHistory(UUID actor, UUID projectId, UUID groupId, String query,
                                                    Integer limit) {
         groupService.requireGroupMember(projectId, groupId, actor);
@@ -116,9 +111,7 @@ public class ContextService {
         return toContextMessage(message);
     }
 
-    /**
-     * 读取一条当前项目内可见且已发布的 Skill 正文。调用方必须显式选择该 Skill。
-     */
+    /** 读取一条当前项目内可见且已发布的 Skill 正文。调用方必须显式选择该 Skill。 */
     public SkillEntity activateSkill(UUID actor, UUID projectId, UUID skillId) {
         access.requireProjectMember(projectId, actor);
         SkillEntity skill = skillMapper.findVisiblePublishedById(projectId, actor, skillId);

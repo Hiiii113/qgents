@@ -15,10 +15,7 @@ import java.security.spec.PKCS8EncodedKeySpec;
 import java.util.Base64;
 import javax.crypto.Cipher;
 
-/**
- * 私钥解密器，用于解密客户端使用公钥加密的密码
- * RsaPasswordDecryptor
- */
+/** 使用服务端 RSA 私钥解密客户端提交的密码密文。 */
 @Component
 public class RsaPasswordDecryptor {
     private static final Logger log = LoggerFactory.getLogger(RsaPasswordDecryptor.class);

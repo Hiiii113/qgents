@@ -6,9 +6,7 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 
-/**
- * 映射 tool_executions 表的工具执行持久化实体。
- */
+/** 映射 tool_executions 表的工具执行持久化实体。 */
 @Data
 @TableName("tool_executions")
 public class ToolExecutionEntity {

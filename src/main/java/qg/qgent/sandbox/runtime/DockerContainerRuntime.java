@@ -52,10 +52,8 @@ public class DockerContainerRuntime implements ContainerRuntime {
     private static final String EXPIRES_AT_LABEL = LABEL_PREFIX + "expires-at";
     private static final String MAX_EXPIRES_AT_LABEL = LABEL_PREFIX + "max-expires-at";
     private static final String EXECUTION_TIMEOUT_LABEL = LABEL_PREFIX + "execution-timeout-seconds";
-    /**
-     * 沙箱容器运行用户（与 sandbox-images/dev-tools Dockerfile 的 USER_ID 一致），
-     * workspace 目录属主需与之一致，非 root 沙箱才能读写 git 检出的文件。
-     */
+    // 沙箱容器运行用户（与 sandbox-images/dev-tools Dockerfile 的 USER_ID 一致），
+    // workspace 目录属主需与之一致，非 root 沙箱才能读写 git 检出的文件。
     private static final int SANDBOX_UID = 10001;
     private static final int SANDBOX_GID = 10001;
 
@@ -142,7 +140,7 @@ public class DockerContainerRuntime implements ContainerRuntime {
     /**
      * 构建容器可写 tmpfs 挂载：/tmp、/run、开发用户 HOME 以及构建缓存目录。
      * 各构建缓存容量由 Sandbox 配置控制，仅作为本 Sandbox 的临时缓存，随容器销毁清理；
-     * 不挂载宿主机路径；rootfs 可写仅影响当前容器，Workspace 仍由逐仓库 bind 控制。
+     * 不挂载宿主机路径；rootfs 可写仅影响当前容器，持久文件仍通过完整 Workspace 挂载保存。
      */
     Map<String, String> tmpfsMounts() {
         String developerHomeOptions = "rw,nosuid,nodev,uid=10001,gid=10001,mode=700,size=";
@@ -171,9 +169,7 @@ public class DockerContainerRuntime implements ContainerRuntime {
         return List.copyOf(allocations.values());
     }
 
-    /**
-     * 从 Docker daemon 全局查询所有 Sandbox 创建的运行中容器，避免只检查当前 JVM 内存。
-     */
+    /** 从 Docker daemon 全局查询所有 Sandbox 创建的运行中容器，避免只检查当前 JVM 内存。 */
     @Override
     public boolean isWorkspaceInUse(String workspaceStorageKey) {
         return docker.listContainersCmd()
@@ -182,9 +178,7 @@ public class DockerContainerRuntime implements ContainerRuntime {
                 .exec().stream().findAny().isPresent();
     }
 
-    /**
-     * 销毁 Sandbox 容器。Workspace 是独立宿主机挂载目录，不会随容器删除。
-     */
+    /** 销毁 Sandbox 容器。Workspace 是独立宿主机挂载目录，不会随容器删除。 */
     @Override
     public synchronized void destroy(UUID sandboxId) {
         SandboxAllocation allocation = allocations.remove(sandboxId);

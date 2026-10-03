@@ -14,23 +14,23 @@ import java.util.Map;
 @AllArgsConstructor
 public class AvatarCredentialResponse {
 
-    /** 头像对象键（avatars/{userId}/{uuid}.{ext}），确认时回传。 */
+    // 头像对象键（avatars/{userId}/{uuid}.{ext}），确认时回传。
     @Schema(description = "头像对象键，确认时原样回传")
     private String objectKey;
 
-    /** 上传地址（对象存储预签名地址）。 */
+    // 上传地址（对象存储预签名地址）。
     @Schema(description = "上传地址")
     private String uploadUrl;
 
-    /** 上传方法，固定 PUT。 */
+    // 上传方法，固定 PUT。
     @Schema(description = "上传方法", example = "PUT")
     private String method;
 
-    /** 上传请求头。 */
+    // 上传请求头。
     @Schema(description = "上传请求头")
     private Map<String, String> headers;
 
-    /** 凭证过期时间（UTC）。 */
+    // 凭证过期时间（UTC）。
     @Schema(description = "凭证过期时间（UTC）")
     private LocalDateTime expiresAt;
 }

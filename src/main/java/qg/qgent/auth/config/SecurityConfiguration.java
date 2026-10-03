@@ -28,10 +28,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 安全配置
- * SecurityConfiguration
- */
+/** 配置 JWT 鉴权、公开接口、幂等过滤器和跨域规则。 */
 @Slf4j
 @Configuration
 public class SecurityConfiguration {
@@ -42,45 +39,26 @@ public class SecurityConfiguration {
         return new ObjectMapper().findAndRegisterModules().registerModule(utcLocalDateTimeModule);
     }
 
-    /**
-     * 加密密码
-     *
-     * @return BCryptPasswordEncoder
-     */
+    /** 使用 BCrypt 保存密码哈希。 */
     @Bean
     PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder(12);
     }
 
-    /**
-     * 幂等过滤器 Bean：在 JwtAuthenticationFilter 之后注册，保证读取请求体前鉴权已就绪。
-     */
+    /** 幂等过滤器 Bean：在 JwtAuthenticationFilter 之后注册，保证读取请求体前鉴权已就绪。 */
     @Bean
     IdempotencyFilter idempotencyFilter(IdempotencyService idempotency, ObjectMapper mapper) {
         return new IdempotencyFilter(idempotency, mapper);
     }
 
-    /**
-     * 安全过滤链
-     *
-     * @param http
-     * @param jwt
-     * @param idempotency 写接口幂等过滤器，位于 JWT 鉴权之后
-     * @param mapper
-     * @return
-     * @throws Exception
-     */
+    /** 配置无状态认证及请求访问规则，幂等过滤器在 JWT 鉴权之后执行。 */
     @Bean
     SecurityFilterChain security(HttpSecurity http, JwtAuthenticationFilter jwt, IdempotencyFilter idempotency,
                                  ObjectMapper mapper, @Qualifier("cors") CorsConfigurationSource corsConfigurationSource) throws Exception {
         return http
-                // 不启用 CSRF
                 .csrf(c -> c.disable())
-                // 开启 CORS
                 .cors(c -> c.configurationSource(corsConfigurationSource))
-                // 不使用 Session
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                // 配置请求授权
                 .authorizeHttpRequests(a -> a
                         // SSE 断连/超时后容器触发的 ASYNC/ERROR dispatch 会重走过滤链，此时已无 SecurityContext
                         // （且长连接可能已超出 access token 有效期）。派发是已通过初始鉴权的请求的收尾，
@@ -109,7 +87,6 @@ public class SecurityConfiguration {
                         .requestMatchers("/actuator/prometheus", "/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/error").permitAll().anyRequest()
                         .authenticated())
-                // 配置异常处理
                 .exceptionHandling(e -> e.authenticationEntryPoint((req, res, ex) -> {
                     // 401 原因记录为 debug：token 缺失/过期属客户端常态，避免刷屏；排查时开启 DEBUG 级别即可
                     log.debug("Unauthorized {} {}: {}", req.getMethod(), req.getRequestURI(), ex.getMessage());
@@ -120,36 +97,26 @@ public class SecurityConfiguration {
                             Map.of("error", Map.of("code", "UNAUTHORIZED", "message", "需要登录", "details", List.of()),
                                     "requestId", String.valueOf(req.getAttribute("requestId"))));
                 }))
-                // 配置 JWT 过滤器
                 .addFilterBefore(jwt, UsernamePasswordAuthenticationFilter.class)
-                // 幂等过滤器紧跟 JWT 之后，仅处理已鉴权的 /api/v1/projects/** POST
+                // 幂等过滤器在 JWT 之后执行，处理项目路径下的 POST、PUT、PATCH 和 DELETE。
                 .addFilterAfter(idempotency, JwtAuthenticationFilter.class)
                 .build();
     }
 
-    /**
-     * 跨域配置
-     *
-     * @param origins
-     * @return
-     */
+    /** 按配置允许前端来源，开放业务请求和 SSE 续传所需的请求头。 */
     @Bean
     CorsConfigurationSource cors(@Value("${app.cors-allowed-origins}") String origins) {
-        // 配置跨域
         CorsConfiguration c = new CorsConfiguration();
-        // 允许的来源
         c.setAllowedOrigins(Arrays.stream(origins.split(","))
                 .map(String::trim)
                 .filter(origin -> !origin.isEmpty())
                 .toList());
-        // 允许的请求方法
         c.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         // 允许的请求头：Idempotency-Key（写接口幂等）、Last-Event-ID（SSE 续传）
         c.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Request-Id", "Idempotency-Key",
                 "Last-Event-ID"));
         // 当前认证使用 Authorization Bearer，不启用跨域凭证（Cookie）传递。
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        // 注册跨域配置
         source.registerCorsConfiguration("/**", c);
         return source;
     }

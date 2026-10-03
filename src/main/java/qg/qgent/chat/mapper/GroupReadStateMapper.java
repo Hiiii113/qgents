@@ -6,9 +6,7 @@ import org.apache.ibatis.annotations.Param;
 
 import java.util.UUID;
 
-/**
- * 群成员已读游标数据访问（表 group_read_state）。
- */
+/** 群成员已读游标数据访问（表 group_read_state）。 */
 @Mapper
 public interface GroupReadStateMapper {
 
@@ -17,7 +15,6 @@ public interface GroupReadStateMapper {
      * <p>
      * 采用 MySQL {@code INSERT ... ON DUPLICATE KEY UPDATE} 并用 {@code GREATEST} 保证单调不减，
      * 天然满足幂等（重复调用无副作用）。调用方需已校验项目/群归属。
-     *
      * @param userId 用户 ID
      * @param groupId 项目群聊 ID
      * @param seq 目标已读游标（群内消息序号）

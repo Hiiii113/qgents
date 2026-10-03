@@ -12,9 +12,7 @@ import java.util.regex.Pattern;
 
 import static org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY;
 
-/**
- * 将 Workspace 存储标识解析为安全路径。
- */
+/** 将 Workspace 存储标识解析为安全路径。 */
 @Component
 public class WorkspacePathResolver {
     private static final Pattern STORAGE_KEY = Pattern.compile("workspaces/[0-9a-fA-F-]{36}");

@@ -11,18 +11,7 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
-/**
- * 全局时间序列化配置：数据库时间统一以 UTC 存储（{@code LocalDateTime.now(ZoneOffset.UTC)}），
- * 但 Jackson 对 {@link LocalDateTime} 的默认序列化是无时区偏移的 ISO 字符串
- * （如 {@code 2026-08-18T15:26:31}），前端 {@code new Date(...)} 会按浏览器本地时区解析，
- * 导致中国（UTC+8）展示比真实时刻少 8 小时。
- * <p>
- * 本配置把 {@link LocalDateTime} 统一序列化为带 {@code Z} 后缀的 UTC ISO8601
- * （与各 Service 的 {@code iso()} 工具一致），前端 {@code new Date("...Z")} 即可正确转本地时区。
- * <p>
- * 注意：{@link LocalDateTime} 语义上无时区，项目约定其值恒为 UTC 时刻，故用
- * {@code toInstant(ZoneOffset.UTC)} 转 Instant 输出。
- */
+/** 将项目约定为 UTC 的 LocalDateTime 序列化为带 Z 后缀的 ISO8601 字符串，避免客户端按本地时区解析。 */
 @Configuration
 public class JacksonTimeConfiguration {
 

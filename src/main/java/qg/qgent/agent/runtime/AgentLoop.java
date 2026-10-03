@@ -36,7 +36,7 @@ public class AgentLoop {
         this.maxRounds = maxRounds;
     }
 
-    /** 工具列表按轮读取，使模型创建工作区后即可在下一轮使用文件工具。 */
+    /** 逐轮调用模型，将工具结果加入历史；取消、轮次耗尽或模型异常回复时停止。 */
     public Result run(String systemPrompt, List<Message> initialHistory,
                       Supplier<List<ToolCallback>> availableTools, BooleanSupplier cancelled) {
         List<Message> history = new ArrayList<>(initialHistory);

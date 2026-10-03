@@ -7,7 +7,7 @@ import lombok.Data;
 
 import java.util.List;
 
-/** 创建 Skill 草稿请求。 */
+/** 创建 Skill 的名称、正文、标签和可见范围。 */
 @Data
 public class SkillCreateRequest {
 

@@ -10,10 +10,10 @@ public class TeamMemberView {
     private UUID teamId;
     private UUID userId;
     private String role;
-    /** 成员用户显示名（users.display_name）。 */
+    // 成员用户显示名（users.display_name）。
     private String displayName;
-    /** 成员用户邮箱（users.email）。 */
+    // 成员用户邮箱（users.email）。
     private String email;
-    /** 成员用户头像 URL（users.avatar_url，可为空）。 */
+    // 成员用户头像 URL（users.avatar_url，可为空）。
     private String avatarUrl;
 }

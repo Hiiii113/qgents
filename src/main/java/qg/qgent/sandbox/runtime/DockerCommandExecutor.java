@@ -35,9 +35,7 @@ public class DockerCommandExecutor implements CommandExecutor {
     private final SandboxProperties properties;
     private final ConcurrentMap<String, ReentrantLock> sandboxCommandLocks = new ConcurrentHashMap<>();
 
-    /**
-     * 在沙箱内执行单条命令。超时或线程中断时会重启容器以终止残留进程，Workspace 挂载内容保持不变。
-     */
+    /** 在沙箱内执行单条命令。超时或线程中断时会重启容器以终止残留进程，Workspace 挂载内容保持不变。 */
     @Override
     public CommandExecutionResult execute(SandboxAllocation sandbox, String workingDirectory, List<String> command,
                                           Duration timeout)

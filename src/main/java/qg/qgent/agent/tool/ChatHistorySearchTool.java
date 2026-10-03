@@ -14,11 +14,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * 当前项目群聊的历史聊天检索工具。
- * <p>
- * 本工具不接触 Skill 或 Memory；每个实例仅服务一条 AgentRun，调用预算不跨运行继承。
- */
+/** 当前群聊的历史消息检索与全文读取；检索次数按 AgentRun 计数。 */
 @Slf4j
 public class ChatHistorySearchTool {
 

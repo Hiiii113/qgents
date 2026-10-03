@@ -14,10 +14,7 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.UUID;
 
-/**
- * 生成和验证JWT Token的服务
- * TokenService
- */
+/** 签发和校验 JWT 访问令牌，生成刷新令牌及令牌摘要。 */
 @Component
 public class TokenService {
     private final Algorithm algorithm;

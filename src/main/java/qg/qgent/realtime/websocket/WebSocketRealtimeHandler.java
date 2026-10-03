@@ -21,7 +21,7 @@ import java.util.UUID;
 public class WebSocketRealtimeHandler extends TextWebSocketHandler {
     private static final Logger log = LoggerFactory.getLogger(WebSocketRealtimeHandler.class);
 
-    /** 心跳间隔（毫秒），对齐 SSE 每 15 秒心跳。 */
+    // 心跳间隔（毫秒），对齐 SSE 每 15 秒心跳。
     private static final long HEARTBEAT_MS = 15_000L;
 
     private final RealtimeHub hub;
@@ -60,10 +60,10 @@ public class WebSocketRealtimeHandler extends TextWebSocketHandler {
         log.debug("realtime transport error, userId={}: {}", userId, exception.getMessage());
     }
 
-    /** 预留的客户端上行入口：当前实时通道为服务端单向推送，一般忽略客户端文本；后续如需 心跳应答、按需订阅或查询扩展可在此解析处理。 */
+    /** 实时通道只做服务端推送；收到客户端文本时记录 debug 日志并忽略。 */
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
-        // 预留；当前协议不定义客户端上行载荷，忽略（记 debug 便于排查异常上行）
+        // 当前协议不处理客户端文本。
         log.debug("realtime unsolicited client frame ignored, session={}", session.getId());
     }
 

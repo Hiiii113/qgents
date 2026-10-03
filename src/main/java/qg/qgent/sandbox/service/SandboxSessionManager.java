@@ -21,7 +21,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
-/** 为 AgentRun 准备空工作区和沙箱；同一 AgentRun 复用原目录。 */
+/** 首次代码工具调用时准备 Workspace 和沙箱；会话按工作区复用，由根 AgentRun 持有。 */
 @Service
 public class SandboxSessionManager {
 
@@ -47,9 +47,7 @@ public class SandboxSessionManager {
         this.writeLeases = writeLeases;
     }
 
-    /**
-     * 为一次 AgentRun 编排准备 Sandbox 会话；已存在则直接返回。
-     */
+    /** 为根 AgentRun 准备指定工作区的沙箱会话；同一持有者复用已有会话。 */
     public SandboxSession acquire(UUID agentRunId, UUID projectId, UUID workspaceId) {
         ReentrantLock acquireLock = acquireLocks.computeIfAbsent(workspaceId, ignored -> new ReentrantLock());
         // 初始化或释放已由其他线程处理时返回冲突，避免等待 沙箱初始化。
@@ -91,9 +89,7 @@ public class SandboxSessionManager {
         return session;
     }
 
-    /**
-     * 销毁会话对应的 Sandbox 并移除记录；Workspace 保留。销毁失败交给 Sandbox 后续清理，不阻断执行收尾。
-     */
+    /** 销毁会话对应的 Sandbox 并移除记录；Workspace 保留。销毁失败交给 Sandbox 后续清理，不阻断执行收尾。 */
     public void release(UUID workspaceId, UUID agentRunId) {
         if (workspaceId == null || agentRunId == null) {
             return;

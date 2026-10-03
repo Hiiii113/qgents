@@ -26,10 +26,10 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AvatarStorageService {
 
-    /** 头像对象大小上限（字节），前端应同步限制图片体积。 */
+    // 头像对象大小上限（字节），前端应同步限制图片体积。
     static final long MAX_SIZE_BYTES = 5 * 1024 * 1024;
 
-    /** 允许的头像扩展名白名单。 */
+    // 允许的头像扩展名白名单。
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
 
     private final ObjectProvider<OSS> ossProvider;

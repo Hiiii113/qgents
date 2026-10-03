@@ -12,23 +12,23 @@ import java.util.UUID;
 @Data
 @TableName("workspaces")
 public class WorkspaceEntity {
-    /** 工作区 ID。 */
+    // 工作区 ID。
     @TableId(type = IdType.INPUT)
     private UUID id;
-    /** 所属项目。 */
+    // 所属项目。
     private UUID projectId;
-    /** 工作区存储相对路径。 */
+    // 工作区存储相对路径。
     private String storageKey;
-    /** 准备状态：创建时为 PROVISIONING，Sandbox 准备完成后为 READY。 */
+    // 准备状态：创建时为 PROVISIONING，Sandbox 准备完成后为 READY。
     private String status;
-    /** 当前持有写入租约的根 AgentRun，不代表工作区的归属。 */
+    // 当前持有写入租约的根 AgentRun，不代表工作区的归属。
     private UUID writeLeaseAgentRunId;
-    /** 续租和释放时匹配的随机令牌。 */
+    // 续租和释放时匹配的随机令牌。
     private String writeLeaseToken;
-    /** 租约过期时间（UTC）；每次 Sandbox 工具调用前续租。 */
+    // 租约过期时间（UTC）；每次 Sandbox 工具调用前续租。
     private LocalDateTime writeLeaseExpiresAt;
-    /** 创建时间（UTC）。 */
+    // 创建时间（UTC）。
     private LocalDateTime createdAt;
-    /** 更新时间（UTC）。 */
+    // 更新时间（UTC）。
     private LocalDateTime updatedAt;
 }

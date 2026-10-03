@@ -5,9 +5,7 @@ import org.apache.ibatis.annotations.Mapper;
 
 import qg.qgent.agent.entity.AgentEntity;
 
-/**
- * Data access for team-scoped Agent identities.
- */
+/** 团队 Agent 数据访问。 */
 @Mapper
 public interface AgentMapper extends BaseMapper<AgentEntity> {
 }

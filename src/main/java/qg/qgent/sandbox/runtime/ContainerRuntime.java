@@ -14,7 +14,6 @@ public interface ContainerRuntime {
 
     /**
      * 创建一个新的 Sandbox。
-     *
      * @param request    经过接口校验的创建请求
      * @param allocation 服务层计算完成的租约和资源元数据
      * @return 已受运行时管理的沙箱状态
@@ -32,14 +31,11 @@ public interface ContainerRuntime {
      */
     List<SandboxAllocation> findAll();
 
-    /**
-     * 判断任一受管 Sandbox 是否仍在使用指定 Workspace
-     */
+    /** 判断任一受管 Sandbox 是否仍在使用指定 Workspace */
     boolean isWorkspaceInUse(String workspaceStorageKey);
 
     /**
      * 销毁指定 Sandbox 的临时运行资源，不删除 Workspace。
-     *
      * @param sandboxId 沙箱编号
      */
     void destroy(UUID sandboxId);

@@ -11,7 +11,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class AvatarConfirmResponse {
 
-    /** 头像公共读长期 URL。 */
+    // 头像公共读长期 URL。
     @Schema(description = "头像公共读长期 URL")
     private String avatarUrl;
 }

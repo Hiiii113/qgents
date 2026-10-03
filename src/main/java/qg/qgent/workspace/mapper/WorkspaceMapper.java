@@ -23,9 +23,7 @@ public interface WorkspaceMapper extends BaseMapper<WorkspaceEntity> {
     int claimWriteLease(@Param("projectId") UUID projectId, @Param("workspaceId") UUID workspaceId,
                         @Param("agentRunId") UUID agentRunId, @Param("token") String token);
 
-    /**
-     * 仅当前持有者可续租；返回 0 表示租约已被接管、过期或 Workspace 归属不匹配。
-     */
+    /** 仅当前持有者可续租；返回 0 表示租约已被接管、过期或 Workspace 归属不匹配。 */
     @Update("update workspaces set write_lease_expires_at=DATE_ADD(UTC_TIMESTAMP(6), INTERVAL 30 MINUTE), "
             + "updated_at=UTC_TIMESTAMP(6) where id=#{workspaceId} and project_id=#{projectId} "
             + "and write_lease_agent_run_id=#{agentRunId} and write_lease_token=#{token} "
@@ -33,9 +31,7 @@ public interface WorkspaceMapper extends BaseMapper<WorkspaceEntity> {
     int renewWriteLease(@Param("projectId") UUID projectId, @Param("workspaceId") UUID workspaceId,
                         @Param("agentRunId") UUID agentRunId, @Param("token") String token);
 
-    /**
-     * 仅当前令牌可释放租约，防止旧进程迟到的 finally 清理掉新持有者。
-     */
+    /** 仅当前令牌可释放租约，防止旧进程迟到的 finally 清理掉新持有者。 */
     @Update("update workspaces set write_lease_agent_run_id=null, write_lease_token=null, write_lease_expires_at=null, "
             + "updated_at=UTC_TIMESTAMP(6) where id=#{workspaceId} and project_id=#{projectId} "
             + "and write_lease_agent_run_id=#{agentRunId} and write_lease_token=#{token}")

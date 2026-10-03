@@ -30,9 +30,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * Memory 自动沉淀（AI 草稿）业务测试。
- */
+/** Memory 自动沉淀（AI 草稿）业务测试。 */
 class MemoryServiceTest {
 
     private final MemoryMapper memories = mock(MemoryMapper.class);

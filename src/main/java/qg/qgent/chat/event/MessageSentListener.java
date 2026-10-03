@@ -18,9 +18,7 @@ import qg.qgent.chat.service.MessageService;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * 消息提交后通知被 @ 的用户，并启动被 @ 的 Agent。普通聊天不会调用模型。
- */
+/** 消息提交后通知被 @ 的用户，并启动被 @ 的 Agent。普通聊天不会调用模型。 */
 @Component
 public class MessageSentListener {
     private static final Logger log = LoggerFactory.getLogger(MessageSentListener.class);
@@ -38,9 +36,7 @@ public class MessageSentListener {
         this.messageService = messageService;
     }
 
-    /**
-     * 消息提交后异步执行，不占用发送消息的请求线程。
-     */
+    /** 消息提交后异步执行，不占用发送消息的请求线程。 */
     @Async("agentExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onMessageSent(MessageSentEvent event) {

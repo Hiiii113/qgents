@@ -8,15 +8,12 @@ import org.apache.ibatis.annotations.Select;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * 项目群聊 Agent 参与者关系数据访问（复合主键，使用自定义 SQL）。
- */
+/** 项目群聊 Agent 参与者关系数据访问（复合主键，使用自定义 SQL）。 */
 @Mapper
 public interface GroupAgentMapper {
 
     /**
      * 将 Agent 加入群（幂等：已存在则忽略，复合主键去重）。
-     *
      * @param groupId 项目群聊 ID
      * @param agentId Agent ID
      * @return 影响行数（0 表示已存在）
@@ -26,7 +23,6 @@ public interface GroupAgentMapper {
 
     /**
      * 查询群内参与聊天的 Agent ID 列表。
-     *
      * @param groupId 项目群聊 ID
      * @return Agent ID 列表
      */

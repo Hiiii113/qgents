@@ -11,16 +11,12 @@ import org.springframework.context.annotation.Configuration;
 import java.net.URI;
 import java.time.Duration;
 
-/**
- * Docker Engine 客户端配置，仅在显式启用 Docker 运行时时加载。
- */
+/** Docker Engine 客户端配置，仅在显式启用 Docker 运行时时加载。 */
 @Configuration
 @ConditionalOnProperty(name = "sandbox.runtime", havingValue = "docker")
 public class DockerClientConfiguration {
 
-    /**
-     * 创建供容器生命周期和命令执行共同使用的 Docker 客户端。
-     */
+    /** 创建供容器生命周期和命令执行共同使用的 Docker 客户端。 */
     @Bean(destroyMethod = "close")
     DockerClient dockerClient(SandboxProperties properties) {
         // 根据 Docker Host 配置创建 Docker 客户端配置

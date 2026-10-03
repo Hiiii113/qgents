@@ -15,9 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/**
- * 全局异常处理单测：未映射路径/方法应返回 404/405（不被 Exception 兜底吞成 500）。
- */
+/** 全局异常处理单测：未映射路径/方法应返回 404/405（不被 Exception 兜底吞成 500）。 */
 class GlobalExceptionHandlerTest {
 
     private final GlobalExceptionHandler handler = new GlobalExceptionHandler();

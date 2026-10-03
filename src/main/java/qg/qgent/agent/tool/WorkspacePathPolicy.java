@@ -3,15 +3,12 @@ package qg.qgent.agent.tool;
 import java.util.ArrayList;
 import java.util.List;
 
-/** 工作区相对路径归一化；实际目标由文件访问端检查。 */
+/** 工作区相对路径归一化，实际目标由文件访问端检查。 */
 public final class WorkspacePathPolicy {
 
     private WorkspacePathPolicy() { }
 
-    /**
-     * Normalizes a workspace-relative path and rejects absolute paths and any
-     * parent traversal segment. A null return means the input is unsafe.
-     */
+    /** 归一化相对路径；绝对路径、父目录跳转及空字符返回 null。 */
     public static String normalize(String path) {
         if (path == null || path.isBlank()) {
             return null;

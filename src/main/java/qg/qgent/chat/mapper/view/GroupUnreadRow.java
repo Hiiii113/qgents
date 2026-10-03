@@ -13,13 +13,9 @@ import java.util.UUID;
 @Data
 public class GroupUnreadRow {
 
-    /**
-     * 所属项目群聊 ID。
-     */
+    // 所属项目群聊 ID。
     private UUID groupId;
 
-    /**
-     * 该群未读消息数（sequence_no &gt; 已读游标 且非本人）。
-     */
+    // 该群未读消息数（sequence_no > 已读游标 且非本人）。
     private Long unread;
 }

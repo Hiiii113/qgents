@@ -11,9 +11,7 @@ import qg.qgent.sandbox.execution.entity.ToolExecutionEntity;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/**
- * 工具执行记录的数据访问接口。
- */
+/** 工具执行记录的数据访问接口。 */
 @Mapper
 public interface ToolExecutionMapper extends BaseMapper<ToolExecutionEntity> {
     @Update("""

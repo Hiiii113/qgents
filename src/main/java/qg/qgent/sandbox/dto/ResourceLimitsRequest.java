@@ -4,9 +4,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.Data;
 
-/**
- * 控制面请求的资源限制，工作节点会再次按本地上限收紧。
- */
+/** 控制面请求的资源限制，工作节点会再次按本地上限收紧。 */
 @Data
 public class ResourceLimitsRequest {
     @Min(1)

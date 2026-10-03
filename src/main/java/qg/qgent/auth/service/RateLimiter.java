@@ -12,10 +12,7 @@ import java.util.HexFormat;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * 限流
- * RateLimiter
- */
+/** 按请求指纹和时间窗口限流；Redis 不可用时使用本地计数。 */
 @Component
 public class RateLimiter {
     private static final Logger log = LoggerFactory.getLogger(RateLimiter.class);
@@ -28,7 +25,6 @@ public class RateLimiter {
 
     /**
      * 检查是否允许请求通过
-     *
      * @param scope       限流场景
      * @param fingerprint 请求指纹（如 IP、用户 ID 等）
      * @param limit       限流阈值
@@ -57,14 +53,12 @@ public class RateLimiter {
             // 如果是第一次或者过期，就重置计数器
             if (old == null || old.expiresAt < now)
                 return new LocalWindow(new AtomicInteger(1), now + window.toMillis());
-            // 增加一次请求次数计数
             old.count.incrementAndGet();
             return old;
         });
-        // 太多就移除一下过期了的计数器
+        // 计数窗口过多时清理已过期记录。
         if (fallback.size() > 10_000)
             fallback.entrySet().removeIf(e -> e.getValue().expiresAt < now);
-        // 返回判断
         return current.count.get() <= limit;
     }
 
@@ -78,7 +72,7 @@ public class RateLimiter {
         }
     }
 
-    // 在redis挂掉的时候弄的一个本地的限流窗口
+    // Redis 不可用时使用的内存计数窗口。
         private record LocalWindow(AtomicInteger count, long expiresAt) {
     }
 }

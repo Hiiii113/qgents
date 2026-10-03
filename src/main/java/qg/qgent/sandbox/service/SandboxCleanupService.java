@@ -7,9 +7,7 @@ import org.springframework.stereotype.Service;
 
 import qg.qgent.sandbox.execution.service.ToolExecutionService;
 
-/**
- * 定期取消过期执行并回收沙箱，作为控制层主动销毁之外的安全兜底。
- */
+/** 定期取消过期执行并回收沙箱，作为控制层主动销毁之外的安全兜底。 */
 @Slf4j
 @Service
 @RequiredArgsConstructor

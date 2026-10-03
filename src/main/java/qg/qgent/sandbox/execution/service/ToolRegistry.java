@@ -14,9 +14,7 @@ import java.util.stream.Collectors;
 
 import static org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY;
 
-/**
- * 维护 Agent Sandbox 允许调用的非 Git 工具白名单。
- */
+/** 维护 Agent Sandbox 允许调用的非 Git 工具白名单。 */
 @Component
 public class ToolRegistry {
     private final Map<String, SandboxTool> tools;

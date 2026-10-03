@@ -39,9 +39,7 @@ public class IdempotencyFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(IdempotencyFilter.class);
     private static final String HEADER = "Idempotency-Key";
     private static final String UUID_PATTERN = "(?i)[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
-    /**
-     * 请求体缓存上限（字节）：超过上限的部分不参与幂等哈希，需保证不小于常见写请求体。
-     */
+    // 请求体缓存上限（字节）：超过上限的部分不参与幂等哈希，需保证不小于常见写请求体。
     private static final int BODY_CACHE_LIMIT = 1024 * 1024;
 
     private final IdempotencyService idempotency;
@@ -70,14 +68,12 @@ public class IdempotencyFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        // 获取幂等键（Idempotency-Key）
         String key = request.getHeader(HEADER);
         if (key == null || key.isBlank()) {
             writeError(request, response, 400, "IDEMPOTENCY_KEY_REQUIRED", "缺少 Idempotency-Key");
             return;
         }
 
-        // 获取当前操作用户的安全上下文
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         UUID userId = auth != null && auth.getPrincipal() instanceof UUID u ? u : null;
         if (userId == null) {
@@ -86,7 +82,6 @@ public class IdempotencyFilter extends OncePerRequestFilter {
             return;
         }
 
-        // 计算用户指纹和请求范围标识
         byte[] fingerprint = fingerprint(userId);
         String scope = scope(request);
 
@@ -109,7 +104,6 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         ContentCachingResponseWrapper cachedResponse = new ContentCachingResponseWrapper(response);
 
         try {
-            // 继续执行下游的过滤器和业务控制器逻辑
             chain.doFilter(cachedRequest, cachedResponse);
         } finally {
             // 业务执行完毕（无论是成功还是抛错），记录请求体的哈希
@@ -143,7 +137,7 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         // 若这里读全量，>1MB 的请求体（如代理上传大文件）重放时会因
         // 「全量哈希 vs 缓存前缀哈希」不一致被误判为 IDEMPOTENCY_KEY_REUSED。
         if (request instanceof ContentCachingRequestWrapper cached) {
-            // 强制读取以填充缓存，保证下游可重复读
+            // 读取请求体前缀，用于与首次缓存的哈希比较。
             try (InputStream in = cached.getInputStream()) {
                 return in.readNBytes(BODY_CACHE_LIMIT);
             }

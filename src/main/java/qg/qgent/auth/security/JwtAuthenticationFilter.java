@@ -40,7 +40,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
             throws ServletException, IOException {
-        // 尝试获取响应头
+        // 读取请求中的 Bearer Token。
         String header = req.getHeader("Authorization");
         if (header != null && header.startsWith("Bearer ")) {
             var userId = tokens.verifyAccess(header.substring(7));

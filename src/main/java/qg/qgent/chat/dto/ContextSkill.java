@@ -18,15 +18,11 @@ import java.util.UUID;
 @AllArgsConstructor
 public class ContextSkill {
 
-    /**
-     * Skill ID，用于调用 {@code activate_skill}。
-     */
+    // Skill ID，用于调用 activate_skill。
     @Schema(description = "Skill ID，可用于 activate_skill")
     private UUID id;
 
-    /**
-     * Skill 名称。
-     */
+    // Skill 名称。
     @Schema(description = "Skill 名称")
     private String name;
 }

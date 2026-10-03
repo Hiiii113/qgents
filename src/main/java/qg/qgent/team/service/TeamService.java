@@ -94,7 +94,7 @@ public class TeamService {
         member.setUserId(actor);
         member.setRole("TEAM_OWNER");
         memberMapper.insert(member);
-        // 建团队即预置团队默认 Agent（通用 Agent 和 Coding Agent），不依赖应用重启时的启动兜底
+        // 在创建团队的事务内预置通用 Agent 和 Coding Agent
         defaultAgents.ensureForTeam(team.getId(), actor);
         // 重查一次以带回数据库生成的 created_at
         return team(teamMapper.selectById(team.getId()), "TEAM_OWNER");
@@ -149,7 +149,6 @@ public class TeamService {
 
     /** 获取团队成员列表 */
     public PageSlice<TeamMemberResponse> members(UUID actor, UUID teamId, String cursor, Integer limit) {
-        // 检查用户是否是团队的成员
         requireMember(teamId, actor);
         TeamEntity team = requireTeam(teamId);
         int pageSize = pageSize(limit);
@@ -170,7 +169,6 @@ public class TeamService {
     /** 邀请成员加入团队 */
     @Transactional
     public TeamInvitationResponse invite(UUID actor, UUID teamId, TeamMemberInviteRequest request) {
-        // 确保team存在
         TeamEntity team = requireTeamForUpdate(teamId);
 
         requireOwner(team, actor);
@@ -184,11 +182,9 @@ public class TeamService {
 
         UserEntity invitedUser = userMapper
                 .selectOne(Wrappers.<UserEntity>lambdaQuery().eq(UserEntity::getEmail, email));
-        // 判断用户是否已经是团队成员
         if (invitedUser != null && memberMapper.selectByTeamAndUser(teamId, invitedUser.getId()) != null) {
             throw conflict("ALREADY_TEAM_MEMBER", "该用户已是团队成员");
         }
-        // 判断用户是否已有待处理邀请
         TeamInvitationEntity pending = invitationMapper.selectOne(Wrappers.<TeamInvitationEntity>lambdaQuery()
                 .eq(TeamInvitationEntity::getTeamId, teamId)
                 .eq(TeamInvitationEntity::getEmailNormalized, email)
@@ -268,7 +264,6 @@ public class TeamService {
         if (invitation == null || !normalize(user.getEmail()).equals(invitation.getEmailNormalized())) {
             throw notFound();
         }
-        // 判断邀请是否已被接受
         if ("ACCEPTED".equals(invitation.getStatus())) {
             TeamMemberEntity existing = memberMapper.selectByTeamAndUser(invitation.getTeamId(), actor);
             if (existing != null) {
@@ -276,20 +271,16 @@ public class TeamService {
                 return memberResponse(actor, team, existing.getRole(), user);
             }
         }
-        // 判断邀请是否是待处理状态
         if (!"PENDING".equals(invitation.getStatus())) {
             throw conflict("INVITATION_NOT_PENDING", "邀请已不可接受");
         }
-        // 判断邀请是否已过期
         if (!invitation.getExpiresAt().isAfter(now())) {
             invitation.setStatus("EXPIRED");
             invitationMapper.updateById(invitation);
             throw new PersistedApiException(HttpStatus.CONFLICT, "INVITATION_EXPIRED", "邀请已过期");
         }
-        // 判断用户是否已经是团队成员
         TeamMemberEntity member = memberMapper.selectByTeamAndUser(invitation.getTeamId(), actor);
         if (member == null) {
-            // 加入到团队成员列表
             member = new TeamMemberEntity();
             member.setTeamId(invitation.getTeamId());
             member.setUserId(actor);
@@ -299,7 +290,6 @@ public class TeamService {
             eventService.publishTeamEvent(invitation.getTeamId(), "team.member.updated", id(actor),
                     Map.of("teamId", id(invitation.getTeamId()), "userId", id(actor)));
         }
-        // 更新邀请状态为已接受
         invitation.setStatus("ACCEPTED");
         invitation.setAcceptedAt(now());
         invitationMapper.updateById(invitation);
@@ -334,28 +324,23 @@ public class TeamService {
     /** 撤销团队邀请 */
     @Transactional(noRollbackFor = PersistedApiException.class)
     public TeamInvitationResponse revoke(UUID actor, UUID teamId, UUID invitationId) {
-        // 检查团队是否存在
         TeamEntity team = requireTeamForUpdate(teamId);
 
         requireOwner(team, actor);
-        // 查询到这个邀请记录并加行锁
         TeamInvitationEntity invitation = invitationMapper.selectOne(Wrappers.<TeamInvitationEntity>lambdaQuery()
                 .eq(TeamInvitationEntity::getId, invitationId).eq(TeamInvitationEntity::getTeamId, teamId)
                 .last("FOR UPDATE"));
         if (invitation == null) {
             throw notFound();
         }
-        // 判断邀请是否已过期
         if ("PENDING".equals(invitation.getStatus()) && !invitation.getExpiresAt().isAfter(now())) {
             invitation.setStatus("EXPIRED");
             invitationMapper.updateById(invitation);
             throw new PersistedApiException(HttpStatus.CONFLICT, "INVITATION_EXPIRED", "邀请已过期");
         }
-        // 判断邀请是否是待处理状态
         if (!"PENDING".equals(invitation.getStatus())) {
             throw conflict("INVITATION_NOT_PENDING", "仅能撤销待处理邀请");
         }
-        // 更新邀请状态为已撤销
         invitation.setStatus("REVOKED");
         invitationMapper.updateById(invitation);
         return invitation(invitation);
@@ -399,9 +384,7 @@ public class TeamService {
                 throw conflict("LAST_PROJECT_ADMIN_REQUIRED", "该成员是项目最后一名 Project Admin");
             }
         }
-        // 移除团队成员在项目中
         projectMemberMapper.deleteByTeamAndUser(teamId, userId);
-        // 移除团队成员在团队成员列表
         memberMapper.deleteByTeamAndUser(teamId, userId);
         // 团队级 SSE：成员移出团队
         eventService.publishTeamEvent(teamId, "team.member.updated", id(userId),
@@ -437,7 +420,7 @@ public class TeamService {
 
     // ---------- 团队动态：事件类型映射与条目构建 ----------
 
-    /** 动态类型对应的固定 SQL 条件；用户参数只用于选择条件。 */
+    // 动态类型对应的固定 SQL 条件；用户参数只用于选择条件。
     private static final Map<String, String> ACTIVITY_FRAGMENTS = Map.of(
             "GROUP_CREATED", "e.event_type='project.created'");
 
@@ -546,7 +529,7 @@ public class TeamService {
                         : user.getDisplayName()));
     }
 
-    // 查询到团队和成员信息并检查是否存在
+    // 校验团队存在且当前用户属于该团队。
     public TeamMemberEntity requireMember(UUID teamId, UUID userId) {
         TeamMemberEntity member = memberMapper.selectByTeamAndUser(teamId, userId);
         if (member == null) {
@@ -555,9 +538,8 @@ public class TeamService {
         return member;
     }
 
-    // 检查这个team是不是这个userId是owner
+    // 校验当前用户为团队记录中的所有者。
     private void requireOwner(TeamEntity team, UUID userId) {
-        // 查询到team和user信息
         TeamMemberEntity member = requireMember(team.getId(), userId);
         if (!team.getOwnerUserId().equals(userId) || !"TEAM_OWNER".equals(member.getRole())) {
             throw new ApiException(HttpStatus.FORBIDDEN, "TEAM_OWNER_REQUIRED", "需要 Team Owner 权限");
@@ -570,7 +552,7 @@ public class TeamService {
                 : "TEAM_MEMBER";
     }
 
-    // 查询到team并检查是否存在
+    // 读取团队；不存在时返回 404。
     private TeamEntity requireTeam(UUID teamId) {
         TeamEntity team = teamMapper.selectById(teamId);
         if (team == null) {
@@ -579,7 +561,7 @@ public class TeamService {
         return team;
     }
 
-    // 查询到team并加行锁
+    // 锁定团队行，使成员和邀请变更按团队串行。
     private TeamEntity requireTeamForUpdate(UUID teamId) {
         TeamEntity team = teamMapper.selectByIdForUpdate(teamId);
         if (team == null) {
@@ -588,7 +570,6 @@ public class TeamService {
         return team;
     }
 
-    // 检查分页参数是否有效并修改
     private int pageSize(Integer requestedLimit) {
         int limit = requestedLimit == null ? 30 : requestedLimit;
         if (limit < 1 || limit > 100) {
@@ -621,7 +602,6 @@ public class TeamService {
                 .encodeToString((scope + "|" + anchor).getBytes(StandardCharsets.UTF_8));
     }
 
-    // 构建分页响应
     private <R, T> PageSlice<T> keysetPage(List<R> rows, int pageSize, String scope,
                                            Function<R, UUID> id, Function<R, T> convert) {
         boolean hasMore = rows.size() > pageSize;

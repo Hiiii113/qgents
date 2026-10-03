@@ -16,26 +16,26 @@ import java.util.UUID;
 @TableName(value = "team_events", autoResultMap = true)
 public class TeamEventEntity {
 
-    /** 事件 ID（UUIDv7）。 */
+    // 事件 ID（UUIDv7）。
     @TableId(type = IdType.INPUT)
     private UUID id;
 
-    /** 所属团队 ID。 */
+    // 所属团队 ID。
     private UUID teamId;
 
-    /** 团队内单调递增事件序号（SSE 游标）。 */
+    // 团队内单调递增事件序号（SSE 游标）。
     private Long sequenceNo;
 
-    /** 事件类型（project.member.added / team.member.updated / activity.created）。 */
+    // 事件类型（project.member.added / team.member.updated / activity.created）。
     private String eventType;
 
-    /** 关联资源 ID（projectId 等）；可为空。 */
+    // 关联资源 ID（projectId 等）；可为空。
     private String resourceId;
 
-    /** 脱敏事件载荷。 */
+    // 脱敏事件载荷。
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<String, Object> payload;
 
-    /** 产生时间（UTC）。 */
+    // 产生时间（UTC）。
     private LocalDateTime createdAt;
 }

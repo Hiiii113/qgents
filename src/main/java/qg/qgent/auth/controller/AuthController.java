@@ -22,7 +22,7 @@ import java.util.UUID;
 
 /**
  * 认证与账户接口
- * 注册/登录/刷新/重置密码无需已认证 Token；password 字段为平台 RSA 公钥加密的 Base64 密文（见契约 §4.1）。
+ * 注册/登录/刷新/重置密码无需已认证 Token；password 字段为平台 RSA 公钥加密的 Base64 密文。
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -33,9 +33,7 @@ public class AuthController {
         this.authService = authService;
     }
 
-    /**
-     * 契约 §4：注册新用户并签发登录 Token（需先通过邮箱验证码校验）。
-     */
+    /** 注册新用户并签发登录 Token（需先通过邮箱验证码校验）。 */
     @PostMapping("/auth/register")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<?> register(@Valid @RequestBody RegisterRequest body, HttpServletRequest request) {
@@ -43,7 +41,7 @@ public class AuthController {
     }
 
     /**
-     * 契约 §4 补充：发送注册邮箱验证码（6 位数字，10 分钟有效）。
+     * 发送注册邮箱验证码（6 位数字，10 分钟有效）。
      * 邮箱已注册返回 409；限流按 IP+邮箱计，防止验证码轰炸。
      */
     @PostMapping("/auth/register/verification-codes")
@@ -54,25 +52,19 @@ public class AuthController {
         return ok(Map.of("message", "验证码已发送到邮箱，10 分钟内有效"), request);
     }
 
-    /**
-     * 契约 §4：邮箱密码登录并签发新 Token。
-     */
+    /** 邮箱密码登录并签发新 Token。 */
     @PostMapping("/auth/login")
     public ApiResponse<?> login(@Valid @RequestBody LoginRequest body, HttpServletRequest request) {
         return ok(authService.login(body, fingerprint(request)), request);
     }
 
-    /**
-     * 契约 §4：用 refreshToken 轮换一组新 Token。
-     */
+    /** 用 refreshToken 轮换一组新 Token。 */
     @PostMapping("/auth/refresh")
     public ApiResponse<?> refresh(@Valid @RequestBody RefreshTokenRequest body, HttpServletRequest request) {
         return ok(authService.refresh(body.getRefreshToken()), request);
     }
 
-    /**
-     * 契约 §4：注销当前登录态。
-     */
+    /** 注销当前登录态。 */
     @PostMapping("/auth/logout")
     public ApiResponse<?> logout(@AuthenticationPrincipal UUID userId,
                                  @Valid @RequestBody RefreshTokenRequest body, HttpServletRequest request) {
@@ -80,9 +72,7 @@ public class AuthController {
         return ok(Map.of(), request);
     }
 
-    /**
-     * 契约 §4：发起找回密码邮件（未注册邮箱同样返回成功，规避枚举）。
-     */
+    /** 发起找回密码邮件（未注册邮箱同样返回成功，规避枚举）。 */
     @PostMapping("/auth/password-reset-requests")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public ApiResponse<?> requestReset(@Valid @RequestBody PasswordResetRequest body,
@@ -91,26 +81,20 @@ public class AuthController {
         return ok(Map.of("message", "如果邮箱已注册，重置邮件将很快发送"), request);
     }
 
-    /**
-     * 契约 §4：用重置令牌设置新密码并撤销全部 refreshToken。
-     */
+    /** 用重置令牌设置新密码并撤销全部 refreshToken。 */
     @PostMapping("/auth/password-resets")
     public ApiResponse<?> reset(@Valid @RequestBody ResetPasswordRequest body, HttpServletRequest request) {
         authService.reset(body);
         return ok(Map.of(), request);
     }
 
-    /**
-     * 契约 §4：获取当前账户、团队与项目角色摘要。
-     */
+    /** 获取当前账户、团队与项目角色摘要。 */
     @GetMapping("/me")
     public ApiResponse<?> me(@AuthenticationPrincipal UUID userId, HttpServletRequest request) {
         return ok(authService.me(userId), request);
     }
 
-    /**
-     * 契约 §4：修改昵称或头像。
-     */
+    /** 修改昵称或头像。 */
     @PatchMapping("/me")
     public ApiResponse<?> updateMe(@AuthenticationPrincipal UUID userId, @Valid @RequestBody UserUpdateRequest body,
                                    HttpServletRequest request) {

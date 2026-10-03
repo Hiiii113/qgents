@@ -17,17 +17,17 @@ import java.util.UUID;
 public class EventEntity {
     @TableId(type = IdType.INPUT)
     private UUID id;
-    /** 所属项目ID。 */
+    // 所属项目ID。
     private UUID projectId;
-    /** 可选关联项目群聊ID。 */
+    // 可选关联项目群聊ID。
     private UUID groupId;
-    /** 项目内单调递增事件序号，作为 SSE 游标。 */
+    // 项目内单调递增事件序号，作为 SSE 游标。
     private Long sequenceNo;
-    /** 事件类型，如 task.updated / agent-run.updated。 */
+    // 事件类型，如 message.created / agent-run.updated。
     private String eventType;
-    /** 关联资源ID字符串，如 agentRunId。 */
+    // 关联资源ID字符串，如 agentRunId。
     private String resourceId;
-    /** 脱敏事件载荷 JSON。 */
+    // 脱敏事件载荷 JSON。
     @TableField(typeHandler = JacksonTypeHandler.class)
     private Map<String, Object> payload;
     private LocalDateTime createdAt;

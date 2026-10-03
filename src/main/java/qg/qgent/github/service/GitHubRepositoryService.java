@@ -168,7 +168,7 @@ public class GitHubRepositoryService {
         return app.installationToken(installation.getProviderInstallationId(), repository.getProviderRepositoryId());
     }
 
-    /** 安装卸载、暂停与仓库授权变化由 Webhook 更新；不处理 PR 自动交付状态机。 */
+    /** 根据 Webhook 同步 App 安装状态和仓库授权。 */
     @Transactional
     public void installationChanged(long providerId, boolean deleted) {
         var installation = byProviderId(providerId);

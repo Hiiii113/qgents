@@ -18,7 +18,7 @@ public class ProjectEntity {
     private UUID createdBy;
     private String name;
     private String description;
-    /** 项目头像 URL（OSS 公共读长期地址，可为空；确认上传后通过修改项目接口保存）。 */
+    // 项目头像 URL（OSS 公共读长期地址，可为空；确认上传后通过修改项目接口保存）。
     // 清空头像时也写入 null；更新前读取完整项目资料。
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String avatarUrl;

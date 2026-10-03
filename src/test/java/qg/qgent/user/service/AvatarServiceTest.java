@@ -25,9 +25,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * AvatarService 头像上传业务测试：凭证透传、对象键归属校验、确认落库并尽力删旧对象。
- */
+/** AvatarService 头像上传业务测试：凭证透传、对象键归属校验、确认落库并尽力删旧对象。 */
 class AvatarServiceTest {
 
     private final UserMapper userMapper = mock(UserMapper.class);

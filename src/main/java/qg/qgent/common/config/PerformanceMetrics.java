@@ -5,9 +5,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import org.springframework.stereotype.Component;
 
-/**
- * 统一性能指标入口。标签只使用有限枚举，资源 ID 仍写入结构化日志，避免高基数指标拖垮监控系统。
- */
+/** 统一性能指标入口。标签只使用有限枚举，资源 ID 仍写入结构化日志，避免高基数指标拖垮监控系统。 */
 @Component
 public class PerformanceMetrics {
     private final MeterRegistry registry;

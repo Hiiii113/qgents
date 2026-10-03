@@ -3,9 +3,7 @@ package qg.qgent.common.util;
 import java.security.SecureRandom;
 import java.util.UUID;
 
-/**
- * UUIDv7 生成器
- */
+/** UUIDv7 生成器 */
 public final class UuidV7 {
     private static final SecureRandom RANDOM = new SecureRandom();
 

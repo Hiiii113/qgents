@@ -203,12 +203,10 @@ public class TeamController {
         return ok(new AvatarConfirmResponse(avatarUrl), request);
     }
 
-    // 构建成功响应
     private <T> ApiResponse<T> ok(T data, HttpServletRequest request) {
         return ApiResponse.ok(data, (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
     }
 
-    // 构建分页响应
     private <T> PagedApiResponse<T> page(PageSlice<T> value, HttpServletRequest request) {
         return new PagedApiResponse<>(value.getData(), value.getPage(),
                 (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));

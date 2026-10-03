@@ -21,7 +21,7 @@ public class EventController {
         this.eventService = eventService;
     }
 
-    /** 契约 §12.1：建立 SSE 连接，接收状态与产物事件（每 15 秒心跳，事件保留 24 小时）。 */
+    /** 订阅项目实时事件，每 15 秒发送心跳；支持保留期内的游标续传。 */
     @GetMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(@PathVariable UUID projectId,
                              @RequestHeader(value = "Last-Event-ID", required = false) Long lastEventId,

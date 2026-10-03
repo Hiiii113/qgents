@@ -5,19 +5,12 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
-/**
- * 创建自定义 Agent，可配置描述、模型和附加能力。
- * <p>
- * 创建成功后固定为 {@code visibility=PRIVATE}、{@code status=ACTIVE}、{@code isDefault=false}。
- * role 仅用于展示用途，执行方式由模型和工具决定；prompt 不得包含凭据、
- * Token、私钥或宿主机敏感信息（服务端校验）。
- */
+/** 创建自定义 Agent 的名称、用途、提示词与可选 GitHub 能力。 */
 @Data
 @Schema(description = "创建自定义 Agent 请求")
 public class AgentCreateRequest {
     @Schema(description = "是否开启 GitHub 能力，使用团队 GitHub App 授权")
     private boolean githubEnabled;
-
 
     @NotBlank(message = "name 不能为空白")
     @Size(max = 255, message = "name 最长 255 个字符")

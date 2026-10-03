@@ -16,37 +16,27 @@ import java.util.UUID;
 @Data
 public class CreateSandboxRequest {
 
-    /**
-     * 由控制层生成的 Sandbox 唯一编号；重复编号会被拒绝。
-     */
+    // 控制层生成的沙箱编号；同编号且规格相同的创建请求可幂等重试。
     @NotNull
     private UUID sandboxId;
 
-    /**
-     * Sandbox 所属 AgentRun 编号。
-     */
+    // Sandbox 所属 AgentRun 编号。
     @NotNull
     private UUID agentRunId;
 
-    /**
-     * Workspace 的不透明存储键，由 Sandbox 解析为受控根目录下的实际路径。
-     */
+    // Workspace 的不透明存储键，由 Sandbox 解析为受控根目录下的实际路径。
     @NotBlank
     @Size(max = 512)
     @Pattern(regexp = "workspaces/[0-9a-fA-F-]{36}")
     private String workspaceStorageKey;
 
-    /**
-     * Sandbox 白名单中的镜像配置名称，例如 dev-tools。
-     */
+    // Sandbox 白名单中的镜像配置名称，例如 dev-tools。
     @NotBlank
     @Size(max = 64)
     @Pattern(regexp = "[a-z0-9][a-z0-9-]*")
     private String imageProfile;
 
-    /**
-     * 可选的资源限制；Sandbox 会再次按本地上限收紧。
-     */
+    // 可选的资源限制；Sandbox 会再次按本地上限收紧。
     @Valid
     private ResourceLimitsRequest limits;
 

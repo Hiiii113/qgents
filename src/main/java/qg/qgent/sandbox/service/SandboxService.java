@@ -90,9 +90,7 @@ public class SandboxService {
                 null);
     }
 
-    /**
-     * 判断两个沙箱规格是否一致：所属根运行、Workspace 存储键和镜像配置全部相等才算一致。
-     */
+    /** 判断两个沙箱规格是否一致：所属根运行、Workspace 存储键和镜像配置全部相等才算一致。 */
     private boolean sameSandboxSpec(SandboxAllocation existing, SandboxAllocation requested) {
         return java.util.Objects.equals(existing.getAgentRunId(), requested.getAgentRunId())
 
@@ -100,9 +98,7 @@ public class SandboxService {
                 && java.util.Objects.equals(existing.getImageProfile(), requested.getImageProfile());
     }
 
-    /**
-     * 查询沙箱；不存在时返回空结果。
-     */
+    /** 查询沙箱；不存在时返回空结果。 */
     public Optional<SandboxResponse> find(UUID sandboxId) {
         return runtime.find(sandboxId).map(this::response);
     }
@@ -115,9 +111,7 @@ public class SandboxService {
         return require(sandboxId);
     }
 
-    /**
-     * 延长空闲租约，但绝不突破最大生命周期。
-     */
+    /** 延长空闲租约，但绝不突破最大生命周期。 */
     public SandboxResponse renew(UUID sandboxId, Long requestedSeconds) {
         SandboxAllocation allocation = require(sandboxId);
         Duration requested = requestedSeconds == null
@@ -133,24 +127,18 @@ public class SandboxService {
         return response(allocation);
     }
 
-    /**
-     * 销毁 Sandbox 容器，不删除 Workspace。
-     */
+    /** 销毁 Sandbox 容器，不删除 Workspace。 */
     public void destroy(UUID sandboxId) {
         runtime.destroy(sandboxId);
         log.info("sandbox destroyed sandboxId={}", sandboxId);
     }
 
-    /**
-     * 判断指定持久 Workspace 是否仍被任一受管 Sandbox 引用。
-     */
+    /** 判断指定持久 Workspace 是否仍被任一受管 Sandbox 引用。 */
     public boolean isWorkspaceInUse(String workspaceStorageKey) {
         return runtime.isWorkspaceInUse(workspaceStorageKey);
     }
 
-    /**
-     * 返回已经超过空闲期限或最大生命周期的沙箱编号。
-     */
+    /** 返回已经超过空闲期限或最大生命周期的沙箱编号。 */
     public List<UUID> expiredSandboxIds() {
         Instant now = clock.instant();
         return runtime.findAll().stream()

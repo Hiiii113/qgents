@@ -65,7 +65,6 @@ public class IdempotencyService {
      * 供全局防重放过滤器 (IdempotencyFilter) 专用的查询方法。
      * 根据请求者的身份指纹、请求接口路径 (scope) 和幂等键 (Idempotency-Key)，
      * 在数据库中查找是否存在一条尚未过期、且已经成功保存了响应体的幂等记录。
-     *
      * @param fingerprint 用户身份的哈希指纹
      * @param scope       请求的接口范围标识（HTTP Method + URI）
      * @param key         客户端传来的 Idempotency-Key
@@ -82,7 +81,6 @@ public class IdempotencyService {
 
     /**
      * 保存由幂等过滤器拦截下来的下游业务成功响应结果。
-     *
      * @param userId       触发该请求的当前操作用户 ID
      * @param fingerprint  用户身份的哈希指纹
      * @param scope        请求的接口范围标识（HTTP Method + URI）
@@ -109,9 +107,7 @@ public class IdempotencyService {
         mapper.insert(record);
     }
 
-    /**
-     * 执行幂等操作
-     */
+    /** 占用幂等键并执行业务操作；相同请求返回缓存结果，请求内容不同则拒绝。 */
     public <T> T execute(UUID actorUserId, String scope, String key, Object request, int responseStatus,
                          Class<T> responseType, Supplier<T> action) {
         validateKey(key);
@@ -183,7 +179,6 @@ public class IdempotencyService {
         }
     }
 
-    //
     private <T> Claim<T> claim(UUID actorUserId, byte[] fingerprint, String scope, String key, byte[] requestHash,
                                Class<T> responseType) {
         LocalDateTime now = now();

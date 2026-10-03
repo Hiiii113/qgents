@@ -14,53 +14,29 @@ import java.util.UUID;
 @Data
 @AllArgsConstructor
 public class SandboxAllocation {
-    /**
-     * 沙箱唯一编号。
-     */
+    // 沙箱唯一编号。
     private UUID id;
-    /**
-     * Sandbox 所属 AgentRun 编号；
-     */
+    // Sandbox 所属 AgentRun 编号；
     private UUID agentRunId;
-    /**
-     * 控制层提供的不透明 Workspace 存储键。
-     */
+    // 控制层提供的不透明 Workspace 存储键。
     private String workspaceStorageKey;
-    /**
-     * 创建容器时选择的镜像配置名称。
-     */
+    // 创建容器时选择的镜像配置名称。
     private String imageProfile;
-    /**
-     * Sandbox 内部状态，例如 READY 或 BUSY。
-     */
+    // Sandbox 内部状态，例如 READY 或 BUSY。
     private String status;
-    /**
-     * 实际运行时种类，例如 FAKE 或 DOCKER。
-     */
+    // 实际运行时种类，例如 FAKE 或 DOCKER。
     private String runtimeKind;
-    /**
-     * 沙箱创建时间，使用 UTC。
-     */
+    // 沙箱创建时间，使用 UTC。
     private Instant createdAt;
-    /**
-     * 最近一次活动时间，使用 UTC。
-     */
+    // 最近一次活动时间，使用 UTC。
     private Instant lastActiveAt;
-    /**
-     * 当前空闲租约到期时间，使用 UTC。
-     */
+    // 当前空闲租约到期时间，使用 UTC。
     private Instant expiresAt;
-    /**
-     * 不可延长的最大生命周期终点，使用 UTC。
-     */
+    // 不可延长的最大生命周期终点，使用 UTC。
     private Instant maxExpiresAt;
-    /**
-     * 单次命令允许使用的最大执行时间。
-     */
+    // 单次命令允许使用的最大执行时间。
     private Duration executionTimeout;
-    /**
-     * 底层运行时资源句柄；Docker 实现中为容器编号。
-     */
+    // 底层运行时资源句柄；Docker 实现中为容器编号。
     private String runtimeHandle;
 
 }

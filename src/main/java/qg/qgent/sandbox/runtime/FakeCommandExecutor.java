@@ -6,9 +6,7 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.util.List;
 
-/**
- * 用于联调的模拟执行器，不会在宿主机上启动进程。
- */
+/** 用于联调的模拟执行器，不会在宿主机上启动进程。 */
 @Component
 @ConditionalOnProperty(name = "sandbox.runtime", havingValue = "fake", matchIfMissing = true)
 public class FakeCommandExecutor implements CommandExecutor {

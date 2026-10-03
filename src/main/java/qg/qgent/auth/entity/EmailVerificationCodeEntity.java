@@ -17,14 +17,14 @@ import java.util.UUID;
 public class EmailVerificationCodeEntity {
     @TableId(type = IdType.INPUT)
     private UUID id;
-    /** 归一化邮箱（小写）。 */
+    // 归一化邮箱（小写）。
     private String email;
-    /** 验证码 SHA-256 哈希，禁止存储明文。 */
+    // 验证码 SHA-256 哈希，禁止存储明文。
     private byte[] codeHash;
-    /** 验证码过期时间（UTC）。 */
+    // 验证码过期时间（UTC）。
     private LocalDateTime expiresAt;
-    /** 验证码使用时间（UTC），为空表示未使用。 */
+    // 验证码使用时间（UTC），为空表示未使用。
     private LocalDateTime usedAt;
-    /** 发送时间（UTC）。 */
+    // 发送时间（UTC）。
     private LocalDateTime createdAt;
 }

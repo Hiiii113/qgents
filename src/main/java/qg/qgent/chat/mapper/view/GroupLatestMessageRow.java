@@ -14,28 +14,18 @@ import java.util.UUID;
 @Data
 public class GroupLatestMessageRow {
 
-    /**
-     * 所属项目群聊 ID。
-     */
+    // 所属项目群聊 ID。
     private UUID groupId;
 
-    /**
-     * 最新消息发送者昵称（用户 displayName 或 Agent name）；SYSTEM 消息为空。
-     */
+    // 最新消息发送者昵称（用户 displayName 或 Agent name）；SYSTEM 消息为空。
     private String senderName;
 
-    /**
-     * 最新消息文本摘要（content 的 $.text）；非文本消息为空。
-     */
+    // 最新消息文本摘要（content 的 $.text）；非文本消息为空。
     private String text;
 
-    /**
-     * 最新消息类型，供前端对非文本摘要降级展示。
-     */
+    // 最新消息类型，供前端对非文本摘要降级展示。
     private String messageType;
 
-    /**
-     * 最新消息发送时间（UTC）。
-     */
+    // 最新消息发送时间（UTC）。
     private LocalDateTime createdAt;
 }

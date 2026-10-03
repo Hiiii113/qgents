@@ -12,9 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * Agent 调用沙箱工具时提交的结构化请求。
- */
+/** Agent 调用沙箱工具时提交的结构化请求。 */
 @Data
 public class ToolExecutionRequest {
     @NotNull

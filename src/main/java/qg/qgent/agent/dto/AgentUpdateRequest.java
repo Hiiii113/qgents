@@ -4,18 +4,12 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
-/**
- * 编辑自定义 Agent 的名称、描述、模型和附加能力。
- * <p>
- * 所有字段均为可选，但请求体至少包含一个字段（服务端校验）。
- * visibility/status/createdBy/isDefault 不允许由客户端修改；role 仅作为用途展示标签。
- */
+/** 编辑自定义 Agent；所有字段可选，但至少提供一个字段，role 仅用于展示。 */
 @Data
 @Schema(description = "编辑自定义 Agent 请求")
 public class AgentUpdateRequest {
     @Schema(description = "是否开启 GitHub 能力，使用团队 GitHub App 授权")
     private Boolean githubEnabled;
-
 
     @Size(max = 255, message = "name 最长 255 个字符")
     @Schema(description = "Agent 昵称，去除首尾空白后非空（可选）")

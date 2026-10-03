@@ -18,9 +18,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-/**
- * AvatarStorageService 头像存储测试：OSS 未启用 501、媒体类型/大小校验、对象键命名空间、确认与公共读 URL。
- */
+/** AvatarStorageService 头像存储测试：OSS 未启用 501、媒体类型/大小校验、对象键命名空间、确认与公共读 URL。 */
 class AvatarStorageServiceTest {
 
     private final AliyunOssProperties properties = new AliyunOssProperties();

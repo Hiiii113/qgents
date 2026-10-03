@@ -40,7 +40,7 @@ import java.util.*;
 public class MemoryService {
     private static final Set<String> SUBMITTABLE = Set.of("DRAFT", "REJECTED");
     private static final Set<String> EDITABLE = Set.of("DRAFT", "PENDING_REVIEW");
-    /** AI 自动沉淀一次性读取的最近消息条数上限（按群内 sequence 倒序取最近 N 条）。 */
+    // AI 自动沉淀一次性读取的最近消息条数上限（按群内 sequence 倒序取最近 N 条）。
     private static final int RECENT_MESSAGE_LIMIT = 40;
     private static final String DEFAULT_INSTRUCTION = "将最近群聊中值得沉淀的内容沉淀为项目 Memory";
     private static final String AI_SYSTEM_PROMPT = "你是项目知识沉淀助手。根据给定的最近群聊消息，自动甄别其中值得长期复用的"
