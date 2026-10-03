@@ -7,10 +7,12 @@ IM 聊天、可选 GitHub App 集成和云端 Agent Harness。普通消息仅用
 ## 本地开发
 
 1. 将 `.env.example` 复制为 `.env`，填写数据库、Redis、`DASHSCOPE_API_KEY`、SMTP 和 JWT 配置。Spring 自动读取 `.env`。
-2. 初始化新数据库：执行 `src/main/resources/db/qgents_schema.sql`。已有外部 MySQL 时执行 `docker compose up -d redis`；本地新建 MySQL 使用 `docker compose --profile database up -d`，数据库用户须为非 root 用户。
+2. 启动 Docker Desktop（Linux containers），执行 `docker compose up -d --wait`，启动 MySQL 8.4 和 Redis。应用数据库用户使用 `qgents` 等非 root 用户。首次创建 MySQL 数据卷时自动执行 `src/main/resources/db/qgents_schema.sql`；复用已有数据卷不会重新建表。默认映射到本机 13306 和 16379，分别对应 `MYSQL_HOST_PORT`、`REDIS_HOST_PORT`，本机 API 的 `DB_URL` 与 `REDIS_PORT` 须使用这两个端口。
 3. 将已有登录 RSA 私钥放到 `RSA_PRIVATE_KEY_PATH` 指定位置，前端公钥和 keyId 须与其对应。项目公钥位于 `src/main/resources/rsa/public_key.pem`，仅有公钥无法生成对应私钥。
 4. Windows Docker Desktop 使用 `SANDBOX_DOCKER_HOST=npipe:////./pipe/docker_engine`；本地运行时两个 Workspace 根目录指向同一实际目录。
 5. 执行 `docker build -t qgents/sandbox-dev-tools:0.2.0 sandbox-images/dev-tools`，再运行 `./mvnw.cmd spring-boot:run`。不涉及代码环境的工具无需 Docker。
+
+前端目录执行 `npm ci`、`npm run dev`，`.env` 使用 `VITE_USE_MOCK=false`、`VITE_API_BASE_URL=/api`、`API_PROXY_TARGET=http://localhost:8080`。页面入口为 `http://localhost:5173`。
 
 API 为 `http://localhost:8080/api/v1`，Swagger 为 `http://localhost:8080/swagger-ui/index.html`，管理端口默认仅监听 `127.0.0.1:8081`。
 
@@ -23,7 +25,7 @@ API 为 `http://localhost:8080/api/v1`，Swagger 为 `http://localhost:8080/swag
 
 ## Linux Docker 部署
 
-`Dockerfile` 构建单个 API 服务；`docker-compose.production.yml` 构建相邻前端仓库并启动 API、Web、Redis。MySQL 使用外部服务，`DB_URL` 必须为容器可访问的地址，宿主机数据库可使用 `host.docker.internal`，不能填写容器自身的 `127.0.0.1`。
+`Dockerfile` 构建单个 API 服务；`docker-compose.production.yml` 构建相邻前端仓库并启动 MySQL、API、Web、Redis。MySQL 使用独立数据卷并在首次启动时自动建表；API 固定通过 `mysql:3306` 连接，等待数据库完成初始化后启动。生产数据库不发布宿主机端口。
 
 填写 `.env` 必需配置及以下部署参数：
 
