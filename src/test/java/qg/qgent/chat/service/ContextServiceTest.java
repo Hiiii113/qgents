@@ -22,6 +22,27 @@ class ContextServiceTest {
             mock(SkillMapper.class), mock(MemoryMapper.class), mock(ProjectAccessService.class), groups, new ObjectMapper());
 
     @Test
+    void codeAndAttachmentsUseTheirStructuredContent() {
+        UUID group = UUID.randomUUID();
+        MessageEntity message = new MessageEntity();
+        message.setId(UUID.randomUUID());
+        message.setGroupId(group);
+        message.setMessageType("CODE");
+        message.setContent("{\"language\":\"java\",\"code\":\"return 42;\"}");
+        when(messages.selectById(message.getId())).thenReturn(message);
+        assertThat(service.readChatMessage(UUID.randomUUID(), UUID.randomUUID(), group, message.getId()).getText())
+                .isEqualTo("return 42;");
+
+        String attachmentId = UUID.randomUUID().toString();
+        message.setMessageType("IMAGE");
+        message.setContent("{\"attachmentId\":\"" + attachmentId + "\",\"mediaType\":\"image/png\"}");
+        var context = service.readChatMessage(UUID.randomUUID(), UUID.randomUUID(), group, message.getId());
+        assertThat(context.getAttachmentId()).isEqualTo(attachmentId);
+        assertThat(context.getMediaType()).isEqualTo("image/png");
+        assertThat(context.getText()).isEmpty();
+    }
+
+    @Test
     void readingMessagePreservesFullBodyAndReplyRelationship() {
         UUID actor = UUID.randomUUID(), project = UUID.randomUUID(), group = UUID.randomUUID();
         UUID id = UUID.randomUUID(), original = UUID.randomUUID();

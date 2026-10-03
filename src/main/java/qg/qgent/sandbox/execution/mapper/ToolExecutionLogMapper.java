@@ -6,11 +6,7 @@ import org.apache.ibatis.annotations.Select;
 
 import qg.qgent.sandbox.execution.entity.ToolExecutionLogEntity;
 
-import java.util.List;
-
-/**
- * 工具执行日志的数据访问接口。
- */
+/** 工具执行日志的数据访问接口。 */
 @Mapper
 public interface ToolExecutionLogMapper {
     @Insert("""
@@ -20,15 +16,6 @@ public interface ToolExecutionLogMapper {
                 (#{executionId}, #{sequenceNo}, #{stream}, #{content}, #{createdAt})
             """)
     int insert(ToolExecutionLogEntity entity);
-
-    @Select("""
-            SELECT execution_id, sequence_no, stream, content, created_at
-            FROM tool_execution_logs
-            WHERE execution_id = #{executionId} AND sequence_no > #{after}
-            ORDER BY sequence_no
-            LIMIT #{limit}
-            """)
-    List<ToolExecutionLogEntity> selectAfter(String executionId, long after, int limit);
 
     @Select("SELECT COALESCE(MAX(sequence_no), 0) FROM tool_execution_logs WHERE execution_id = #{executionId}")
     long selectMaxSequence(String executionId);

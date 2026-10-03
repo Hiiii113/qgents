@@ -24,8 +24,8 @@ public class GitHubRepositoryController {
     private final String frontendMobile;
 
     public GitHubRepositoryController(GitHubRepositoryService service,
-            @Value("${app.frontend-url-web:${app.frontend-url}}") String frontendWeb,
-            @Value("${app.frontend-url-mobile:${app.frontend-url}}") String frontendMobile) {
+            @Value("${app.frontend-url-web}") String frontendWeb,
+            @Value("${app.frontend-url-mobile}") String frontendMobile) {
         this.service = service;
         this.frontendWeb = frontendWeb;
         this.frontendMobile = frontendMobile;

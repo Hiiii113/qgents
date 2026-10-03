@@ -101,7 +101,6 @@ public class AuthService {
         user.setEmail(email);
         user.setDisplayName(input.getDisplayName().trim());
         user.setPasswordHash(passwords.encode(password));
-        user.setPasswordAlgorithm("BCRYPT");
         user.setStatus("ACTIVE");
         try {
             userMapper.insert(user);
@@ -269,7 +268,6 @@ public class AuthService {
         String password = validated(rsa.decrypt(input.getPasswordKeyId(), input.getNewPassword()));
         UserEntity user = userMapper.selectById(reset.getUserId());
         user.setPasswordHash(passwords.encode(password));
-        user.setPasswordAlgorithm("BCRYPT");
         userMapper.updateById(user);
 
         // 刷新reset和refresh token

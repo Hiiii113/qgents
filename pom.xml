@@ -7,7 +7,7 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
         <version>4.1.0</version>
-        <relativePath/> <!-- lookup parent from repository -->
+        <relativePath/>
     </parent>
 
     <groupId>qg.qgent</groupId>
@@ -21,7 +21,6 @@
         <java.version>21</java.version>
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
         <spring-ai.version>2.0.0</spring-ai.version>
-        <!-- Spring Boot 4.x 需要使用 SpringDoc 3.x -->
         <springdoc.version>3.0.3</springdoc.version>
         <aliyun-oss.version>3.18.1</aliyun-oss.version>
         <google-auth.version>1.33.1</google-auth.version>
@@ -33,7 +32,6 @@
 
     <dependencyManagement>
         <dependencies>
-            <!-- Spring AI BOM：统一 Spring AI 相关制品版本 -->
             <dependency>
                 <groupId>org.springframework.ai</groupId>
                 <artifactId>spring-ai-bom</artifactId>
@@ -41,9 +39,6 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-
-            <!-- ==================== 持久层 ==================== -->
-            <!-- 当前项目使用 Spring Boot 4，因此这里要使用 Boot 4 对应的 starter -->
             <dependency>
                 <groupId>com.baomidou</groupId>
                 <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
@@ -54,15 +49,11 @@
                 <artifactId>mybatis-plus-jsqlparser</artifactId>
                 <version>${mybatis-plus.version}</version>
             </dependency>
-
-            <!-- ==================== 编排与模型 ==================== -->
             <dependency>
                 <groupId>org.springframework.ai</groupId>
                 <artifactId>spring-ai-starter-model-openai</artifactId>
                 <version>${spring-ai.version}</version>
             </dependency>
-
-            <!-- ==================== 接口文档 ==================== -->
             <dependency>
                 <groupId>org.springdoc</groupId>
                 <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
@@ -73,8 +64,6 @@
                 <artifactId>swagger-annotations-jakarta</artifactId>
                 <version>${swagger-annotations.version}</version>
             </dependency>
-
-            <!-- ==================== 鉴权与加密 ==================== -->
             <dependency>
                 <groupId>com.auth0</groupId>
                 <artifactId>java-jwt</artifactId>
@@ -85,22 +74,16 @@
                 <artifactId>bcpkix-jdk18on</artifactId>
                 <version>${bouncycastle.version}</version>
             </dependency>
-
-            <!-- ==================== 外部服务 ==================== -->
-            <!-- FCM HTTP v1：服务账号 OAuth2 凭证只通过环境变量受控注入 -->
             <dependency>
                 <groupId>com.google.auth</groupId>
                 <artifactId>google-auth-library-oauth2-http</artifactId>
                 <version>${google-auth.version}</version>
             </dependency>
-            <!-- 阿里云 OSS 对象存储：附件真实存储（AccessKey 走环境变量，禁止写入配置文件或提交） -->
             <dependency>
                 <groupId>com.aliyun.oss</groupId>
                 <artifactId>aliyun-sdk-oss</artifactId>
                 <version>${aliyun-oss.version}</version>
             </dependency>
-
-            <!-- ==================== 沙箱执行面 ==================== -->
             <dependency>
                 <groupId>com.github.docker-java</groupId>
                 <artifactId>docker-java-core</artifactId>
@@ -123,7 +106,6 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
-        <!-- 运行状态与性能指标；端点通过 application.yaml 明确暴露并受现有鉴权/网络边界保护。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
@@ -132,7 +114,6 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
-        <!-- WebSocket 实时通道：单连接用户级聚合推送（SSE 保留兼容，见 RealtimeWsConfig） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-websocket</artifactId>
@@ -147,31 +128,23 @@
             <artifactId>mysql-connector-j</artifactId>
             <scope>runtime</scope>
         </dependency>
-        <!-- MyBatis-Plus -->
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
         </dependency>
-        <!-- 使用分页插件时保留 -->
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-jsqlparser</artifactId>
         </dependency>
-
-        <!-- ==================== 登录鉴权 ==================== -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
-
-        <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
         </dependency>
-
-        <!-- Swagger / SpringDoc -->
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
@@ -182,8 +155,6 @@
             <artifactId>spring-boot-starter-webmvc-test</artifactId>
             <scope>test</scope>
         </dependency>
-
-        <!-- ==================== Redis ==================== -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
@@ -192,8 +163,6 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
-
-        <!-- JWT -->
         <dependency>
             <groupId>com.auth0</groupId>
             <artifactId>java-jwt</artifactId>
@@ -202,25 +171,18 @@
             <groupId>org.bouncycastle</groupId>
             <artifactId>bcpkix-jdk18on</artifactId>
         </dependency>
-        <!-- 自带的加密配置 -->
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-crypto</artifactId>
         </dependency>
-
-        <!-- FCM HTTP v1：服务账号 OAuth2 凭证只通过环境变量受控注入 -->
         <dependency>
             <groupId>com.google.auth</groupId>
             <artifactId>google-auth-library-oauth2-http</artifactId>
         </dependency>
-
-        <!-- 阿里云 OSS 对象存储：附件真实存储（AccessKey 走环境变量，禁止写入配置文件或提交） -->
         <dependency>
             <groupId>com.aliyun.oss</groupId>
             <artifactId>aliyun-sdk-oss</artifactId>
         </dependency>
-
-        <!-- 测试依赖 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
@@ -263,8 +225,6 @@
                     <configuration>
                         <release>${java.version}</release>
                         <fork>true</fork>
-                        <!-- 原生 Tool Calling 与 Spring MVC 均依赖反射参数名；不保留会让 schema 暴露 arg0，
-                             从而与提示词/API 文档中的参数名不一致。 -->
                         <parameters>true</parameters>
                         <annotationProcessorPaths>
                             <path>

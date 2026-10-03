@@ -207,13 +207,7 @@ public class MessageService {
         return value.length() <= 60 ? value : value.substring(0, 60) + "…";
     }
 
-    /**
-     * 回显 IMAGE/FILE 消息时回填附件预览字段（增量契约 §7：previewable / previewType）。
-     * <p>
-     * 不回填带 token 的 previewUrl：消息内容里的 URL 无法随 token 过期续期，前端拿到过期地址后
-     * 没有回退，会再次出现「无法预览」。previewable/previewType 无时效性，前端据此提示「点击预览」
-     * 并调 preview-url 接口重新签发。附件缺失/未就绪时保持原样回显，不阻断消息列表。
-     */
+    /** 回填附件预览类型；短期预览 URL 由客户端打开附件时重新获取。 */
     private void enrichAttachmentPreview(MessageResponse response, UUID projectId) {
         if (response == null || projectId == null) {
             return;
@@ -228,9 +222,6 @@ public class MessageService {
         }
         String attachmentId = stringField(content, "attachmentId");
         if (attachmentId == null) {
-            attachmentId = attachmentIdFromUrl(stringField(content, "url"));
-        }
-        if (attachmentId == null) {
             return;
         }
         AttachmentService.MessageAttachmentPreview preview = attachmentService.messagePreview(projectId, attachmentId);
@@ -244,27 +235,6 @@ public class MessageService {
     private String stringField(Map<String, Object> content, String key) {
         Object value = content.get(key);
         return value instanceof String s ? s : null;
-    }
-
-    /**
-     * 从附件 content URL 中反解附件 ID。URL 形如
-     * {@code /api/v1/projects/{projectId}/attachments/{attachmentId}/content}
-     * 或 {@code http://host:port/api/v1/projects/{projectId}/attachments/{attachmentId}/content}。
-     */
-    private String attachmentIdFromUrl(String url) {
-        if (url == null || url.isBlank()) {
-            return null;
-        }
-        int idx = url.indexOf("/attachments/");
-        if (idx < 0) {
-            return null;
-        }
-        String rest = url.substring(idx + "/attachments/".length());
-        int slash = rest.indexOf('/');
-        int q = rest.indexOf('?');
-        int end = slash >= 0 ? slash : (q >= 0 ? q : rest.length());
-        String id = rest.substring(0, end);
-        return id.isBlank() ? null : id;
     }
 
     /**
@@ -508,7 +478,7 @@ public class MessageService {
                 requireField(content, "language", "代码消息缺少 language 字段");
                 requireField(content, "code", "代码消息缺少 code 字段");
             }
-            case "IMAGE", "FILE" -> requireField(content, "url", type + " 消息缺少 url 字段");
+            case "IMAGE", "FILE" -> requireField(content, "attachmentId", type + " 消息缺少 attachmentId 字段");
             default -> throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "MESSAGE_TYPE_INVALID",
                     "不支持的消息类型");
         }

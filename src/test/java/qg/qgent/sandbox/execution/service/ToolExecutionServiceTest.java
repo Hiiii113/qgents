@@ -167,7 +167,7 @@ class ToolExecutionServiceTest {
                 "temporary-secret".equals(context.getEnvironment().get("GIT_CONFIG_VALUE_0"))), any());
         assertEquals(null, service.find(executionId).getFailureCode());
         assertEquals(null, service.find(executionId).getFailureReason());
-        assertFalse(service.logs(executionId, 0, 100).getItems().isEmpty());
+        assertFalse(logs.isEmpty());
     }
 
     @Test
@@ -403,8 +403,6 @@ class ToolExecutionServiceTest {
             logs.add(invocation.getArgument(0));
             return 1;
         });
-        when(mapper.selectAfter(anyString(), any(Long.class), any(Integer.class))).thenAnswer(invocation ->
-                logs.stream().filter(item -> item.getSequenceNo() > (long) invocation.getArgument(1)).toList());
         return mapper;
     }
 

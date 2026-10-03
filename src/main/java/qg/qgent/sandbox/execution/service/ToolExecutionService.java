@@ -12,8 +12,6 @@ import qg.qgent.sandbox.exception.SandboxException;
 import qg.qgent.sandbox.config.SandboxProperties;
 import qg.qgent.sandbox.runtime.SandboxAllocation;
 import qg.qgent.sandbox.service.SandboxService;
-import qg.qgent.sandbox.execution.dto.ExecutionLogEntryResponse;
-import qg.qgent.sandbox.execution.dto.ExecutionLogsResponse;
 import qg.qgent.sandbox.execution.dto.ToolContext;
 import qg.qgent.sandbox.execution.dto.ToolExecutionRequest;
 import qg.qgent.sandbox.execution.dto.ToolExecutionResponse;
@@ -29,7 +27,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -237,19 +234,6 @@ public class ToolExecutionService {
                 paths.resolveLocal(sandbox.getWorkspaceStorageKey()), executionId);
         return Map.of("stdout", qg.qgent.sandbox.execution.handler.CommandOutput.read(directory, "stdout", stdoutOffset, count),
                 "stderr", qg.qgent.sandbox.execution.handler.CommandOutput.read(directory, "stderr", stderrOffset, count));
-    }
-
-    /** 按执行内递增序号分页读取日志。 */
-    public ExecutionLogsResponse logs(UUID executionId, long after, int limit) {
-        require(executionId);
-        List<ExecutionLogEntryResponse> items = logMapper
-                .selectAfter(executionId.toString(), after, Math.max(1, Math.min(limit, 1000)))
-                .stream()
-                .map(row -> new ExecutionLogEntryResponse(row.getSequenceNo(), row.getStream(), row.getContent(),
-                        row.getCreatedAt().toInstant(ZoneOffset.UTC)))
-                .toList();
-        long cursor = items.isEmpty() ? after : items.get(items.size() - 1).getSequence();
-        return new ExecutionLogsResponse(items, cursor);
     }
 
     private void run(String executionId, SandboxAllocation sandbox, ToolExecutionRequest request) {

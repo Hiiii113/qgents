@@ -4,12 +4,10 @@ import org.springframework.stereotype.Component;
 
 import qg.qgent.sandbox.exception.SandboxException;
 import qg.qgent.sandbox.config.SandboxProperties;
-import qg.qgent.sandbox.runtime.SandboxAllocation;
 
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.util.UUID;
 import java.util.regex.Pattern;
 
 import static org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY;

@@ -40,8 +40,8 @@ public class SandboxService {
      * 规格不同返回冲突，避免初始化重试因请求超时造成重复创建。
      */
     public SandboxResponse create(CreateSandboxRequest request) {
-        // 如果镜像不在列表中
-        if (!properties.getImageProfiles().contains(request.getImageProfile())) {
+        // 仅允许使用 Sandbox 配置中的镜像。
+        if (!properties.getImages().containsKey(request.getImageProfile())) {
             throw new SandboxException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "IMAGE_PROFILE_NOT_ALLOWED", "镜像配置不在 Sandbox 允许列表中");
         }

@@ -5,10 +5,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 import java.time.Duration;
 import java.util.Map;
-import java.util.Set;
 
 /**
- * 沙箱工作节点的运行时、安全上限和资源回收配置。
+ * 沙箱容器的运行时、资源上限和回收配置。
  * 所有值均由部署环境控制，客户端请求不能放宽这些限制。
  */
 @Data
@@ -23,9 +22,7 @@ public class SandboxProperties {
      */
     private Duration defaultIdleTtl = Duration.ofMinutes(30);
 
-    /**
-     * 控制层能够申请的最大空闲存活时间。
-     */
+    // 沙箱允许的最大空闲存活时间。
     private Duration maxIdleTtl = Duration.ofHours(2);
 
     /**
@@ -48,34 +45,16 @@ public class SandboxProperties {
      */
     private Duration maxExecutionTimeout = Duration.ofHours(1);
 
-    /**
-     * 扫描并回收过期沙箱的间隔。
-     */
-    private Duration cleanupInterval = Duration.ofSeconds(30);
-
-    /**
-     * 异步命令执行线程池大小。
-     */
+    // 异步命令执行线程池大小。
     private int executionThreads = 4;
 
-    /**
-     * 允许控制层选择的镜像配置名称。
-     */
-    private Set<String> imageProfiles = Set.of("dev-tools");
-
-    /**
-     * Docker Engine API 地址。
-     */
+    // Docker Engine API 地址。
     private String dockerHost = "unix:///var/run/docker.sock";
 
-    /**
-     * 当前 Sandbox 的稳定编号，用于限定容器恢复和认领范围。
-     */
+    // 当前应用实例的稳定编号，用于容器恢复和执行归属。
     private String instanceId = "local";
 
-    /**
-     * Sandbox 进程可见的 Workspace 根目录，用于路径真实性检查。
-     */
+    // 应用进程可见的工作区根目录。
     private String workspaceLocalRoot = "/var/lib/qgents/workspaces";
 
     /**
@@ -83,9 +62,7 @@ public class SandboxProperties {
      */
     private String workspaceDockerHostRoot = "/srv/qgents/workspaces";
 
-    /**
-     * Sandbox 保存 Workspace 清单的目录，不会挂载到 Agent 沙箱。
-     */
+    // 工作区元数据目录，不挂载到沙箱。
     private String workspaceMetadataRoot = "/var/lib/qgents/workspace-metadata";
 
     /**

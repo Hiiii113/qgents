@@ -7,73 +7,46 @@ import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
-/**
- * 为前端公开接口补充统一的中文分组、接口编号和简明说明。
- * <p>
- * 编号与接口文档章节一致（§4、§5.1、§5.2、§6、§6.1、§7、§7.1、§8、§9、§11.3、§12.1~§12.4、§13），
- * 供 Apifox 导入和前后端沟通使用；{@code /internal/**} 是服务间接口，刻意不在此处处理。
- */
+/** 为公开业务接口补充中文分组和缺省说明，保留 Controller 的接口描述。 */
 @Configuration
 public class FrontendOpenApiConfiguration {
 
     @Bean
     OpenApiCustomizer frontendApiChineseDocumentation() {
-        return openApi -> documentPublicPaths(openApi);
+        return this::documentPublicPaths;
     }
 
     private void documentPublicPaths(OpenAPI openApi) {
         if (openApi.getPaths() == null) {
             return;
         }
-        // 默认 Springdoc 会扫描所有 Controller。前端导入入口只允许看到 /api/v1，
-        // 文档只包含前端公开业务接口。
         openApi.getPaths().keySet().removeIf(path -> !path.startsWith("/api/v1/"));
-        Map<String, Integer> counters = new LinkedHashMap<>();
-        openApi.getPaths().entrySet().stream()
-                .filter(entry -> entry.getKey().startsWith("/api/v1/"))
-                .sorted(Map.Entry.comparingByKey())
-                .forEach(entry -> entry.getValue().readOperationsMap().forEach((method, operation) -> {
-                    ApiGroup group = group(entry.getKey());
-                    int sequence = counters.merge(group.code(), 1, Integer::sum);
-                    String id = "API-" + group.code() + "-" + String.format("%02d", sequence);
-                    operation.setTags(List.of(group.name()));
-                    operation.setSummary(id + " " + summary(entry.getKey(), method));
-                    String existing = operation.getDescription();
-                    String prefix = "前端公开接口。编号：" + id + "。";
-                    operation.setDescription(existing == null || existing.isBlank() ? prefix : prefix + "\n\n" + existing);
-                }));
-        openApi.setTags(List.of(
-                tag("4 认证与账户", "4"), tag("5.1 团队与邀请", "5.1"),
-                tag("5.2 项目与项目成员", "5.2"),
-                tag("6 GitHub App 与仓库导入", "6"),
-                tag("7 群组与消息", "7"),
-                tag("7.1 通知中心", "7.1"), tag("8 共享 Skill", "8"),
-                tag("9 共享 Memory", "9"),
-                tag("12.1 实时事件流", "12.1"),
-                tag("12.2 Agent 执行记录", "12.2"), tag("11.1 Agent 与能力", "11.1")));
+        openApi.getPaths().forEach((path, item) -> item.readOperationsMap().forEach((method, operation) -> {
+            operation.setTags(List.of(group(path)));
+            if (operation.getSummary() == null || operation.getSummary().isBlank()) {
+                operation.setSummary(summary(path, method));
+            }
+        }));
+        openApi.setTags(List.of("认证与账户", "团队与邀请", "项目与项目成员", "GitHub App 与仓库导入",
+                "群组与消息", "通知中心", "共享 Skill", "共享 Memory", "实时事件流", "Agent 与能力")
+                .stream().map(name -> new Tag().name(name)).toList());
     }
 
-    private Tag tag(String name, String code) {
-        return new Tag().name(name).description("接口编号段：API-" + code + "-xx");
-    }
-
-    private ApiGroup group(String path) {
+    private String group(String path) {
         if (path.contains("/integrations/github") || path.contains("/repositories"))
-            return new ApiGroup("6", "GitHub App 与仓库导入");
-        if (path.contains("/events")) return new ApiGroup("12.1", "实时事件流");
-        if (path.startsWith("/api/v1/notifications")) return new ApiGroup("7.1", "通知中心");
-        if (path.contains("/agents")) return new ApiGroup("11.1", "Agent 与能力");
-        if (path.contains("/groups") || path.contains("/messages") || path.contains("/attachments")
-                || path.contains("/context")) return new ApiGroup("7", "群组与消息");
-        if (path.contains("/skills")) return new ApiGroup("8", "共享 Skill");
-        if (path.contains("/memories")) return new ApiGroup("9", "共享 Memory");
-        if (path.contains("/auth/") || path.equals("/api/v1/me")) return new ApiGroup("4", "认证与账户");
-        if (path.contains("/projects")) return new ApiGroup("5.2", "项目与项目成员");
-        return new ApiGroup("5.1", "团队与邀请");
+            return "GitHub App 与仓库导入";
+        if (path.contains("/events")) return "实时事件流";
+        if (path.startsWith("/api/v1/notifications")) return "通知中心";
+        if (path.contains("/agents")) return "Agent 与能力";
+        if (path.contains("/groups") || path.contains("/messages") || path.contains("/attachments"))
+            return "群组与消息";
+        if (path.contains("/skills")) return "共享 Skill";
+        if (path.contains("/memories")) return "共享 Memory";
+        if (path.contains("/auth/") || path.equals("/api/v1/me")) return "认证与账户";
+        if (path.contains("/projects")) return "项目与项目成员";
+        return "团队与邀请";
     }
 
     private String summary(String path, PathItem.HttpMethod method) {
@@ -97,11 +70,7 @@ public class FrontendOpenApiConfiguration {
             return method == PathItem.HttpMethod.GET ? "获取当前用户资料" : "修改当前用户资料";
         if (path.endsWith("/drafts")) return "生成 AI 草稿";
         if (path.endsWith("/read-all")) return "全部通知已读";
-        if (path.endsWith("/read")) return "标记通知已读";
-        if (path.endsWith("/execution-context")) return "获取执行上下文";
-        if (path.endsWith("/logs")) return "读取执行日志";
-        if (path.endsWith("/files")) return "查询" + resource(path) + "文件";
-        if (path.endsWith("/report")) return "获取" + resource(path) + "报告";
+        if (path.endsWith("/read")) return "标记已读";
         String resource = resource(path);
         if (method == PathItem.HttpMethod.GET) return "查询" + resource;
         if (method == PathItem.HttpMethod.PUT) {
@@ -119,13 +88,10 @@ public class FrontendOpenApiConfiguration {
         if (path.endsWith("/accept")) return "接受" + resource;
         if (path.endsWith("/reject")) return "拒绝" + resource;
         if (path.endsWith("/approve")) return "批准" + resource;
-        if (path.endsWith("/start")) return "启动或继续" + resource;
         if (path.endsWith("/cancel")) return "取消" + resource;
         if (path.endsWith("/archive")) return "归档" + resource;
         if (path.endsWith("/restore")) return "恢复" + resource;
-        if (path.endsWith("/merge")) return "合并" + resource;
         if (path.endsWith("/sync")) return "同步" + resource;
-        if (path.endsWith("/retry")) return "重试" + resource;
         if (path.endsWith("/leave")) return "退出" + resource;
         if (path.endsWith("/submit-review")) return "提交" + resource + "审核";
         return "创建" + resource;
@@ -134,9 +100,7 @@ public class FrontendOpenApiConfiguration {
     private String resource(String path) {
         if (path.endsWith("github-capability")) return "Agent GitHub 能力";
         if (path.contains("/agents")) return "Agent";
-        if (path.contains("attachments")) return "附件直传凭证";
-        if (path.contains("context")) return "群聊上下文";
-        if (path.contains("diffs")) return "Diff";
+        if (path.contains("attachments")) return "附件";
         if (path.contains("events")) return "项目事件流";
         if (path.contains("groups") && path.contains("members")) return "群成员";
         if (path.contains("invitations")) return "团队邀请";
@@ -148,12 +112,9 @@ public class FrontendOpenApiConfiguration {
         if (path.contains("messages")) return "群消息";
         if (path.contains("skills")) return "Skill";
         if (path.contains("notifications")) return "通知";
-        if (path.contains("team-invitations")) return "团队邀请";
         if (path.contains("teams")) return "团队";
         if (path.contains("projects")) return "项目";
         return "资源";
     }
 
-    private record ApiGroup(String code, String name) {
-    }
 }
