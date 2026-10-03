@@ -64,11 +64,10 @@ src/main/resources/rsa/private_key.pem
 # 环境变量配置示例允许提交
 !.env.example
 
-# 数据库迁移脚本仍在开发中，当前不纳入版本控制
-/src/main/resources/db/migrations/
-
 # 沙箱/工具临时目录
 .codex-test-tmp/
 
 # 脚本文件
 scripts/
+
+/secrets/

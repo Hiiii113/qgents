@@ -1,12 +1,13 @@
 .git
 .env
 .env.*
-github_app.pem
-src/main/resources/rsa/private_key.pem
-# 单服务构建产物和本地运行文件
+*.pem
+!src/main/resources/rsa/public_key.pem
 target
+.m2*
+.codex-test-tmp
 logs
 data
+secrets
 *.log
-Dockerfile.production
-Dockerfile
+docs

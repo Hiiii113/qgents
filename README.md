@@ -1,125 +1,52 @@
 # Qgents
 
-QG 工作室暑假末期考核项目。
+IM 聊天、可选 GitHub App 集成和云端 Agent Harness。普通消息仅用于聊天，`@Agent` 启动自有工具 loop；首次需要代码环境时准备 Docker Sandbox，运行结束释放沙箱并保留 Workspace。
 
-产品方向与持续协作依据见 [docs/target.md](docs/target.md)。下文介绍当前实现；GitHub App 与仓库导入后端已实现，前端接入、真实环境联调和结构化成果展示仍需后续完善。
+后端与 Sandbox 为单个 Java 21 Spring Boot 应用，依赖 MySQL 和 Redis。前端位于相邻的 `../qgents-fronted` 仓库。
 
-Qgents 是一个支持群聊和代码交付的 Agent 平台。普通消息只用于聊天；`@Agent` 才启动对应 Agent。
-通用 Agent、Coding Agent 与自定义 Agent 共用项目自己的 loop：模型调用工具时执行并继续，
-没有工具调用的文本回复即结束，最多执行配置的轮次。模型按需调用 subagent，不设置固定的计划、编码、测试、审查阶段。
+## 本地开发
 
-消息发送只保留 `type`、`content`、`mentions`、`replyToId`、`clientMessageId`。
-回复用普通消息加 `replyToId`，不再支持 QUOTE、replyText 或客户端拼接的引用摘要。
-项目创建时自动创建唯一默认群聊；群成员来自项目成员，不区分主群或需求群。
+1. 将 `.env.example` 复制为 `.env`，填写数据库、Redis、`DASHSCOPE_API_KEY`、SMTP 和 JWT 配置。Spring 自动读取 `.env`。
+2. 初始化新数据库：执行 `src/main/resources/db/qgents_schema.sql`。已有外部 MySQL 时执行 `docker compose up -d redis`；本地新建 MySQL 使用 `docker compose --profile database up -d`，数据库用户须为非 root 用户。
+3. 将已有登录 RSA 私钥放到 `RSA_PRIVATE_KEY_PATH` 指定位置，前端公钥和 keyId 须与其对应。项目公钥位于 `src/main/resources/rsa/public_key.pem`，仅有公钥无法生成对应私钥。
+4. Windows Docker Desktop 使用 `SANDBOX_DOCKER_HOST=npipe:////./pipe/docker_engine`；本地运行时两个 Workspace 根目录指向同一实际目录。
+5. 执行 `docker build -t qgents/sandbox-dev-tools:0.2.0 sandbox-images/dev-tools`，再运行 `./mvnw.cmd spring-boot:run`。不涉及代码环境的工具无需 Docker。
 
-代码工具一开始即可由模型调用，首次调用才准备 Workspace 和 Sandbox。
-问答、历史检索、Skill 激活及 `github_request` 不创建代码环境。
-`list_workspaces` / `create_workspace` / `use_workspace` 管理独立环境；创建或选择环境不启动沙箱，
-未选择环境时首次代码工具自动创建空工作区。Agent 自主 clone 仓库，默认使用远端默认/base 分支。
-一次运行可以切换 Workspace，后续工作也可以复用已有目录。运行结束释放 Sandbox，保留工作目录。
+API 为 `http://localhost:8080/api/v1`，Swagger 为 `http://localhost:8080/swagger-ui/index.html`，管理端口默认仅监听 `127.0.0.1:8081`。
 
-工作目标与成果保留在聊天消息中，AgentRun 记录执行状态，不维护独立 Task。
-继续工作时读取引用消息及聊天历史，再按需选择已有 Workspace。
-`cancel_agent` 工具和消息的 `cancel-agent` 接口可停止该消息已启动的执行。
-AgentRun 保存最近使用的 Workspace，Sandbox 执行记录保存每次实际使用的环境。
-`run_command` 在工作区中执行参数数组命令，并返回真实 stdout/stderr 和退出码。
-分支、commit、push 和 PR 由 Agent 按用户目标调用工具完成，系统不自动执行 Git 交付。
+## 配置
 
-### 可选 GitHub 能力
+- 模型通过 DashScope 的 OpenAI 兼容接口调用，使用 `AI_BASE_URL`、`AI_MODEL`、`AI_MAX_TOKENS` 配置地址、模型和输出上限。
+- 附件默认保存到 `ATTACHMENT_LOCAL_ROOT`，也支持 OSS；头像直传需要配置 OSS 公共访问地址。
+- GitHub App 可选，Agent 的 GitHub 能力默认关闭。配置见 [docs/github-app.md](docs/github-app.md)，导入仓库不自动 clone 或绑定 Workspace。
+- `FRONTEND_URL` 为页面入口；独立 API 域名部署时将页面来源加入 `CORS_ALLOWED_ORIGINS`。
 
-团队通过 GitHub App 安装连接 GitHub，再选择授权仓库导入项目。通过
-`PUT /api/v1/teams/{teamId}/agents/{agentId}/github-capability` 设置
-`{"enabled":true}` 开启 GitHub 能力，使用当前项目导入仓库的 App 安装凭证；`false` 关闭能力。默认 Agent 由 Team Owner 配置，
-自定义 Agent 由创建者配置，也可在创建或编辑时提供 `githubEnabled`。
-安装配置、接口和操作示例见 [GitHub App 与仓库导入](docs/github-app.md)。不提供个人 OAuth。
-App 凭证每次操作按安装和目标仓库获取，不进入提示词或工具参数。
+## Linux Docker 部署
 
-- `github_request` 访问 GitHub REST API，如查询仓库、创建 PR、查询或合并 PR。
-- `github_repositories` 列出项目已导入仓库，无需创建执行环境。
-- `github_git` 支持带认证的 fetch、pull 等 Git 操作。
-- `github_clone` / `github_push` 使用当前 Agent 的凭证，在选定 Workspace 内操作选择的仓库。
-- 仓库基线省略时遵循远端默认分支；分支、提交和其他 Git 操作用 `run_command`。
-- Git 操作使用临时进程环境认证，不把凭据写入 remote URL 或仓库配置。
+`Dockerfile` 构建单个 API 服务；`docker-compose.production.yml` 构建相邻前端仓库并启动 API、Web、Redis。MySQL 使用外部服务，`DB_URL` 必须为容器可访问的地址，宿主机数据库可使用 `host.docker.internal`，不能填写容器自身的 `127.0.0.1`。
 
-本次使用项目已有 Tool 机制提供附加能力，不引入 MCP 服务框架；技能仍通过现有 Skill 工具按需激活。
+填写 `.env` 必需配置及以下部署参数：
 
-## Agent 实现
+- `RSA_PRIVATE_KEY_FILE`：宿主机现有登录私钥文件。
+- `QGENTS_DATA_ROOT`：宿主机绝对数据目录，默认 `/srv/qgents`。
+- `DOCKER_GID`：`stat -c '%g' /var/run/docker.sock` 的实际组 ID。
+- `FRONTEND_DIRECTORY`：前端仓库目录，默认 `../qgents-fronted`。
+- `FRONTEND_RSA_PUBLIC_KEY`：更换密钥时填入对应 PEM 公钥，可用字面量 `\n` 表示换行；修改后重建 Web。
 
-- `agent/runtime/AgentLoop` 管理模型调用、工具结果回传和轮次上限。
-- `agent/runtime/AgentChatService` 管理聊天上下文、AgentRun、同步 subagent 和可选代码工作区。
-- Spring AI 仅提供底层 `ChatModel` 及工具 schema，不负责 loop、阶段调度或自动执行工具；已移除 LangGraph4j。
-- `list_agents` / `call_agent` 提供委托，子 Agent 有独立输入，共享根运行的工作区。
-- 文件、命令和 Git 工具通过 Sandbox 模块共享按需沙箱环境入口；技能及历史检索直接执行。`read_chat_message` 可展开消息全文及回复关系。
-- `app.agent.max-rounds`、`max-depth`、`max-subagents` 分别限制模型轮次、委托深度和总委托数。
+预先创建数据根目录下的 `workspaces`、`workspace-metadata`、`github-app` 目录。工作区和元数据目录需允许 UID/GID `10001` 写入。GitHub App 可选私钥放到 `github-app/private-key.pem`；API 用户需能读取登录及 App 私钥。
 
-本次改造以新的建表脚本为准，不保留旧阶段执行 API 的兼容行为。
-
-## 仓库结构
-
-一个 Spring Boot 应用；聊天、Agent 和 Sandbox 按业务分包，工具直接调用 Java 服务。
-
-```text
-Qgents/
-├── pom.xml                         # 单应用依赖与构建
-├── src/main/java/qg/qgent/
-│   ├── agent/                      # Agent loop、模型工具和运行记录
-│   ├── chat/                       # 群聊、消息和上下文
-│   ├── workspace/                  # 工作区业务记录与写入租约
-│   ├── sandbox/
-│   │   ├── config/                 # Docker、执行线程池和资源配置
-│   │   ├── runtime/                # 容器创建、命令执行和回收
-│   │   ├── service/                # 会话与 Workspace 工具适配
-│   │   ├── execution/              # 工具处理器、执行记录、完成通知和日志
-│   │   └── filesystem/             # 工作目录、路径和补丁操作
-│   └── ...                         # 其他现有业务领域
-├── src/main/resources/             # 统一配置和数据库建表语句
-├── src/test/                       # 测试与源码包路径一致
-├── sandbox-images/dev-tools/       # 用户代码所在的沙箱镜像
-├── Dockerfile.production
-└── docker-compose.production.yml
+```sh
+docker compose -f docker-compose.production.yml config --quiet
+docker compose -f docker-compose.production.yml --profile images build
+docker compose -f docker-compose.production.yml up -d
 ```
 
-业务内部按需使用 `controller`、`service`、`dto`、`entity`、`mapper`、`config` 等子包。
-文件工具在调用线程执行；命令使用独立线程池，短等待后返回句柄，后续可读取输出或取消。
-等待使用进程内完成通知，执行记录与其他业务使用同一个 MySQL 数据源。
+Web 默认端口 80，API 仅发布到宿主机 `127.0.0.1:8080`。Web 将 `/api` 与 WebSocket 转发到 API。容器内 Workspace 路径和 Docker 宿主机挂载路径须对应同一份数据。
 
-应用负责管理 Docker 容器，用户命令仍在 Sandbox 容器内运行。首次代码工具才准备环境，运行结束销毁容器并保留 Workspace。
-应用容器需要 Docker Socket 组权限及工作目录挂载；应用重启会影响聊天和正在进行的 Agent 执行。
+可选 `proxy` profile 启动 Mihomo，配置保存在 `mihomo_config` 卷；`tunnel` profile 启动 Cloudflare Tunnel，需填写 `CLOUDFLARE_TUNNEL_TOKEN`，Web 路由指向 `http://web:80`。
 
-## 环境要求
+## 验证与协作
 
-- JDK 21、Maven 3.9+，或仓库自带的 `mvnw` / `mvnw.cmd`。
-- MySQL 8.0.16+、Redis；用 `src/main/resources/db/qgents_schema.sql` 初始化一个 `qgents` 数据库，包含 Sandbox 执行表。
-- Docker 用于实际代码环境。`SANDBOX_RUNTIME=fake` 仅用于不使用真实容器的测试与联调。
+执行 `./mvnw.cmd clean package -q` 编译、测试和打包。外部集成测试可能跳过，真实容器、数据库、模型和 GitHub 联调需要对应环境。
 
-## 构建与测试
-
-在仓库根目录执行：
-
-```powershell
-.\mvnw.cmd clean test
-.\mvnw.cmd package -DskipTests
-
-# 外部服务集成测试需初始化数据库并显式启用。
-$env:QGENTS_INTEGRATION_TESTS="true"
-.\mvnw.cmd -Dtest=FixedAccountAuthIntegrationTest test
-```
-
-产物为 `target/qgents-0.0.1-SNAPSHOT.jar`。
-
-## 运行
-
-从根目录加载 `.env`（不入版本控制），统一配置数据库、模型、GitHub 和 Sandbox。
-本地执行 `.\mvnw.cmd spring-boot:run`，或 `java -jar target/qgents-0.0.1-SNAPSHOT.jar`。
-真实代码工具还需要先构建开发镜像：`docker build -t qgents/sandbox-dev-tools:0.2.0 sandbox-images/dev-tools`。
-
-生产部署使用 `docker-compose.production.yml`，以根目录 `.env.example` 为配置模板。
-Compose 中 API 管理沙箱并挂载持久工作目录；`QGENTS_DATA_ROOT` 必须是宿主机绝对路径，`DOCKER_GID` 对应宿主机 Docker 组。
-应用端口为 8080，管理端点端口为 8081；保留 Redis、代理与开发镜像相关服务。
-
-## 文档
-
-- 产品愿景与实现差距：`docs/target.md`
-- Sandbox 工具与 DeepSeek Harness 对照：`docs/sandbox-tools.md`
-- GitHub App 接入：`docs/github-app.md`
-- 协作约定：`AGENTS.md`
+愿景与实现差距见 [docs/target.md](docs/target.md)，工具说明见 [docs/sandbox-tools.md](docs/sandbox-tools.md)，协作规范见 [AGENTS.md](AGENTS.md)。

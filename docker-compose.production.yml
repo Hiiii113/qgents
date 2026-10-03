@@ -5,137 +5,104 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD}"]
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+    command: [redis-server, --appendonly, "yes", --requirepass, "${REDIS_PASSWORD}"]
     volumes: [redis_data:/data]
-    networks: [backend]
     healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
       interval: 10s
       timeout: 5s
       retries: 20
 
-  clash:
-    image: docker.io/metacubex/mihomo:latest
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:7890:7890"
-    # 配置不入库，使用命名卷承载；首次启动后需将 mihomo 配置写入该卷
-    volumes:
-      - mihomo_config:/root/.config/mihomo
-    expose: ["7890"]
-    networks: [backend]
-    healthcheck:
-      test: ["CMD-SHELL", "grep -qi ':1ED2' /proc/net/tcp /proc/net/tcp6"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-
-  sandbox-dev-tools:
-    build:
-      context: ./sandbox-images/dev-tools
-      dockerfile: Dockerfile
-    image: qgents/sandbox-dev-tools:production
+  # 只用于构建镜像，不常驻启动开发容器。
+  sandbox-image:
+    profiles: [images]
+    build: ./sandbox-images/dev-tools
+    image: ${SANDBOX_DEV_TOOLS_IMAGE:-qgents/sandbox-dev-tools:0.2.0}
 
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile.production
+    build: .
     restart: unless-stopped
+    env_file: .env
     environment:
-      DB_URL: jdbc:mysql://${DB_HOST:-172.17.0.1}:${DB_PORT:-3306}/qgents?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC
-      DB_USERNAME: ${DB_USERNAME:-root}
+      DB_URL: ${DB_URL:?Set DB_URL to a MySQL address reachable from the container}
+      DB_USERNAME: ${DB_USERNAME:?Set DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
-      SMTP_HOST: ${SMTP_HOST:-smtp.qq.com}
-      SMTP_PORT: ${SMTP_PORT:-465}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:?Set DASHSCOPE_API_KEY}
       SMTP_USERNAME: ${SMTP_USERNAME:?Set SMTP_USERNAME}
       SMTP_AUTH_CODE: ${SMTP_AUTH_CODE:?Set SMTP_AUTH_CODE}
-      REDIS_HOST: redis
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD}
-      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:?Set DASHSCOPE_API_KEY}
-      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET}
-      GITHUB_APP_ID: ${GITHUB_APP_ID:-}
-      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      RSA_PRIVATE_KEY_PATH: file:/run/qgents/rsa/private_key.pem
       GITHUB_APP_PRIVATE_KEY_PATH: /run/qgents/github/private-key.pem
-      GITHUB_APP_CALLBACK_URL: ${GITHUB_APP_CALLBACK_URL:-}
-      GITHUB_WEBHOOK_SECRET: ${GITHUB_WEBHOOK_SECRET:-}
-      FRONTEND_URL: ${FRONTEND_URL:-https://qgents.dpdns.org}
-      FRONTEND_URL_WEB: ${FRONTEND_URL_WEB:-https://qgents.dpdns.org}
-      FRONTEND_URL_MOBILE: ${FRONTEND_URL_MOBILE:-https://mobile.qgents.dpdns.org}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-https://qgents.dpdns.org,https://mobile.qgents.dpdns.org}
-      # 附件下载 URL 签名密钥：application.yaml 的默认值仅供本地开发，生产必须注入随机值，
-      # 否则任何人都能伪造附件下载地址。
-      ATTACHMENT_SIGNING_SECRET: ${ATTACHMENT_SIGNING_SECRET:?Set ATTACHMENT_SIGNING_SECRET}
-      ALIYUN_OSS_ENABLED: ${ALIYUN_OSS_ENABLED:-false}
-      ALIYUN_OSS_ENDPOINT: ${ALIYUN_OSS_ENDPOINT:-}
-      ALIYUN_OSS_BUCKET_NAME: ${ALIYUN_OSS_BUCKET_NAME:-}
-      ALIYUN_OSS_ACCESS_KEY_ID: ${ALIYUN_OSS_ACCESS_KEY_ID:-}
-      ALIYUN_OSS_ACCESS_KEY_SECRET: ${ALIYUN_OSS_ACCESS_KEY_SECRET:-}
-      ALIYUN_OSS_PRESIGN_EXPIRY_SECONDS: ${ALIYUN_OSS_PRESIGN_EXPIRY_SECONDS:-900}
-      ALIYUN_OSS_PUBLIC_BASE_URL: ${ALIYUN_OSS_PUBLIC_BASE_URL:-}
-      HTTP_PROXY: http://${PROXY_HOST:-clash}:${PROXY_PORT:-7890}
-      HTTPS_PROXY: http://${PROXY_HOST:-clash}:${PROXY_PORT:-7890}
-      NO_PROXY: localhost,127.0.0.1,host.docker.internal,redis,api,clash
-      APP_AGENT_PROTOCOL: native
+      ATTACHMENT_LOCAL_ROOT: /app/data/attachments
+      LOG_FILE: /app/logs/qgents.log
       MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
       MANAGEMENT_SERVER_PORT: "8081"
-      SANDBOX_RUNTIME: ${SANDBOX_RUNTIME:-docker}
+      SANDBOX_RUNTIME: docker
       SANDBOX_DOCKER_HOST: unix:///var/run/docker.sock
-      SANDBOX_DEV_TOOLS_IMAGE: qgents/sandbox-dev-tools:production
+      SANDBOX_DEV_TOOLS_IMAGE: ${SANDBOX_DEV_TOOLS_IMAGE:-qgents/sandbox-dev-tools:0.2.0}
       SANDBOX_WORKSPACE_LOCAL_ROOT: /var/lib/qgents/workspaces
       SANDBOX_WORKSPACE_DOCKER_HOST_ROOT: ${QGENTS_DATA_ROOT:-/srv/qgents}/workspaces
       SANDBOX_WORKSPACE_METADATA_ROOT: /var/lib/qgents/workspace-metadata
       SANDBOX_INSTANCE_ID: ${SANDBOX_INSTANCE_ID:-production-1}
-      SANDBOX_EXECUTION_THREADS: ${SANDBOX_EXECUTION_THREADS:-4}
     volumes:
-      - ./src/main/resources/rsa/private_key.pem:/app/src/main/resources/rsa/private_key.pem:ro
+      - type: bind
+        source: ${RSA_PRIVATE_KEY_FILE:-./src/main/resources/rsa/private_key.pem}
+        target: /run/qgents/rsa/private_key.pem
+        read_only: true
+        bind: {create_host_path: false}
       - ${QGENTS_DATA_ROOT:-/srv/qgents}/github-app:/run/qgents/github:ro
-      - api_data:/app/data
-      - api_logs:/app/logs
-      - /var/run/docker.sock:/var/run/docker.sock
       - ${QGENTS_DATA_ROOT:-/srv/qgents}/workspaces:/var/lib/qgents/workspaces
       - ${QGENTS_DATA_ROOT:-/srv/qgents}/workspace-metadata:/var/lib/qgents/workspace-metadata
-    group_add:
-      - "${DOCKER_GID:-999}"
-    expose: ["8080", "8081"]
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    networks: [backend]
+      - /var/run/docker.sock:/var/run/docker.sock
+      - api_data:/app/data
+      - api_logs:/app/logs
+    group_add: ["${DOCKER_GID:-999}"]
+    ports: ["127.0.0.1:${API_HOST_PORT:-8080}:8080"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8081/actuator/health | grep -q UP"]
+      test: [CMD, curl, -fsS, http://127.0.0.1:8081/actuator/health]
       interval: 10s
       timeout: 5s
+      start_period: 30s
       retries: 20
     depends_on:
-      clash: {condition: service_healthy}
       redis: {condition: service_healthy}
-      sandbox-dev-tools: {condition: service_started}
 
   web:
     build:
-      context: ../前端/qgents
-      dockerfile: Dockerfile.production
+      context: ${FRONTEND_DIRECTORY:-../qgents-fronted}
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://api.qgents.dpdns.org/api/v1}
+        VITE_API_BASE_URL: /api
+        VITE_RSA_KEY_ID: ${RSA_KEY_ID:-rsa-2026-08}
+        VITE_RSA_PUBLIC_KEY: ${FRONTEND_RSA_PUBLIC_KEY:-}
     restart: unless-stopped
-    ports: ["80:80"]
-    networks: [backend]
-    depends_on: {api: {condition: service_started}}
+    ports: ["${WEB_HOST_PORT:-80}:80"]
+    depends_on:
+      api: {condition: service_healthy}
+
+  clash:
+    image: metacubex/mihomo:latest
+    profiles: [proxy]
+    restart: unless-stopped
+    ports: ["127.0.0.1:7890:7890"]
+    volumes: [mihomo_config:/root/.config/mihomo]
 
   cloudflared:
     image: cloudflare/cloudflared:latest
-    restart: unless-stopped
     profiles: [tunnel]
-    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?Set CLOUDFLARE_TUNNEL_TOKEN}
-    networks: [backend]
+    restart: unless-stopped
+    command: [tunnel, --no-autoupdate, run]
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      web: {condition: service_healthy}
 
 volumes:
   redis_data:
   api_data:
   api_logs:
   mihomo_config:
-
-networks:
-  backend:
-    driver: bridge
