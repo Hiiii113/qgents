@@ -3,7 +3,7 @@ import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 import java.time.LocalDateTime;
 import java.util.UUID;
-/** 每个项目的唯一默认群聊，成员来自项目。 */
+/** 默认群共享项目成员；新建群仅包含受邀用户和 Agent。 */
 @Data
 @TableName("chat_groups")
 public class ChatGroupEntity {
@@ -11,6 +11,7 @@ public class ChatGroupEntity {
     private UUID id;
     private UUID projectId;
     private UUID createdBy;
+    private Boolean defaultGroup = true;
     private String name;
     private String description;
     private LocalDateTime lastMessageAt;

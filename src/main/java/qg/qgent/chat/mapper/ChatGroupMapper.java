@@ -6,7 +6,9 @@ import java.util.List;
 import java.util.UUID;
 @Mapper
 public interface ChatGroupMapper extends BaseMapper<ChatGroupEntity> {
-    @Select("select * from chat_groups where project_id=#{projectId}")
+    @Select("SELECT user_id FROM group_users WHERE group_id = #{groupId}")
+    List<UUID> selectUserIds(UUID groupId);
+    @Select("select * from chat_groups where project_id=#{projectId} ORDER BY default_group DESC, created_at ASC")
     List<ChatGroupEntity> listByProject(UUID projectId);
     @Select({"<script>", "SELECT * FROM chat_groups WHERE project_id IN ",
             "(<foreach collection='projectIds' item='pid' separator=','>#{pid}</foreach>)",

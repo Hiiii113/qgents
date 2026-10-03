@@ -9,6 +9,9 @@ import org.springframework.transaction.annotation.Transactional;
 import qg.qgent.agent.entity.AgentEntity;
 import qg.qgent.agent.mapper.AgentMapper;
 import qg.qgent.chat.dto.GroupLatestMessage;
+import qg.qgent.chat.dto.GroupCreateRequest;
+import qg.qgent.chat.dto.GroupInviteRequest;
+import qg.qgent.chat.mapper.GroupUserMapper;
 import qg.qgent.chat.dto.GroupMemberResponse;
 import qg.qgent.chat.dto.GroupPinResponse;
 import qg.qgent.chat.dto.GroupReadResponse;
@@ -30,7 +33,6 @@ import qg.qgent.project.mapper.view.ProjectMembershipView;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.user.mapper.UserGroupPreferenceMapper;
-import qg.qgent.user.mapper.UserMapper;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -50,7 +52,7 @@ public class GroupService {
     private final ProjectMapper projectMapper;
     private final GroupAgentMapper groupAgentMapper;
     private final AgentMapper agentMapper;
-    private final UserMapper userMapper;
+    private final GroupUserMapper groupUserMapper;
     private final MessageMapper messageMapper;
     private final GroupReadStateMapper groupReadStateMapper;
     private final UserGroupPreferenceMapper userGroupPreferenceMapper;
@@ -60,7 +62,7 @@ public class GroupService {
     public GroupService(ChatGroupMapper groupMapper,
                         ProjectMemberMapper projectMemberMapper,
                         ProjectMapper projectMapper, GroupAgentMapper groupAgentMapper,
-                        AgentMapper agentMapper, UserMapper userMapper,
+                        AgentMapper agentMapper, GroupUserMapper groupUserMapper,
                         MessageMapper messageMapper, GroupReadStateMapper groupReadStateMapper,
                         UserGroupPreferenceMapper userGroupPreferenceMapper,
                         ProjectAccessService access, EventService eventService) {
@@ -69,7 +71,7 @@ public class GroupService {
         this.projectMapper = projectMapper;
         this.groupAgentMapper = groupAgentMapper;
         this.agentMapper = agentMapper;
-        this.userMapper = userMapper;
+        this.groupUserMapper = groupUserMapper;
         this.messageMapper = messageMapper;
         this.groupReadStateMapper = groupReadStateMapper;
         this.userGroupPreferenceMapper = userGroupPreferenceMapper;
@@ -86,7 +88,7 @@ public class GroupService {
     @Transactional
     public GroupResponse ensureProjectGroup(UUID projectId, UUID createdBy, String projectName) {
         ChatGroupEntity existing = groupMapper.selectOne(Wrappers.<ChatGroupEntity>lambdaQuery()
-                .eq(ChatGroupEntity::getProjectId, projectId));
+                .eq(ChatGroupEntity::getProjectId, projectId).eq(ChatGroupEntity::getDefaultGroup, true));
         if (existing != null) {
             return toResponse(existing);
         }
@@ -97,57 +99,43 @@ public class GroupService {
         group.setProjectId(projectId);
         group.setCreatedBy(createdBy);
         group.setName(title);
+        group.setDefaultGroup(true);
         group.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
         groupMapper.insert(group);
         eventService.publish(projectId, group.getId(), "group.created", id(group.getId()),
                 Map.of("projectId", id(projectId), "groupId", id(group.getId())));
-        return toResponse(groupMapper.selectById(group.getId()));
+        return toResponse(group);
     }
 
     public List<GroupResponse> list(UUID actor, UUID projectId) {
         access.requireProjectMember(projectId, actor);
-        List<ChatGroupEntity> visibleGroups = groupMapper.listByProject(projectId);
-        if (visibleGroups.isEmpty()) {
-            return List.of();
-        }
-        List<UUID> visibleGroupIds = visibleGroups.stream().map(ChatGroupEntity::getId).toList();
-        Map<UUID, GroupLatestMessageRow> latestByGroup = messageMapper.selectLatestByGroupIds(visibleGroupIds).stream()
-                .collect(Collectors.toMap(GroupLatestMessageRow::getGroupId, Function.identity()));
-        Map<UUID, Long> unreadByGroup = countUnread(visibleGroupIds, actor);
-        Map<UUID, Long> mentionUnreadByGroup = countMentionUnread(visibleGroupIds, actor);
-        Map<UUID, Boolean> pinnedByGroup = countPinned(visibleGroupIds, actor);
-        return visibleGroups.stream()
-                .map(group -> {
-                    GroupResponse response = toResponse(group, latestByGroup.get(group.getId()),
-                            unreadByGroup.get(group.getId()));
-                    response.setMentionedUnread(mentionUnreadByGroup.getOrDefault(group.getId(), 0L));
-                    response.setPinned(pinnedByGroup.getOrDefault(group.getId(), false));
-                    return response;
-                })
-                .toList();
+        return groupResponses(groupMapper.listByProject(projectId), actor);
     }
 
     public List<GroupResponse> allGroups(UUID actor) {
         List<UUID> projectIds = projectMapper.selectAccessibleByUser(actor).stream()
                 .map(ProjectMembershipView::getId).toList();
-        if (projectIds.isEmpty()) {
+        return projectIds.isEmpty() ? List.of() : groupResponses(groupMapper.selectByProjectIds(projectIds), actor);
+    }
+
+    /** 列表与详情共用消息摘要、未读数和个人置顶状态的组装逻辑。 */
+    private List<GroupResponse> groupResponses(List<ChatGroupEntity> groups, UUID actor) {
+        groups = groups.stream().filter(group -> isDefault(group) || groupUserMapper.selectUserIds(group.getId()).contains(actor)).toList();
+        if (groups.isEmpty()) {
             return List.of();
         }
-        List<ChatGroupEntity> allGroups = groupMapper.selectByProjectIds(projectIds);
-        if (allGroups.isEmpty()) {
-            return List.of();
-        }
-        List<UUID> groupIds = allGroups.stream().map(ChatGroupEntity::getId).toList();
-        Map<UUID, GroupLatestMessageRow> latestByGroup = messageMapper.selectLatestByGroupIds(groupIds).stream()
+        List<UUID> visibleGroupIds = groups.stream().map(ChatGroupEntity::getId).toList();
+        Map<UUID, GroupLatestMessageRow> latestByGroup = messageMapper.selectLatestByGroupIds(visibleGroupIds).stream()
                 .collect(Collectors.toMap(GroupLatestMessageRow::getGroupId, Function.identity()));
-        Map<UUID, Long> unreadByGroup = countUnread(groupIds, actor);
-        Map<UUID, Long> mentionUnreadByGroup = countMentionUnread(groupIds, actor);
-        Map<UUID, Boolean> pinnedByGroup = countPinned(groupIds, actor);
-        return allGroups.stream()
-                .map(g -> {
-                    GroupResponse response = toResponse(g, latestByGroup.get(g.getId()), unreadByGroup.get(g.getId()));
-                    response.setMentionedUnread(mentionUnreadByGroup.getOrDefault(g.getId(), 0L));
-                    response.setPinned(pinnedByGroup.getOrDefault(g.getId(), false));
+        Map<UUID, Long> unreadByGroup = countUnread(visibleGroupIds, actor);
+        Map<UUID, Long> mentionUnreadByGroup = countMentionUnread(visibleGroupIds, actor);
+        Map<UUID, Boolean> pinnedByGroup = countPinned(visibleGroupIds, actor);
+        return groups.stream()
+                .map(group -> {
+                    GroupResponse response = toResponse(group, latestByGroup.get(group.getId()),
+                            unreadByGroup.get(group.getId()));
+                    response.setMentionedUnread(mentionUnreadByGroup.getOrDefault(group.getId(), 0L));
+                    response.setPinned(pinnedByGroup.getOrDefault(group.getId(), false));
                     return response;
                 })
                 .toList();
@@ -171,23 +159,21 @@ public class GroupService {
     }
 
     public GroupResponse get(UUID actor, UUID projectId, UUID groupId) {
-        requireGroupMember(projectId, groupId, actor);
-        ChatGroupEntity group = requireGroupInProject(projectId, groupId);
-        Map<UUID, Long> unreadByGroup = countUnread(List.of(groupId), actor);
-        Map<UUID, Long> mentionUnreadByGroup = countMentionUnread(List.of(groupId), actor);
-        Map<UUID, Boolean> pinnedByGroup = countPinned(List.of(groupId), actor);
-        GroupResponse response = toResponse(group, null, unreadByGroup.get(groupId));
-        response.setMentionedUnread(mentionUnreadByGroup.getOrDefault(groupId, 0L));
-        response.setPinned(pinnedByGroup.getOrDefault(groupId, false));
-        return response;
+        ChatGroupEntity group = requireGroupMember(projectId, groupId, actor);
+        return groupResponses(List.of(group), actor).getFirst();
     }
 
     @Transactional
     public GroupResponse update(UUID actor, UUID projectId, UUID groupId, GroupUpdateRequest body) {
-        access.requireProjectMember(projectId, actor);
-        ChatGroupEntity group = requireGroupInProject(projectId, groupId);
+        ChatGroupEntity group = requireGroupMember(projectId, groupId, actor);
         if (!group.getCreatedBy().equals(actor)) {
             access.requireProjectAdmin(projectId, actor);
+        }
+        if (body.getTitle() != null && body.getTitle().isBlank()) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "GROUP_TITLE_REQUIRED", "群名称不能为空");
+        }
+        if (body.getTitle() == null && body.getDescription() == null) {
+            return get(actor, projectId, groupId);
         }
         groupMapper.update(null, Wrappers.<ChatGroupEntity>lambdaUpdate()
                 .set(body.getTitle() != null, ChatGroupEntity::getName,
@@ -196,20 +182,23 @@ public class GroupService {
                 .eq(ChatGroupEntity::getId, groupId));
         eventService.publish(projectId, groupId, "group.updated", id(groupId),
                 Map.of("projectId", id(projectId), "groupId", id(groupId)));
-        return toResponse(groupMapper.selectById(groupId));
+        return get(actor, projectId, groupId);
     }
 
     public List<GroupMemberResponse> members(UUID actor, UUID projectId, UUID groupId) {
-        requireGroupMember(projectId, groupId, actor);
+        ChatGroupEntity group = requireGroupMember(projectId, groupId, actor);
         List<GroupMemberResponse> members = new ArrayList<>();
-        projectMemberMapper.selectMembers(projectId).stream()
+        boolean defaultGroup = isDefault(group);
+        var userMembers = defaultGroup ? projectMemberMapper.selectMembers(projectId) : groupUserMapper.selectMembers(groupId);
+        userMembers.stream()
                 .map(m -> new GroupMemberResponse(m.getUserId().toString(), m.getDisplayName(), m.getAvatarUrl(),
                         null, "USER"))
                 .forEach(members::add);
         // 群内参与聊天的 Agent 一并作为成员返回（群成员 = 真实用户 + Agent 混合）
-        for (UUID agentId : groupAgentMapper.selectAgentIds(groupId)) {
-            AgentEntity agent = agentMapper.selectById(agentId);
-            if (agent != null) {
+        List<UUID> agentIds = groupAgentMapper.selectAgentIds(groupId);
+        if (!agentIds.isEmpty()) {
+            for (AgentEntity agent : agentMapper.selectList(Wrappers.<AgentEntity>lambdaQuery()
+                    .in(AgentEntity::getId, agentIds))) {
                 members.add(new GroupMemberResponse(agent.getId().toString(), agent.getName(), agent.getAvatar(),
                         null, "AGENT"));
             }
@@ -217,9 +206,13 @@ public class GroupService {
         return members;
     }
 
-    public void requireGroupMember(UUID projectId, UUID groupId, UUID actor) {
+    public ChatGroupEntity requireGroupMember(UUID projectId, UUID groupId, UUID actor) {
         access.requireProjectMember(projectId, actor);
-        requireGroupInProject(projectId, groupId);
+        ChatGroupEntity group = requireGroupInProject(projectId, groupId);
+        if (!isDefault(group) && !groupUserMapper.selectUserIds(groupId).contains(actor)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
+        }
+        return group;
     }
 
     private String id(UUID value) {
@@ -243,7 +236,6 @@ public class GroupService {
     @Transactional
     public GroupPinResponse setPinned(UUID actor, UUID projectId, UUID groupId, boolean pinned) {
         requireGroupMember(projectId, groupId, actor);
-        requireGroupInProject(projectId, groupId);
         userGroupPreferenceMapper.upsertPin(actor, groupId, pinned);
         return new GroupPinResponse(id(groupId), pinned);
     }
@@ -260,24 +252,72 @@ public class GroupService {
         return toResponse(g, null, null);
     }
 
-    private GroupResponse toResponse(ChatGroupEntity g, GroupLatestMessageRow latest) {
-        return toResponse(g, latest, null);
-    }
-
     private GroupResponse toResponse(ChatGroupEntity g, GroupLatestMessageRow latest, Long unreadCount) {
         GroupLatestMessage latestMessage = latest == null ? null
                 : new GroupLatestMessage(latest.getSenderName(), latest.getText(), latest.getMessageType());
-        long members = projectMemberMapper.countMembers(g.getProjectId())
+        long members = (isDefault(g) ? projectMemberMapper.countMembers(g.getProjectId()) : groupUserMapper.selectUserIds(g.getId()).size())
                 + groupAgentMapper.selectAgentIds(g.getId()).size();
         GroupResponse response = new GroupResponse(g.getId().toString(), g.getProjectId().toString(),
                 g.getName(), g.getDescription(), id(g.getCreatedBy()), iso(g.getLastMessageAt()),
                 iso(g.getLastMessageAt() != null ? g.getLastMessageAt() : g.getCreatedAt()), latestMessage,
-                iso(g.getCreatedAt()), members, unreadCount == null ? 0L : unreadCount, 0L, false);
-        // 「@ 我」未读数默认 0，list/allGroups/get 按需覆盖
-        response.setMentionedUnread(0L);
-        // 置顶为个人偏好，默认 false；list/allGroups/get 按需覆盖
-        response.setPinned(false);
+                iso(g.getCreatedAt()), members, unreadCount == null ? 0L : unreadCount, 0L, false, isDefault(g));
         return response;
+    }
+
+    private boolean isDefault(ChatGroupEntity group) {
+        return Boolean.TRUE.equals(group.getDefaultGroup());
+    }
+
+    /** 项目成员可以建群，创建者自动加入；邀请范围限于当前项目及其团队 Agent。 */
+    @Transactional
+    public GroupResponse create(UUID actor, UUID projectId, GroupCreateRequest body) {
+        access.requireProjectMember(projectId, actor);
+        ChatGroupEntity group = new ChatGroupEntity();
+        group.setId(UuidV7.next());
+        group.setProjectId(projectId);
+        group.setCreatedBy(actor);
+        group.setDefaultGroup(false);
+        group.setName(body.getTitle().trim());
+        group.setDescription(body.getDescription());
+        group.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
+        validateInvites(actor, projectId, body.getUserIds(), body.getAgentIds());
+        groupMapper.insert(group);
+        groupUserMapper.insertUser(group.getId(), actor);
+        addMembers(group.getId(), body.getUserIds(), body.getAgentIds());
+        eventService.publish(projectId, group.getId(), "group.created", id(group.getId()),
+                Map.of("projectId", id(projectId), "groupId", id(group.getId())));
+        return toResponse(group);
+    }
+
+    @Transactional
+    public List<GroupMemberResponse> invite(UUID actor, UUID projectId, UUID groupId, GroupInviteRequest body) {
+        ChatGroupEntity group = requireGroupMember(projectId, groupId, actor);
+        validateInvites(actor, projectId, body.getUserIds(), body.getAgentIds());
+        // 默认群的用户随项目同步，只需追加 Agent。
+        addMembers(groupId, isDefault(group) ? List.of() : body.getUserIds(), body.getAgentIds());
+        eventService.publish(projectId, groupId, "group.member.updated", id(groupId),
+                Map.of("projectId", id(projectId), "groupId", id(groupId)));
+        return members(actor, projectId, groupId);
+    }
+
+    private void validateInvites(UUID actor, UUID projectId, List<UUID> users, List<UUID> agents) {
+        if (users == null || agents == null || users.stream().anyMatch(java.util.Objects::isNull) || agents.stream().anyMatch(java.util.Objects::isNull)) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_GROUP_MEMBER", "请选择有效成员");
+        }
+        for (UUID userId : users) access.requireProjectMember(projectId, userId);
+        UUID teamId = projectMapper.selectById(projectId).getTeamId();
+        for (UUID agentId : agents) {
+            AgentEntity agent = agentMapper.selectById(agentId);
+            if (agent == null || !teamId.equals(agent.getTeamId()) || !"ACTIVE".equals(agent.getStatus())
+                    || !("TEAM".equals(agent.getVisibility()) || actor.equals(agent.getCreatedBy()))) {
+                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_GROUP_AGENT", "请选择团队中可用的 Agent");
+            }
+        }
+    }
+
+    private void addMembers(UUID groupId, List<UUID> users, List<UUID> agents) {
+        users.stream().distinct().forEach(userId -> groupUserMapper.insertUser(groupId, userId));
+        agents.stream().distinct().forEach(agentId -> groupAgentMapper.insertAgent(groupId, agentId));
     }
 
     private String iso(LocalDateTime value) {

@@ -1,6 +1,5 @@
 package qg.qgent.realtime.service;
 
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
@@ -62,21 +61,21 @@ import java.util.stream.Collectors;
 public class EventService {
     private static final Logger log = LoggerFactory.getLogger(EventService.class);
 
-    /** SSE 连接保活心跳间隔（秒），每 15 秒一次。 */
+    // SSE 连接保活心跳间隔（秒），每 15 秒一次。
     private static final long HEARTBEAT_SECONDS = 15;
-    /** 增量事件轮询间隔（毫秒）。 */
+    // 增量事件轮询间隔（毫秒）。
     private static final long POLL_INTERVAL_MS = 2000;
-    /** 单次轮询批量拉取上限。 */
+    // 单次轮询批量拉取上限。
     private static final int BATCH_SIZE = 100;
-    /** 事件保留时长（小时），过期事件不再可续传。 */
+    // 事件保留时长（小时），过期事件不再可续传。
     private static final int RETENTION_HOURS = 24;
-    /** 单连接空闲超时（毫秒）：心跳会保活，超时后线程退出、客户端按 Last-Event-ID 重连。 */
+    // SSE 连接超时（毫秒）；超时后释放连接，由客户端按 Last-Event-ID 重连。
     private static final long SSE_TIMEOUT_MS = 30 * 60 * 1000L;
-    /** 三类 SSE 共用的连接上限；超过时返回 429。 */
+    // 三类 SSE 共用的连接上限；超过时返回 429。
     private static final int MAX_SSE_CONNECTIONS = 128;
-    /** 同一项目事件写入发生死锁时的最大新事务重试次数。 */
+    // 同一项目事件写入发生死锁时的最大新事务重试次数。
     private static final int EVENT_DEADLOCK_RETRIES = 3;
-    /** 死锁重试的初始退避时间（毫秒）。 */
+    // 死锁重试的初始退避时间（毫秒）。
     private static final long EVENT_DEADLOCK_BACKOFF_MS = 50L;
 
     private final EventMapper eventMapper;
@@ -93,7 +92,7 @@ public class EventService {
     private final TeamMapper teamMapper;
     private final TransactionTemplate eventTransaction;
     private final PerformanceMetrics metrics;
-    /** 每个 EventService Bean 专用的事务同步资源键，保存待提交的项目事件队列。 */
+    // 每个 EventService Bean 专用的事务同步资源键，保存待提交的项目事件队列。
     private final Object projectEventQueueResource = new Object();
     private final AtomicInteger activeSseConnections = new AtomicInteger();
 
@@ -139,7 +138,7 @@ public class EventService {
         }
     }
 
-    /** 保留测试与既有直接构造调用；生产 Spring Bean 始终使用包含用户、团队锁 Mapper 的构造器。 */
+    /** 单元测试构造器；生产装配使用包含用户、团队锁 Mapper 的构造器。 */
     public EventService(EventMapper eventMapper, ProjectAccessService projectAccess,
                         NotificationEventMapper notificationEventMapper, TeamEventMapper teamEventMapper,
                         RealtimeHub realtimeHub,
@@ -151,7 +150,7 @@ public class EventService {
                 null, null, null, null);
     }
 
-    /** 保留测试与既有直接构造调用的完整构造器，不启用生产事务重试。 */
+    /** 单元测试构造器，不配置事务重试。 */
     public EventService(EventMapper eventMapper, ProjectAccessService projectAccess,
                         NotificationEventMapper notificationEventMapper, TeamEventMapper teamEventMapper,
                         RealtimeHub realtimeHub,
@@ -264,6 +263,12 @@ public class EventService {
         event.setPayload(request.payload);
         event.setCreatedAt(now);
         eventMapper.insert(event);
+        if (request.groupId != null) {
+            var group = groupMapper.selectById(request.groupId);
+            if (group != null && Boolean.FALSE.equals(group.getDefaultGroup())) {
+                return Set.copyOf(groupMapper.selectUserIds(request.groupId));
+            }
+        }
         return projectMembers(request.projectId);
     }
 
@@ -373,14 +378,18 @@ public class EventService {
         projectAccess.requireProjectMember(projectId, userId);
         long cursor = resolveCursor(lastEventId, () -> eventMapper.minSequence(projectId),
                 () -> eventMapper.maxSequence(projectId));
-        Set<UUID> visibleGroups = groupMapper.selectList(Wrappers.<ChatGroupEntity>lambdaQuery()
-                        .eq(ChatGroupEntity::getProjectId, projectId)).stream()
-                .map(ChatGroupEntity::getId).collect(Collectors.toSet());
         return openStream("project", projectId, cursor, after ->
                 eventMapper.listAfter(projectId, after, BATCH_SIZE).stream()
                         .map(event -> new SseEvent(event.getSequenceNo(), event.getEventType(), event.getPayload(),
-                                event.getGroupId() == null || visibleGroups.contains(event.getGroupId())))
+                                event.getGroupId() == null || canSeeGroup(event.getGroupId(), userId)))
                         .toList(), true);
+    }
+
+    /** 每次读取事件时核对成员，已有连接也能收到刚创建或刚被邀请的群事件。 */
+    private boolean canSeeGroup(UUID groupId, UUID userId) {
+        ChatGroupEntity group = groupMapper.selectById(groupId);
+        return group != null && (Boolean.TRUE.equals(group.getDefaultGroup())
+                || groupMapper.selectUserIds(groupId).contains(userId));
     }
 
     /** 不传游标时从最新事件开始；无效或过期的续传点拒绝连接。 */
@@ -456,7 +465,7 @@ public class EventService {
     private record SseEvent(long sequenceNo, String type, Map<String, Object> payload, boolean visible) {
     }
 
-    /** 兼容旧数据：早期创建事件曾错误持久化业务通知类型，SSE 协议仍须使用通知事件名。 */
+    /** 通知 SSE 使用 notification.* 事件名；业务通知类型统一映射为 notification.created。 */
     String notificationEventType(String kind) {
         return kind != null && kind.startsWith("notification.") ? kind : "notification.created";
     }
@@ -484,7 +493,9 @@ public class EventService {
         }
     }
 
-    /** 尝试占用一个 SSE 连接槽位。超过 {@link #MAX_SSE_CONNECTIONS} 时返回 false， 调用方应拒绝建立新连接（429），避免连接堆积耗尽泵线程（固定 8 线程池排队） 与数据库连接（每个泵线程周期性查询事件表）。 */
+    /**
+     * 尝试占用一个 SSE 连接槽位。超过 {@link #MAX_SSE_CONNECTIONS} 时返回 false， 调用方应拒绝建立新连接（429），避免连接堆积耗尽泵线程（固定 8 线程池排队） 与数据库连接（每个泵线程周期性查询事件表）。
+     */
     private boolean acquireSseSlot() {
         while (true) {
             int current = activeSseConnections.get();

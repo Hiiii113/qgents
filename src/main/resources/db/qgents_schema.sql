@@ -143,12 +143,22 @@ CREATE TABLE IF NOT EXISTS
         last_message_at DATETIME (6) NULL COMMENT '最近消息时间（UTC）',
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
         updated_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',
-        UNIQUE KEY uk_chat_project (project_id),
+        KEY idx_chat_project (project_id),
+        default_project_id BINARY(16) GENERATED ALWAYS AS (IF(default_group, project_id, NULL)) STORED,
+        UNIQUE KEY uk_chat_default_project (default_project_id),
         KEY idx_rg_creator (created_by),
         CONSTRAINT fk_rg_project FOREIGN KEY (project_id) REFERENCES projects (id),
         CONSTRAINT fk_rg_creator FOREIGN KEY (created_by) REFERENCES users (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目需求讨论与协作上下文群';
 
+
+CREATE TABLE IF NOT EXISTS group_users (
+    group_id BINARY(16) NOT NULL,
+    user_id BINARY(16) NOT NULL,
+    PRIMARY KEY (group_id, user_id),
+    CONSTRAINT fk_gu_group FOREIGN KEY (group_id) REFERENCES chat_groups(id) ON DELETE CASCADE,
+    CONSTRAINT fk_gu_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '新建群聊的用户成员';
 
 CREATE TABLE IF NOT EXISTS
     messages (
@@ -359,7 +369,7 @@ CREATE TABLE IF NOT EXISTS
         project_id BINARY(16) NOT NULL COMMENT '所属项目ID',
         group_id BINARY(16) NULL COMMENT '可选关联项目群聊ID',
         sequence_no BIGINT UNSIGNED NOT NULL COMMENT '项目内单调递增事件序号，作为SSE游标',
-        event_type VARCHAR(64) NOT NULL COMMENT '事件类型，如task.updated/agent-run.updated',
+        event_type VARCHAR(64) NOT NULL COMMENT '事件类型，如message.created/agent-run.updated',
         resource_id VARCHAR(128) NULL COMMENT '关联资源ID字符串，如agentRunId',
         payload JSON NOT NULL COMMENT '脱敏事件载荷JSON，禁止包含凭证',
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '产生时间（UTC）',

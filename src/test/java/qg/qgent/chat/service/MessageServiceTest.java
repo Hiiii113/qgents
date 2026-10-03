@@ -28,7 +28,6 @@ import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.mapper.ProjectMapper;
-import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.user.mapper.UserMapper;
 
@@ -43,9 +42,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-/**
- * 群聊消息的发送、引用与 Agent 身份验证。
- */
+/** 群聊消息的发送、引用与 Agent 身份验证。 */
 class MessageServiceTest {
 
     @BeforeEach
@@ -84,7 +81,7 @@ class MessageServiceTest {
         when(groups.selectOne(any())).thenReturn(group);
         when(projects.selectById(projectId)).thenReturn(project);
         MessageService service = new MessageService(messages, groups, groupAgents, mock(UserMapper.class), agents,
-                projects, mock(ProjectAccessService.class), mock(GroupService.class),
+                projects, mock(GroupService.class),
                 new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 mock(ApplicationEventPublisher.class));
         MessageSendRequest request = new MessageSendRequest();
@@ -147,7 +144,7 @@ class MessageServiceTest {
         when(messages.selectById(any())).thenAnswer(invocation -> inserted.get());
         when(groupAgents.insertAgent(groupId, agentId)).thenReturn(1);
         MessageService service = new MessageService(messages, groups, groupAgents, mock(UserMapper.class), agents,
-                projects, mock(ProjectAccessService.class), mock(GroupService.class),
+                projects, mock(GroupService.class),
                 new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 mock(ApplicationEventPublisher.class));
         MessageSendRequest request = new MessageSendRequest();
@@ -184,7 +181,7 @@ class MessageServiceTest {
         ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
         MessageService service = new MessageService(messages, groups, mock(GroupAgentMapper.class),
                 mock(UserMapper.class), mock(AgentMapper.class), mock(ProjectMapper.class),
-                mock(ProjectAccessService.class), mock(GroupService.class), new ObjectMapper(),
+                mock(GroupService.class), new ObjectMapper(),
                 mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 publisher);
         MessageSendRequest request = new MessageSendRequest();
@@ -240,7 +237,7 @@ class MessageServiceTest {
         when(messages.insert(any(MessageEntity.class))).thenThrow(new DuplicateKeyException("duplicate"));
         MessageService service = new MessageService(messages, groups, mock(GroupAgentMapper.class),
                 mock(UserMapper.class), mock(AgentMapper.class), mock(ProjectMapper.class),
-                mock(ProjectAccessService.class), mock(GroupService.class), new ObjectMapper(),
+                mock(GroupService.class), new ObjectMapper(),
                 mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class), publisher);
         MessageSendRequest request = new MessageSendRequest();
         request.setType("TEXT");
@@ -289,7 +286,7 @@ class MessageServiceTest {
         when(projects.selectById(group.getProjectId())).thenReturn(project);
         MessageService service = new MessageService(messages, groups, mock(GroupAgentMapper.class),
                 mock(UserMapper.class), agents, projects,
-                mock(ProjectAccessService.class), mock(GroupService.class),
+                mock(GroupService.class),
                 new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 mock(ApplicationEventPublisher.class));
 
@@ -345,7 +342,7 @@ class MessageServiceTest {
         when(projects.selectById(group.getProjectId())).thenReturn(project);
         MessageService service = new MessageService(messages, groups, mock(GroupAgentMapper.class),
                 mock(UserMapper.class), agents, projects,
-                mock(ProjectAccessService.class), mock(GroupService.class),
+                mock(GroupService.class),
                 new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 mock(ApplicationEventPublisher.class));
 
@@ -377,7 +374,7 @@ class MessageServiceTest {
 
         MessageService service = new MessageService(messages, groups, mock(GroupAgentMapper.class),
                 mock(UserMapper.class), mock(AgentMapper.class), mock(ProjectMapper.class),
-                mock(ProjectAccessService.class), groupService,
+                groupService,
                 new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 mock(ApplicationEventPublisher.class));
 
@@ -401,7 +398,7 @@ class MessageServiceTest {
         when(groups.selectById(groupId)).thenReturn(group);
         MessageService service = new MessageService(messages, groups, mock(GroupAgentMapper.class),
                 mock(UserMapper.class), mock(AgentMapper.class), mock(ProjectMapper.class),
-                mock(ProjectAccessService.class), mock(GroupService.class),
+                mock(GroupService.class),
                 new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 mock(ApplicationEventPublisher.class));
 

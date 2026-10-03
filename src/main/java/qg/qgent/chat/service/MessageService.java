@@ -20,6 +20,7 @@ import qg.qgent.chat.dto.MessageSendRequest;
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.event.MessageSentEvent;
+import qg.qgent.chat.event.MessageSentListener;
 import qg.qgent.chat.mapper.GroupAgentMapper;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
@@ -30,7 +31,6 @@ import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.mapper.ProjectMapper;
-import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
@@ -41,9 +41,7 @@ import java.time.ZoneOffset;
 import java.util.*;
 import java.util.stream.Collectors;
 
-/**
- * 群消息业务：发送（类型校验、clientMessageId 幂等、sequence 单调递增）与游标分页拉取（契约 §7）。
- */
+/** 群消息业务：发送、clientMessageId 去重、消息序号分配、历史分页与断线补拉。 */
 @Service
 public class MessageService {
     private static final Logger log = LoggerFactory.getLogger(MessageService.class);
@@ -56,7 +54,6 @@ public class MessageService {
     private final UserMapper userMapper;
     private final AgentMapper agentMapper;
     private final ProjectMapper projectMapper;
-    private final ProjectAccessService access;
     private final GroupService groupService;
     private final ObjectMapper mapper;
     private final EventService eventService;
@@ -66,7 +63,7 @@ public class MessageService {
 
     public MessageService(MessageMapper messageMapper, ChatGroupMapper groupMapper,
                           GroupAgentMapper groupAgentMapper, UserMapper userMapper, AgentMapper agentMapper,
-                          ProjectMapper projectMapper, ProjectAccessService access, GroupService groupService,
+                          ProjectMapper projectMapper, GroupService groupService,
                           ObjectMapper mapper,
                           EventService eventService, NotificationService notificationService,
                           AttachmentService attachmentService, ApplicationEventPublisher eventPublisher) {
@@ -76,7 +73,6 @@ public class MessageService {
         this.userMapper = userMapper;
         this.agentMapper = agentMapper;
         this.projectMapper = projectMapper;
-        this.access = access;
         this.groupService = groupService;
         this.mapper = mapper;
         this.eventService = eventService;
@@ -90,7 +86,6 @@ public class MessageService {
      * <p>
      * 发送前持有群行锁（FOR UPDATE）以保证 sequence 单调递增；client_message_id 在同一群内唯一，
      * 断线重试或并发撞唯一键时返回原消息（幂等）。
-     *
      * @param actor     当前用户 ID
      * @param projectId 项目 ID
      * @param groupId   项目群聊 ID
@@ -99,7 +94,7 @@ public class MessageService {
      */
     @Transactional
     public MessageResponse send(UUID actor, UUID projectId, UUID groupId, MessageSendRequest body) {
-        // 群成员可见性（契约 2026-08-17 严格收紧）：主群=项目成员，项目群聊=群成员
+        // 默认群对项目成员开放，新建群要求受邀成员身份。
         groupService.requireGroupMember(projectId, groupId, actor);
         ChatGroupEntity group = lockGroup(groupId);
         if (group == null || !group.getProjectId().equals(projectId)) {
@@ -112,10 +107,9 @@ public class MessageService {
 
     /**
      * 对被 @ 的用户生成站内通知（MESSAGE_MENTION）：发送者、群名与消息文本摘要进通知内容；
-     * 排除发送者本人；@Agent 不在此处理（走任务触发）。通知失败不影响消息发送（日志兜底）。
+     * 排除发送者本人；被提及的 Agent 由消息监听器启动 loop。通知失败不影响消息发送。
      * <p>
      * 由 {@link MessageSentListener} 在消息事务提交后异步调用，不再占用发送事务与群行锁。
-     *
      * @param event      消息发送事件（含 actor/projectId/groupId/messageId/mentions）
      * @param groupName  来源群名（已查好，避免再查一次）
      * @param textPreview 消息文本摘要（由监听器从已落库消息提取；为空则通知不含摘要）
@@ -183,7 +177,6 @@ public class MessageService {
      * 提取已落库消息的文本摘要（最长 60 字符），供 {@link MessageSentListener} 在事务提交后生成 @ 通知内容。
      * <p>
      * 解析失败返回空串而非抛异常：通知失败不阻塞、摘要缺失只影响通知文案。
-     *
      * @param message 已落库消息
      * @return 文本摘要（可能为空串）
      */
@@ -242,7 +235,6 @@ public class MessageService {
      * <p>
      * Agent 不是登录用户，不执行项目成员校验；服务端校验其 Team 归属与启用状态。
      * 与用户消息共用 sequence 单调递增与 client_message_id 幂等逻辑，响应 senderType=AGENT。
-     *
      * @param groupId 项目群聊 ID
      * @param agentId Agent ID
      * @param body    发送请求
@@ -282,16 +274,12 @@ public class MessageService {
 
     private MessageResponse doSend(UUID projectId, UUID groupId, UUID authorUserId, UUID agentId,
                                    MessageSendRequest body) {
-        return doSend(projectId, groupId, authorUserId, agentId, body, normalizeType(body.getType()));
-    }
-
-    private MessageResponse doSend(UUID projectId, UUID groupId, UUID authorUserId, UUID agentId,
-                                   MessageSendRequest body, String type) {
+        String type = normalizeType(body.getType());
         validateContent(type, body.getContent());
         List<Mention> mentions = body.getMentions() == null ? List.of() : body.getMentions();
         String clientMessageId = trimmed(body.getClientMessageId());
 
-        // clientMessageId 幂等：断线重试命中直接返回原消息（优先于其余字段校验）
+        // clientMessageId 去重：重试命中后返回原消息，不重复写入或触发提及。
         if (clientMessageId != null) {
             MessageEntity existing = findByClientMessageId(groupId, clientMessageId);
             if (existing != null) {
@@ -350,7 +338,7 @@ public class MessageService {
             eventPublisher.publishEvent(new MessageSentEvent(authorUserId, projectId, groupId,
                     message.getId(), mentions));
         }
-        return toResponse(messageMapper.selectById(message.getId()));
+        return toResponse(message);
     }
 
     private String id(UUID value) {
@@ -359,7 +347,6 @@ public class MessageService {
 
     /**
      * 游标拉取群消息，新消息在前；limit 默认 30、最大 100。
-     *
      * @param actor     当前用户 ID
      * @param projectId 项目 ID
      * @param groupId   项目群聊 ID
@@ -368,12 +355,8 @@ public class MessageService {
      * @return 消息分页结果
      */
     public PageSlice<MessageResponse> list(UUID actor, UUID projectId, UUID groupId, String cursor, int limit) {
-        // 群成员可见性（契约 2026-08-17 严格收紧）：主群=项目成员，项目群聊=群成员
+        // 默认群对项目成员开放，新建群要求受邀成员身份。
         groupService.requireGroupMember(projectId, groupId, actor);
-        ChatGroupEntity group = groupMapper.selectById(groupId);
-        if (group == null || !group.getProjectId().equals(projectId)) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
-        }
         Long cursorSequence = decodeCursor(cursor);
         int pageSize = Math.min(Math.max(limit, 1), 100);
         List<MessageEntity> rows = messageMapper.selectList(Wrappers.<MessageEntity>lambdaQuery()
@@ -383,11 +366,7 @@ public class MessageService {
                 .last("limit " + (pageSize + 1)));
         boolean hasMore = rows.size() > pageSize;
         List<MessageEntity> pageRows = rows.stream().limit(pageSize).toList();
-        // 批量加载发送者显示名，避免逐条消息按 senderId 查询造成 N+1
-        Map<UUID, String> userNames = loadUserNames(pageRows);
-        Map<UUID, String> agentNames = loadAgentNames(pageRows);
-        List<MessageResponse> views = pageRows.stream().map(m -> toResponse(m, userNames, agentNames)).toList();
-        views.forEach(v -> enrichAttachmentPreview(v, projectId));
+        List<MessageResponse> views = messageResponses(pageRows, projectId);
         String nextCursor = hasMore && !views.isEmpty()
                 ? encodeCursor(views.get(views.size() - 1).getSequence())
                 : null;
@@ -401,10 +380,6 @@ public class MessageService {
     public PageSlice<MessageResponse> listAfterSequence(UUID actor, UUID projectId, UUID groupId,
                                                          long afterSequence, int limit) {
         groupService.requireGroupMember(projectId, groupId, actor);
-        ChatGroupEntity group = groupMapper.selectById(groupId);
-        if (group == null || !group.getProjectId().equals(projectId)) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
-        }
         if (afterSequence < 0) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_MESSAGE_CURSOR", "afterSequence 必须为非负数");
         }
@@ -412,21 +387,17 @@ public class MessageService {
         List<MessageEntity> rows = messageMapper.selectAfterSequence(groupId, afterSequence, pageSize + 1);
         boolean hasMore = rows.size() > pageSize;
         List<MessageEntity> pageRows = rows.stream().limit(pageSize).toList();
-        Map<UUID, String> userNames = loadUserNames(pageRows);
-        Map<UUID, String> agentNames = loadAgentNames(pageRows);
-        List<MessageResponse> views = pageRows.stream().map(m -> toResponse(m, userNames, agentNames)).toList();
-        views.forEach(v -> enrichAttachmentPreview(v, projectId));
+        List<MessageResponse> views = messageResponses(pageRows, projectId);
         String nextCursor = hasMore && !views.isEmpty()
                 ? String.valueOf(views.get(views.size() - 1).getSequence()) : null;
         return new PageSlice<>(views, new PageInfo(nextCursor, hasMore));
     }
 
     /**
-     * 按消息 ID 拉取单条群消息（通知跳转精确定位用，契约「群聊@提及-后端接口补充」§六）。
+     * 按消息 ID 拉取单条群消息，供通知跳转和回复定位使用。
      * <p>
      * 场景：通知点击跳转后，目标消息较旧不在前端已加载的分页窗口内时，前端调用本接口拉取
      * 该条消息合并进本地列表再滚动高亮。权限与群成员可见性校验同列表接口。
-     *
      * @param actor     当前用户 ID
      * @param projectId 项目 ID
      * @param groupId   项目群聊 ID
@@ -434,12 +405,8 @@ public class MessageService {
      * @return 消息视图（含发送者名称）
      */
     public MessageResponse getMessage(UUID actor, UUID projectId, UUID groupId, UUID messageId) {
-        // 群成员可见性（契约 2026-08-17 严格收紧）：主群=项目成员，项目群聊=群成员
+        // 默认群对项目成员开放，新建群要求受邀成员身份。
         groupService.requireGroupMember(projectId, groupId, actor);
-        ChatGroupEntity group = groupMapper.selectById(groupId);
-        if (group == null || !group.getProjectId().equals(projectId)) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
-        }
         MessageEntity message = messageMapper.selectById(messageId);
         if (message == null || !groupId.equals(message.getGroupId())) {
             throw new ApiException(HttpStatus.NOT_FOUND, "MESSAGE_NOT_FOUND", "消息不存在或不属于该群");
@@ -491,6 +458,15 @@ public class MessageService {
         }
     }
 
+    /** 历史分页与增量补拉共用响应组装，批量查询发送者名称。 */
+    private List<MessageResponse> messageResponses(List<MessageEntity> rows, UUID projectId) {
+        Map<UUID, String> userNames = loadUserNames(rows);
+        Map<UUID, String> agentNames = loadAgentNames(rows);
+        List<MessageResponse> responses = rows.stream().map(m -> toResponse(m, userNames, agentNames)).toList();
+        responses.forEach(response -> enrichAttachmentPreview(response, projectId));
+        return responses;
+    }
+
     private MessageResponse toResponse(MessageEntity m) {
         // 单条路径（发送/幂等返回）逐条解析发送者名称；列表路径使用批量加载版本 toResponse(m, userNames, agentNames)
         String senderName = m.getAgentId() != null
@@ -530,16 +506,12 @@ public class MessageService {
                 iso(m.getCreatedAt()));
     }
 
-    /**
-     * 时间统一序列化为 UTC 并带 Z 后缀（ISO8601），避免前端按本地时区误解析。
-     */
+    /** 时间统一序列化为 UTC 并带 Z 后缀（ISO8601），避免前端按本地时区误解析。 */
     private String iso(LocalDateTime value) {
         return value == null ? null : value.toInstant(ZoneOffset.UTC).toString();
     }
 
-    /**
-     * 批量加载消息页中出现的用户显示名，返回 userId → displayName。
-     */
+    /** 批量加载消息页中出现的用户显示名，返回 userId → displayName。 */
     private Map<UUID, String> loadUserNames(List<MessageEntity> pageRows) {
         Set<UUID> userIds = pageRows.stream().map(MessageEntity::getAuthorUserId).filter(Objects::nonNull)
                 .collect(Collectors.toSet());
@@ -552,9 +524,7 @@ public class MessageService {
                                 : u.getDisplayName()));
     }
 
-    /**
-     * 批量加载消息页中出现的 Agent 名称，返回 agentId → name。
-     */
+    /** 批量加载消息页中出现的 Agent 名称，返回 agentId → name。 */
     private Map<UUID, String> loadAgentNames(List<MessageEntity> pageRows) {
         Set<UUID> agentIds = pageRows.stream().map(MessageEntity::getAgentId).filter(Objects::nonNull)
                 .collect(Collectors.toSet());

@@ -11,9 +11,7 @@ import qg.qgent.common.persistence.typehandler.UuidBinaryTypeHandler;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * 群消息数据访问。
- */
+/** 群消息数据访问。 */
 @Mapper
 public interface MessageMapper extends BaseMapper<MessageEntity> {
 
@@ -21,7 +19,6 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
      * 计算群内下一个单调递增消息序号。
      * <p>
      * 调用方必须在事务内先持有群行锁（chat_groups FOR UPDATE），避免并发重号。
-     *
      * @param groupId 项目群聊 ID
      * @return 下一个序号（当前最大值 + 1，空群为 1）
      */
@@ -54,7 +51,6 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
 
     /**
      * 批量查询指定群的最新一条消息摘要。调用方必须先完成项目与群成员权限校验。
-     *
      * @param groupIds 已确认可见的群 ID
      * @return 每个有消息群的最新消息摘要
      */
@@ -86,11 +82,10 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
     List<GroupLatestMessageRow> selectLatestByGroupIds(@Param("groupIds") List<UUID> groupIds);
 
     /**
-     * 按关键字检索项目内群消息的文本内容（点6 上下文检索）。
+     * 按关键字检索项目内群消息的文本内容。
      * <p>
      * 仅检索当前项目下的消息（通过 chat_groups 归属限定，防跨项目泄露）；
      * 仅检索调用方已完成访问校验的可见群。关键字匹配 content JSON 的 {@code $.text}，按 sequence 倒序。
-     *
      * @param projectId 项目 ID
      * @param groupIds  当前用户可见的群 ID，不能为空列表
      * @param q         关键字，不能为空
@@ -125,7 +120,6 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
     /**
      * 批量计算指定可见群的未读消息数（排除本人消息）。
      * <p>已读游标通过 LEFT JOIN 一次关联，避免对每条消息执行相关子查询。</p>
-     *
      * @param groupIds 已确认可见的群 ID
      * @param userId 当前用户 ID
      * @return 群 ID → 未读数，仅返回未读数大于 0 的群
@@ -138,7 +132,7 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
             "WHERE m.group_id IN ",
             "(<foreach collection='groupIds' item='groupId' separator=','>#{groupId}</foreach>) ",
             "AND m.sequence_no &gt; COALESCE(r.last_read_sequence_no, 0) ",
-            "AND m.author_user_id &lt;&gt; #{userId} ",
+            "AND (m.author_user_id IS NULL OR m.author_user_id &lt;&gt; #{userId}) ",
             "GROUP BY m.group_id",
             "</script>"})
     @Results({
@@ -157,7 +151,6 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
      * 注意：mentions 里存的 id 是 Jackson 序列化的字符串 UUID；而 {@code userId} 参数受全局
      * {@link UuidBinaryTypeHandler} 影响会以 BINARY(16) 绑定，直接 CAST 成乱码，JSON_CONTAINS
      * 永远匹配不上。因此 JSON 匹配必须使用独立传入的字符串参数 {@code userIdText}。
-     *
      * @param groupIds   已确认可见的群 ID
      * @param userId     当前用户 ID（BINARY(16) 绑定，用于游标/发送者比较）
      * @param userIdText 当前用户 ID 的字符串形式（JSON 匹配用）
@@ -171,7 +164,7 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
             "WHERE m.group_id IN ",
             "(<foreach collection='groupIds' item='groupId' separator=','>#{groupId}</foreach>) ",
             "AND m.sequence_no &gt; COALESCE(r.last_read_sequence_no, 0) ",
-            "AND m.author_user_id &lt;&gt; #{userId} ",
+            "AND (m.author_user_id IS NULL OR m.author_user_id &lt;&gt; #{userId}) ",
             "AND JSON_CONTAINS(m.mentions, JSON_OBJECT('type', 'USER', 'id', #{userIdText})) ",
             "GROUP BY m.group_id",
             "</script>"})
@@ -194,7 +187,6 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
      * MySQL 不允许在 DELETE 的 FROM/子查询中再次读取目标表（error 1093），因此把
      * 「被引用的父行 id」子查询用派生表 {@code AS tmp} 包一层，让 MySQL 先物化；
      * 同时用 {@code IS NOT NULL} 排除空值，避免 {@code NOT IN} 遇到 NULL 时整体失效。
-     *
      * @param groupIds 待删除消息所属的项目群聊 ID 集合（非空）
      * @return 本次实际删除的行数；为 0 表示已无满足条件的消息
      */

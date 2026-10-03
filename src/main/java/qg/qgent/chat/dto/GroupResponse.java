@@ -6,9 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 
-/**
- * 项目群聊视图（契约 §7 统一 Group）。
- */
+/** 项目群聊视图，包含消息摘要及当前用户的未读和置顶状态。 */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -44,7 +42,7 @@ public class GroupResponse {
     private String createdAt;
 
 
-    @Schema(description = "群成员数（= 项目成员数）")
+    @Schema(description = "群内用户及 Agent 数")
     private Long memberCount;
 
     @Schema(description = "当前用户在该群的未读消息数（排除本人消息），≥ 0")
@@ -55,4 +53,7 @@ public class GroupResponse {
 
     @Schema(description = "当前用户是否置顶该群（个人偏好，默认 false）")
     private Boolean pinned;
+
+    // 默认群随项目创建，用户成员与项目同步。
+    private Boolean defaultGroup;
 }

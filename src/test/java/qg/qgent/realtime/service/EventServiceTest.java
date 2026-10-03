@@ -18,6 +18,8 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import qg.qgent.chat.mapper.ChatGroupMapper;
+import qg.qgent.chat.entity.ChatGroupEntity;
+import java.util.Set;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.entity.NotificationEventEntity;
 import qg.qgent.notification.mapper.NotificationEventMapper;
@@ -48,6 +50,27 @@ import static org.mockito.Mockito.when;
 
 /** 事件发布与过期清理的事务边界测试。 */
 class EventServiceTest {
+
+    @Test
+    void newGroupEventsGoToInvitedUsersAndMembershipIsReadDynamically() {
+        EventMapper events = mock(EventMapper.class);
+        ChatGroupMapper groups = mock(ChatGroupMapper.class);
+        RealtimeHub hub = mock(RealtimeHub.class);
+        UUID projectId = UUID.randomUUID(), groupId = UUID.randomUUID(), invited = UUID.randomUUID();
+        ChatGroupEntity group = new ChatGroupEntity(); group.setId(groupId); group.setDefaultGroup(false);
+        when(groups.selectById(groupId)).thenReturn(group);
+        when(groups.selectUserIds(groupId)).thenReturn(List.of(invited));
+        EventService service = new EventService(events, mock(ProjectAccessService.class), mock(NotificationEventMapper.class),
+                mock(TeamEventMapper.class), hub, mock(ProjectMemberMapper.class), mock(TeamMemberMapper.class),
+                groups, mock(ProjectMapper.class));
+        service.publish(projectId, groupId, "group.created", groupId.toString(), Map.of());
+        verify(hub).broadcastToUsers(org.mockito.ArgumentMatchers.eq(Set.of(invited)), any());
+        assertEquals(true, ReflectionTestUtils.invokeMethod(service, "canSeeGroup", groupId, invited));
+        UUID laterInvite = UUID.randomUUID();
+        assertEquals(false, ReflectionTestUtils.invokeMethod(service, "canSeeGroup", groupId, laterInvite));
+        when(groups.selectUserIds(groupId)).thenReturn(List.of(invited, laterInvite));
+        assertEquals(true, ReflectionTestUtils.invokeMethod(service, "canSeeGroup", groupId, laterInvite));
+    }
 
     @ParameterizedTest
     @ValueSource(strings = {"project", "team", "notification"})

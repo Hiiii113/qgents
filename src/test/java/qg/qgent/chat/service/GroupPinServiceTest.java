@@ -8,6 +8,8 @@ import org.springframework.http.HttpStatus;
 import qg.qgent.agent.mapper.AgentMapper;
 import qg.qgent.chat.dto.GroupPinResponse;
 import qg.qgent.chat.dto.GroupResponse;
+import qg.qgent.chat.dto.GroupUpdateRequest;
+import qg.qgent.chat.mapper.view.GroupLatestMessageRow;
 import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.mapper.GroupAgentMapper;
 import qg.qgent.chat.mapper.GroupReadStateMapper;
@@ -19,7 +21,6 @@ import qg.qgent.project.mapper.ProjectMemberMapper;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.user.mapper.UserGroupPreferenceMapper;
-import qg.qgent.user.mapper.UserMapper;
 
 import java.util.List;
 import java.util.UUID;
@@ -35,9 +36,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/**
- * 群聊置顶（个人偏好持久化）：列表返回 pinned、setPinned 幂等 upsert、非项目成员 403。
- */
+/** 群聊置顶（个人偏好持久化）：列表返回 pinned、setPinned 幂等 upsert、非项目成员 403。 */
 class GroupPinServiceTest {
 
     private final ChatGroupMapper groupMapper = mock(ChatGroupMapper.class);
@@ -45,7 +44,6 @@ class GroupPinServiceTest {
     private final ProjectMapper projectMapper = mock(ProjectMapper.class);
     private final GroupAgentMapper groupAgentMapper = mock(GroupAgentMapper.class);
     private final AgentMapper agentMapper = mock(AgentMapper.class);
-    private final UserMapper userMapper = mock(UserMapper.class);
     private final MessageMapper messageMapper = mock(MessageMapper.class);
     private final GroupReadStateMapper groupReadStateMapper = mock(GroupReadStateMapper.class);
     private final UserGroupPreferenceMapper userGroupPreferenceMapper = mock(UserGroupPreferenceMapper.class);
@@ -53,7 +51,7 @@ class GroupPinServiceTest {
     private final EventService eventService = mock(EventService.class);
 
     private final GroupService service = new GroupService(groupMapper, projectMemberMapper,
-            projectMapper, groupAgentMapper, agentMapper, userMapper,
+            projectMapper, groupAgentMapper, agentMapper, mock(qg.qgent.chat.mapper.GroupUserMapper.class),
             messageMapper, groupReadStateMapper, userGroupPreferenceMapper, access, eventService);
 
     private final UUID projectId = UUID.randomUUID();
@@ -104,6 +102,33 @@ class GroupPinServiceTest {
 
         assertEquals(1, groups.size());
         assertFalse(groups.get(0).getPinned());
+    }
+
+    @Test
+    void detailIncludesLatestMessageAndPersonalPin() {
+        GroupLatestMessageRow latest = new GroupLatestMessageRow();
+        latest.setGroupId(groupId);
+        latest.setSenderName("助手");
+        latest.setText("已完成修改");
+        latest.setMessageType("TEXT");
+        when(messageMapper.selectLatestByGroupIds(List.of(groupId))).thenReturn(List.of(latest));
+        when(userGroupPreferenceMapper.selectPinnedGroupIds(memberA, List.of(groupId))).thenReturn(List.of(groupId));
+
+        GroupResponse response = service.get(memberA, projectId, groupId);
+
+        assertEquals("已完成修改", response.getLatestMessage().getText());
+        assertTrue(response.getPinned());
+    }
+
+    @Test
+    void updateRejectsBlankTitleWithoutWritingOrPublishing() {
+        GroupUpdateRequest body = new GroupUpdateRequest();
+        body.setTitle("  ");
+
+        ApiException error = assertThrows(ApiException.class, () -> service.update(creator, projectId, groupId, body));
+
+        assertEquals("GROUP_TITLE_REQUIRED", error.code());
+        org.mockito.Mockito.verifyNoInteractions(eventService);
     }
 
     @Test

@@ -3,6 +3,13 @@ package qg.qgent.chat.service;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import qg.qgent.agent.mapper.AgentMapper;
+import qg.qgent.agent.entity.AgentEntity;
+import qg.qgent.project.entity.ProjectEntity;
+import qg.qgent.chat.dto.GroupCreateRequest;
+import qg.qgent.chat.dto.GroupInviteRequest;
+import qg.qgent.common.web.ApiException;
+import java.util.List;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.event.*;
 import qg.qgent.chat.mapper.*;
@@ -19,8 +26,12 @@ import static org.mockito.Mockito.*;
 class ProjectChatTest {
     private final ChatGroupMapper groups = mock(ChatGroupMapper.class);
     private final ProjectAccessService access = mock(ProjectAccessService.class);
+    private final GroupUserMapper users = mock(GroupUserMapper.class);
+    private final GroupAgentMapper agents = mock(GroupAgentMapper.class);
+    private final AgentMapper agentMapper = mock(AgentMapper.class);
+    private final ProjectMapper projects = mock(ProjectMapper.class);
     private final GroupService service = new GroupService(groups, mock(ProjectMemberMapper.class),
-            mock(ProjectMapper.class), mock(GroupAgentMapper.class), mock(AgentMapper.class), mock(UserMapper.class),
+            projects, agents, agentMapper, users,
             mock(MessageMapper.class), mock(GroupReadStateMapper.class), mock(UserGroupPreferenceMapper.class),
             access, mock(EventService.class));
 
@@ -50,5 +61,64 @@ class ProjectChatTest {
         when(groups.selectById(groupId)).thenReturn(group);
         service.requireGroupMember(projectId, groupId, actor);
         verify(access).requireProjectMember(projectId, actor);
+    }
+
+    @Test
+    void newGroupIncludesCreatorAndSelectedUsersAndAgents() {
+        UUID projectId = UUID.randomUUID(), actor = UUID.randomUUID(), teammate = UUID.randomUUID();
+        UUID teamId = UUID.randomUUID(), agentId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity(); project.setTeamId(teamId);
+        when(projects.selectById(projectId)).thenReturn(project);
+        AgentEntity agent = new AgentEntity(); agent.setTeamId(teamId); agent.setStatus("ACTIVE"); agent.setVisibility("TEAM");
+        when(agentMapper.selectById(agentId)).thenReturn(agent);
+        GroupCreateRequest body = new GroupCreateRequest(); body.setTitle("  方案讨论  ");
+        body.setUserIds(List.of(teammate)); body.setAgentIds(List.of(agentId));
+        var response = service.create(actor, projectId, body);
+        ArgumentCaptor<ChatGroupEntity> saved = ArgumentCaptor.forClass(ChatGroupEntity.class);
+        verify(groups).insert(saved.capture());
+        assertThat(saved.getValue().getDefaultGroup()).isFalse();
+        assertThat(response.getTitle()).isEqualTo("方案讨论");
+        verify(users).insertUser(saved.getValue().getId(), actor);
+        verify(users).insertUser(saved.getValue().getId(), teammate);
+        verify(agents).insertAgent(saved.getValue().getId(), agentId);
+        verify(access).requireProjectMember(projectId, teammate);
+    }
+
+    @Test
+    void newGroupRequiresInvitedMembershipAndIsHiddenFromOthers() {
+        UUID projectId = UUID.randomUUID(), groupId = UUID.randomUUID(), actor = UUID.randomUUID();
+        ChatGroupEntity group = new ChatGroupEntity(); group.setId(groupId); group.setProjectId(projectId); group.setDefaultGroup(false);
+        when(groups.selectById(groupId)).thenReturn(group);
+        when(groups.listByProject(projectId)).thenReturn(List.of(group));
+        when(users.selectUserIds(groupId)).thenReturn(List.of(UUID.randomUUID()));
+        assertThatThrownBy(() -> service.requireGroupMember(projectId, groupId, actor)).isInstanceOf(ApiException.class);
+        assertThat(service.list(actor, projectId)).isEmpty();
+        when(users.selectUserIds(groupId)).thenReturn(List.of(actor));
+        service.requireGroupMember(projectId, groupId, actor);
+    }
+
+    @Test
+    void inviteAddsMembersToExistingGroupWithoutChangingItsIdentity() {
+        UUID projectId = UUID.randomUUID(), groupId = UUID.randomUUID(), actor = UUID.randomUUID(), teammate = UUID.randomUUID();
+        ChatGroupEntity group = new ChatGroupEntity(); group.setId(groupId); group.setProjectId(projectId); group.setDefaultGroup(false);
+        when(groups.selectById(groupId)).thenReturn(group);
+        when(users.selectUserIds(groupId)).thenReturn(List.of(actor));
+        when(projects.selectById(projectId)).thenReturn(new ProjectEntity());
+        GroupInviteRequest body = new GroupInviteRequest(); body.setUserIds(List.of(teammate));
+        service.invite(actor, projectId, groupId, body);
+        verify(users).insertUser(groupId, teammate);
+        verify(groups, never()).insert(any(ChatGroupEntity.class));
+    }
+
+    @Test
+    void rejectsAgentFromAnotherTeamBeforeSavingGroup() {
+        UUID projectId = UUID.randomUUID(), actor = UUID.randomUUID(), agentId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity(); project.setTeamId(UUID.randomUUID());
+        when(projects.selectById(projectId)).thenReturn(project);
+        AgentEntity agent = new AgentEntity(); agent.setTeamId(UUID.randomUUID()); agent.setStatus("ACTIVE"); agent.setVisibility("TEAM");
+        when(agentMapper.selectById(agentId)).thenReturn(agent);
+        GroupCreateRequest body = new GroupCreateRequest(); body.setTitle("讨论"); body.setAgentIds(List.of(agentId));
+        assertThatThrownBy(() -> service.create(actor, projectId, body)).isInstanceOf(ApiException.class);
+        verify(groups, never()).insert(any(ChatGroupEntity.class));
     }
 }
