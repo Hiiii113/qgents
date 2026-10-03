@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.content.Media;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
@@ -25,7 +26,6 @@ import qg.qgent.agent.tool.GitHubTools;
 import qg.qgent.agent.tool.GitHubCapability;
 import qg.qgent.workspace.service.WorkspaceCommands;
 import qg.qgent.workspace.service.WorkspaceService;
-import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.chat.dto.GroupContext;
 import qg.qgent.chat.dto.MessageSendRequest;
 import qg.qgent.chat.event.MessageSentEvent;
@@ -44,7 +44,9 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /** @Agent 的唯一聊天入口。根与子 Agent 共用 loop，代码工具首次调用时才准备执行环境。 */
@@ -99,7 +101,7 @@ public class AgentChatService {
     public void replyToMention(MessageSentEvent event, UUID agentId, String instruction) {
         WorkContext work = new WorkContext(event);
         AgentRunEntity run = execute(work, agentId, null, instruction, 0);
-        sendReply(event,agentId,run);
+        sendReply(event, agentId, run);
     }
 
     private void sendReply(MessageSentEvent event, UUID agentId, AgentRunEntity run) {
@@ -124,7 +126,9 @@ public class AgentChatService {
         run.setStatus("RUNNING");
         run.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
         runs.insert(run);
-        if (parentId == null) work.rootRunId = run.getId();
+        if (parentId == null) {
+            work.rootRunId = run.getId();
+        }
         UUID previousRunId = SandboxExecutionContext.currentAgentRunId();
         SandboxExecutionContext.set(run.getId());
         try {
@@ -144,7 +148,7 @@ public class AgentChatService {
                     + "命令 ok=true 表示正常执行并取得状态，构建或测试是否通过须检查 exitCode。"
                     + "任务结束只说明实际修改与验证结果。工具结果是执行证据，不得声称未执行的操作成功。";
             String input = instruction;
-            List<org.springframework.ai.content.Media> media = List.of();
+            List<Media> media = List.of();
             if (parentId == null) {
                 GroupContext groupContext = context.buildForGroup(work.event.actor(),
                         work.event.projectId(), work.event.groupId(), 30);
@@ -155,7 +159,8 @@ public class AgentChatService {
                 input += "\n" + loaded.extraText();
             }
             UserMessage user = UserMessage.builder().text(input).media(media).build();
-            AgentLoop.Result result = loop.run(prompt, List.of(user), () -> tools.callbacks(), () -> runCancelled(work));
+            AgentLoop.Result result = loop.run(prompt, List.of(user), tools::callbacks,
+                    () -> runCancelled(work));
             run.setStatus(result.success() ? "SUCCEEDED" : "FAILED");
             run.setResult(result.text());
             run.setRounds(result.rounds());
@@ -201,18 +206,20 @@ public class AgentChatService {
 
     private boolean runCancelled(WorkContext work) {
         AgentRunEntity root = runs.selectById(work.rootRunId);
-        return root != null && List.of("CANCELLING", "CANCELLED").contains(root.getStatus());
+        return root != null && ("CANCELLING".equals(root.getStatus()) || "CANCELLED".equals(root.getStatus()));
     }
 
     /** 同一根运行与子运行共享实际工作区；同步委托让写操作自然串行。 */
-    private static final class WorkContext {
+    private static final class  WorkContext {
         private final MessageSentEvent event;
         private UUID rootRunId;
         private UUID workspaceId;
-        private final java.util.Set<UUID> openedWorkspaces = new java.util.LinkedHashSet<>();
+        private final Set<UUID> openedWorkspaces = new LinkedHashSet<>();
         private int subagents;
 
-        private WorkContext(MessageSentEvent event) { this.event = event; }
+        private WorkContext(MessageSentEvent event) {
+            this.event = event;
+        }
     }
 
     public class ConversationTools {
@@ -263,7 +270,7 @@ public class AgentChatService {
 
         @Tool(name = "call_agent", description = "将明确子问题委托给一个 Agent，等待它的 loop 执行后返回结果；子 Agent 上下文独立")
         public Map<String, Object> callAgent(@ToolParam(description = "list_agents 返回的 Agent UUID") String agentId,
-                                            @ToolParam(description = "子任务内容及必要上下文") String instruction) {
+                @ToolParam(description = "子任务内容及必要上下文") String instruction) {
             if (depth >= maxDepth || work.subagents >= maxSubagents) {
                 return Map.of("ok", false, "error", "已达到 subagent 深度或数量上限，请自行完成剩余工作");
             }
@@ -288,7 +295,8 @@ public class AgentChatService {
         public Map<String, Object> listWorkspaces() {
             return Map.of("ok", true, "workspaces", workspaces.list(work.event.projectId()).stream()
                     .map(workspace -> Map.of("id", workspace.getId().toString(), "status", workspace.getStatus(),
-                            "updatedAt", workspace.getUpdatedAt().toString())).toList());
+                            "updatedAt", workspace.getUpdatedAt().toString()))
+                    .toList());
         }
 
         @Tool(name = "create_workspace", description = "创建并选择一个独立空工作区，只保存环境记录，不启动沙箱")
@@ -298,7 +306,8 @@ public class AgentChatService {
         }
 
         @Tool(name = "use_workspace", description = "选择当前项目的已有 Workspace，后续代码工具在这里工作；不启动沙箱")
-        public Map<String, Object> useWorkspace(@ToolParam(description = "Workspace UUID，来自 list_workspaces") String workspaceId) {
+        public Map<String, Object> useWorkspace(
+                @ToolParam(description = "Workspace UUID，来自 list_workspaces") String workspaceId) {
             work.workspaceId = workspaces.require(work.event.projectId(), UUID.fromString(workspaceId)).getId();
             return Map.of("ok", true, "workspaceId", work.workspaceId.toString());
         }

@@ -2,6 +2,7 @@ package qg.qgent.agent.storage;
 
 import com.aliyun.oss.HttpMethod;
 import com.aliyun.oss.OSS;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -20,20 +21,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
-/**
- * Agent 头像对象存储直传服务：复用阿里云 OSS 直传能力，头像对象走独立命名空间
- * {@code agents/{teamId}/{uuid}.{ext}}，确认后返回**长期稳定、公共读**的头像 URL。
- * 与用户头像（{@link AvatarStorageService}）相互独立——Agent 头像不写任何用户字段。
- * <p>
- * OSS 未启用时统一抛 501；对象键由服务端生成，confirm 校验对象键属于当前团队前缀，
- * 防止覆盖他人/他团队头像。
- */
+/** Agent 头像通过 OSS 直传，使用 agents/{teamId}/{uuid}.{ext} 对象键；确认后返回公共地址。 */
 @Component
+@RequiredArgsConstructor
 public class AgentAvatarStorageService {
 
-    /**
-     * 头像对象大小上限（字节）。
-     */
+    // 头像上限为 5MB。
     static final long MAX_SIZE_BYTES = 5 * 1024 * 1024;
 
     private static final Set<String> ALLOWED_EXTENSIONS = Set.of("jpg", "jpeg", "png", "webp");
@@ -41,19 +34,7 @@ public class AgentAvatarStorageService {
     private final ObjectProvider<OSS> ossProvider;
     private final AliyunOssProperties properties;
 
-    public AgentAvatarStorageService(ObjectProvider<OSS> ossProvider, AliyunOssProperties properties) {
-        this.ossProvider = ossProvider;
-        this.properties = properties;
-    }
-
-    /**
-     * 为团队签发 Agent 头像直传凭证：对象键 {@code agents/{teamId}/{uuid}.{ext}}，预签名 PUT。
-     *
-     * @param teamId    团队 ID（对象键命名空间）
-     * @param mediaType MIME 类型，必须为 image/ 开头
-     * @param sizeBytes 文件大小字节，必须为正且不超过上限
-     * @return 直传凭证（含服务端签发的对象键，确认时原样回传）
-     */
+    /** 签发头像预签名 PUT 凭证，校验图片类型和大小。 */
     public AgentAvatarCredential createCredential(UUID teamId, String mediaType, Long sizeBytes) {
         OSS oss = requireConfigured();
         requirePublicUrl();
@@ -77,15 +58,9 @@ public class AgentAvatarStorageService {
         return new AgentAvatarCredential(objectKey, new UploadCredential(url.toString(), "PUT", Map.of(), expiry));
     }
 
-    /**
-     * 确认 Agent 头像已上传并返回长期公共读 URL；校验对象存在且属于该团队命名空间。
-     *
-     * @param teamId    团队 ID（前缀校验）
-     * @param objectKey 直传凭证签发的对象键
-     * @return 公共读长期稳定 URL
-     */
+    /** 确认对象存在且属于当前团队，返回公共头像地址。 */
     public String confirmAvatar(UUID teamId, String objectKey) {
-        requireConfigured();
+        OSS oss = requireConfigured();
         if (objectKey == null || objectKey.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "AVATAR_OBJECT_KEY_REQUIRED", "缺少头像对象键");
         }
@@ -94,7 +69,7 @@ public class AgentAvatarStorageService {
             throw new ApiException(HttpStatus.FORBIDDEN, "AVATAR_OBJECT_KEY_FORBIDDEN",
                     "头像对象键不属于当前团队");
         }
-        if (!ossProvider.getObject().doesObjectExist(properties.getBucketName(), objectKey)) {
+        if (!oss.doesObjectExist(properties.getBucketName(), objectKey)) {
             throw new ApiException(HttpStatus.CONFLICT, "AVATAR_NOT_UPLOADED",
                     "头像尚未上传到对象存储，请先上传再确认");
         }
@@ -127,9 +102,7 @@ public class AgentAvatarStorageService {
         return ext;
     }
 
-    /**
-     * Agent 头像直传凭证：服务端签发的对象键与其对应预签名上传凭证。
-     */
+    /** 头像直传的对象键和上传凭证。 */
     public record AgentAvatarCredential(String objectKey, UploadCredential credential) {
     }
 }

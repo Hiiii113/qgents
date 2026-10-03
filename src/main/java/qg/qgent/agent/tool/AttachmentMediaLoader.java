@@ -1,5 +1,6 @@
 package qg.qgent.agent.tool;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.content.Media;
 import org.springframework.stereotype.Component;
@@ -19,44 +20,21 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
-/**
- * 从群聊消息中按项目成员身份读取附件并转换为多模态输入：
- * <ul>
- *   <li>IMAGE 附件转 base64 data URI {@link Media}，供多模态模型视觉理解；</li>
- *   <li>FILE 附件中的 TEXT/CODE 内联为文本；</li>
- *   <li>读取失败、越权、越预算或类型不支持的附件降级为文本引用，不影响主流程。</li>
- * </ul>
- * 供 Plan / Coding 等 Agent 复用，避免各自复制一份图片/文件读取逻辑。
- */
+/** 将群聊图片转换为多模态输入，将文本和代码附件加入提示词；无法读取的附件保留上下文中的引用。 */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class AttachmentMediaLoader {
 
-    /**
-     * 图片媒体字节预算：base64 后约 5.2MB，防止超大截图/长图撑爆多模态输入与 token 成本。
-     * 超预算的图片降级为文本引用。
-     */
+    // 单张图片字节上限；超限时跳过媒体加载。
     public static final long IMAGE_BYTES_CAP = 3_900_000L;
 
-    /**
-     * 文本/代码附件内联文本预算：超过 64KB 不读入 prompt，仅保留文件引用，避免稀释上下文。
-     */
+    // 单个文本或代码附件的字节上限。
     public static final long FILE_TEXT_BYTES_CAP = 64 * 1024L;
 
     private final AttachmentService attachmentService;
 
-    public AttachmentMediaLoader(AttachmentService attachmentService) {
-        this.attachmentService = attachmentService;
-    }
-
-    /**
-     * 把群聊消息中的 IMAGE/FILE 附件转换为多模态输入。
-     *
-     * @param actor        当前用户 ID（附件鉴权身份）
-     * @param projectId    项目 ID
-     * @param conversation 群聊消息列表
-     * @return 转换结果：图片媒体 + 附加的内联文本
-     */
+    /** 以当前用户身份读取群聊附件，返回图片媒体和内联文本。 */
     public Result load(UUID actor, UUID projectId, List<ContextMessage> conversation) {
         List<Media> media = new ArrayList<>();
         StringBuilder extraText = new StringBuilder();
@@ -139,28 +117,23 @@ public class AttachmentMediaLoader {
         }
     }
 
-    /**
-     * 把附件 mediaType 解析为合法 {@link MimeType}；缺失或非法时回退 {@code image/png}（预览类型
-     * 已判定为图片，回退不会改变语义）。
-     */
+    /** 解析图片 MIME 类型，缺失或无效时使用 image/png。 */
     private MimeType resolveImageMimeType(String mediaType) {
         if (mediaType != null && !mediaType.isBlank()) {
             try {
                 return MimeTypeUtils.parseMimeType(mediaType.trim().toLowerCase(Locale.ROOT));
             } catch (InvalidMimeTypeException e) {
-                // fall through 到默认
+                // MIME 无效时按 PNG 处理
             }
         }
         return MimeType.valueOf("image/png");
     }
 
-    /**
-     * 附件转换结果：图片媒体列表 + 内联的文本/代码附件内容。
-     */
+    /** 图片媒体与内联附件文本。 */
     public record Result(List<Media> media, String extraText) {
-        public Result(List<Media> media, String extraText) {
-            this.media = media == null ? List.of() : media;
-            this.extraText = extraText == null ? "" : extraText;
+        public Result {
+            media = media == null ? List.of() : media;
+            extraText = extraText == null ? "" : extraText;
         }
     }
 }

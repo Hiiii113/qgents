@@ -1,6 +1,7 @@
 package qg.qgent.agent.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,18 +22,17 @@ import qg.qgent.team.mapper.TeamMemberMapper;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
-/**
- * Team-scoped Agent visibility, lifecycle and read operations.
- */
+/** 团队 Agent 的可见性、配置与发布审核管理。 */
 @Service
+@RequiredArgsConstructor
 public class AgentService {
-    /**
-     * Prompt 敏感信息拦截模式：命中即拒绝保存，防止凭据/私钥/宿主机敏感信息进入 Agent 上下文。
-     */
+    // 保存提示词时拒绝匹配以下凭据和敏感路径
     private static final List<Pattern> SENSITIVE_PROMPT_PATTERNS = List.of(
             Pattern.compile("-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----"),
             Pattern.compile("gh[pous]_[A-Za-z0-9]{20,}"),
@@ -46,16 +46,6 @@ public class AgentService {
     private final ProjectAccessService projectAccess;
     private final ProjectMapper projectMapper;
     private final TeamMapper teamMapper;
-
-    public AgentService(AgentMapper agentMapper, TeamMemberMapper teamMemberMapper,
-                        ProjectAccessService projectAccess,
-                        ProjectMapper projectMapper, TeamMapper teamMapper) {
-        this.agentMapper = agentMapper;
-        this.teamMemberMapper = teamMemberMapper;
-        this.projectAccess = projectAccess;
-        this.projectMapper = projectMapper;
-        this.teamMapper = teamMapper;
-    }
 
     public List<AgentResponse> list(UUID actorId, UUID teamId) {
         if (teamMemberMapper.selectByTeamAndUser(teamId, actorId) == null) {
@@ -72,41 +62,28 @@ public class AgentService {
                 .toList();
     }
 
-    /**
-     * 获取单张 Agent 卡（前端需要）：团队可见性校验；projectId 可选，传了则额外校验
-     * 该 Agent 属于此项目的 Team（项目上下文可见），并校验调用者是该项目成员。
-     * PRIVATE Agent 仅创建者可见（prompt 仅创建者返回）。
-     */
+    /** 获取用户可见的 Agent；可选项目 ID 用于校验项目访问权限及团队归属。 */
     public AgentResponse get(UUID teamId, UUID agentId, UUID actor, UUID projectId) {
         if (teamMemberMapper.selectByTeamAndUser(teamId, actor) == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "TEAM_RESOURCE_NOT_FOUND", "团队资源不存在或不可见");
         }
         if (projectId != null) {
             projectAccess.requireProjectMember(projectId, actor);
-            qg.qgent.project.entity.ProjectEntity project = projectMapper.selectById(projectId);
+            ProjectEntity project = projectMapper.selectById(projectId);
             if (project == null || !teamId.equals(project.getTeamId())) {
                 throw new ApiException(HttpStatus.NOT_FOUND, "PROJECT_NOT_FOUND", "项目不存在或不可见");
             }
         }
-        AgentEntity agent = agentMapper.selectById(agentId);
-        if (agent == null || !teamId.equals(agent.getTeamId())) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "AGENT_NOT_FOUND", "Agent 不存在或不可见");
-        }
+        AgentEntity agent = requireAgentInTeam(teamId, agentId);
         boolean owner = actor.equals(agent.getCreatedBy());
         boolean teamOwner = isTeamOwner(teamId, actor);
-        if (!"TEAM".equals(agent.getVisibility()) && !owner
-                && !("PENDING".equals(agent.getVisibility()) && teamOwner)) {
+        if (!visibleTo(agent, actor, teamOwner)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "AGENT_NOT_FOUND", "Agent 不存在或不可见");
         }
         return toResponse(agent, owner);
     }
 
-    // ---------- 自定义 Agent 生命周期管理（契约 §11.1，接口补充 v2.0.3 §2-§6） ----------
-
-    /**
-     * 创建自定义 Agent：创建者只能创建自己所属 Team 的 Agent，创建成功后固定为
-     * {@code visibility=PRIVATE}、{@code status=ACTIVE}、{@code isDefault=false}。
-     */
+    /** 创建私有、启用的自定义 Agent。 */
     @Transactional
     public AgentResponse create(UUID actor, UUID teamId, AgentCreateRequest request) {
         requireTeamMember(teamId, actor);
@@ -131,11 +108,7 @@ public class AgentService {
         return toResponse(agent, true);
     }
 
-    /**
-     * 编辑自定义 Agent：仅创建者可编辑，系统预置 Agent（isDefault=true）不可编辑。
-     * 所有字段可选但至少一个；visibility/status/createdBy/isDefault 不允许客户端修改。
-     * role 只作为展示标签，模型执行由提示词与工具决定。
-     */
+    /** 仅创建者可编辑自定义 Agent；只更新请求中提供的字段。 */
     @Transactional
     public AgentResponse update(UUID actor, UUID teamId, UUID agentId, AgentUpdateRequest request) {
         requireTeamMember(teamId, actor);
@@ -160,7 +133,9 @@ public class AgentService {
         if (request.getDescription() != null) {
             agent.setDescription(blankToNull(request.getDescription()));
         }
-        if (request.getGithubEnabled() != null) agent.setGithubEnabled(request.getGithubEnabled());
+        if (request.getGithubEnabled() != null) {
+            agent.setGithubEnabled(request.getGithubEnabled());
+        }
         if (request.getPrompt() != null) {
             validatePrompt(request.getPrompt());
             agent.setPrompt(request.getPrompt());
@@ -174,7 +149,9 @@ public class AgentService {
         requireTeamMember(teamId, actor);
         AgentEntity agent = requireAgentInTeam(teamId, agentId);
         if (Boolean.TRUE.equals(agent.getIsDefault())) {
-            if (!isTeamOwner(teamId, actor)) throw forbidden("仅 Team Owner 可以配置默认 Agent 的能力");
+            if (!isTeamOwner(teamId, actor)) {
+                throw forbidden("仅 Team Owner 可以配置默认 Agent 的能力");
+            }
         } else {
             requireEditable(agent, actor);
         }
@@ -183,10 +160,7 @@ public class AgentService {
         return toResponse(agent, true);
     }
 
-    /**
-     * 发布自定义 Agent：普通创建者为 PRIVATE + ACTIVE → PENDING + ACTIVE；Team Owner 自建的
-     * Agent 直接 PRIVATE + ACTIVE → TEAM + ACTIVE，免除自己审核自己的发布。
-     */
+    /** 创建者提交发布；团队所有者自建 Agent 直接共享，其他成员进入审核。 */
     @Transactional
     public AgentResponse publish(UUID actor, UUID teamId, UUID agentId) {
         requireTeamMember(teamId, actor);
@@ -203,7 +177,7 @@ public class AgentService {
         if (isTeamOwner(teamId, actor)) {
             agent.setVisibility("TEAM");
             agent.setReviewedBy(actor);
-            agent.setReviewedAt(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC));
+            agent.setReviewedAt(LocalDateTime.now(ZoneOffset.UTC));
             agent.setReviewReason(null);
         } else {
             agent.setVisibility("PENDING");
@@ -215,10 +189,7 @@ public class AgentService {
         return toResponse(agent, true);
     }
 
-    /**
-     * 批准发布：PENDING + ACTIVE → TEAM + ACTIVE。仅 Team Owner（canonical owner）可批准。
-     * 批准后团队共享，不可再变回私有（只能归档）。
-     */
+    /** 团队所有者批准发布，Agent 变为团队共享。 */
     @Transactional
     public AgentResponse approve(UUID actor, UUID teamId, UUID agentId) {
         requireTeamMember(teamId, actor);
@@ -231,16 +202,13 @@ public class AgentService {
         }
         agent.setVisibility("TEAM");
         agent.setReviewedBy(actor);
-        agent.setReviewedAt(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC));
+        agent.setReviewedAt(LocalDateTime.now(ZoneOffset.UTC));
         agent.setReviewReason(null);
         agentMapper.updateById(agent);
         return toResponse(agent, false);
     }
 
-    /**
-     * 拒绝发布：PENDING + ACTIVE → PRIVATE + ACTIVE（可修改后重新提交）。仅 Team Owner 可拒绝；
-     * 拒绝原因写入 reviewReason，仅创建者可见。
-     */
+    /** 团队所有者拒绝发布，恢复私有并记录拒绝原因。 */
     @Transactional
     public AgentResponse reject(UUID actor, UUID teamId, UUID agentId, String reason) {
         requireTeamMember(teamId, actor);
@@ -253,23 +221,20 @@ public class AgentService {
         }
         agent.setVisibility("PRIVATE");
         agent.setReviewedBy(actor);
-        agent.setReviewedAt(java.time.LocalDateTime.now(java.time.ZoneOffset.UTC));
-        agent.setReviewReason(reason == null || reason.isBlank() ? null : reason.trim());
+        agent.setReviewedAt(LocalDateTime.now(ZoneOffset.UTC));
+        agent.setReviewReason(blankToNull(reason));
         agentMapper.updateById(agent);
         return toResponse(agent, true);
     }
 
-    /**
-     * 归档 Agent：PRIVATE/TEAM + ACTIVE → ARCHIVED。仅创建者或 Team Owner 可归档。
-     * 归档后不能启动新 AgentRun；已运行的 loop 和历史记录保留。
-     */
+    /** 创建者或团队所有者归档 Agent；已有运行与历史记录保留。 */
     @Transactional
     public AgentResponse archive(UUID actor, UUID teamId, UUID agentId) {
         requireTeamMember(teamId, actor);
         AgentEntity agent = requireAgentInTeam(teamId, agentId);
         requireNotDefault(agent);
         requireVisibleForManage(agent, actor);
-        if (!canManagePublished(agent, actor, teamId)) {
+        if (!actor.equals(agent.getCreatedBy()) && !isTeamOwner(teamId, actor)) {
             throw forbidden("仅 Agent 创建者或 Team Owner 可归档");
         }
         if ("ARCHIVED".equals(agent.getStatus())) {
@@ -286,9 +251,7 @@ public class AgentService {
         }
     }
 
-    /**
-     * 列表可见性：TEAM 全团队成员可见；PRIVATE/PENDING 仅创建者可见；PENDING 额外对 Team Owner 可见（待审核）。
-     */
+    /** 共享 Agent 对团队成员可见，私有和待审核 Agent 对创建者可见；所有者另可查看待审核项。 */
     private boolean visibleTo(AgentEntity agent, UUID actor, boolean teamOwner) {
         if ("TEAM".equals(agent.getVisibility())) {
             return true;
@@ -299,17 +262,13 @@ public class AgentService {
         return "PENDING".equals(agent.getVisibility()) && teamOwner;
     }
 
-    /**
-     * 是否为团队 canonical Owner（Team Owner）。
-     */
+    /** 以团队记录中的 ownerUserId 判断所有者。 */
     private boolean isTeamOwner(UUID teamId, UUID actor) {
         TeamEntity team = teamMapper.selectById(teamId);
         return team != null && actor.equals(team.getOwnerUserId());
     }
 
-    /**
-     * 仅团队 canonical Owner 可执行（发布审核批准/拒绝）。
-     */
+    /** 发布审核仅允许团队所有者执行。 */
     private void requireTeamOwner(UUID teamId, UUID actor) {
         if (!isTeamOwner(teamId, actor)) {
             throw new ApiException(HttpStatus.FORBIDDEN, "TEAM_OWNER_REQUIRED",
@@ -328,13 +287,11 @@ public class AgentService {
     private void requireNotDefault(AgentEntity agent) {
         if (Boolean.TRUE.equals(agent.getIsDefault())) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_DEFAULT_IMMUTABLE",
-                    "系统预置 Agent 不可编辑、发布、收回或归档");
+                    "系统预置 Agent 不可编辑、发布或归档");
         }
     }
 
-    /**
-     * 编辑权限：PRIVATE 仅创建者可见（非创建者按 404 处理）；TEAM 团队成员可见但仅创建者可编辑。
-     */
+    /** 私有 Agent 对其他用户返回不存在，其余 Agent 仅创建者可编辑。 */
     private void requireEditable(AgentEntity agent, UUID actor) {
         if (agent.getCreatedBy() != null && agent.getCreatedBy().equals(actor)) {
             return;
@@ -345,10 +302,7 @@ public class AgentService {
         throw forbidden("仅 Agent 创建者可以编辑");
     }
 
-    /**
-     * 管理操作可见性：PRIVATE Agent 仅创建者可见，非创建者按 404 处理；
-     * TEAM Agent 团队成员可见，操作权限由调用方另行校验。
-     */
+    /** 管理操作先隐藏他人的私有 Agent，具体操作权限由调用方校验。 */
     private void requireVisibleForManage(AgentEntity agent, UUID actor) {
         if ("PRIVATE".equals(agent.getVisibility())
                 && (agent.getCreatedBy() == null || !agent.getCreatedBy().equals(actor))) {
@@ -356,19 +310,9 @@ public class AgentService {
         }
     }
 
-    /**
-     * 发布后 Agent（TEAM）的收回/归档权限：创建者或 Team Owner（canonical owner）。
-     */
-    private boolean canManagePublished(AgentEntity agent, UUID actor, UUID teamId) {
-        if (agent.getCreatedBy() != null && agent.getCreatedBy().equals(actor)) {
-            return true;
-        }
-        TeamEntity team = teamMapper.selectById(teamId);
-        return team != null && actor.equals(team.getOwnerUserId());
-    }
-
     private boolean isEmptyPatch(AgentUpdateRequest request) {
-        return request.getGithubEnabled() == null && request.getName() == null && request.getAvatar() == null && request.getRole() == null
+        return request.getGithubEnabled() == null && request.getName() == null
+                && request.getAvatar() == null && request.getRole() == null
                 && request.getDescription() == null && request.getPrompt() == null;
     }
 
@@ -442,7 +386,7 @@ public class AgentService {
         response.setGithubEnabled(Boolean.TRUE.equals(agent.getGithubEnabled()));
         response.setReviewedBy(agent.getReviewedBy() == null ? null : agent.getReviewedBy().toString());
         response.setReviewedAt(agent.getReviewedAt() == null ? null
-                : agent.getReviewedAt().toInstant(java.time.ZoneOffset.UTC).toString());
+                : agent.getReviewedAt().toInstant(ZoneOffset.UTC).toString());
         return response;
     }
 
