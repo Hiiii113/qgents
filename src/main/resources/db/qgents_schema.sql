@@ -128,16 +128,12 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT fk_pm_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目成员及角色关系';
 
-
-
-
-
-
 CREATE TABLE IF NOT EXISTS
     chat_groups (
         id BINARY(16) PRIMARY KEY COMMENT '项目群聊UUIDv7',
         project_id BINARY(16) NOT NULL COMMENT '所属项目ID',
         created_by BINARY(16) NOT NULL COMMENT '创建用户ID',
+        default_group TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否为项目自动创建的默认群',
         name VARCHAR(255) NOT NULL COMMENT '群聊名称',
         description TEXT NULL COMMENT '群聊目标和需求背景说明',
         last_message_at DATETIME (6) NULL COMMENT '最近消息时间（UTC）',
@@ -150,7 +146,6 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT fk_rg_project FOREIGN KEY (project_id) REFERENCES projects (id),
         CONSTRAINT fk_rg_creator FOREIGN KEY (created_by) REFERENCES users (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目需求讨论与协作上下文群';
-
 
 CREATE TABLE IF NOT EXISTS group_users (
     group_id BINARY(16) NOT NULL,
@@ -273,7 +268,6 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT fk_mms_message FOREIGN KEY (message_id) REFERENCES messages (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'Memory与多条来源消息关系';
 
-
 CREATE TABLE IF NOT EXISTS
     idempotency_records (
         id BINARY(16) PRIMARY KEY COMMENT '幂等记录UUIDv7',
@@ -293,8 +287,6 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT fk_idem_user FOREIGN KEY (actor_user_id) REFERENCES users (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '写接口幂等请求与脱敏响应缓存';
 
--- ============================================================================
--- ============================================================================
 
 CREATE TABLE IF NOT EXISTS agents (
     id BINARY(16) PRIMARY KEY, team_id BINARY(16) NOT NULL, created_by BINARY(16) NULL,
@@ -348,8 +340,6 @@ CREATE TABLE IF NOT EXISTS group_agents (
     CONSTRAINT fk_ga_agent FOREIGN KEY(agent_id) REFERENCES agents(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='群聊 Agent 参与者（Agent 首次回群时自动加入）';
 
-
-
 CREATE TABLE IF NOT EXISTS workspaces (
     id BINARY(16) PRIMARY KEY, project_id BINARY(16) NOT NULL,
     storage_key VARCHAR(512) NOT NULL COMMENT 'Opaque storage key, not a host path', status VARCHAR(32) NOT NULL DEFAULT 'PROVISIONING',
@@ -379,8 +369,7 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT fk_event_group FOREIGN KEY (group_id) REFERENCES chat_groups (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目级实时事件存储，至少保留24小时';
 
--- 已存在该列的库自动跳过，脚本整体可重复执行。
--- 说明：MySQL 不支持 ADD COLUMN IF NOT EXISTS，此处用 information_schema 探测 + PREPARE 动态执行实现幂等。
+-- Agent 表创建后补充消息发送者外键。
 
 ALTER TABLE messages ADD CONSTRAINT fk_msg_agent FOREIGN KEY (agent_id) REFERENCES agents (id);
 
@@ -404,7 +393,6 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT fk_notif_project FOREIGN KEY (project_id) REFERENCES projects (id),
         CONSTRAINT fk_notif_group FOREIGN KEY (group_id) REFERENCES chat_groups (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '用户通知中心';
-
 
 CREATE TABLE IF NOT EXISTS push_devices (
     id BINARY(16) PRIMARY KEY COMMENT '推送设备UUIDv7',
@@ -468,8 +456,6 @@ CREATE TABLE IF NOT EXISTS team_events (
     CONSTRAINT fk_te_team FOREIGN KEY (team_id) REFERENCES teams(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='团队级 SSE 事件（团队维度游标）';
 
--- ============================================================
--- ============================================================
 
 CREATE TABLE IF NOT EXISTS
     group_read_state (
