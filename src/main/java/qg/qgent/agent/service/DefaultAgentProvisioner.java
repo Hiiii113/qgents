@@ -1,6 +1,7 @@
 package qg.qgent.agent.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -9,8 +10,6 @@ import org.springframework.transaction.annotation.Transactional;
 import qg.qgent.agent.entity.AgentEntity;
 import qg.qgent.agent.mapper.AgentMapper;
 import qg.qgent.common.util.UuidV7;
-import qg.qgent.team.entity.TeamEntity;
-import qg.qgent.team.mapper.TeamMapper;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -20,6 +19,7 @@ import java.util.UUID;
 /** 团队共享的默认通用 Agent 与 Coding Agent。 */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class DefaultAgentProvisioner {
 
     private static final Map<String, DefaultSpec> DEFAULT_AGENTS = new LinkedHashMap<>();
@@ -33,31 +33,13 @@ public class DefaultAgentProvisioner {
                 "根据用户需求完成代码工作，先理解现有代码，改动保持简洁，并如实说明验证结果。"));
     }
 
-    private final TeamMapper teamMapper;
     private final AgentMapper agentMapper;
-
-    public DefaultAgentProvisioner(TeamMapper teamMapper, AgentMapper agentMapper) {
-        this.teamMapper = teamMapper;
-        this.agentMapper = agentMapper;
-    }
 
     @Transactional
     public void ensureForTeam(UUID teamId, UUID ownerUserId) {
         for (Map.Entry<String, DefaultSpec> entry : DEFAULT_AGENTS.entrySet()) {
             ensureRole(teamId, ownerUserId, entry.getKey(), entry.getValue());
         }
-    }
-
-    @Transactional
-    public void ensureForTeam(UUID teamId) {
-        if (teamId == null) {
-            return;
-        }
-        TeamEntity team = teamMapper.selectById(teamId);
-        if (team == null) {
-            return;
-        }
-        ensureForTeam(teamId, team.getOwnerUserId());
     }
 
     private void ensureRole(UUID teamId, UUID ownerUserId, String role, DefaultSpec spec) {

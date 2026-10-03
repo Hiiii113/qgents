@@ -5,7 +5,6 @@ import org.mockito.ArgumentCaptor;
 
 import qg.qgent.agent.entity.AgentEntity;
 import qg.qgent.agent.mapper.AgentMapper;
-import qg.qgent.team.mapper.TeamMapper;
 
 import java.util.List;
 import java.util.UUID;
@@ -19,7 +18,7 @@ class DefaultAgentProvisionerTest {
     void provisionsOnlyGeneralAndCodingAgents() {
         AgentMapper agents = mock(AgentMapper.class);
         when(agents.selectList(any())).thenReturn(List.of());
-        new DefaultAgentProvisioner(mock(TeamMapper.class), agents)
+        new DefaultAgentProvisioner(agents)
                 .ensureForTeam(UUID.randomUUID(), UUID.randomUUID());
         ArgumentCaptor<AgentEntity> inserted = ArgumentCaptor.forClass(AgentEntity.class);
         verify(agents, times(2)).insert(inserted.capture());
@@ -30,7 +29,7 @@ class DefaultAgentProvisionerTest {
     void existingDefaultsAreNotInsertedAgain() {
         AgentMapper agents = mock(AgentMapper.class);
         when(agents.selectList(any())).thenReturn(List.of(new AgentEntity()));
-        new DefaultAgentProvisioner(mock(TeamMapper.class), agents)
+        new DefaultAgentProvisioner(agents)
                 .ensureForTeam(UUID.randomUUID(), UUID.randomUUID());
         verify(agents, never()).insert(any(AgentEntity.class));
     }

@@ -3,9 +3,7 @@ spring:
     import: optional:file:.env[.properties]
   ai:
     openai:
-      # Qwen3.7-Flash（DashScope OpenAI 兼容）：统一多模态模型，支持图片/文档/PDF 输入，
-      # 思考更快、生成时长短，降低非流式超长输出撞服务端响应时限的概率。
-      # 回退 DeepSeek：api-key=${DEEPSEEK_API_KEY} / base-url=https://api.deepseek.com/ / model=deepseek-v4-flash
+      # 通过 DashScope 的 OpenAI 兼容接口调用多模态模型。
       api-key: ${DASHSCOPE_API_KEY}
       base-url: ${AI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
       chat:
@@ -80,10 +78,6 @@ app:
   # 附件大小上限（字节，默认 50MB）与临时下载地址有效期（秒，默认 900）
   attachment-max-size-bytes: ${APP_ATTACHMENT_MAX_SIZE_BYTES:52428800}
   attachment-download-expiry-seconds: ${APP_ATTACHMENT_DOWNLOAD_EXPIRY_SECONDS:900}
-  # Agent 默认预置：建团队事务内补齐团队默认 Agent（通用 Agent 和 Coding Agent）；
-  # 启动时为存量 ACTIVE 团队幂等兜底（DefaultAgentProvisioner）
-  agent-preseed:
-    enabled: ${APP_AGENT_PRESEED_ENABLED:true}
 
 aliyun:
   oss:
