@@ -4,9 +4,9 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
-/** 编辑自定义 Agent；所有字段可选，但至少提供一个字段，role 仅用于展示。 */
+/** 编辑 Agent；所有字段可选，默认 Agent 仅允许团队所有者修改 name 与 avatar。 */
 @Data
-@Schema(description = "编辑自定义 Agent 请求")
+@Schema(description = "编辑 Agent 请求；默认 Agent 仅支持昵称与头像")
 public class AgentUpdateRequest {
     @Schema(description = "是否开启 GitHub 能力，使用团队 GitHub App 授权")
     private Boolean githubEnabled;

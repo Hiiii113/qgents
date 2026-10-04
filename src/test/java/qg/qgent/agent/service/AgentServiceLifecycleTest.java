@@ -184,7 +184,7 @@ class AgentServiceLifecycleTest {
     }
 
     @Test
-    void updateRejectsDefaultAgent() {
+    void updateRejectsDefaultAgentForNonOwner() {
         member(teamId, creator);
         AgentEntity agent = agent(agentId(), teamId, creator, "TEAM", "ACTIVE", true);
         when(agents.selectById(agent.getId())).thenReturn(agent);
@@ -192,7 +192,43 @@ class AgentServiceLifecycleTest {
         ApiException error = assertThrows(ApiException.class,
                 () -> service.update(creator, teamId, agent.getId(), patch("name", "x")));
 
-        assertEquals("AGENT_DEFAULT_IMMUTABLE", error.code());
+        assertEquals(HttpStatus.FORBIDDEN, error.status());
+        verify(agents, never()).updateById(any(AgentEntity.class));
+    }
+
+    @Test
+    void ownerCanRenameAndChangeDefaultAvatarWithoutChangingItsBehavior() {
+        member(teamId, owner);
+        TeamEntity team = new TeamEntity();
+        team.setOwnerUserId(owner);
+        when(teams.selectById(teamId)).thenReturn(team);
+        AgentEntity agent = agent(agentId(), teamId, creator, "TEAM", "ACTIVE", true);
+        when(agents.selectById(agent.getId())).thenReturn(agent);
+        String prompt = agent.getPrompt();
+        AgentUpdateRequest request = new AgentUpdateRequest();
+        request.setName(" 小青 ");
+        request.setAvatar("https://cdn.example.com/agent.png");
+        AgentResponse result = service.update(owner, teamId, agent.getId(), request);
+        assertEquals("小青", result.getName());
+        assertEquals("https://cdn.example.com/agent.png", result.getAvatar());
+        assertEquals(prompt, agent.getPrompt());
+        request.setAvatar("");
+        assertNull(service.update(owner, teamId, agent.getId(), request).getAvatar());
+    }
+
+    @Test
+    void defaultAgentRejectsBehaviorFieldsBeforeApplyingIdentityChanges() {
+        member(teamId, owner);
+        TeamEntity team = new TeamEntity();
+        team.setOwnerUserId(owner);
+        when(teams.selectById(teamId)).thenReturn(team);
+        AgentEntity agent = agent(agentId(), teamId, owner, "TEAM", "ACTIVE", true);
+        when(agents.selectById(agent.getId())).thenReturn(agent);
+        AgentUpdateRequest request = new AgentUpdateRequest();
+        request.setName("不应写入");
+        request.setPrompt("不应替换");
+        assertEquals("AGENT_INVALID_REQUEST", assertThrows(ApiException.class,
+                () -> service.update(owner, teamId, agent.getId(), request)).code());
         verify(agents, never()).updateById(any(AgentEntity.class));
     }
 

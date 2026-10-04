@@ -108,13 +108,22 @@ public class AgentService {
         return toResponse(agent, true);
     }
 
-    /** 仅创建者可编辑自定义 Agent；只更新请求中提供的字段。 */
+    /** 创建者编辑自定义 Agent；团队所有者可修改默认 Agent 的昵称与头像。 */
     @Transactional
     public AgentResponse update(UUID actor, UUID teamId, UUID agentId, AgentUpdateRequest request) {
         requireTeamMember(teamId, actor);
         AgentEntity agent = requireAgentInTeam(teamId, agentId);
-        requireNotDefault(agent);
-        requireEditable(agent, actor);
+        if (Boolean.TRUE.equals(agent.getIsDefault())) {
+            if (!isTeamOwner(teamId, actor)) {
+                throw forbidden("仅团队管理员可以修改默认 Agent 的昵称与头像");
+            }
+            if (request.getRole() != null || request.getDescription() != null
+                    || request.getPrompt() != null || request.getGithubEnabled() != null) {
+                throw invalidRequest("默认 Agent 仅支持修改昵称与头像");
+            }
+        } else {
+            requireEditable(agent, actor);
+        }
         if (isEmptyPatch(request)) {
             throw invalidRequest("请求体至少包含一个字段");
         }
@@ -287,7 +296,7 @@ public class AgentService {
     private void requireNotDefault(AgentEntity agent) {
         if (Boolean.TRUE.equals(agent.getIsDefault())) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_DEFAULT_IMMUTABLE",
-                    "系统预置 Agent 不可编辑、发布或归档");
+                    "默认 Agent 不可发布或归档");
         }
     }
 

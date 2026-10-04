@@ -75,7 +75,7 @@ public class AgentController {
                 return ApiResponse.ok(result, (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
         }
 
-        /** 编辑自定义 Agent，仅创建者可操作。 */
+        /** 创建者编辑自定义 Agent；团队所有者可编辑默认 Agent 的昵称与头像。 */
         @PatchMapping("/teams/{teamId}/agents/{agentId}")
         public ApiResponse<AgentResponse> update(@AuthenticationPrincipal UUID actor, @PathVariable UUID teamId,
                         @PathVariable UUID agentId,
