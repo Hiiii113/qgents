@@ -125,6 +125,7 @@
 ## Memory 与 Agent 工具
 
 - Memory 也要提供给 Agent 操作和更新的 Tool，与 MR/PR 等能力一样由 Agent 按需调用；不能只提供用户管理接口或被动注入上下文。
+- 不提供独立的“AI 沉淀 Memory”按钮或生成草稿接口；AI 对 Memory 的操作统一通过聊天中的 Agent 按需调用 Tool 完成。
 
 ## Sandbox 工具约定
 

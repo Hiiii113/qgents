@@ -259,16 +259,6 @@ CREATE TABLE IF NOT EXISTS
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目确认知识，MVP标签内嵌JSON';
 
 CREATE TABLE IF NOT EXISTS
-    memory_message_sources (
-        memory_id BINARY(16) NOT NULL COMMENT 'Memory ID',
-        message_id BINARY(16) NOT NULL COMMENT '作为知识依据的消息ID',
-        PRIMARY KEY (memory_id, message_id),
-        KEY idx_mms_message (message_id),
-        CONSTRAINT fk_mms_memory FOREIGN KEY (memory_id) REFERENCES memories (id) ON DELETE CASCADE,
-        CONSTRAINT fk_mms_message FOREIGN KEY (message_id) REFERENCES messages (id)
-    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = 'Memory与多条来源消息关系';
-
-CREATE TABLE IF NOT EXISTS
     idempotency_records (
         id BINARY(16) PRIMARY KEY COMMENT '幂等记录UUIDv7',
         actor_user_id BINARY(16) NULL COMMENT '已认证调用用户ID；匿名请求为空',

@@ -68,7 +68,6 @@ public class FrontendOpenApiConfiguration {
         if (path.endsWith("/password-resets")) return "重置密码";
         if (path.equals("/api/v1/me"))
             return method == PathItem.HttpMethod.GET ? "获取当前用户资料" : "修改当前用户资料";
-        if (path.endsWith("/drafts")) return "生成 AI 草稿";
         if (path.endsWith("/read-all")) return "全部通知已读";
         if (path.endsWith("/read")) return "标记已读";
         String resource = resource(path);

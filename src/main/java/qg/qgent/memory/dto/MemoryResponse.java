@@ -51,10 +51,4 @@ public class MemoryResponse {
 
     @Schema(description = "创建时间（UTC）")
     private LocalDateTime createdAt;
-
-    @Schema(description = "来源标识：MANUAL / MESSAGE")
-    private String source;
-
-    @Schema(description = "来源消息引用列表（AI 草稿有值）")
-    private List<MemorySourceRef> sources;
 }

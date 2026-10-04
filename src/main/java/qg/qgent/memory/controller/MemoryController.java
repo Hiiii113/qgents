@@ -10,7 +10,6 @@ import qg.qgent.common.dto.RejectRequest;
 import qg.qgent.common.web.ApiResponse;
 import qg.qgent.common.web.RequestIdFilter;
 import qg.qgent.memory.dto.MemoryCreateRequest;
-import qg.qgent.memory.dto.MemoryDraftRequest;
 import qg.qgent.memory.dto.MemoryUpdateRequest;
 import qg.qgent.memory.service.MemoryService;
 
@@ -41,14 +40,6 @@ public class MemoryController {
     public ApiResponse<?> create(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
                                  @Valid @RequestBody MemoryCreateRequest body, HttpServletRequest request) {
         return ok(memoryService.create(userId, projectId, body), request);
-    }
-
-    /** 读取指定群最近 40 条消息，生成 AI 草稿并记录消息来源。 */
-    @PostMapping("/projects/{projectId}/memories/drafts")
-    @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<?> createAiDraft(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
-                                        @Valid @RequestBody MemoryDraftRequest body, HttpServletRequest request) {
-        return ok(memoryService.createAiDraft(userId, projectId, body), request);
     }
 
     /** 获取 Memory 详情。 */

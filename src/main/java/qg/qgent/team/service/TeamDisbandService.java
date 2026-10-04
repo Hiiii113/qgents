@@ -70,7 +70,6 @@ public class TeamDisbandService {
         List<UUID> groupIds = chatGroupMapper.selectList(Wrappers.<ChatGroupEntity>lambdaQuery()
                         .eq(ChatGroupEntity::getProjectId, projectId)).stream().map(ChatGroupEntity::getId)
                 .toList();
-        // memory_message_sources 由 memories 外键级联删除
         memoryMapper.delete(Wrappers.<MemoryEntity>lambdaQuery().eq(MemoryEntity::getProjectId, projectId));
 
         agentRuns.delete(Wrappers.<AgentRunEntity>lambdaQuery().eq(AgentRunEntity::getProjectId, projectId));

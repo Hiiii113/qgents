@@ -1,17 +1,12 @@
 package qg.qgent.skill.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.chat.client.ChatClient;
 
-import qg.qgent.chat.mapper.MessageMapper;
-import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.memory.dto.MemoryCreateRequest;
 import qg.qgent.memory.dto.MemoryResponse;
 import qg.qgent.memory.entity.MemoryEntity;
 import qg.qgent.memory.mapper.MemoryMapper;
-import qg.qgent.memory.mapper.MemoryMessageSourceMapper;
 import qg.qgent.memory.service.MemoryService;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.service.ProjectAccessService;
@@ -41,17 +36,13 @@ class SkillMemoryAdminAutoPublishTest {
 
     private final SkillMapper skillMapper = mock(SkillMapper.class);
     private final MemoryMapper memoryMapper = mock(MemoryMapper.class);
-    private final MemoryMessageSourceMapper sourceMapper = mock(MemoryMessageSourceMapper.class);
-    private final MessageMapper messageMapper = mock(MessageMapper.class);
-    private final ChatGroupMapper groupMapper = mock(ChatGroupMapper.class);
     private final ProjectMapper projectMapper = mock(ProjectMapper.class);
     private final ProjectAccessService access = mock(ProjectAccessService.class);
     private final UserMapper userMapper = mock(UserMapper.class);
     private final EventService eventService = mock(EventService.class);
 
     private final SkillService skillService = new SkillService(skillMapper, access, userMapper, eventService);
-    private final MemoryService memoryService = new MemoryService(memoryMapper, sourceMapper, messageMapper,
-            groupMapper, projectMapper, access, userMapper, mock(ChatClient.Builder.class), new ObjectMapper(), eventService);
+    private final MemoryService memoryService = new MemoryService(memoryMapper, projectMapper, access, userMapper, eventService, 12000);
 
     private final UUID projectId = UUID.randomUUID();
     private final UUID admin = UUID.randomUUID();
@@ -109,7 +100,6 @@ class SkillMemoryAdminAutoPublishTest {
     @Test
     void memoryCreatedByAdminIsApprovedImmediately() {
         when(access.isProjectAdmin(projectId, admin)).thenReturn(true);
-        when(sourceMapper.selectMessageIds(any())).thenReturn(java.util.List.of());
         final MemoryEntity[] created = new MemoryEntity[1];
         when(memoryMapper.insert(any(MemoryEntity.class))).thenAnswer(invocation -> {
             created[0] = invocation.getArgument(0);
@@ -129,7 +119,6 @@ class SkillMemoryAdminAutoPublishTest {
         when(access.isProjectAdmin(projectId, member)).thenReturn(false);
         MemoryEntity entity = memoryEntity();
         when(memoryMapper.selectById(any())).thenReturn(entity);
-        when(sourceMapper.selectMessageIds(any())).thenReturn(java.util.List.of());
 
         MemoryResponse response = memoryService.create(member, projectId, memoryRequest("登录约定"));
 
@@ -141,8 +130,7 @@ class SkillMemoryAdminAutoPublishTest {
     void memoryCreatedByAdminRejectsWhenApprovedContextBudgetWouldBeExceeded() {
         when(access.isProjectAdmin(projectId, admin)).thenReturn(true);
         when(memoryMapper.selectApprovedForUpdate(projectId)).thenReturn(java.util.List.of(memoryEntityWithSize(11_999)));
-        MemoryService constrainedService = new MemoryService(memoryMapper, sourceMapper, messageMapper,
-                groupMapper, projectMapper, access, userMapper, mock(ChatClient.Builder.class), new ObjectMapper(), eventService, 12_000);
+        MemoryService constrainedService = new MemoryService(memoryMapper, projectMapper, access, userMapper, eventService, 12_000);
 
         ApiException error = org.junit.jupiter.api.Assertions.assertThrows(ApiException.class,
                 () -> constrainedService.create(admin, projectId, memoryRequest("登录约定")));
