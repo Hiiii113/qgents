@@ -35,8 +35,7 @@ public interface ProjectMapper extends BaseMapper<ProjectEntity> {
             @Result(column = "id", property = "id", typeHandler = UuidBinaryTypeHandler.class),
             @Result(column = "team_id", property = "teamId", typeHandler = UuidBinaryTypeHandler.class),
             @Result(column = "avatar_url", property = "avatarUrl"),
-            @Result(column = "member_count", property = "memberCount"),
-            @Result(column = "last_activity_at", property = "lastActivityAt")
+            @Result(column = "member_count", property = "memberCount")
     })
     List<ProjectMembershipView> selectAccessiblePage(@Param("teamId") UUID teamId,
                                                      @Param("userId") UUID userId, @Param("teamOwner") boolean teamOwner,
@@ -59,20 +58,4 @@ public interface ProjectMapper extends BaseMapper<ProjectEntity> {
     @ResultMap("membership")
     List<ProjectMembershipView> selectAccessibleByUser(@Param("userId") UUID userId);
 
-    /** 按项目群聊最近消息时间倒序查询；无消息时为空。 */
-    @Select({"<script>",
-            "SELECT p.id, p.team_id, p.name, p.description, p.avatar_url, p.status, ",
-            "(SELECT COUNT(*) FROM project_members mc WHERE mc.project_id = p.id) AS member_count,",
-            "CASE WHEN #{teamOwner} THEN 'PROJECT_ADMIN' ELSE pm.role END AS role, ",
-            "(SELECT MAX(rg.last_message_at) FROM chat_groups rg ",
-            "  WHERE rg.project_id = p.id) AS last_activity_at ",
-            "FROM projects p LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = #{userId} ",
-            "WHERE p.team_id = #{teamId} ",
-            "<if test='teamOwner == false'>AND pm.user_id IS NOT NULL</if> ",
-            "ORDER BY last_activity_at DESC, p.id",
-            "</script>"})
-    @ResultMap("membership")
-    List<ProjectMembershipView> selectAccessibleByActivity(@Param("teamId") UUID teamId,
-                                                           @Param("userId") UUID userId,
-                                                           @Param("teamOwner") boolean teamOwner);
 }

@@ -88,16 +88,6 @@ public class ProjectService {
                 this::response);
     }
 
-    /** 按最近聊天时间返回可见项目；无消息的项目排在末尾，不分页。 */
-    public List<ProjectResponse> listByLastActivity(UUID actor, UUID teamId) {
-        requireTeam(teamId);
-        requireTeamMember(teamId, actor);
-        boolean teamOwner = access.isCanonicalTeamOwner(teamId, actor);
-        return projectMapper.selectAccessibleByActivity(teamId, actor, teamOwner).stream()
-                .map(this::response)
-                .toList();
-    }
-
     public ProjectResponse get(UUID actor, UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
         return response(project, access.requireAccess(project, actor));
@@ -317,9 +307,6 @@ public class ProjectService {
         ProjectResponse r = new ProjectResponse(row.getId().toString(), row.getTeamId().toString(), row.getName(),
                 row.getDescription(), row.getRole(), row.getStatus(), row.getMemberCount());
         r.setAvatarUrl(row.getAvatarUrl());
-        if (row.getLastActivityAt() != null) {
-            r.setLastActivityAt(row.getLastActivityAt().toInstant(ZoneOffset.UTC).toString());
-        }
         return r;
     }
 

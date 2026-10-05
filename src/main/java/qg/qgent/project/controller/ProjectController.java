@@ -26,7 +26,6 @@ import qg.qgent.user.dto.AvatarConfirmResponse;
 import qg.qgent.user.dto.AvatarCredentialRequest;
 import qg.qgent.user.dto.AvatarCredentialResponse;
 
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -58,14 +57,6 @@ public class ProjectController {
                                                   @RequestParam(required = false) String cursor, @RequestParam(required = false) Integer limit,
                                                   HttpServletRequest request) {
         return page(projects.list(actor, teamId, cursor, limit), request);
-    }
-
-    /** 按最近聊天时间返回可见项目，不分页；无消息的项目排在末尾。 */
-    @GetMapping("/teams/{teamId}/projects/by-last-activity")
-    public ApiResponse<List<ProjectResponse>> listByLastActivity(@AuthenticationPrincipal UUID actor,
-                                                                 @PathVariable UUID teamId,
-                                                                 HttpServletRequest request) {
-        return ok(projects.listByLastActivity(actor, teamId), request);
     }
 
     /** 获取项目资料。 */

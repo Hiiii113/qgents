@@ -20,10 +20,7 @@ import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.entity.ProjectMemberEntity;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.mapper.ProjectMemberMapper;
-import qg.qgent.realtime.entity.EventEntity;
-import qg.qgent.realtime.mapper.EventMapper;
 import qg.qgent.realtime.service.EventService;
-import qg.qgent.team.dto.ActivityResponse;
 import qg.qgent.team.dto.ReceivedInvitationResponse;
 import qg.qgent.team.dto.TeamCreateRequest;
 import qg.qgent.team.dto.TeamInvitationResponse;
@@ -48,7 +45,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
@@ -59,7 +55,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/** 管理团队资料、成员、邀请与最近动态。 */
+/** 管理团队资料、成员和邀请。 */
 @Service
 @RequiredArgsConstructor
 public class TeamService {
@@ -74,7 +70,6 @@ public class TeamService {
     private final TeamDisbandService teamDisbandService;
     private final NotificationService notificationService;
     private final EventService eventService;
-    private final EventMapper eventMapper;
     private final DefaultAgentProvisioner defaultAgents;
 
     /** 创建团队 */
@@ -110,13 +105,6 @@ public class TeamService {
         // 转成指定的分页响应，memberCount/description/createdAt 来自列表聚合查询
         return keysetPage(rows, pageSize, scope, TeamMembershipView::getId,
                 row -> membershipResponse(row, actor));
-    }
-
-    /** 按最近聊天时间列出团队；无消息的团队排在最后。 */
-    public List<TeamResponse> listByLastActivity(UUID actor) {
-        return teamMapper.selectMembershipByActivity(actor).stream()
-                .map(row -> membershipResponse(row, actor))
-                .toList();
     }
 
     /** 获取团队详情 */
@@ -376,8 +364,8 @@ public class TeamService {
             throw conflict("TEAM_OWNER_IMMUTABLE", "Team Owner 不能被移除");
         }
         // 团队行锁后按项目ID锁定受影响项目，避免并发删除/降级造成项目失去最后一名 Admin。
-        for (qg.qgent.project.entity.ProjectEntity project : projectMapper.selectByTeamForUpdate(teamId)) {
-            qg.qgent.project.entity.ProjectMemberEntity projectMember = projectMemberMapper
+        for (ProjectEntity project : projectMapper.selectByTeamForUpdate(teamId)) {
+            ProjectMemberEntity projectMember = projectMemberMapper
                     .selectByProjectAndUser(project.getId(), userId);
             if (projectMember != null && "PROJECT_ADMIN".equals(projectMember.getRole())
                     && projectMemberMapper.countAdmins(project.getId()) <= 1) {
@@ -401,132 +389,6 @@ public class TeamService {
         TeamResponse summary = team(team, "TEAM_OWNER");
         teamDisbandService.deleteTeam(teamId);
         return summary;
-    }
-
-    /** 从项目事件中查询团队最近动态，按类型筛选并分页。 */
-    public PageSlice<ActivityResponse> activities(UUID actor, UUID teamId, String type, String cursor, Integer limit) {
-        requireMember(teamId, actor);
-        requireTeam(teamId);
-        int pageSize = Math.min(Math.max(limit == null ? 20 : limit, 1), 50);
-        String scope = "team-activities:" + teamId;
-        UUID anchor = decodeCursor(cursor, scope);
-        List<String> fragments = activityFragments(type);
-        List<EventEntity> rows = eventMapper.listTeamAfter(teamId, anchor, fragments, pageSize + 1);
-        Map<UUID, ProjectEntity> projects = loadProjects(rows);
-        Map<UUID, String> userNames = loadActivityUserNames(rows);
-        return keysetPage(rows, pageSize, scope, EventEntity::getId,
-                event -> activity(event, projects, userNames));
-    }
-
-    // ---------- 团队动态：事件类型映射与条目构建 ----------
-
-    // 动态类型对应的固定 SQL 条件；用户参数只用于选择条件。
-    private static final Map<String, String> ACTIVITY_FRAGMENTS = Map.of(
-            "GROUP_CREATED", "e.event_type='project.created'");
-
-    /** 将逗号分隔的 type 过滤参数映射为 SQL 片段集合；无参数返回全部。 */
-    private List<String> activityFragments(String type) {
-        List<String> tokens = type == null || type.isBlank()
-                ? List.of()
-                : Arrays.stream(type.split(",")).map(String::trim).filter(t -> !t.isBlank()).toList();
-        List<String> fragments = new ArrayList<>();
-        for (String activityType : ACTIVITY_FRAGMENTS.keySet()) {
-            if (tokens.isEmpty() || tokens.stream().anyMatch(t -> activityType.equals(t) || activityType.startsWith(t))) {
-                fragments.add(ACTIVITY_FRAGMENTS.get(activityType));
-            }
-        }
-        return fragments.isEmpty() ? List.of("1=0") : fragments;
-    }
-
-    private ActivityResponse activity(EventEntity event,
-                                      Map<UUID, ProjectEntity> projects, Map<UUID, String> userNames) {
-        String type = activityType(event);
-        String actorId = null;
-        String targetType;
-        String targetId;
-        String targetTitle;
-        String title;
-        switch (type) {
-            case "GROUP_CREATED" -> {
-                UUID groupProjectId = uuidOf(event.getPayload() == null ? null : event.getPayload().get("projectId"));
-                ProjectEntity project = groupProjectId == null ? null : projects.get(groupProjectId);
-                String projectName = project == null ? null : project.getName();
-                targetType = "PROJECT";
-                targetId = groupProjectId == null ? null : groupProjectId.toString();
-                targetTitle = projectName;
-                title = "项目「" + safe(projectName) + "」已创建";
-                actorId = payloadString(event, "createdBy");
-            }
-            default -> throw new IllegalStateException("unmapped activity type: " + type);
-        }
-        String actorName = actorId == null ? null : userNames.get(UUID.fromString(actorId));
-        return new ActivityResponse(event.getId().toString(), type, title, null,
-                actorId == null ? null : new ActivityResponse.ActivityActor(actorId, actorName, null),
-                new ActivityResponse.ActivityTarget(targetType, targetId, targetTitle), null,
-                iso(event.getCreatedAt()));
-    }
-
-    /** 事件 → 动态类型；SQL 片段已按状态过滤，返回值与 {@link #ACTIVITY_FRAGMENTS} 的 key 一致。 */
-    private String activityType(EventEntity event) {
-        String eventType = event.getEventType();
-        return switch (eventType) {
-            case "project.created" -> "GROUP_CREATED";
-            default -> null;
-        };
-    }
-
-    private String payloadString(EventEntity event, String key) {
-        Object value = event.getPayload() == null ? null : event.getPayload().get(key);
-        return value == null ? null : String.valueOf(value);
-    }
-
-    private UUID uuidOf(Object value) {
-        if (value instanceof UUID uuid) {
-            return uuid;
-        }
-        if (value instanceof String s) {
-            try {
-                return UUID.fromString(s);
-            } catch (IllegalArgumentException ignored) {
-                return null;
-            }
-        }
-        return null;
-    }
-
-    private String safe(String value) {
-        return value == null || value.isBlank() ? "未知项目" : value;
-    }
-
-    // ---------- 团队动态：页内批量富化 ----------
-
-    private Map<UUID, ProjectEntity> loadProjects(List<EventEntity> rows) {
-        Set<UUID> projectIds = rows.stream()
-                .map(event -> uuidOf(event.getPayload() == null ? null : event.getPayload().get("projectId")))
-                .filter(Objects::nonNull).collect(Collectors.toSet());
-        if (projectIds.isEmpty()) {
-            return Map.of();
-        }
-        return projectMapper.selectBatchIds(projectIds).stream().collect(Collectors.toMap(ProjectEntity::getId, p -> p));
-    }
-
-    private Map<UUID, String> loadActivityUserNames(List<EventEntity> rows) {
-        Set<UUID> userIds = new java.util.HashSet<>();
-        // 项目创建动态的发起人取自 project.created 载荷。
-        for (EventEntity row : rows) {
-            if ("project.created".equals(row.getEventType())) {
-                UUID creator = uuidOf(row.getPayload() == null ? null : row.getPayload().get("createdBy"));
-                if (creator != null) {
-                    userIds.add(creator);
-                }
-            }
-        }
-        if (userIds.isEmpty()) {
-            return Map.of();
-        }
-        return userMapper.selectBatchIds(userIds).stream().collect(Collectors.toMap(UserEntity::getId,
-                user -> user.getDisplayName() == null || user.getDisplayName().isBlank() ? "已注销用户"
-                        : user.getDisplayName()));
     }
 
     // 校验团队存在且当前用户属于该团队。
@@ -619,9 +481,6 @@ public class TeamService {
         response.setDescription(row.getDescription());
         response.setAvatarUrl(row.getAvatarUrl());
         response.setCreatedAt(row.getCreatedAt());
-        if (row.getLastActivityAt() != null) {
-            response.setLastActivityAt(row.getLastActivityAt().toInstant(ZoneOffset.UTC).toString());
-        }
         return response;
     }
 

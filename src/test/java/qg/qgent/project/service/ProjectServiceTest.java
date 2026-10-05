@@ -11,7 +11,6 @@ import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.mapper.view.ProjectMembershipView;
 import qg.qgent.team.entity.TeamMemberEntity;
 import java.util.List;
-import java.time.LocalDateTime;
 import qg.qgent.project.event.ProjectCreatedEvent;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.mapper.ProjectMemberMapper;
@@ -36,7 +35,7 @@ class ProjectServiceTest {
             access, mock(ApplicationEventPublisher.class), mock(NotificationService.class), mock(EventService.class));
 
     @Test
-    void activityListReturnsAvatarAndMemberCountWithoutExtraQueries() {
+    void projectListReturnsAvatarAndMemberCountWithoutExtraQueries() {
         UUID actor = UUID.randomUUID(), teamId = UUID.randomUUID();
         TeamEntity team = new TeamEntity();
         team.setStatus("ACTIVE");
@@ -47,14 +46,12 @@ class ProjectServiceTest {
         row.setTeamId(teamId);
         row.setAvatarUrl("https://assets.example/avatar.png");
         row.setMemberCount(3L);
-        row.setLastActivityAt(LocalDateTime.of(2026, 10, 1, 10, 0));
-        when(projects.selectAccessibleByActivity(teamId, actor, false)).thenReturn(List.of(row));
+        when(projects.selectAccessiblePage(teamId, actor, false, null, 21)).thenReturn(List.of(row));
 
-        var response = service.listByLastActivity(actor, teamId).getFirst();
+        var response = service.list(actor, teamId, null, 20).getData().getFirst();
 
         assertThat(response.getAvatarUrl()).isEqualTo(row.getAvatarUrl());
         assertThat(response.getMemberCount()).isEqualTo(3L);
-        assertThat(response.getLastActivityAt()).isEqualTo("2026-10-01T10:00:00Z");
         verifyNoInteractions(projectMembers);
     }
 

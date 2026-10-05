@@ -29,7 +29,6 @@ import qg.qgent.common.web.ApiException;
 import qg.qgent.project.event.ProjectCreatedEvent;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.mapper.ProjectMemberMapper;
-import qg.qgent.project.mapper.view.ProjectMembershipView;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.user.mapper.UserGroupPreferenceMapper;
@@ -110,12 +109,6 @@ public class GroupService {
     public List<GroupResponse> list(UUID actor, UUID projectId) {
         access.requireProjectMember(projectId, actor);
         return groupResponses(groupMapper.listByProject(projectId), actor);
-    }
-
-    public List<GroupResponse> allGroups(UUID actor) {
-        List<UUID> projectIds = projectMapper.selectAccessibleByUser(actor).stream()
-                .map(ProjectMembershipView::getId).toList();
-        return projectIds.isEmpty() ? List.of() : groupResponses(groupMapper.selectByProjectIds(projectIds), actor);
     }
 
     /** 列表与详情共用消息摘要、未读数和个人置顶状态的组装逻辑。 */

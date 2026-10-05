@@ -40,22 +40,9 @@ public interface TeamMapper extends BaseMapper<TeamEntity> {
             @Result(column = "avatar_url", property = "avatarUrl"),
             @Result(column = "created_at", property = "createdAt"),
             @Result(column = "role", property = "role"),
-            @Result(column = "member_count", property = "memberCount"),
-            @Result(column = "last_activity_at", property = "lastActivityAt")
+            @Result(column = "member_count", property = "memberCount")
     })
     List<TeamMembershipView> selectMembershipPage(@Param("userId") UUID userId,
                                                   @Param("anchor") UUID anchor, @Param("limit") int limit);
 
-    /** 查询当前用户加入的团队（含最后活跃时间），按最后活跃倒序。 */
-    @Select("SELECT t.id, t.owner_user_id, t.name, t.description, t.avatar_url, t.created_at, tm.role, "
-            + "(SELECT COUNT(*) FROM team_members tc WHERE tc.team_id = t.id) AS member_count, "
-            + "(SELECT MAX(p_act) FROM ( "
-            + "  SELECT (SELECT MAX(rg.last_message_at) FROM chat_groups rg "
-            + "          WHERE rg.project_id = p.id) AS p_act "
-            + "  FROM projects p WHERE p.team_id = t.id) x) AS last_activity_at "
-            + "FROM team_members tm INNER JOIN teams t ON t.id = tm.team_id "
-            + "WHERE tm.user_id = #{userId} "
-            + "ORDER BY last_activity_at DESC, t.id")
-    @ResultMap("membership")
-    List<TeamMembershipView> selectMembershipByActivity(@Param("userId") UUID userId);
 }

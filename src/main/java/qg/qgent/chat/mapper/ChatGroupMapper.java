@@ -10,8 +10,4 @@ public interface ChatGroupMapper extends BaseMapper<ChatGroupEntity> {
     List<UUID> selectUserIds(UUID groupId);
     @Select("select * from chat_groups where project_id=#{projectId} ORDER BY default_group DESC, created_at ASC")
     List<ChatGroupEntity> listByProject(UUID projectId);
-    @Select({"<script>", "SELECT * FROM chat_groups WHERE project_id IN ",
-            "(<foreach collection='projectIds' item='pid' separator=','>#{pid}</foreach>)",
-            "ORDER BY coalesce(last_message_at, created_at) DESC", "</script>"})
-    List<ChatGroupEntity> selectByProjectIds(@Param("projectIds") List<UUID> projectIds);
 }

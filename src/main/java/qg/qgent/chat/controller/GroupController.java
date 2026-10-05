@@ -51,12 +51,6 @@ public class GroupController {
         return ok(groupService.invite(userId, projectId, groupId, body), request);
     }
 
-    /** 查询当前用户可访问的所有项目群聊，供聊天列表使用。 */
-    @GetMapping("/chat/groups")
-    public ApiResponse<?> allGroups(@AuthenticationPrincipal UUID userId, HttpServletRequest request) {
-        return ok(groupService.allGroups(userId), request);
-    }
-
     /** 查询指定群聊的基本信息，以及当前用户的未读和置顶状态。 */
     @GetMapping("/projects/{projectId}/groups/{groupId}")
     public ApiResponse<?> get(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,

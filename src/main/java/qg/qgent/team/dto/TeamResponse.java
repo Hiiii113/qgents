@@ -21,8 +21,6 @@ public class TeamResponse {
     // 创建时间（UTC）。
     private LocalDateTime createdAt;
 
-    // 团队最近聊天时间（ISO8601 UTC），没有消息时为空。
-    private String lastActivityAt;
 
     public TeamResponse(String id, String name, String role) {
         this.id = id;

@@ -27,13 +27,13 @@ class TeamMapperTest {
     void teamListsAndMemberQueriesKeepUuidAndProfileMappings() {
         var configuration = configuration();
         configuration.addMapper(TeamMemberMapper.class);
-        for (String method : new String[]{"selectMembershipPage", "selectMembershipByActivity"}) {
+        for (String method : new String[]{"selectMembershipPage"}) {
             var mappings = configuration.getMappedStatement(TeamMapper.class.getName() + "." + method)
                     .getResultMaps().getFirst().getResultMappings();
             assertThat(mappings).anyMatch(field -> "id".equals(field.getProperty())
                     && field.getTypeHandler() instanceof UuidBinaryTypeHandler);
             assertThat(mappings).anyMatch(field -> "avatarUrl".equals(field.getProperty()));
-            assertThat(mappings).anyMatch(field -> "lastActivityAt".equals(field.getProperty()));
+            assertThat(mappings).anyMatch(field -> "memberCount".equals(field.getProperty()));
         }
         for (String method : new String[]{"selectByTeamAndUser", "selectByTeamId", "selectByUserId"}) {
             var mappings = configuration.getMappedStatement(TeamMemberMapper.class.getName() + "." + method)

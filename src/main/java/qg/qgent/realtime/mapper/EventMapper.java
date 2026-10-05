@@ -44,29 +44,6 @@ public interface EventMapper extends BaseMapper<EventEntity> {
     List<EventEntity> listAfter(@Param("projectId") UUID projectId, @Param("after") long after,
                                 @Param("limit") int limit);
 
-    /** 按事件 ID 倒序分页查询团队项目动态；过滤 SQL 只允许调用方的固定映射。 */
-    @Select({"<script>",
-            "SELECT e.id, e.project_id, e.group_id, e.sequence_no, e.event_type, e.resource_id, e.payload, e.created_at",
-            "FROM events e JOIN projects p ON e.project_id = p.id",
-            "WHERE p.team_id = #{teamId}",
-            "<if test='anchor != null'>AND e.id &lt; #{anchor}</if>",
-            "AND (<foreach collection='fragments' item='f' separator=' OR '>${f}</foreach>)",
-            "ORDER BY e.id DESC LIMIT #{limit}",
-            "</script>"})
-    @Results({
-            @Result(column = "id", property = "id", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "project_id", property = "projectId", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "group_id", property = "groupId",
-                    typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "sequence_no", property = "sequenceNo"),
-            @Result(column = "event_type", property = "eventType"),
-            @Result(column = "resource_id", property = "resourceId"),
-            @Result(column = "payload", property = "payload", typeHandler = JacksonTypeHandler.class),
-            @Result(column = "created_at", property = "createdAt")
-    })
-    List<EventEntity> listTeamAfter(@Param("teamId") UUID teamId, @Param("anchor") UUID anchor,
-                                    @Param("fragments") List<String> fragments, @Param("limit") int limit);
-
     /** 删除全部早于 cutoff 的过期事件（每日定时清理）。 */
     @Delete("DELETE FROM events WHERE created_at < #{cutoff}")
     int deleteExpired(@Param("cutoff") LocalDateTime cutoff);

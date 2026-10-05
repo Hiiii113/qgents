@@ -14,7 +14,6 @@ import qg.qgent.common.web.ApiResponse;
 import qg.qgent.common.web.PagedApiResponse;
 import qg.qgent.common.web.RequestIdFilter;
 import qg.qgent.realtime.service.EventService;
-import qg.qgent.team.dto.ActivityResponse;
 import qg.qgent.team.dto.TeamCreateRequest;
 import qg.qgent.team.dto.TeamInvitationResponse;
 import qg.qgent.team.dto.TeamMemberInviteRequest;
@@ -29,7 +28,6 @@ import qg.qgent.user.dto.AvatarConfirmResponse;
 import qg.qgent.user.dto.AvatarCredentialRequest;
 import qg.qgent.user.dto.AvatarCredentialResponse;
 
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -69,13 +67,6 @@ public class TeamController {
         return page(teams.list(actor, cursor, limit), request);
     }
 
-    /** 按团队内最近聊天时间列出我加入的团队；无消息的团队排在最后。 */
-    @GetMapping("/by-last-activity")
-    public ApiResponse<List<TeamResponse>> listByLastActivity(@AuthenticationPrincipal UUID actor,
-                                                              HttpServletRequest request) {
-        return ok(teams.listByLastActivity(actor), request);
-    }
-
     /** 获取团队资料与当前用户生效角色。 */
     @GetMapping("/{teamId}")
     public ApiResponse<TeamResponse> get(@AuthenticationPrincipal UUID actor, @PathVariable UUID teamId,
@@ -110,16 +101,6 @@ public class TeamController {
                                                         @PathVariable UUID teamId, @RequestParam(required = false) String cursor,
                                                         @RequestParam(required = false) Integer limit, HttpServletRequest request) {
         return page(teams.members(actor, teamId, cursor, limit), request);
-    }
-
-    /** 团队最近动态（团队成员可见，基于项目事件聚合，覆盖最近 24 小时）。 */
-    @GetMapping("/{teamId}/activities")
-    public PagedApiResponse<ActivityResponse> activities(@AuthenticationPrincipal UUID actor, @PathVariable UUID teamId,
-                                                         @RequestParam(required = false) String type,
-                                                         @RequestParam(required = false) String cursor,
-                                                         @RequestParam(required = false) Integer limit,
-                                                         HttpServletRequest request) {
-        return page(teams.activities(actor, teamId, type, cursor, limit), request);
     }
 
     /** Team Owner 按邮箱创建团队邀请。 */
