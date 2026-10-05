@@ -136,7 +136,6 @@ CREATE TABLE IF NOT EXISTS
         created_by BINARY(16) NOT NULL COMMENT '创建用户ID',
         default_group TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否为项目自动创建的默认群',
         name VARCHAR(255) NOT NULL COMMENT '群聊名称',
-        description TEXT NULL COMMENT '群聊目标和需求背景说明',
         last_message_at DATETIME (6) NULL COMMENT '最近消息时间（UTC）',
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
         updated_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',

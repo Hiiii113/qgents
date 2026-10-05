@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * Agent 使用的群聊上下文。
  * <p>
- * 将项目群聊的历史消息、群描述、已发布 Skill 目录与已批准 Memory 组装为 Agent 输入上下文，
+ * 将项目群聊的历史消息、已发布 Skill 目录与已批准 Memory 组装为 Agent 输入上下文，
  * 供 Agent loop 作为 prompt 输入。
  */
 @Data
@@ -27,8 +27,6 @@ public class GroupContext {
     @Schema(description = "项目群聊标题")
     private String title;
 
-    @Schema(description = "群聊描述")
-    private String description;
     @Schema(description = "近期群聊消息")
     private List<ContextMessage> conversation;
 

@@ -78,6 +78,7 @@ class ProjectChatTest {
         verify(groups).insert(saved.capture());
         assertThat(saved.getValue().getDefaultGroup()).isFalse();
         assertThat(response.getTitle()).isEqualTo("方案讨论");
+        assertThat(new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(response).has("description")).isFalse();
         verify(users).insertUser(saved.getValue().getId(), actor);
         verify(users).insertUser(saved.getValue().getId(), teammate);
         verify(agents).insertAgent(saved.getValue().getId(), agentId);

@@ -22,9 +22,6 @@ public class GroupResponse {
     @Schema(description = "群标题")
     private String title;
 
-    @Schema(description = "群说明")
-    private String description;
-
 
     @Schema(description = "群创建者用户 ID")
     private String createdBy;

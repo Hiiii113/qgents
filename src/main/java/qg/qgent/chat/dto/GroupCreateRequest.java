@@ -11,8 +11,6 @@ import java.util.UUID;
 public class GroupCreateRequest {
     @NotBlank @Size(max = 255)
     private String title;
-    @Size(max = 2000)
-    private String description;
     @Size(max = 100)
     private List<UUID> userIds = List.of();
     @Size(max = 100)

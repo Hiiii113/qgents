@@ -13,7 +13,6 @@ public class ChatGroupEntity {
     private UUID createdBy;
     private Boolean defaultGroup = true;
     private String name;
-    private String description;
     private LocalDateTime lastMessageAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

@@ -165,13 +165,11 @@ public class GroupService {
         if (body.getTitle() != null && body.getTitle().isBlank()) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "GROUP_TITLE_REQUIRED", "群名称不能为空");
         }
-        if (body.getTitle() == null && body.getDescription() == null) {
+        if (body.getTitle() == null) {
             return get(actor, projectId, groupId);
         }
         groupMapper.update(null, Wrappers.<ChatGroupEntity>lambdaUpdate()
-                .set(body.getTitle() != null, ChatGroupEntity::getName,
-                        body.getTitle() == null ? null : body.getTitle().trim())
-                .set(body.getDescription() != null, ChatGroupEntity::getDescription, body.getDescription())
+                .set(ChatGroupEntity::getName, body.getTitle().trim())
                 .eq(ChatGroupEntity::getId, groupId));
         eventService.publish(projectId, groupId, "group.updated", id(groupId),
                 Map.of("projectId", id(projectId), "groupId", id(groupId)));
@@ -251,7 +249,7 @@ public class GroupService {
         long members = (isDefault(g) ? projectMemberMapper.countMembers(g.getProjectId()) : groupUserMapper.selectUserIds(g.getId()).size())
                 + groupAgentMapper.selectAgentIds(g.getId()).size();
         GroupResponse response = new GroupResponse(g.getId().toString(), g.getProjectId().toString(),
-                g.getName(), g.getDescription(), id(g.getCreatedBy()), iso(g.getLastMessageAt()),
+                g.getName(), id(g.getCreatedBy()), iso(g.getLastMessageAt()),
                 iso(g.getLastMessageAt() != null ? g.getLastMessageAt() : g.getCreatedAt()), latestMessage,
                 iso(g.getCreatedAt()), members, unreadCount == null ? 0L : unreadCount, 0L, false, isDefault(g));
         return response;
@@ -271,7 +269,6 @@ public class GroupService {
         group.setCreatedBy(actor);
         group.setDefaultGroup(false);
         group.setName(body.getTitle().trim());
-        group.setDescription(body.getDescription());
         group.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
         validateInvites(actor, projectId, body.getUserIds(), body.getAgentIds());
         groupMapper.insert(group);

@@ -86,7 +86,7 @@ public class ContextService {
         List<ContextMemory> memories = memoryMapper.listMemories(projectId, actor, isAdmin, "APPROVED", null).stream()
                 .map(m -> new ContextMemory(m.getTitle(), m.getContent(), m.getCategory())).toList();
 
-        return new GroupContext(group.getId().toString(), projectId.toString(), group.getName(), group.getDescription(),
+        return new GroupContext(group.getId().toString(), projectId.toString(), group.getName(),
                 conversation, skills, memories);
     }
 
