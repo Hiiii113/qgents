@@ -44,7 +44,7 @@ public class FrontendOpenApiConfiguration {
             return "群组与消息";
         if (path.contains("/skills")) return "共享 Skill";
         if (path.contains("/memories")) return "共享 Memory";
-        if (path.contains("/auth/") || path.equals("/api/v1/me")) return "认证与账户";
+        if (path.contains("/auth/") || path.equals("/api/v1/me") || path.startsWith("/api/v1/me/")) return "认证与账户";
         if (path.contains("/projects")) return "项目与项目成员";
         return "团队与邀请";
     }
@@ -66,6 +66,7 @@ public class FrontendOpenApiConfiguration {
         if (path.endsWith("/logout")) return "退出登录";
         if (path.endsWith("/password-reset-requests")) return "提交密码重置申请";
         if (path.endsWith("/password-resets")) return "重置密码";
+        if (path.equals("/api/v1/me/current-team")) return "保存最近使用的团队";
         if (path.equals("/api/v1/me"))
             return method == PathItem.HttpMethod.GET ? "获取当前用户资料" : "修改当前用户资料";
         if (path.endsWith("/read-all")) return "全部通知已读";

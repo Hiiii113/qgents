@@ -16,6 +16,7 @@ import qg.qgent.auth.service.AuthService;
 import qg.qgent.common.web.ApiResponse;
 import qg.qgent.common.web.RequestIdFilter;
 import qg.qgent.user.dto.UserUpdateRequest;
+import qg.qgent.user.dto.CurrentTeamRequest;
 
 import java.util.Map;
 import java.util.UUID;
@@ -99,6 +100,14 @@ public class AuthController {
     public ApiResponse<?> updateMe(@AuthenticationPrincipal UUID userId, @Valid @RequestBody UserUpdateRequest body,
                                    HttpServletRequest request) {
         return ok(authService.updateMe(userId, body), request);
+    }
+
+    /** 保存当前团队，供后续登录和其他设备恢复。 */
+    @PutMapping("/me/current-team")
+    public ApiResponse<?> selectTeam(@AuthenticationPrincipal UUID userId,
+                                    @Valid @RequestBody CurrentTeamRequest body, HttpServletRequest request) {
+        authService.selectTeam(userId, body.teamId());
+        return ok(Map.of(), request);
     }
 
     // 生成统一的 API 响应

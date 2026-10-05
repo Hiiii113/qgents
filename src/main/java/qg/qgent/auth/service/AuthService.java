@@ -264,9 +264,32 @@ public class AuthService {
                 .isNull(RefreshTokenEntity::getRevokedAt));
     }
 
+    @Transactional
     public CurrentUserResponse me(UUID userId) {
         UserEntity user = requireUser(userId);
-        return new CurrentUserResponse(view(user), teams(userId), projects(userId));
+        List<TeamResponse> availableTeams = teams(userId);
+        UUID currentTeamId = availableTeams.stream().map(team -> UUID.fromString(team.getId()))
+                .filter(id -> id.equals(user.getLastTeamId())).findFirst()
+                .orElseGet(() -> availableTeams.isEmpty() ? null : UUID.fromString(availableTeams.getFirst().getId()));
+        if (!Objects.equals(currentTeamId, user.getLastTeamId())) {
+            saveTeam(userId, currentTeamId);
+        }
+        return new CurrentUserResponse(view(user), availableTeams, projects(userId),
+                currentTeamId == null ? null : currentTeamId.toString());
+    }
+
+    @Transactional
+    public void selectTeam(UUID userId, UUID teamId) {
+        TeamEntity team = teamMapper.selectById(teamId);
+        if (team == null || !"ACTIVE".equals(team.getStatus())
+                || teamMemberMapper.selectByTeamAndUser(teamId, userId) == null) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "TEAM_ACCESS_DENIED", "暂无团队访问权限");
+        }
+        saveTeam(userId, teamId);
+    }
+
+    private void saveTeam(UUID userId, UUID teamId) {
+        userMapper.updateLastTeam(userId, teamId);
     }
 
     @Transactional
@@ -328,6 +351,7 @@ public class AuthService {
                             : "TEAM_MEMBER";
                     TeamResponse response = new TeamResponse(team.getId().toString(), team.getName(), role);
                     response.setDescription(team.getDescription());
+                    response.setAvatarUrl(team.getAvatarUrl());
                     response.setCreatedAt(team.getCreatedAt());
                     response.setMemberCount(memberCount(team.getId()));
                     return response;

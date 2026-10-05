@@ -16,4 +16,5 @@ public class CurrentUserResponse {
     private UserResponse user;
     private List<TeamResponse> teams;
     private List<ProjectResponse> projects;
+    private String currentTeamId;
 }

@@ -47,7 +47,7 @@ public interface TeamMemberMapper extends BaseMapper<TeamMemberEntity> {
     @Delete("DELETE FROM team_members WHERE team_id = #{teamId} AND user_id = #{userId}")
     int deleteByTeamAndUser(@Param("teamId") UUID teamId, @Param("userId") UUID userId);
 
-    @Select("SELECT team_id, user_id, role FROM team_members WHERE user_id = #{userId}")
+    @Select("SELECT team_id, user_id, role FROM team_members WHERE user_id = #{userId} ORDER BY team_id")
     @ResultMap("member")
     List<TeamMemberEntity> selectByUserId(UUID userId);
 
