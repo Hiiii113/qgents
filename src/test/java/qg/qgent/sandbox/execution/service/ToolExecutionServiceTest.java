@@ -114,6 +114,30 @@ class ToolExecutionServiceTest {
     }
 
     @Test
+    void cancelledQueuedCommandNeverInvokesToolWhenWorkerBecomesAvailable() throws Exception {
+        CountDownLatch busy = new CountDownLatch(1), release = new CountDownLatch(1);
+        pool.execute(() -> {
+            busy.countDown();
+            try { release.await(); }
+            catch (InterruptedException exception) { Thread.currentThread().interrupt(); }
+        });
+        assertTrue(busy.await(5, TimeUnit.SECONDS));
+        ToolExecutionFixture fixture = fixture();
+        fixture.request().setTool("command.run");
+        fixture.service().submit(fixture.sandboxId(), fixture.request());
+        try {
+            assertEquals("CANCELLED", fixture.service().cancel(fixture.executionId()).getStatus());
+            assertEquals("CANCELLED", fixture.service().await(fixture.executionId(), Duration.ofSeconds(1)).getStatus());
+        } finally {
+            release.countDown();
+        }
+        // 同一个单线程池的后续任务完成，表示先前排队的命令已经走完收尾。
+        pool.submit(() -> { }).get(5, TimeUnit.SECONDS);
+        verify(fixture.tools(), org.mockito.Mockito.never()).execute(anyString(), any(), any());
+        assertEquals("CANCELLED", fixture.service().find(fixture.executionId()).getStatus());
+    }
+
+    @Test
     void shortWaitReturnsHandleAndCancellationWakesWaiter() throws Exception {
         ToolExecutionFixture fixture = fixture();
         fixture.request().setTool("command.run");
