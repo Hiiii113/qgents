@@ -3,12 +3,6 @@ package qg.qgent.realtime.service;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import org.springframework.test.util.ReflectionTestUtils;
-import java.io.IOException;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.LongFunction;
 import org.springframework.dao.DeadlockLoserDataAccessException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -16,10 +10,11 @@ import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.chat.entity.ChatGroupEntity;
-import java.util.Set;
+import qg.qgent.chat.mapper.ChatGroupMapper;
+import qg.qgent.common.config.PerformanceMetrics;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.entity.NotificationEventEntity;
 import qg.qgent.notification.mapper.NotificationEventMapper;
@@ -28,6 +23,9 @@ import qg.qgent.project.mapper.ProjectMemberMapper;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.entity.EventEntity;
 import qg.qgent.realtime.mapper.EventMapper;
+import qg.qgent.realtime.transport.RealtimeConnectionTransport;
+import qg.qgent.realtime.transport.SseConnectionTransport;
+import qg.qgent.realtime.websocket.RealtimeFrame;
 import qg.qgent.team.entity.TeamEventEntity;
 import qg.qgent.team.mapper.TeamEventMapper;
 import qg.qgent.team.mapper.TeamMapper;
@@ -36,305 +34,303 @@ import qg.qgent.user.mapper.UserMapper;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.LongFunction;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
-/** 事件发布与过期清理的事务边界测试。 */
+/** Publishing and subscription behavior at the realtime domain boundary. */
 class EventServiceTest {
 
     @Test
-    void newGroupEventsGoToInvitedUsersAndMembershipIsReadDynamically() {
-        EventMapper events = mock(EventMapper.class);
-        ChatGroupMapper groups = mock(ChatGroupMapper.class);
-        RealtimeHub hub = mock(RealtimeHub.class);
-        UUID projectId = UUID.randomUUID(), groupId = UUID.randomUUID(), invited = UUID.randomUUID();
-        ChatGroupEntity group = new ChatGroupEntity(); group.setId(groupId); group.setDefaultGroup(false);
-        when(groups.selectById(groupId)).thenReturn(group);
-        when(groups.selectUserIds(groupId)).thenReturn(List.of(invited));
-        EventService service = new EventService(events, mock(ProjectAccessService.class), mock(NotificationEventMapper.class),
-                mock(TeamEventMapper.class), hub, mock(ProjectMemberMapper.class), mock(TeamMemberMapper.class),
-                groups, mock(ProjectMapper.class));
-        service.publish(projectId, groupId, "group.created", groupId.toString(), Map.of());
-        verify(hub).broadcastToUsers(org.mockito.ArgumentMatchers.eq(Set.of(invited)), any());
-        assertEquals(true, ReflectionTestUtils.invokeMethod(service, "canSeeGroup", groupId, invited));
-        UUID laterInvite = UUID.randomUUID();
-        assertEquals(false, ReflectionTestUtils.invokeMethod(service, "canSeeGroup", groupId, laterInvite));
-        when(groups.selectUserIds(groupId)).thenReturn(List.of(invited, laterInvite));
-        assertEquals(true, ReflectionTestUtils.invokeMethod(service, "canSeeGroup", groupId, laterInvite));
-    }
-
-    @ParameterizedTest
-    @ValueSource(strings = {"project", "team", "notification"})
-    void allStreamsRejectNegativeAndExpiredCursorsWithoutOccupyingSlots(String scope) {
-        EventMapper events = mock(EventMapper.class);
-        NotificationEventMapper notifications = mock(NotificationEventMapper.class);
-        TeamEventMapper teams = mock(TeamEventMapper.class);
-        when(events.minSequence(any())).thenReturn(2L);
-        when(notifications.minSequence(any())).thenReturn(2L);
-        when(teams.minSequence(any())).thenReturn(2L);
-        EventService service = fullService(events, notifications, teams, mock(UserMapper.class), mock(TeamMapper.class));
-        UUID owner = UUID.randomUUID(), user = UUID.randomUUID();
-        java.util.function.Function<Long, SseEmitter> connect = cursor -> switch (scope) {
-            case "project" -> service.stream(owner, user, cursor);
-            case "team" -> service.teamStream(owner, user, cursor);
-            default -> service.notificationStream(user, cursor);
-        };
-        var negative = org.junit.jupiter.api.Assertions.assertThrows(ApiException.class, () -> connect.apply(-1L));
-        assertEquals("INVALID_EVENT_CURSOR", negative.code());
-        var expired = org.junit.jupiter.api.Assertions.assertThrows(ApiException.class, () -> connect.apply(1L));
-        assertEquals("EVENT_CURSOR_EXPIRED", expired.code());
-        AtomicInteger active = (AtomicInteger) ReflectionTestUtils.getField(service, "activeSseConnections");
-        assertEquals(0, active.get());
-    }
-
-    @Test
-    void pollSkipsHiddenEventsAndReleasesConnectionOnSendFailure() throws Exception {
-        EventService service = service(mock(EventMapper.class), mock(ProjectMapper.class));
-        SseEmitter emitter = mock(SseEmitter.class);
-        org.mockito.Mockito.doThrow(new IOException("disconnected")).when(emitter).send(any(SseEmitter.SseEventBuilder.class));
-        var eventClass = Class.forName(EventService.class.getName() + "$SseEvent");
-        var constructor = eventClass.getDeclaredConstructor(long.class, String.class, Map.class, boolean.class);
-        constructor.setAccessible(true);
-        Object hidden = constructor.newInstance(1L, "message.created", Map.of(), false);
-        Object visible = constructor.newInstance(2L, "task.updated", Map.of("status", "DONE"), true);
-        AtomicInteger active = (AtomicInteger) ReflectionTestUtils.getField(service, "activeSseConnections");
-        active.set(1);
-        AtomicBoolean closed = new AtomicBoolean();
-        LongFunction<List<?>> load = cursor -> {
-            assertEquals(0L, cursor);
-            return List.of(hidden, visible);
-        };
-
-        ReflectionTestUtils.invokeMethod(service, "pump", emitter, 0L, load, false, closed);
-
-        var captured = org.mockito.ArgumentCaptor.forClass(SseEmitter.SseEventBuilder.class);
-        verify(emitter).send(captured.capture());
-        String frame = captured.getValue().build().stream().map(item -> String.valueOf(item.getData()))
-                .collect(java.util.stream.Collectors.joining());
-        org.junit.jupiter.api.Assertions.assertTrue(frame.contains("id:2"));
-        org.junit.jupiter.api.Assertions.assertTrue(frame.contains("event:task.updated"));
-        verify(emitter).complete();
-        assertEquals(0, active.get());
-        org.junit.jupiter.api.Assertions.assertTrue(closed.get());
-    }
-
-    @Test
-    void publishLocksProjectThenUsesConcurrentSafeNextSequence() {
-        EventMapper events = mock(EventMapper.class);
-        ProjectMapper projects = mock(ProjectMapper.class);
+    void projectPublisherPersistsAnEventThenSendsItToTheCurrentGroupMembers() {
+        Fixture fixture = new Fixture();
         UUID projectId = UUID.randomUUID();
-        when(events.nextSequence(projectId)).thenReturn(9L);
-        EventService service = service(events, projects);
+        UUID groupId = UUID.randomUUID();
+        UUID invitedUser = UUID.randomUUID();
+        ChatGroupEntity group = new ChatGroupEntity();
+        group.setId(groupId);
+        group.setDefaultGroup(false);
+        when(fixture.events.nextSequence(projectId)).thenReturn(9L);
+        when(fixture.groups.selectById(groupId)).thenReturn(group);
+        when(fixture.groups.selectUserIds(groupId)).thenReturn(List.of(invitedUser));
 
-        service.publish(projectId, null, "agent-run.updated", "run-1", Map.of("status", "RUNNING"));
+        RealtimeEventPublisher publisher = fixture.publisher();
+        publisher.publish(projectId, groupId, "group.created", groupId.toString(), Map.of("name", "planning"));
 
-        // 发布前先持有项目行锁，串行化同项目事件写入，避免并发 MAX+1 撞唯一键 500
-        verify(projects).selectByIdForUpdate(projectId);
-        verify(events, never()).maxSequence(any());
-        verify(events).nextSequence(projectId);
-        org.mockito.ArgumentCaptor<EventEntity> captured = org.mockito.ArgumentCaptor.forClass(EventEntity.class);
-        verify(events).insert(captured.capture());
-        EventEntity event = captured.getValue();
-        assertEquals(9L, event.getSequenceNo());
-        assertEquals(projectId, event.getProjectId());
-        assertEquals("agent-run.updated", event.getEventType());
-        assertNotNull(event.getCreatedAt());
-        // 发布路径只能写入事件；过期清理由独立定时任务执行，不能参与调用方业务事务。
-        verifyNoMoreInteractions(events);
+        verify(fixture.projects).selectByIdForUpdate(projectId);
+        verify(fixture.events, never()).maxSequence(any());
+        var persisted = org.mockito.ArgumentCaptor.forClass(EventEntity.class);
+        verify(fixture.events).insert(persisted.capture());
+        assertEquals(9L, persisted.getValue().getSequenceNo());
+        assertEquals(projectId, persisted.getValue().getProjectId());
+        assertEquals("group.created", persisted.getValue().getEventType());
+        assertNotNull(persisted.getValue().getCreatedAt());
+        verify(fixture.events).nextSequence(projectId);
+
+        var frame = org.mockito.ArgumentCaptor.forClass(RealtimeFrame.class);
+        verify(fixture.realtime).broadcastToUsers(eq(Set.of(invitedUser)), frame.capture());
+        assertEquals("project", frame.getValue().scope());
+        assertEquals(projectId.toString(), frame.getValue().projectId());
+        assertEquals(groupId.toString(), frame.getValue().groupId());
+        assertEquals("group.created", frame.getValue().type());
+        var order = inOrder(fixture.transactions, fixture.realtime);
+        order.verify(fixture.transactions).commit(any(TransactionStatus.class));
+        order.verify(fixture.realtime).broadcastToUsers(any(), any(RealtimeFrame.class));
+        verifyNoMoreInteractions(fixture.events);
     }
 
     @Test
-    void purgeExpiredUsesDedicatedMaintenanceQuery() {
-        EventMapper events = mock(EventMapper.class);
-        when(events.deleteExpired(any())).thenReturn(3);
-        EventService service = service(events, mock(ProjectMapper.class));
-
-        service.purgeExpired();
-
-        verify(events).deleteExpired(any());
-        verifyNoMoreInteractions(events);
-    }
-
-    @Test
-    void publishDefersBusinessTransactionEventsUntilAfterCommitAndPreservesOrder() {
-        EventMapper events = mock(EventMapper.class);
-        ProjectMapper projects = mock(ProjectMapper.class);
+    void projectPublisherWaitsForBusinessCommitAndKeepsInvocationOrder() {
+        Fixture fixture = new Fixture();
         UUID projectId = UUID.randomUUID();
-        when(events.nextSequence(projectId)).thenReturn(1L, 2L);
-        EventService service = service(events, projects);
-
-        TransactionSynchronizationManager.initSynchronization();
-        TransactionSynchronizationManager.setActualTransactionActive(true);
+        when(fixture.events.nextSequence(projectId)).thenReturn(1L, 2L);
+        fixture.startBusinessTransaction();
         try {
-            service.publish(projectId, null, "task.updated", "task-1", Map.of("status", "RUNNING"));
-            service.publish(projectId, null, "task-step.updated", "step-1", Map.of("status", "RUNNING"));
+            RealtimeEventPublisher publisher = fixture.publisher();
+            publisher.publish(projectId, null, "project.updated", "project-1", Map.of("name", "A"));
+            publisher.publish(projectId, null, "project.member.added", "member-1", Map.of("userId", "u1"));
 
-            verify(events, never()).insert(any(EventEntity.class));
-            List<TransactionSynchronization> synchronizations = TransactionSynchronizationManager.getSynchronizations();
-            assertEquals(1, synchronizations.size());
-            synchronizations.forEach(TransactionSynchronization::afterCommit);
+            verify(fixture.events, never()).insert(any(EventEntity.class));
+            verifyNoInteractions(fixture.realtime);
+            assertEquals(1, TransactionSynchronizationManager.getSynchronizations().size());
 
-            org.mockito.ArgumentCaptor<EventEntity> captured = org.mockito.ArgumentCaptor.forClass(EventEntity.class);
-            verify(events, org.mockito.Mockito.times(2)).insert(captured.capture());
-            assertEquals(List.of("task.updated", "task-step.updated"),
-                    captured.getAllValues().stream().map(EventEntity::getEventType).toList());
-            synchronizations.forEach(sync -> sync.afterCompletion(TransactionSynchronization.STATUS_COMMITTED));
+            fixture.commitBusinessTransaction();
+
+            var persisted = org.mockito.ArgumentCaptor.forClass(EventEntity.class);
+            verify(fixture.events, org.mockito.Mockito.times(2)).insert(persisted.capture());
+            assertEquals(List.of("project.updated", "project.member.added"),
+                    persisted.getAllValues().stream().map(EventEntity::getEventType).toList());
+            var frames = org.mockito.ArgumentCaptor.forClass(RealtimeFrame.class);
+            verify(fixture.realtime, org.mockito.Mockito.times(2)).broadcastToUsers(any(), frames.capture());
+            assertEquals(List.of("project.updated", "project.member.added"),
+                    frames.getAllValues().stream().map(RealtimeFrame::type).toList());
         } finally {
-            TransactionSynchronizationManager.setActualTransactionActive(false);
-            TransactionSynchronizationManager.clearSynchronization();
+            fixture.clearBusinessTransaction();
         }
     }
 
     @Test
-    void notificationSequenceIsAllocatedWhileRecipientRowIsLocked() {
-        NotificationEventMapper notifications = mock(NotificationEventMapper.class);
-        UserMapper users = mock(UserMapper.class);
-        UUID userId = UUID.randomUUID();
-        when(notifications.maxSequence(userId)).thenReturn(4L);
-        EventService service = fullService(mock(EventMapper.class), notifications, mock(TeamEventMapper.class),
-                users, mock(TeamMapper.class));
-
-        service.publishNotification(userId, UUID.randomUUID(), "notification.created", Map.of("ok", true));
-
-        verify(users).selectByIdForUpdate(userId);
-        org.mockito.ArgumentCaptor<NotificationEventEntity> captured =
-                org.mockito.ArgumentCaptor.forClass(NotificationEventEntity.class);
-        verify(notifications).insert(captured.capture());
-        assertEquals(5L, captured.getValue().getSequenceNo());
-        assertEquals("notification.created", captured.getValue().getKind());
-    }
-
-    @Test
-    void notificationEventTypePreservesProtocolEventsAndNormalizesLegacyBusinessKinds() {
-        EventService service = fullService(mock(EventMapper.class), mock(NotificationEventMapper.class),
-                mock(TeamEventMapper.class), mock(UserMapper.class), mock(TeamMapper.class));
-
-        assertEquals("notification.created", service.notificationEventType("INVITED"));
-        assertEquals("notification.created", service.notificationEventType(null));
-        assertEquals("notification.removed", service.notificationEventType("notification.removed"));
-    }
-
-    @Test
-    void teamSequenceIsAllocatedWhileTeamRowIsLocked() {
-        TeamEventMapper teams = mock(TeamEventMapper.class);
-        qg.qgent.team.mapper.TeamMapper teamRows = mock(qg.qgent.team.mapper.TeamMapper.class);
-        UUID teamId = UUID.randomUUID();
-        when(teams.maxSequence(teamId)).thenReturn(7L);
-        EventService service = fullService(mock(EventMapper.class), mock(NotificationEventMapper.class), teams,
-                mock(UserMapper.class), teamRows);
-
-        service.publishTeamEvent(teamId, "activity.created", "resource-1", Map.of("ok", true));
-
-        verify(teamRows).selectByIdForUpdate(teamId);
-        org.mockito.ArgumentCaptor<TeamEventEntity> captured =
-                org.mockito.ArgumentCaptor.forClass(TeamEventEntity.class);
-        verify(teams).insert(captured.capture());
-        assertEquals(8L, captured.getValue().getSequenceNo());
-    }
-
-    @Test
-    void deadlockIsRetriedInRequiresNewTransactionsAndDoesNotReachCaller() {
-        EventMapper events = mock(EventMapper.class);
-        ProjectMapper projects = mock(ProjectMapper.class);
+    void projectStreamRechecksGroupMembershipForEachLoadedBatch() {
+        Fixture fixture = new Fixture();
         UUID projectId = UUID.randomUUID();
-        PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
-        when(transactions.getTransaction(any(TransactionDefinition.class))).thenReturn(new SimpleTransactionStatus());
-        doNothing().when(transactions).commit(any(TransactionStatus.class));
-        when(events.insert(any(EventEntity.class)))
+        UUID groupId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        when(fixture.events.maxSequence(projectId)).thenReturn(3L);
+        EventEntity groupEvent = new EventEntity();
+        groupEvent.setSequenceNo(4L);
+        groupEvent.setGroupId(groupId);
+        groupEvent.setEventType("message.created");
+        when(fixture.events.listAfter(eq(projectId), anyLong(), anyInt())).thenReturn(List.of(groupEvent));
+        ChatGroupEntity group = new ChatGroupEntity();
+        group.setId(groupId);
+        group.setDefaultGroup(false);
+        when(fixture.groups.selectById(groupId)).thenReturn(group);
+        when(fixture.groups.selectUserIds(groupId)).thenReturn(List.of());
+
+        fixture.service().stream(projectId, userId, null);
+
+        var loader = org.mockito.ArgumentCaptor.forClass(LongFunction.class);
+        verify(fixture.sse).open(eq("project"), eq(projectId), eq(3L), loader.capture(), eq(true));
+        @SuppressWarnings("unchecked")
+        LongFunction<List<SseConnectionTransport.SseEvent>> loadEvents = loader.getValue();
+        assertEquals(4L, loadEvents.apply(3L).getFirst().sequenceNo());
+        assertEquals(false, loadEvents.apply(3L).getFirst().visible());
+
+        when(fixture.groups.selectUserIds(groupId)).thenReturn(List.of(userId));
+        assertEquals(true, loadEvents.apply(4L).getFirst().visible());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"project", "team", "notification"})
+    void streamsRejectNegativeAndExpiredCursorsBeforeOpeningAConnection(String scope) {
+        Fixture fixture = new Fixture();
+        when(fixture.events.minSequence(any())).thenReturn(2L);
+        when(fixture.notifications.minSequence(any())).thenReturn(2L);
+        when(fixture.teams.minSequence(any())).thenReturn(2L);
+        EventService service = fixture.service();
+        UUID ownerId = UUID.randomUUID();
+        UUID userId = UUID.randomUUID();
+        java.util.function.Function<Long, SseEmitter> connect = cursor -> switch (scope) {
+            case "project" -> service.stream(ownerId, userId, cursor);
+            case "team" -> service.teamStream(ownerId, userId, cursor);
+            default -> service.notificationStream(userId, cursor);
+        };
+
+        ApiException negative = assertThrows(ApiException.class, () -> connect.apply(-1L));
+        assertEquals("INVALID_EVENT_CURSOR", negative.code());
+        ApiException expired = assertThrows(ApiException.class, () -> connect.apply(1L));
+        assertEquals("EVENT_CURSOR_EXPIRED", expired.code());
+        verifyNoInteractions(fixture.sse);
+    }
+
+    @Test
+    void notificationStreamUsesProtocolEventNamesForLegacyKinds() {
+        Fixture fixture = new Fixture();
+        UUID userId = UUID.randomUUID();
+        when(fixture.notifications.minSequence(userId)).thenReturn(1L);
+        NotificationEventEntity legacy = new NotificationEventEntity();
+        legacy.setSequenceNo(2L);
+        legacy.setKind("INVITED");
+        NotificationEventEntity removed = new NotificationEventEntity();
+        removed.setSequenceNo(3L);
+        removed.setKind("notification.removed");
+        when(fixture.notifications.listAfter(eq(userId), eq(1L), anyInt())).thenReturn(List.of(legacy, removed));
+
+        fixture.service().notificationStream(userId, 1L);
+
+        var loader = org.mockito.ArgumentCaptor.forClass(LongFunction.class);
+        verify(fixture.sse).open(eq("notification"), eq(userId), eq(1L), loader.capture(), eq(false));
+        @SuppressWarnings("unchecked")
+        LongFunction<List<SseConnectionTransport.SseEvent>> loadEvents = loader.getValue();
+        assertEquals(List.of("notification.created", "notification.removed"),
+                loadEvents.apply(1L).stream().map(SseConnectionTransport.SseEvent::type).toList());
+    }
+
+    @Test
+    void notificationAndTeamFramesAreDeliveredAfterTheirTransactionCommits() {
+        Fixture fixture = new Fixture();
+        UUID userId = UUID.randomUUID();
+        UUID notificationId = UUID.randomUUID();
+        UUID teamId = UUID.randomUUID();
+        when(fixture.notifications.maxSequence(userId)).thenReturn(4L);
+        when(fixture.teams.maxSequence(teamId)).thenReturn(7L);
+        fixture.startBusinessTransaction();
+        try {
+            RealtimeEventPublisher publisher = fixture.publisher();
+            publisher.publishNotification(userId, notificationId, "notification.created", Map.of("title", "Hello"));
+            publisher.publishTeamEvent(teamId, "activity.created", "resource-1", Map.of("ok", true));
+
+            verify(fixture.users).selectByIdForUpdate(userId);
+            verify(fixture.teamRows).selectByIdForUpdate(teamId);
+            var notification = org.mockito.ArgumentCaptor.forClass(NotificationEventEntity.class);
+            verify(fixture.notifications).insert(notification.capture());
+            assertEquals(5L, notification.getValue().getSequenceNo());
+            var teamEvent = org.mockito.ArgumentCaptor.forClass(TeamEventEntity.class);
+            verify(fixture.teams).insert(teamEvent.capture());
+            assertEquals(8L, teamEvent.getValue().getSequenceNo());
+            verifyNoInteractions(fixture.realtime);
+
+            fixture.commitBusinessTransaction();
+
+            var recipients = org.mockito.ArgumentCaptor.forClass(Set.class);
+            var frames = org.mockito.ArgumentCaptor.forClass(RealtimeFrame.class);
+            verify(fixture.realtime, org.mockito.Mockito.times(2)).broadcastToUsers(recipients.capture(), frames.capture());
+            assertEquals(List.of(Set.of(userId), Set.of()), recipients.getAllValues());
+            assertEquals(List.of("notification", "team"),
+                    frames.getAllValues().stream().map(RealtimeFrame::scope).toList());
+            assertEquals(userId.toString(), frames.getAllValues().getFirst().recipientUserId());
+            assertEquals(teamId.toString(), frames.getAllValues().get(1).teamId());
+        } finally {
+            fixture.clearBusinessTransaction();
+        }
+    }
+
+    @Test
+    void projectEventDeadlockRetriesTheWholeRequiresNewTransaction() {
+        Fixture fixture = new Fixture();
+        UUID projectId = UUID.randomUUID();
+        when(fixture.events.insert(any(EventEntity.class)))
                 .thenThrow(new DeadlockLoserDataAccessException("deadlock", null))
                 .thenThrow(new DeadlockLoserDataAccessException("deadlock", null))
                 .thenReturn(1);
-        when(events.nextSequence(projectId)).thenReturn(1L);
-        EventService service = productionService(events, projects, transactions);
+        when(fixture.events.nextSequence(projectId)).thenReturn(1L);
 
-        service.publish(projectId, null, "agent-run.updated", "run-1", Map.of("status", "FAILED"));
+        fixture.publisher().publish(projectId, null, "agent-run.updated", "run-1", Map.of("status", "FAILED"));
 
-        verify(transactions, org.mockito.Mockito.times(3)).getTransaction(any(TransactionDefinition.class));
-        verify(events, org.mockito.Mockito.times(3)).insert(any(EventEntity.class));
-        verify(projects, org.mockito.Mockito.times(3)).selectByIdForUpdate(projectId);
-    }
-
-    private EventService service(EventMapper events, ProjectMapper projects) {
-        return new EventService(events, mock(ProjectAccessService.class), mock(NotificationEventMapper.class),
-                mock(TeamEventMapper.class), mock(RealtimeHub.class),
-                mock(ProjectMemberMapper.class), mock(TeamMemberMapper.class),
-                mock(ChatGroupMapper.class), projects);
-    }
-
-    private EventService productionService(EventMapper events, ProjectMapper projects,
-                                           PlatformTransactionManager transactions) {
-        return new EventService(events, mock(ProjectAccessService.class), mock(NotificationEventMapper.class),
-                mock(TeamEventMapper.class), mock(RealtimeHub.class),
-                mock(ProjectMemberMapper.class), mock(TeamMemberMapper.class), mock(ChatGroupMapper.class), projects, null, null, transactions, null);
-    }
-
-    private EventService fullService(EventMapper events, NotificationEventMapper notifications,
-                                     TeamEventMapper teams, UserMapper users, TeamMapper teamRows) {
-        return new EventService(events, mock(ProjectAccessService.class), notifications, teams,
-                mock(RealtimeHub.class), mock(ProjectMemberMapper.class),
-                mock(TeamMemberMapper.class), mock(ChatGroupMapper.class),
-                mock(ProjectMapper.class), users, teamRows);
+        var definitions = org.mockito.ArgumentCaptor.forClass(TransactionDefinition.class);
+        verify(fixture.transactions, org.mockito.Mockito.times(3)).getTransaction(definitions.capture());
+        assertTrue(definitions.getAllValues().stream().allMatch(definition ->
+                definition.getPropagationBehavior() == TransactionDefinition.PROPAGATION_REQUIRES_NEW));
+        verify(fixture.events, org.mockito.Mockito.times(3)).insert(any(EventEntity.class));
+        verify(fixture.projects, org.mockito.Mockito.times(3)).selectByIdForUpdate(projectId);
+        verify(fixture.transactions).commit(any(TransactionStatus.class));
     }
 
     @Test
-    void sseConnectionLimitRejectsExcessStreams() throws Exception {
-        EventMapper events = mock(EventMapper.class);
-        ProjectAccessService access = mock(ProjectAccessService.class);
-        UUID projectId = UUID.randomUUID(), userId = UUID.randomUUID();
-        EventService service = new EventService(events, access, mock(NotificationEventMapper.class),
-                mock(TeamEventMapper.class), mock(RealtimeHub.class),
-                mock(ProjectMemberMapper.class), mock(TeamMemberMapper.class),
-                mock(ChatGroupMapper.class), mock(ProjectMapper.class),
-                mock(UserMapper.class), mock(TeamMapper.class), null, null);
+    void purgeExpiredUsesTheDedicatedMaintenanceQuery() {
+        Fixture fixture = new Fixture();
+        when(fixture.events.deleteExpired(any())).thenReturn(3);
 
-        // 把活跃连接计数压到上限，验证新连接被拒绝（429），不会无限堆积泵线程。
-        java.lang.reflect.Field active = EventService.class.getDeclaredField("activeSseConnections");
-        active.setAccessible(true);
-        java.util.concurrent.atomic.AtomicInteger counter =
-                (java.util.concurrent.atomic.AtomicInteger) active.get(service);
-        java.lang.reflect.Field max = EventService.class.getDeclaredField("MAX_SSE_CONNECTIONS");
-        max.setAccessible(true);
-        counter.set(max.getInt(null));
+        fixture.service().purgeExpired();
 
-        when(events.maxSequence(projectId)).thenReturn(1L);
-        ApiException error = org.junit.jupiter.api.Assertions.assertThrows(ApiException.class,
-                () -> service.stream(projectId, userId, null));
-        assertEquals("SSE_CONNECTION_LIMIT_EXCEEDED", error.code());
-        // 拒绝的连接不占用计数
-        assertEquals(max.getInt(null), counter.get());
+        verify(fixture.events).deleteExpired(any());
+        verifyNoMoreInteractions(fixture.events);
     }
 
-    @Test
-    void sseStreamAcquiresConnectionSlot() throws Exception {
-        EventMapper events = mock(EventMapper.class);
-        ProjectAccessService access = mock(ProjectAccessService.class);
-        UUID projectId = UUID.randomUUID(), userId = UUID.randomUUID();
-        EventService service = new EventService(events, access, mock(NotificationEventMapper.class),
-                mock(TeamEventMapper.class), mock(RealtimeHub.class),
-                mock(ProjectMemberMapper.class), mock(TeamMemberMapper.class),
-                mock(ChatGroupMapper.class), mock(ProjectMapper.class),
-                mock(UserMapper.class), mock(TeamMapper.class), null, null);
-        when(events.maxSequence(projectId)).thenReturn(1L);
+    private static final class Fixture {
+        private final EventMapper events = mock(EventMapper.class);
+        private final ProjectAccessService access = mock(ProjectAccessService.class);
+        private final NotificationEventMapper notifications = mock(NotificationEventMapper.class);
+        private final TeamEventMapper teams = mock(TeamEventMapper.class);
+        private final RealtimeConnectionTransport realtime = mock(RealtimeConnectionTransport.class);
+        private final SseConnectionTransport sse = mock(SseConnectionTransport.class);
+        private final ProjectMemberMapper projectMembers = mock(ProjectMemberMapper.class);
+        private final TeamMemberMapper teamMembers = mock(TeamMemberMapper.class);
+        private final ChatGroupMapper groups = mock(ChatGroupMapper.class);
+        private final ProjectMapper projects = mock(ProjectMapper.class);
+        private final UserMapper users = mock(UserMapper.class);
+        private final TeamMapper teamRows = mock(TeamMapper.class);
+        private final PlatformTransactionManager transactions = transactionManager();
 
-        org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter =
-                service.stream(projectId, userId, null);
-        assertNotNull(emitter);
+        private Fixture() {
+            when(projectMembers.selectMembers(any())).thenReturn(List.of());
+            when(teamMembers.selectByTeamId(any())).thenReturn(List.of());
+        }
 
-        java.lang.reflect.Field active = EventService.class.getDeclaredField("activeSseConnections");
-        active.setAccessible(true);
-        java.util.concurrent.atomic.AtomicInteger counter =
-                (java.util.concurrent.atomic.AtomicInteger) active.get(service);
-        assertEquals(1, counter.get());
-        // 连接槽位随 emitter 关闭由容器回调释放（onCompletion/onError/onTimeout）；
-        // 单元测试不依赖容器线程，这里只验证成功建立时计数占用正确。
+        private EventService service() {
+            return new EventService(events, access, notifications, teams, realtime, sse,
+                    projectMembers, teamMembers, groups, projects, users, teamRows,
+                    transactions, mock(PerformanceMetrics.class));
+        }
+
+        private RealtimeEventPublisher publisher() {
+            return service();
+        }
+
+        private void startBusinessTransaction() {
+            TransactionSynchronizationManager.initSynchronization();
+            TransactionSynchronizationManager.setActualTransactionActive(true);
+        }
+
+        private void commitBusinessTransaction() {
+            List<TransactionSynchronization> synchronizations = TransactionSynchronizationManager.getSynchronizations();
+            synchronizations.forEach(TransactionSynchronization::afterCommit);
+            synchronizations.forEach(sync -> sync.afterCompletion(TransactionSynchronization.STATUS_COMMITTED));
+        }
+
+        private void clearBusinessTransaction() {
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.getSynchronizations().forEach(
+                        sync -> sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
+                TransactionSynchronizationManager.clearSynchronization();
+            }
+            TransactionSynchronizationManager.setActualTransactionActive(false);
+        }
+
+        private static PlatformTransactionManager transactionManager() {
+            PlatformTransactionManager transactions = mock(PlatformTransactionManager.class);
+            when(transactions.getTransaction(any(TransactionDefinition.class)))
+                    .thenAnswer(invocation -> new SimpleTransactionStatus());
+            doNothing().when(transactions).commit(any(TransactionStatus.class));
+            doNothing().when(transactions).rollback(any(TransactionStatus.class));
+            return transactions;
+        }
     }
 }

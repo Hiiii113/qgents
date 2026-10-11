@@ -9,6 +9,7 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
 import qg.qgent.realtime.websocket.RealtimeFrame;
+import qg.qgent.realtime.transport.RealtimeConnectionTransport;
 
 import java.io.IOException;
 import java.util.Set;
@@ -18,7 +19,7 @@ import java.util.function.Consumer;
 
 /** 保存每个用户的在线连接并推送事件；断线后由客户端重新查询数据。 */
 @Service
-public class RealtimeHub {
+public class RealtimeHub implements RealtimeConnectionTransport {
     private static final Logger log = LoggerFactory.getLogger(RealtimeHub.class);
 
     private final ObjectMapper mapper;
@@ -45,6 +46,7 @@ public class RealtimeHub {
     }
 
     /** 向一组用户的全部在线连接推送一条实时帧。 逐个 session 发送；发送失败/连接失效的连接被关闭并清理。串行化帧若失败仅记错误， 不向调用方（业务事务）抛出，保证实时推送失败不影响业务写入。 */
+    @Override
     public void broadcastToUsers(Set<UUID> userIds, RealtimeFrame frame) {
         if (userIds == null || userIds.isEmpty()) {
             return;
