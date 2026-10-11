@@ -42,11 +42,14 @@ replay_pid*
 .omc/
 .claude/
 
-# 其他文档默认忽略；产品愿景和 GitHub 接入说明纳入版本控制
+# 其他文档默认忽略；产品愿景、接入说明和已确认需求规格纳入版本控制
 /docs/*
 !/docs/target.md
 !/docs/github-app.md
 !/docs/sandbox-tools.md
+!/docs/specs/
+/docs/specs/*
+!/docs/specs/qgent-harness-refactor.md
 
 # 环境变量文件（本地运行配置，一律不入库）
 .env
