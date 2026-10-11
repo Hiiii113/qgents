@@ -30,8 +30,8 @@ public class MessageEntity {
     // 发送用户 ID（UUIDv7，BINARY(16)）；Agent/系统消息时为空。
     private UUID authorUserId;
 
-    // 发送 Agent ID（UUIDv7，BINARY(16)）；用户/系统消息时为空（与 author_user_id 二选一，表 CHECK）。
-    private UUID agentId;
+    // 消息发送方 USER/AGENT/SYSTEM；AGENT 固定表示 Qgent。
+    private String senderType;
 
     // 客户端幂等 ID（群内唯一），断线重试命中时返回原消息；可为空表示不启用客户端幂等。
     private String clientMessageId;

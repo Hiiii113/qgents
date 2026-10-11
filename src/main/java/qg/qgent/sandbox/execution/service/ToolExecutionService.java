@@ -39,6 +39,7 @@ import qg.qgent.sandbox.dto.SandboxExecutionContext;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.regex.Pattern;
 
 /**
@@ -74,6 +75,9 @@ public class ToolExecutionService {
     private final Clock clock;
     private final ConcurrentMap<UUID, CompletableFuture<ToolExecutionResponse>> completions = new ConcurrentHashMap<>();
     private final ConcurrentMap<UUID, Thread> activeThreads = new ConcurrentHashMap<>();
+    private final ConcurrentMap<UUID, FutureTask<Void>> tasks = new ConcurrentHashMap<>();
+    private final ConcurrentMap<UUID, UUID> sandboxByExecution = new ConcurrentHashMap<>();
+    private final ConcurrentMap<UUID, UUID> agentRunByExecution = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, Object> logLocks = new ConcurrentHashMap<>();
 
     /** Sandbox 重启后把无法恢复的排队中和运行中记录标记为中断。 */
@@ -97,8 +101,7 @@ public class ToolExecutionService {
         CompletableFuture<ToolExecutionResponse> completion = new CompletableFuture<>();
         completions.put(request.getExecutionId(), completion);
         Map<String, String> logContext = MDC.getCopyOfContextMap();
-        try {
-            sandboxExecutionPool.execute(() -> {
+        FutureTask<Void> task = new FutureTask<>(() -> {
                 UUID previousRun = SandboxExecutionContext.currentAgentRunId();
                 Map<String, String> previousLog = MDC.getCopyOfContextMap();
                 SandboxExecutionContext.set(request.getAgentRunId());
@@ -111,11 +114,23 @@ public class ToolExecutionService {
                     log.error("sandbox execution failed executionId={}", request.getExecutionId(), exception);
                 } finally {
                     completions.remove(request.getExecutionId(), completion);
+                    tasks.remove(request.getExecutionId());
+                    sandboxByExecution.remove(request.getExecutionId());
+                    agentRunByExecution.remove(request.getExecutionId());
                     SandboxExecutionContext.set(previousRun);
                     if (previousLog == null) MDC.clear(); else MDC.setContextMap(previousLog);
                 }
+                return null;
             });
+        tasks.put(request.getExecutionId(), task);
+        sandboxByExecution.put(request.getExecutionId(), sandboxId);
+        if (request.getAgentRunId() != null) agentRunByExecution.put(request.getExecutionId(), request.getAgentRunId());
+        try {
+            sandboxExecutionPool.execute(task);
         } catch (RejectedExecutionException exception) {
+            tasks.remove(request.getExecutionId(), task);
+            sandboxByExecution.remove(request.getExecutionId(), sandboxId);
+            if (request.getAgentRunId() != null) agentRunByExecution.remove(request.getExecutionId(), request.getAgentRunId());
             executionMapper.rejectQueued(entity.getId(), properties.getInstanceId(),
                     EXECUTION_QUEUE_UNAVAILABLE, "命令执行队列不可用", utc(clock.instant()));
             completion.complete(find(request.getExecutionId()));
@@ -216,6 +231,63 @@ public class ToolExecutionService {
                 }
             }
         });
+    }
+
+    /** Cancels commands owned by a Sandbox and waits for their worker bodies to stop using it. */
+    public void stopAndAwaitBySandbox(UUID sandboxId) {
+        var ids = activeIds(executionMapper.selectActiveIdsBySandbox(sandboxId.toString(), properties.getInstanceId()));
+        sandboxByExecution.forEach((id, owner) -> { if (sandboxId.equals(owner)) ids.add(id); });
+        stopAndAwait(ids);
+    }
+
+    /** Cancels commands started by one root or child AgentRun without affecting sibling runs. */
+    public void stopAndAwaitByAgentRun(UUID agentRunId) {
+        var ids = activeIds(executionMapper.selectActiveIdsByAgentRun(agentRunId.toString(), properties.getInstanceId()));
+        agentRunByExecution.forEach((id, owner) -> { if (agentRunId.equals(owner)) ids.add(id); });
+        stopAndAwait(ids);
+    }
+
+    /** Requests cancellation for one AgentRun without waiting for its command workers to exit. */
+    public void cancelByAgentRun(UUID agentRunId) {
+        var ids = activeIds(executionMapper.selectActiveIdsByAgentRun(agentRunId.toString(), properties.getInstanceId()));
+        agentRunByExecution.forEach((id, owner) -> { if (agentRunId.equals(owner)) ids.add(id); });
+        ids.forEach(id -> {
+            try { cancel(id); }
+            catch (SandboxException exception) {
+                if (!"EXECUTION_NOT_CANCELLABLE".equals(exception.getCode())) throw exception;
+            }
+        });
+    }
+
+    private java.util.Set<UUID> activeIds(java.util.List<String> persistedIds) {
+        var ids = new java.util.LinkedHashSet<UUID>();
+        persistedIds.stream().map(UUID::fromString).forEach(ids::add);
+        return ids;
+    }
+
+    private void stopAndAwait(java.util.Collection<UUID> ids) {
+        ids.forEach(id -> {
+            try { cancel(id); }
+            catch (SandboxException exception) {
+                if (!"EXECUTION_NOT_CANCELLABLE".equals(exception.getCode())) throw exception;
+            }
+        });
+        boolean interrupted = false;
+        for (UUID id : ids) {
+            FutureTask<Void> task = tasks.get(id);
+            if (task == null) continue;
+            while (true) {
+                try {
+                    task.get();
+                    break;
+                } catch (InterruptedException exception) {
+                    interrupted = true;
+                } catch (java.util.concurrent.ExecutionException | java.util.concurrent.CancellationException exception) {
+                    break;
+                }
+            }
+        }
+        if (interrupted) Thread.currentThread().interrupt();
     }
 
     /** 读取命令当前输出；执行记录限定输出目录，不接受外部路径。 */

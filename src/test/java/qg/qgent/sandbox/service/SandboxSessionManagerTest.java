@@ -13,6 +13,9 @@ import qg.qgent.workspace.service.WorkspaceWriteLease;
 import qg.qgent.workspace.service.WorkspaceWriteLeaseService;
 
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -72,5 +75,42 @@ class SandboxSessionManagerTest {
         verify(sandboxes, never()).create(any());
         verify(workspaces, never()).updateById(any(WorkspaceEntity.class));
         assertThatThrownBy(() -> sessions.require(workspaceId)).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void releasesWorkspaceOnlyAfterCommandWorkersExit() throws Exception {
+        WorkspaceEntity workspace = new WorkspaceEntity();
+        workspace.setProjectId(projectId);
+        workspace.setStatus("PROVISIONING");
+        when(lease.getAgentRunId()).thenReturn(runId);
+        when(workspaces.selectById(workspaceId)).thenReturn(workspace);
+        when(leases.acquire(projectId, workspaceId, runId)).thenReturn(lease);
+        WorkspaceResponse ready = new WorkspaceResponse();
+        ready.setStorageKey("workspaces/" + workspaceId);
+        when(storage.provision(eq(workspaceId), any())).thenReturn(ready);
+        SandboxResponse sandbox = new SandboxResponse();
+        sandbox.setId(UUID.randomUUID());
+        when(sandboxes.create(any())).thenReturn(sandbox);
+        sessions.acquire(runId, projectId, workspaceId);
+        CountDownLatch waitingForCommands = new CountDownLatch(1), releaseCommands = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            waitingForCommands.countDown();
+            assertThat(releaseCommands.await(5, TimeUnit.SECONDS)).isTrue();
+            return null;
+        }).when(executions).stopAndAwaitBySandbox(sandbox.getId());
+
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            var release = executor.submit(() -> sessions.release(workspaceId, runId));
+            assertThat(waitingForCommands.await(5, TimeUnit.SECONDS)).isTrue();
+            verify(sandboxes, never()).destroy(any());
+            verify(leases, never()).release(lease);
+            releaseCommands.countDown();
+            release.get(5, TimeUnit.SECONDS);
+        } finally {
+            releaseCommands.countDown();
+        }
+
+        verify(sandboxes).destroy(sandbox.getId());
+        verify(leases).release(lease);
     }
 }

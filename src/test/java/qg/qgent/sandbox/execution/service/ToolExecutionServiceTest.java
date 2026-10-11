@@ -134,6 +134,101 @@ class ToolExecutionServiceTest {
     }
 
     @Test
+    void stoppingSandboxWaitsUntilInterruptedCommandWorkerActuallyExits() throws Exception {
+        ToolExecutionFixture fixture = fixture();
+        fixture.request().setTool("command.run");
+        CountDownLatch started = new CountDownLatch(1), interrupted = new CountDownLatch(1), release = new CountDownLatch(1);
+        when(fixture.tools().execute(anyString(), any(), any())).thenAnswer(invocation -> {
+            started.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException exception) {
+                interrupted.countDown();
+                release.await();
+            }
+            return ToolResult.value(Map.of());
+        });
+        fixture.service().submit(fixture.sandboxId(), fixture.request());
+        assertTrue(started.await(5, TimeUnit.SECONDS));
+        when(fixture.mapper().selectActiveIdsBySandbox(fixture.sandboxId().toString(), "local"))
+                .thenReturn(List.of(fixture.executionId().toString()));
+
+        try (ExecutorService waiter = Executors.newSingleThreadExecutor()) {
+            CompletableFuture<Void> stopping = CompletableFuture.runAsync(
+                    () -> fixture.service().stopAndAwaitBySandbox(fixture.sandboxId()), waiter);
+            assertTrue(interrupted.await(5, TimeUnit.SECONDS));
+            assertFalse(stopping.isDone());
+            release.countDown();
+            stopping.get(5, TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+        }
+    }
+
+    @Test
+    void stoppingOneAgentRunCancelsAndWaitsOnlyItsCommandWorker() throws Exception {
+        ToolExecutionFixture fixture = fixture();
+        UUID childRunId = UUID.randomUUID();
+        fixture.request().setTool("command.run");
+        fixture.request().setAgentRunId(childRunId);
+        CountDownLatch started = new CountDownLatch(1), interrupted = new CountDownLatch(1), release = new CountDownLatch(1);
+        when(fixture.tools().execute(anyString(), any(), any())).thenAnswer(invocation -> {
+            started.countDown();
+            try { release.await(); }
+            catch (InterruptedException exception) {
+                interrupted.countDown();
+                release.await();
+            }
+            return ToolResult.value(Map.of());
+        });
+        fixture.service().submit(fixture.sandboxId(), fixture.request());
+        assertTrue(started.await(5, TimeUnit.SECONDS));
+        when(fixture.mapper().selectActiveIdsByAgentRun(childRunId.toString(), "local"))
+                .thenReturn(List.of(fixture.executionId().toString()));
+
+        try (ExecutorService waiter = Executors.newSingleThreadExecutor()) {
+            CompletableFuture<Void> stopping = CompletableFuture.runAsync(
+                    () -> fixture.service().stopAndAwaitByAgentRun(childRunId), waiter);
+            assertTrue(interrupted.await(5, TimeUnit.SECONDS));
+            assertFalse(stopping.isDone());
+            release.countDown();
+            stopping.get(5, TimeUnit.SECONDS);
+        } finally { release.countDown(); }
+        verify(fixture.mapper()).selectActiveIdsByAgentRun(childRunId.toString(), "local");
+    }
+
+    @Test
+    void workspaceReleaseStillWaitsForAgentRunCommandAlreadyMarkedCancelled() throws Exception {
+        ToolExecutionFixture fixture = fixture();
+        UUID agentRunId = UUID.randomUUID();
+        fixture.request().setAgentRunId(agentRunId);
+        CountDownLatch started = new CountDownLatch(1), interrupted = new CountDownLatch(1), release = new CountDownLatch(1);
+        when(fixture.tools().execute(anyString(), any(), any())).thenAnswer(invocation -> {
+            started.countDown();
+            try { release.await(); }
+            catch (InterruptedException exception) {
+                interrupted.countDown();
+                try { release.await(); }
+                catch (InterruptedException secondInterrupt) { Thread.currentThread().interrupt(); }
+            }
+            return ToolResult.value(Map.of("ok", true));
+        });
+        fixture.service().submit(fixture.sandboxId(), fixture.request());
+        assertTrue(started.await(5, TimeUnit.SECONDS));
+        fixture.service().cancelByAgentRun(agentRunId);
+        assertTrue(interrupted.await(5, TimeUnit.SECONDS));
+
+        try (var waiter = Executors.newSingleThreadExecutor()) {
+            CompletableFuture<Void> releaseWork = CompletableFuture.runAsync(
+                    () -> fixture.service().stopAndAwaitBySandbox(fixture.sandboxId()), waiter);
+            Thread.sleep(100);
+            assertFalse(releaseWork.isDone(), "release must include workers cancelled earlier by run ID");
+            release.countDown();
+            releaseWork.get(5, TimeUnit.SECONDS);
+        } finally { release.countDown(); }
+    }
+
+    @Test
     void submitPersistsQueuedRecordAndCompletesInBackground() throws Exception {
         Map<String, ToolExecutionEntity> rows = new ConcurrentHashMap<>();
         ArrayList<ToolExecutionLogEntity> logs = new ArrayList<>();
@@ -338,6 +433,11 @@ class ToolExecutionServiceTest {
     private ToolExecutionMapper executionMapper(Map<String, ToolExecutionEntity> rows) {
         ToolExecutionMapper mapper = mock(ToolExecutionMapper.class);
         when(mapper.selectById(anyString())).thenAnswer(invocation -> rows.get(invocation.getArgument(0)));
+        when(mapper.selectActiveIdsByAgentRun(anyString(), anyString())).thenAnswer(invocation -> rows.values().stream()
+                .filter(entity -> invocation.getArgument(0).equals(entity.getAgentRunId()))
+                .filter(entity -> invocation.getArgument(1).equals(entity.getOwnerInstanceId()))
+                .filter(entity -> java.util.List.of("QUEUED", "RUNNING").contains(entity.getStatus()))
+                .map(ToolExecutionEntity::getId).toList());
         when(mapper.markInterrupted(anyString(), any())).thenAnswer(invocation -> {
             int updated = 0;
             for (ToolExecutionEntity entity : rows.values()) {

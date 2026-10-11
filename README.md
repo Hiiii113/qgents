@@ -1,6 +1,6 @@
 # Qgents
 
-IM 聊天、可选 GitHub App 集成和云端 Agent Harness。普通消息仅用于聊天，`@Agent` 启动自有工具 loop；首次需要代码环境时准备 Docker Sandbox，运行结束释放沙箱并保留 Workspace。
+IM 聊天、可选 GitHub App 集成和云端 Agent Harness。普通消息仅用于聊天，`@Qgent` 启动自有工具 loop；首次需要代码环境时准备 Docker Sandbox，运行结束释放沙箱并保留 Workspace。
 
 后端与 Sandbox 为单个 Java 21 Spring Boot 应用，依赖 MySQL 和 Redis。前端位于相邻的 `../qgents-fronted` 仓库。
 
@@ -20,7 +20,7 @@ API 为 `http://localhost:8080/api/v1`，Swagger 为 `http://localhost:8080/swag
 
 - 默认使用 [DeepSeek 官方接口](https://api-docs.deepseek.com/zh-cn/)的 `deepseek-flash`，通过 `DEEPSEEK_API_KEY` 鉴权；使用 `AI_BASE_URL`、`AI_MODEL`、`AI_MAX_TOKENS` 配置地址、模型和输出上限。
 - 附件默认保存到 `ATTACHMENT_LOCAL_ROOT`，也支持 OSS；头像直传需要配置 OSS 公共访问地址。
-- GitHub App 可选，Agent 的 GitHub 能力默认关闭。配置见 [docs/github-app.md](docs/github-app.md)，导入仓库不自动 clone 或绑定 Workspace。
+- GitHub App 可选，项目级 GitHub 能力默认开启，项目管理员可在项目设置关闭。配置见 [docs/github-app.md](docs/github-app.md)，导入仓库不自动 clone 或绑定 Workspace。
 - `FRONTEND_URL` 为页面入口；独立 API 域名部署时将页面来源加入 `CORS_ALLOWED_ORIGINS`。
 
 ## Linux Docker 部署

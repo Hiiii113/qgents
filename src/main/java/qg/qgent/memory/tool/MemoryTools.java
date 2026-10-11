@@ -3,7 +3,7 @@ package qg.qgent.memory.tool;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 
-import qg.qgent.agent.tool.ParallelTool;
+import qg.qgent.harness.tool.ParallelTool;
 import qg.qgent.memory.dto.MemoryCreateRequest;
 import qg.qgent.memory.dto.MemoryResponse;
 import qg.qgent.memory.dto.MemoryUpdateRequest;

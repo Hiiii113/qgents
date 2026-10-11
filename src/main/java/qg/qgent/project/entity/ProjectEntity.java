@@ -12,6 +12,7 @@ import java.util.UUID;
 @Data
 @TableName(value = "projects", autoResultMap = true)
 public class ProjectEntity {
+    private Boolean githubEnabled = true;
     @TableId(type = IdType.INPUT)
     private UUID id;
     private UUID teamId;

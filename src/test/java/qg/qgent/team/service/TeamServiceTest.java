@@ -6,7 +6,6 @@ import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import qg.qgent.agent.service.DefaultAgentProvisioner;
 import qg.qgent.auth.service.TokenService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.common.web.PersistedApiException;
@@ -68,11 +67,10 @@ class TeamServiceTest {
     private final UserMapper userMapper = mock(UserMapper.class);
     private final TeamDisbandService teamDisbandService = mock(TeamDisbandService.class);
     private final NotificationService notificationService = mock(NotificationService.class);
-    private final DefaultAgentProvisioner defaultAgents = mock(DefaultAgentProvisioner.class);
     private final TeamService service = new TeamService(teamMapper, memberMapper, invitationMapper,
             projectMemberMapper, projectMapper, userMapper, mock(TokenService.class),
             mock(TeamInvitationMailer.class), teamDisbandService, notificationService,
-            mock(EventService.class), defaultAgents);
+            mock(EventService.class));
 
     @Test
     void createAddsCreatorAsOwner() {
@@ -96,9 +94,6 @@ class TeamServiceTest {
         assertEquals(0, response.getMemberCount());
         verify(teamMapper).insert(any(TeamEntity.class));
         verify(memberMapper).insert(any(TeamMemberEntity.class));
-        // 建团队即预置团队默认 Agent（4 工作角色 + 编排助手）
-        org.mockito.Mockito.verify(defaultAgents).ensureForTeam(org.mockito.ArgumentMatchers.argThat(
-                teamId -> teamId != null), org.mockito.ArgumentMatchers.eq(actor));
     }
 
     @Test
@@ -303,8 +298,7 @@ class TeamServiceTest {
         TokenService tokens = mock(TokenService.class);
         TeamService localService = new TeamService(teamMapper, memberMapper, invitationMapper, projectMemberMapper,
                 projectMapper, userMapper, tokens, mock(TeamInvitationMailer.class), mock(TeamDisbandService.class),
-                mock(NotificationService.class), mock(EventService.class),
-                defaultAgents);
+                mock(NotificationService.class), mock(EventService.class));
         when(userMapper.selectById(actor)).thenReturn(user);
         when(tokens.hash("raw-token")).thenReturn(new byte[] { 1 });
         when(invitationMapper.selectOne(any())).thenReturn(invitation);
@@ -351,8 +345,7 @@ class TeamServiceTest {
         when(tokens.hash("raw-token")).thenReturn(new byte[] { 1 });
         TeamService localService = new TeamService(teamMapper, memberMapper, invitationMapper, projectMemberMapper,
                 projectMapper, userMapper, tokens, mock(TeamInvitationMailer.class), mock(TeamDisbandService.class),
-                mock(NotificationService.class), mock(EventService.class),
-                defaultAgents);
+                mock(NotificationService.class), mock(EventService.class));
         TeamMemberInviteRequest request = new TeamMemberInviteRequest();
         request.setEmail("new@example.com");
         request.setRole("TEAM_MEMBER");

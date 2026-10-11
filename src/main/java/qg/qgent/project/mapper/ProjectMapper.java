@@ -12,7 +12,7 @@ import java.util.UUID;
 
 @Mapper
 public interface ProjectMapper extends BaseMapper<ProjectEntity> {
-    @Select("SELECT id, team_id, created_by, name, description, avatar_url, status FROM projects WHERE id = #{projectId} FOR UPDATE")
+    @Select("SELECT id, team_id, created_by, name, description, avatar_url, github_enabled, status FROM projects WHERE id = #{projectId} FOR UPDATE")
     @Results(id = "project", value = {
             @Result(column = "id", property = "id", typeHandler = UuidBinaryTypeHandler.class),
             @Result(column = "team_id", property = "teamId", typeHandler = UuidBinaryTypeHandler.class),
@@ -22,7 +22,7 @@ public interface ProjectMapper extends BaseMapper<ProjectEntity> {
     ProjectEntity selectByIdForUpdate(@Param("projectId") UUID projectId);
 
     @Select({"<script>",
-            "SELECT p.id, p.team_id, p.name, p.description, p.avatar_url, p.status,",
+            "SELECT p.id, p.team_id, p.name, p.description, p.avatar_url, p.github_enabled, p.status,",
             "(SELECT COUNT(*) FROM project_members mc WHERE mc.project_id = p.id) AS member_count,",
             "CASE WHEN #{teamOwner} THEN 'PROJECT_ADMIN' ELSE pm.role END AS role",
             "FROM projects p LEFT JOIN project_members pm ON pm.project_id = p.id AND pm.user_id = #{userId}",
@@ -41,12 +41,12 @@ public interface ProjectMapper extends BaseMapper<ProjectEntity> {
                                                      @Param("userId") UUID userId, @Param("teamOwner") boolean teamOwner,
                                                      @Param("anchor") UUID anchor, @Param("limit") int limit);
 
-    @Select("SELECT id, team_id, created_by, name, description, avatar_url, status FROM projects "
+    @Select("SELECT id, team_id, created_by, name, description, avatar_url, github_enabled, status FROM projects "
             + "WHERE team_id = #{teamId} ORDER BY id FOR UPDATE")
     @ResultMap("project")
     List<ProjectEntity> selectByTeamForUpdate(@Param("teamId") UUID teamId);
 
-    @Select("SELECT DISTINCT p.id, p.team_id, p.name, p.description, p.avatar_url, p.status, "
+    @Select("SELECT DISTINCT p.id, p.team_id, p.name, p.description, p.avatar_url, p.github_enabled, p.status, "
             + "CASE WHEN t.owner_user_id = #{userId} AND tom.role = 'TEAM_OWNER' "
             + "THEN 'PROJECT_ADMIN' ELSE pm.role END AS role "
             + "FROM projects p INNER JOIN teams t ON t.id = p.team_id "

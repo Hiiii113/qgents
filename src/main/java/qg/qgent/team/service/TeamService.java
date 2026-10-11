@@ -8,7 +8,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import qg.qgent.agent.service.DefaultAgentProvisioner;
 import qg.qgent.auth.service.TokenService;
 import qg.qgent.common.dto.PageInfo;
 import qg.qgent.common.dto.PageSlice;
@@ -70,7 +69,6 @@ public class TeamService {
     private final TeamDisbandService teamDisbandService;
     private final NotificationService notificationService;
     private final EventService eventService;
-    private final DefaultAgentProvisioner defaultAgents;
 
     /** 创建团队 */
     @Transactional
@@ -89,8 +87,6 @@ public class TeamService {
         member.setUserId(actor);
         member.setRole("TEAM_OWNER");
         memberMapper.insert(member);
-        // 在创建团队的事务内预置通用 Agent 和 Coding Agent
-        defaultAgents.ensureForTeam(team.getId(), actor);
         // 重查一次以带回数据库生成的 created_at
         return team(teamMapper.selectById(team.getId()), "TEAM_OWNER");
     }

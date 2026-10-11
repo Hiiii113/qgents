@@ -9,7 +9,7 @@ import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.ResultMap;
 import org.apache.ibatis.annotations.Select;
 
-import qg.qgent.chat.dto.ContextSkill;
+import qg.qgent.skill.dto.ContextSkill;
 import qg.qgent.common.persistence.typehandler.UuidBinaryTypeHandler;
 import qg.qgent.skill.entity.SkillEntity;
 

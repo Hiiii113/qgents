@@ -11,6 +11,8 @@ public class ChatGroupEntity {
     private UUID id;
     private UUID projectId;
     private UUID createdBy;
+    private Boolean qgentEnabled = false;
+
     private Boolean defaultGroup = true;
     private String name;
     private LocalDateTime lastMessageAt;

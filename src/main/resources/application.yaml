@@ -58,7 +58,6 @@ app:
     max-rounds: ${APP_AGENT_MAX_ROUNDS:30}
     # 同一步中已声明可并行工具的最大在途数；1 表示串行执行。
     max-parallel-tool-calls: ${APP_AGENT_MAX_PARALLEL_TOOL_CALLS:4}
-    max-depth: ${APP_AGENT_MAX_DEPTH:3}
     max-subagents: ${APP_AGENT_MAX_SUBAGENTS:8}
     context:
       # 全量注入 Agent 上下文的已批准 Memory 标题与正文总字符上限；超过时禁止批准。

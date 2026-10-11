@@ -111,7 +111,22 @@ class ProjectServiceTest {
         request.setName("项目");
         var created = service.create(owner, teamId, request);
         assertThat(created.getName()).isEqualTo("项目");
+        assertThat(created.getGithubEnabled()).isTrue();
         verify(events).publishEvent(argThat((Object event) -> event instanceof ProjectCreatedEvent project
                 && project.projectId().toString().equals(created.getId()) && project.creatorUserId().equals(owner)));
     }
+    @Test
+    void projectGithubCapabilityCanBeDisabledWithoutChangingProfile() {
+        UUID actor = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID()); project.setTeamId(UUID.randomUUID());
+        project.setName("项目"); project.setStatus("ACTIVE");
+        when(projects.selectByIdForUpdate(project.getId())).thenReturn(project);
+        ProjectUpdateRequest request = new ProjectUpdateRequest();
+        request.setGithubEnabled(false);
+        var result = service.update(actor, project.getId(), request);
+        assertThat(result.getGithubEnabled()).isFalse();
+        assertThat(result.getName()).isEqualTo("项目");
+    }
+
 }

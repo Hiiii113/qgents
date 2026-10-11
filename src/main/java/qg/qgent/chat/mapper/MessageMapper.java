@@ -29,7 +29,7 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
      * 按群内消息序号拉取增量消息，返回严格升序结果。
      * 调用方必须先完成项目群聊成员权限校验；sequence_no 是服务端分配的可靠游标。
      */
-    @Select("SELECT id, group_id, sequence_no, author_user_id, agent_id, client_message_id, "
+    @Select("SELECT id, group_id, sequence_no, author_user_id, sender_type, client_message_id, "
             + "message_type, content, mentions, reply_to_message_id, created_at "
             + "FROM messages WHERE group_id = #{groupId} AND sequence_no > #{afterSequence} "
             + "ORDER BY sequence_no ASC LIMIT #{limit}")
@@ -38,7 +38,7 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
             @Result(column = "group_id", property = "groupId",
                     typeHandler = UuidBinaryTypeHandler.class),
             @Result(column = "author_user_id", property = "authorUserId", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "agent_id", property = "agentId", typeHandler = UuidBinaryTypeHandler.class),
+            @Result(column = "sender_type", property = "senderType"),
             @Result(column = "reply_to_message_id", property = "replyToMessageId",
                     typeHandler = UuidBinaryTypeHandler.class),
             @Result(column = "message_type", property = "messageType"),
@@ -56,12 +56,11 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
      */
     @Select({"<script>",
             "SELECT m.group_id, ",
-            "COALESCE(u.display_name, a.name) AS sender_name, ",
+            "CASE WHEN m.sender_type = 'AGENT' THEN 'Qgent' ELSE u.display_name END AS sender_name, ",
             "JSON_UNQUOTE(JSON_EXTRACT(m.content, '$.text')) AS text, ",
             "m.message_type, m.created_at ",
             "FROM messages m ",
             "LEFT JOIN users u ON u.id = m.author_user_id ",
-            "LEFT JOIN agents a ON a.id = m.agent_id ",
             "INNER JOIN (SELECT group_id, MAX(sequence_no) AS max_seq ",
             "            FROM messages ",
             "            WHERE group_id IN ",
@@ -93,7 +92,7 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
      * @return 匹配的消息实体列表，新的在前
      */
     @Select({"<script>",
-            "SELECT m.id, m.group_id, m.sequence_no, m.author_user_id, m.agent_id, ",
+            "SELECT m.id, m.group_id, m.sequence_no, m.author_user_id, m.sender_type, ",
             "m.client_message_id, m.message_type, m.content, m.mentions, m.reply_to_message_id, m.created_at ",
             "FROM messages m ",
             "INNER JOIN chat_groups rg ON rg.id = m.group_id ",
@@ -108,7 +107,7 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
             @Result(column = "group_id", property = "groupId",
                     typeHandler = UuidBinaryTypeHandler.class),
             @Result(column = "author_user_id", property = "authorUserId", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "agent_id", property = "agentId", typeHandler = UuidBinaryTypeHandler.class),
+            @Result(column = "sender_type", property = "senderType"),
             @Result(column = "reply_to_message_id", property = "replyToMessageId",
                     typeHandler = UuidBinaryTypeHandler.class),
             @Result(column = "message_type", property = "messageType"),

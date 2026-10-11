@@ -12,8 +12,6 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.dao.DuplicateKeyException;
 
-import qg.qgent.agent.entity.AgentEntity;
-import qg.qgent.agent.mapper.AgentMapper;
 import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.dto.MessageSendRequest;
@@ -21,7 +19,6 @@ import qg.qgent.chat.dto.Mention;
 import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.entity.ChatGroupEntity;
-import qg.qgent.chat.mapper.GroupAgentMapper;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.web.ApiException;
@@ -62,79 +59,39 @@ class MessageServiceTest {
     }
 
     @Test
-    void agentMessageRejectsMissingCrossTeamAndInactiveAgentBeforeWriting() {
-        UUID projectId = UUID.randomUUID();
+    void qgentCannotReplyInGroupItHasNotJoined() {
         UUID groupId = UUID.randomUUID();
-        UUID agentId = UUID.randomUUID();
-        UUID teamId = UUID.randomUUID();
         ChatGroupEntity group = new ChatGroupEntity();
-        group.setId(groupId);
-        group.setProjectId(projectId);
-        ProjectEntity project = new ProjectEntity();
-        project.setId(projectId);
-        project.setTeamId(teamId);
+        group.setId(groupId); group.setProjectId(UUID.randomUUID());
         MessageMapper messages = mock(MessageMapper.class);
         ChatGroupMapper groups = mock(ChatGroupMapper.class);
-        GroupAgentMapper groupAgents = mock(GroupAgentMapper.class);
-        AgentMapper agents = mock(AgentMapper.class);
-        ProjectMapper projects = mock(ProjectMapper.class);
         when(groups.selectOne(any())).thenReturn(group);
-        when(projects.selectById(projectId)).thenReturn(project);
-        MessageService service = new MessageService(messages, groups, groupAgents, mock(UserMapper.class), agents,
-                projects, mock(GroupService.class),
-                new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
-                mock(ApplicationEventPublisher.class));
-        MessageSendRequest request = new MessageSendRequest();
-        request.setType("TEXT");
-        request.setContent(Map.of("text", "任务更新"));
-
-        ApiException missing = org.junit.jupiter.api.Assertions.assertThrows(ApiException.class,
-                () -> service.sendAsAgent(groupId, agentId, request));
-        assertThat(missing.code()).isEqualTo("AGENT_NOT_FOUND");
-
-        AgentEntity crossTeam = new AgentEntity();
-        crossTeam.setTeamId(UUID.randomUUID());
-        crossTeam.setStatus("ACTIVE");
-        when(agents.selectById(agentId)).thenReturn(crossTeam);
-        ApiException wrongTeam = org.junit.jupiter.api.Assertions.assertThrows(ApiException.class,
-                () -> service.sendAsAgent(groupId, agentId, request));
-        assertThat(wrongTeam.code()).isEqualTo("AGENT_NOT_IN_PROJECT_TEAM");
-
-        AgentEntity inactive = new AgentEntity();
-        inactive.setTeamId(teamId);
-        inactive.setStatus("INACTIVE");
-        when(agents.selectById(agentId)).thenReturn(inactive);
-        ApiException disabled = org.junit.jupiter.api.Assertions.assertThrows(ApiException.class,
-                () -> service.sendAsAgent(groupId, agentId, request));
-        assertThat(disabled.code()).isEqualTo("AGENT_NOT_ACTIVE");
-        verifyNoInteractions(messages, groupAgents);
+        MessageService service = new MessageService(messages, groups, mock(UserMapper.class), mock(ProjectMapper.class),
+                mock(GroupService.class), new ObjectMapper(), mock(EventService.class), mock(NotificationService.class),
+                mock(AttachmentService.class), mock(ApplicationEventPublisher.class));
+        assertThatThrownBy(() -> service.sendAsAgent(groupId, new MessageSendRequest()))
+                .isInstanceOf(ApiException.class).hasMessageContaining("Qgent");
+        verifyNoInteractions(messages);
     }
 
     @Test
-    void activeAgentInProjectTeamCanSendAndJoinGroup() {
+    void qgentReplyUsesFixedNameAndStructuredSender() {
         UUID projectId = UUID.randomUUID();
         UUID groupId = UUID.randomUUID();
         UUID agentId = UUID.randomUUID();
         UUID teamId = UUID.randomUUID();
         ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
+        group.setQgentEnabled(true);
         group.setProjectId(projectId);
         ProjectEntity project = new ProjectEntity();
         project.setId(projectId);
         project.setTeamId(teamId);
-        AgentEntity agent = new AgentEntity();
-        agent.setId(agentId);
-        agent.setTeamId(teamId);
-        agent.setName("编排助手");
-        agent.setStatus("ACTIVE");
         MessageMapper messages = mock(MessageMapper.class);
         ChatGroupMapper groups = mock(ChatGroupMapper.class);
-        GroupAgentMapper groupAgents = mock(GroupAgentMapper.class);
-        AgentMapper agents = mock(AgentMapper.class);
         ProjectMapper projects = mock(ProjectMapper.class);
         when(groups.selectOne(any())).thenReturn(group);
         when(projects.selectById(projectId)).thenReturn(project);
-        when(agents.selectById(agentId)).thenReturn(agent);
         when(messages.nextSequence(groupId)).thenReturn(1L);
         AtomicReference<MessageEntity> inserted = new AtomicReference<>();
         when(messages.insert(any(MessageEntity.class))).thenAnswer(invocation -> {
@@ -142,8 +99,7 @@ class MessageServiceTest {
             return 1;
         });
         when(messages.selectById(any())).thenAnswer(invocation -> inserted.get());
-        when(groupAgents.insertAgent(groupId, agentId)).thenReturn(1);
-        MessageService service = new MessageService(messages, groups, groupAgents, mock(UserMapper.class), agents,
+        MessageService service = new MessageService(messages, groups, mock(UserMapper.class),
                 projects, mock(GroupService.class),
                 new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 mock(ApplicationEventPublisher.class));
@@ -151,11 +107,12 @@ class MessageServiceTest {
         request.setType("TEXT");
         request.setContent(Map.of("text", "任务更新"));
 
-        MessageResponse response = service.sendAsAgent(groupId, agentId, request);
+        MessageResponse response = service.sendAsAgent(groupId, request);
 
         assertThat(response.getSenderType()).isEqualTo("AGENT");
+        assertThat(response.getSenderName()).isEqualTo("Qgent");
+        assertThat(response.getSenderId()).isEqualTo(qg.qgent.chat.QgentIdentity.ID.toString());
         verify(messages).insert(any(MessageEntity.class));
-        verify(groupAgents).insertAgent(groupId, agentId);
     }
 
     @ParameterizedTest
@@ -166,6 +123,7 @@ class MessageServiceTest {
         UUID actor = UUID.randomUUID();
         ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
+        group.setQgentEnabled(true);
         group.setProjectId(projectId);
         MessageMapper messages = mock(MessageMapper.class);
         ChatGroupMapper groups = mock(ChatGroupMapper.class);
@@ -179,8 +137,8 @@ class MessageServiceTest {
         });
         when(messages.selectById(any())).thenAnswer(invocation -> stored.get());
         ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
-        MessageService service = new MessageService(messages, groups, mock(GroupAgentMapper.class),
-                mock(UserMapper.class), mock(AgentMapper.class), mock(ProjectMapper.class),
+        MessageService service = new MessageService(messages, groups,
+                mock(UserMapper.class), mock(ProjectMapper.class),
                 mock(GroupService.class), new ObjectMapper(),
                 mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 publisher);
@@ -188,8 +146,6 @@ class MessageServiceTest {
         request.setType("TEXT");
         request.setContent(Map.of("text", "@编排助手 补齐邮箱登录功能"));
         Mention agent = new Mention();
-        agent.setType("AGENT");
-        agent.setId(UUID.randomUUID());
         Mention user = new Mention();
         user.setType("USER");
         user.setId(UUID.randomUUID());
@@ -221,6 +177,7 @@ class MessageServiceTest {
         UUID groupId = UUID.randomUUID();
         ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
+        group.setQgentEnabled(true);
         group.setProjectId(projectId);
         MessageEntity existing = new MessageEntity();
         existing.setId(UUID.randomUUID());
@@ -235,8 +192,8 @@ class MessageServiceTest {
         when(messages.selectOne(any())).thenReturn(null, existing);
         when(messages.nextSequence(groupId)).thenReturn(2L);
         when(messages.insert(any(MessageEntity.class))).thenThrow(new DuplicateKeyException("duplicate"));
-        MessageService service = new MessageService(messages, groups, mock(GroupAgentMapper.class),
-                mock(UserMapper.class), mock(AgentMapper.class), mock(ProjectMapper.class),
+        MessageService service = new MessageService(messages, groups,
+                mock(UserMapper.class), mock(ProjectMapper.class),
                 mock(GroupService.class), new ObjectMapper(),
                 mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class), publisher);
         MessageSendRequest request = new MessageSendRequest();
@@ -244,8 +201,6 @@ class MessageServiceTest {
         request.setContent(Map.of("text", "重试"));
         request.setClientMessageId("duplicate-message");
         Mention agent = new Mention();
-        agent.setType("AGENT");
-        agent.setId(UUID.randomUUID());
         request.setMentions(List.of(agent));
 
         MessageResponse response = service.send(UUID.randomUUID(), projectId, groupId, request);
@@ -263,12 +218,8 @@ class MessageServiceTest {
         UUID agentId = UUID.randomUUID();
         UUID teamId = UUID.randomUUID();
         group.setId(groupId);
+        group.setQgentEnabled(true);
         group.setProjectId(UUID.randomUUID());
-        AgentEntity agent = new AgentEntity();
-        agent.setId(agentId);
-        agent.setTeamId(teamId);
-        agent.setName("编排助手");
-        agent.setStatus("ACTIVE");
         ProjectEntity project = new ProjectEntity();
         project.setId(group.getProjectId());
         project.setTeamId(teamId);
@@ -280,12 +231,10 @@ class MessageServiceTest {
             return 1;
         });
         when(messages.selectById(any())).thenAnswer(invocation -> inserted.get());
-        AgentMapper agents = mock(AgentMapper.class);
-        when(agents.selectById(agentId)).thenReturn(agent);
         ProjectMapper projects = mock(ProjectMapper.class);
         when(projects.selectById(group.getProjectId())).thenReturn(project);
-        MessageService service = new MessageService(messages, groups, mock(GroupAgentMapper.class),
-                mock(UserMapper.class), agents, projects,
+        MessageService service = new MessageService(messages, groups,
+                mock(UserMapper.class), projects,
                 mock(GroupService.class),
                 new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 mock(ApplicationEventPublisher.class));
@@ -298,7 +247,7 @@ class MessageServiceTest {
         quoted.setGroupId(groupId);
         when(messages.selectById(request.getReplyToId())).thenReturn(quoted);
 
-        MessageResponse response = service.sendAsAgent(groupId, agentId, request);
+        MessageResponse response = service.sendAsAgent(groupId, request);
 
         ArgumentCaptor<MessageEntity> captured = ArgumentCaptor.forClass(MessageEntity.class);
         verify(messages).insert(captured.capture());
@@ -319,12 +268,8 @@ class MessageServiceTest {
         UUID agentId = UUID.randomUUID();
         UUID teamId = UUID.randomUUID();
         group.setId(groupId);
+        group.setQgentEnabled(true);
         group.setProjectId(UUID.randomUUID());
-        AgentEntity agent = new AgentEntity();
-        agent.setId(agentId);
-        agent.setTeamId(teamId);
-        agent.setName("编排助手");
-        agent.setStatus("ACTIVE");
         ProjectEntity project = new ProjectEntity();
         project.setId(group.getProjectId());
         project.setTeamId(teamId);
@@ -336,12 +281,10 @@ class MessageServiceTest {
             return 1;
         });
         when(messages.selectById(any())).thenAnswer(invocation -> inserted.get());
-        AgentMapper agents = mock(AgentMapper.class);
-        when(agents.selectById(agentId)).thenReturn(agent);
         ProjectMapper projects = mock(ProjectMapper.class);
         when(projects.selectById(group.getProjectId())).thenReturn(project);
-        MessageService service = new MessageService(messages, groups, mock(GroupAgentMapper.class),
-                mock(UserMapper.class), agents, projects,
+        MessageService service = new MessageService(messages, groups,
+                mock(UserMapper.class), projects,
                 mock(GroupService.class),
                 new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 mock(ApplicationEventPublisher.class));
@@ -350,7 +293,7 @@ class MessageServiceTest {
         request.setType("TEXT");
         request.setContent(Map.of("text", "{\"quotedMessageId\":\"example\",\"quotedText\":\"text\",\"replyText\":\"reply\"}"));
 
-        MessageResponse response = service.sendAsAgent(groupId, agentId, request);
+        MessageResponse response = service.sendAsAgent(groupId, request);
 
         assertThat(response.getContent()).isEqualTo(request.getContent());
         assertThat(response.getReplyToId()).isNull();
@@ -366,14 +309,15 @@ class MessageServiceTest {
         GroupService groupService = mock(GroupService.class);
         ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
+        group.setQgentEnabled(true);
         group.setProjectId(projectId);
         when(groups.selectById(groupId)).thenReturn(group);
         MessageEntity first = message(groupId, 11L, "第一条");
         MessageEntity second = message(groupId, 12L, "第二条");
         when(messages.selectAfterSequence(groupId, 10L, 3)).thenReturn(List.of(first, second));
 
-        MessageService service = new MessageService(messages, groups, mock(GroupAgentMapper.class),
-                mock(UserMapper.class), mock(AgentMapper.class), mock(ProjectMapper.class),
+        MessageService service = new MessageService(messages, groups,
+                mock(UserMapper.class), mock(ProjectMapper.class),
                 groupService,
                 new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 mock(ApplicationEventPublisher.class));
@@ -392,12 +336,13 @@ class MessageServiceTest {
         UUID groupId = UUID.randomUUID();
         ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
+        group.setQgentEnabled(true);
         group.setProjectId(projectId);
         MessageMapper messages = mock(MessageMapper.class);
         ChatGroupMapper groups = mock(ChatGroupMapper.class);
         when(groups.selectById(groupId)).thenReturn(group);
-        MessageService service = new MessageService(messages, groups, mock(GroupAgentMapper.class),
-                mock(UserMapper.class), mock(AgentMapper.class), mock(ProjectMapper.class),
+        MessageService service = new MessageService(messages, groups,
+                mock(UserMapper.class), mock(ProjectMapper.class),
                 mock(GroupService.class),
                 new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 mock(ApplicationEventPublisher.class));

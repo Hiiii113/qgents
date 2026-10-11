@@ -1,5 +1,6 @@
 package qg.qgent.skill.service;
 
+import qg.qgent.skill.dto.ContextSkill;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -227,4 +228,20 @@ public class SkillService {
         return user == null ? null
                 : new UserSummary(user.getId().toString(), user.getDisplayName(), user.getAvatarUrl());
     }
+    /** 目录只包含可见且已发布 Skill 的标识和名称，正文显式激活时再读取。 */
+    public List<ContextSkill> publishedCatalog(UUID actor, UUID projectId) {
+        access.requireProjectMember(projectId, actor);
+        return skillMapper.listPublishedCatalog(projectId, actor);
+    }
+
+    public SkillEntity activateSkill(UUID actor, UUID projectId, UUID skillId) {
+        access.requireProjectMember(projectId, actor);
+        SkillEntity skill = skillMapper.findVisiblePublishedById(projectId, actor, skillId);
+        if (skill == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "SKILL_NOT_AVAILABLE", "Skill 不存在、未发布或无权访问");
+        }
+        return skill;
+    }
+
+
 }

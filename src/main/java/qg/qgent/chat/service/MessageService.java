@@ -11,8 +11,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import qg.qgent.agent.entity.AgentEntity;
-import qg.qgent.agent.mapper.AgentMapper;
 import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.chat.dto.Mention;
 import qg.qgent.chat.dto.MessageResponse;
@@ -20,8 +18,7 @@ import qg.qgent.chat.dto.MessageSendRequest;
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.event.MessageSentEvent;
-import qg.qgent.chat.event.MessageSentListener;
-import qg.qgent.chat.mapper.GroupAgentMapper;
+import qg.qgent.chat.QgentIdentity;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.dto.PageInfo;
@@ -50,9 +47,7 @@ public class MessageService {
 
     private final MessageMapper messageMapper;
     private final ChatGroupMapper groupMapper;
-    private final GroupAgentMapper groupAgentMapper;
     private final UserMapper userMapper;
-    private final AgentMapper agentMapper;
     private final ProjectMapper projectMapper;
     private final GroupService groupService;
     private final ObjectMapper mapper;
@@ -62,16 +57,14 @@ public class MessageService {
     private final ApplicationEventPublisher eventPublisher;
 
     public MessageService(MessageMapper messageMapper, ChatGroupMapper groupMapper,
-                          GroupAgentMapper groupAgentMapper, UserMapper userMapper, AgentMapper agentMapper,
+                          UserMapper userMapper,
                           ProjectMapper projectMapper, GroupService groupService,
                           ObjectMapper mapper,
                           EventService eventService, NotificationService notificationService,
                           AttachmentService attachmentService, ApplicationEventPublisher eventPublisher) {
         this.messageMapper = messageMapper;
         this.groupMapper = groupMapper;
-        this.groupAgentMapper = groupAgentMapper;
         this.userMapper = userMapper;
-        this.agentMapper = agentMapper;
         this.projectMapper = projectMapper;
         this.groupService = groupService;
         this.mapper = mapper;
@@ -100,7 +93,13 @@ public class MessageService {
         if (group == null || !group.getProjectId().equals(projectId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
         }
-        MessageResponse response = doSend(projectId, groupId, actor, null, body);
+        for (Mention mention : body.getMentions() == null ? List.<Mention>of() : body.getMentions()) {
+            if ("AGENT".equals(mention.getType()) && (!QgentIdentity.ID.equals(mention.getId())
+                    || !Boolean.TRUE.equals(group.getQgentEnabled()))) {
+                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_QGENT_MENTION", "请选择当前群聊中的 Qgent");
+            }
+        }
+        MessageResponse response = doSend(projectId, groupId, actor, "USER", body);
         enrichAttachmentPreview(response, projectId);
         return response;
     }
@@ -109,7 +108,7 @@ public class MessageService {
      * 对被 @ 的用户生成站内通知（MESSAGE_MENTION）：发送者、群名与消息文本摘要进通知内容；
      * 排除发送者本人；被提及的 Agent 由消息监听器启动 loop。通知失败不影响消息发送。
      * <p>
-     * 由 {@link MessageSentListener} 在消息事务提交后异步调用，不再占用发送事务与群行锁。
+     * 由 消息提交后的监听器 在消息事务提交后异步调用，不再占用发送事务与群行锁。
      * @param event      消息发送事件（含 actor/projectId/groupId/messageId/mentions）
      * @param groupName  来源群名（已查好，避免再查一次）
      * @param textPreview 消息文本摘要（由监听器从已落库消息提取；为空则通知不含摘要）
@@ -174,7 +173,7 @@ public class MessageService {
     }
 
     /**
-     * 提取已落库消息的文本摘要（最长 60 字符），供 {@link MessageSentListener} 在事务提交后生成 @ 通知内容。
+     * 提取已落库消息的文本摘要（最长 60 字符），供 消息提交后的监听器 在事务提交后生成 @ 通知内容。
      * <p>
      * 解析失败返回空串而非抛异常：通知失败不阻塞、摘要缺失只影响通知文案。
      * @param message 已落库消息
@@ -230,38 +229,14 @@ public class MessageService {
         return value instanceof String s ? s : null;
     }
 
-    /**
-     * Agent 发送消息（内部方法，供 Agent 编排系统调用，实现用户+Agent 共同参与聊天）。
-     * <p>
-     * Agent 不是登录用户，不执行项目成员校验；服务端校验其 Team 归属与启用状态。
-     * 与用户消息共用 sequence 单调递增与 client_message_id 幂等逻辑，响应 senderType=AGENT。
-     * @param groupId 项目群聊 ID
-     * @param agentId Agent ID
-     * @param body    发送请求
-     * @return 消息视图
-     */
+    /** Qgent 回复与用户消息共用序号、引用和幂等规则。 */
     @Transactional
-    public MessageResponse sendAsAgent(UUID groupId, UUID agentId, MessageSendRequest body) {
+    public MessageResponse sendAsAgent(UUID groupId, MessageSendRequest body) {
         ChatGroupEntity group = lockGroup(groupId);
-        if (group == null) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在");
+        if (group == null || !Boolean.TRUE.equals(group.getQgentEnabled())) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "QGENT_NOT_IN_GROUP", "Qgent 未加入当前群聊");
         }
-        AgentEntity agent = agentMapper.selectById(agentId);
-        if (agent == null) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "AGENT_NOT_FOUND", "Agent 不存在");
-        }
-        ProjectEntity project = projectMapper.selectById(group.getProjectId());
-        if (project == null) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "PROJECT_NOT_FOUND", "项目不存在");
-        }
-        if (!project.getTeamId().equals(agent.getTeamId())) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_NOT_IN_PROJECT_TEAM",
-                    "Agent 不属于当前项目的 Team");
-        }
-        if (!"ACTIVE".equals(agent.getStatus())) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_NOT_ACTIVE", "Agent 未启用");
-        }
-        MessageResponse response = doSend(group.getProjectId(), groupId, null, agentId, body);
+        MessageResponse response = doSend(group.getProjectId(), groupId, null, "AGENT", body);
         enrichAttachmentPreview(response, group.getProjectId());
         return response;
     }
@@ -272,7 +247,7 @@ public class MessageService {
                 .last("FOR UPDATE"));
     }
 
-    private MessageResponse doSend(UUID projectId, UUID groupId, UUID authorUserId, UUID agentId,
+    private MessageResponse doSend(UUID projectId, UUID groupId, UUID authorUserId, String senderType,
                                    MessageSendRequest body) {
         String type = normalizeType(body.getType());
         validateContent(type, body.getContent());
@@ -299,7 +274,7 @@ public class MessageService {
         message.setGroupId(groupId);
         message.setSequenceNo(messageMapper.nextSequence(groupId));
         message.setAuthorUserId(authorUserId);
-        message.setAgentId(agentId);
+        message.setSenderType(senderType);
         message.setClientMessageId(clientMessageId);
         message.setMessageType(type);
         message.setContent(writeJson(body.getContent()));
@@ -322,13 +297,6 @@ public class MessageService {
         groupMapper.update(null, Wrappers.<ChatGroupEntity>lambdaUpdate()
                 .set(ChatGroupEntity::getLastMessageAt, LocalDateTime.now(ZoneOffset.UTC))
                 .eq(ChatGroupEntity::getId, groupId));
-        // Agent 首次回群后自动成为群参与者（群成员 = 真实用户 + Agent 混合），并推送成员变化事件
-        if (agentId != null) {
-            if (groupAgentMapper.insertAgent(groupId, agentId) > 0) {
-                eventService.publish(projectId, groupId, "group.member.updated", id(groupId),
-                        Map.of("projectId", id(projectId), "groupId", id(groupId)));
-            }
-        }
         // 项目级 SSE：新消息信号（REST 存真相，前端收到后刷新消息列表）
         eventService.publish(projectId, groupId, "message.created", id(message.getId()),
                 Map.of("projectId", id(projectId), "groupId", id(groupId), "messageId", id(message.getId()),
@@ -461,22 +429,21 @@ public class MessageService {
     /** 历史分页与增量补拉共用响应组装，批量查询发送者名称。 */
     private List<MessageResponse> messageResponses(List<MessageEntity> rows, UUID projectId) {
         Map<UUID, String> userNames = loadUserNames(rows);
-        Map<UUID, String> agentNames = loadAgentNames(rows);
-        List<MessageResponse> responses = rows.stream().map(m -> toResponse(m, userNames, agentNames)).toList();
+        List<MessageResponse> responses = rows.stream().map(m -> toResponse(m, userNames)).toList();
         responses.forEach(response -> enrichAttachmentPreview(response, projectId));
         return responses;
     }
 
     private MessageResponse toResponse(MessageEntity m) {
-        // 单条路径（发送/幂等返回）逐条解析发送者名称；列表路径使用批量加载版本 toResponse(m, userNames, agentNames)
-        String senderName = m.getAgentId() != null
-                ? agentName(m.getAgentId())
+        // 单条路径（发送/幂等返回）逐条解析发送者名称；列表路径使用批量加载版本 toResponse(m, userNames)
+        String senderName = "AGENT".equals(m.getSenderType())
+                ? QgentIdentity.NAME
                 : m.getAuthorUserId() != null ? userName(m.getAuthorUserId()) : null;
         return toResponse(m, senderName);
     }
 
-    private MessageResponse toResponse(MessageEntity m, Map<UUID, String> userNames, Map<UUID, String> agentNames) {
-        String senderName = m.getAgentId() != null ? agentNames.get(m.getAgentId())
+    private MessageResponse toResponse(MessageEntity m, Map<UUID, String> userNames) {
+        String senderName = "AGENT".equals(m.getSenderType()) ? QgentIdentity.NAME
                 : m.getAuthorUserId() != null ? userNames.get(m.getAuthorUserId()) : null;
         return toResponse(m, senderName);
     }
@@ -490,9 +457,9 @@ public class MessageService {
         });
         String senderType;
         String senderId;
-        if (m.getAgentId() != null) {
+        if ("AGENT".equals(m.getSenderType())) {
             senderType = "AGENT";
-            senderId = m.getAgentId().toString();
+            senderId = QgentIdentity.ID.toString();
         } else if (m.getAuthorUserId() != null) {
             senderType = "USER";
             senderId = m.getAuthorUserId().toString();
@@ -524,28 +491,12 @@ public class MessageService {
                                 : u.getDisplayName()));
     }
 
-    /** 批量加载消息页中出现的 Agent 名称，返回 agentId → name。 */
-    private Map<UUID, String> loadAgentNames(List<MessageEntity> pageRows) {
-        Set<UUID> agentIds = pageRows.stream().map(MessageEntity::getAgentId).filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-        if (agentIds.isEmpty()) {
-            return Map.of();
-        }
-        return agentMapper.selectList(Wrappers.<AgentEntity>lambdaQuery().in(AgentEntity::getId, agentIds)).stream()
-                .collect(Collectors.toMap(AgentEntity::getId, AgentEntity::getName));
-    }
-
     private String userName(UUID userId) {
         UserEntity user = userMapper.selectById(userId);
         if (user == null || user.getDisplayName() == null || user.getDisplayName().isBlank()) {
             return "已注销用户";
         }
         return user.getDisplayName();
-    }
-
-    private String agentName(UUID agentId) {
-        AgentEntity agent = agentMapper.selectById(agentId);
-        return agent == null ? null : agent.getName();
     }
 
     private String writeJson(Object value) {

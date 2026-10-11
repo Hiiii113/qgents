@@ -5,10 +5,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import qg.qgent.agent.entity.AgentEntity;
-import qg.qgent.agent.entity.AgentRunEntity;
-import qg.qgent.agent.mapper.AgentMapper;
-import qg.qgent.agent.mapper.AgentRunMapper;
+import qg.qgent.harness.entity.AgentRunEntity;
+import qg.qgent.harness.mapper.AgentRunMapper;
 import qg.qgent.attachment.entity.AttachmentEntity;
 import qg.qgent.attachment.mapper.AttachmentMapper;
 import qg.qgent.chat.entity.ChatGroupEntity;
@@ -45,10 +43,9 @@ public class TeamDisbandService {
     private final WorkspaceMapper workspaceMapper;
     private final SkillMapper skillMapper;
     private final AttachmentMapper attachmentMapper;
-    private final AgentMapper agentMapper;
     private final TeamMapper teamMapper;
 
-    /** 先清理各项目的数据，再删除团队 Agent 和团队记录。 */
+    /** 先清理各项目的数据，再删除团队记录。 */
     @Transactional
     public void deleteTeam(UUID teamId) {
         List<UUID> projectIds = projectMapper.selectList(Wrappers.<ProjectEntity>lambdaQuery()
@@ -56,7 +53,6 @@ public class TeamDisbandService {
         for (UUID projectId : projectIds) {
             deleteProject(projectId);
         }
-        agentMapper.delete(Wrappers.<AgentEntity>lambdaQuery().eq(AgentEntity::getTeamId, teamId));
         teamMapper.deleteById(teamId);
     }
 
@@ -75,7 +71,6 @@ public class TeamDisbandService {
         agentRuns.delete(Wrappers.<AgentRunEntity>lambdaQuery().eq(AgentRunEntity::getProjectId, projectId));
         int deleted;
 
-        // 消息引用 Agent，需要在团队 Agent 与群聊之前删除。
         // messages 自引用外键 fk_msg_reply（reply_to_message_id -> id）且无级联、回复链可多级，
         // 同样须逐层删除不再被引用的叶子消息直至清空。
         if (!groupIds.isEmpty()) {
@@ -89,7 +84,7 @@ public class TeamDisbandService {
         skillMapper.delete(Wrappers.<SkillEntity>lambdaQuery().eq(SkillEntity::getProjectId, projectId));
         attachmentMapper.delete(Wrappers.<AttachmentEntity>lambdaQuery().eq(AttachmentEntity::getProjectId, projectId));
 
-        // chat_groups 引用 project；group_agents 由 chat_groups 外键级联，
+        // chat_groups 引用 project，
         // 须在 messages/events/notifications 之后删除
         chatGroupMapper.delete(Wrappers.<ChatGroupEntity>lambdaQuery()
                 .eq(ChatGroupEntity::getProjectId, projectId));

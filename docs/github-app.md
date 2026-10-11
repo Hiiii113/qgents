@@ -20,7 +20,7 @@ App 需要按实际操作配置仓库权限。clone/fetch 需要 Contents 读取
 
 Token 和权限范围说明见 [GitHub 官方安装认证文档](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app-installation)。
 
-现有数据库需执行 `qgents_schema.sql` 新增的 `github_installations`、`github_installation_states`、`project_repositories` 三张表。本次没有自动执行数据库变更。
+开发数据库结构以 `src/main/resources/db/qgents_schema.sql` 为准；包含团队安装、一次性安装回调和项目导入仓库表。代码修改不会自动重建已有数据库。
 
 ## 使用步骤
 
@@ -36,17 +36,17 @@ Token 和权限范围说明见 [GitHub 官方安装认证文档](https://docs.gi
 ```
 
 5. 调用 `GET /api/v1/projects/{projectId}/repositories` 查看导入记录；重复导入同一仓库返回已有记录。移除用 `DELETE /api/v1/projects/{projectId}/repositories/{repositoryId}`，此处 ID 是导入记录 UUID，不是 GitHub 数字 ID。
-6. 通过 Agent 能力配置接口授权使用 App：
+6. 项目 GitHub 能力默认开启。项目管理员可以在项目设置修改，也可以调用项目更新接口：
 
 ```text
-PUT /api/v1/teams/{teamId}/agents/{agentId}/github-capability
+PATCH /api/v1/projects/{projectId}
 ```
 
 ```json
-{"enabled":true}
+{"githubEnabled":false}
 ```
 
-`enabled=false` 关闭 GitHub 能力，默认关闭。创建或编辑自定义 Agent 时使用 `githubEnabled` 布尔字段。默认 Agent 由团队所有者配置，自定义 Agent 沿用现有编辑权限。
+该开关同时控制 Qgent 与本次运行的子 Agent。开启后仍需导入仓库并具备有效团队 App 授权；导入不会自动执行代码或 Git 操作。
 
 ## Agent 工具
 
@@ -65,4 +65,4 @@ PUT /api/v1/teams/{teamId}/agents/{agentId}/github-capability
 - `DELETE /api/v1/teams/{teamId}/integrations/github/installations/{installationId}`：解除本系统团队连接，并级联移除对应导入记录；不卸载 GitHub 账号上的 App。
 - Webhook 同步安装卸载、暂停、恢复和仓库授权变化。重复事件只重复刷新或删除，不创建通知或 PR 镜像。
 
-PR 的状态由 Agent 调用远端 API 查询，不恢复旧 MR 自动交付状态机。GitHub App 未配置时普通聊天和未启用 GitHub 的 Agent 仍可使用。
+PR 的状态由 Agent 调用远端 API 查询，不恢复旧 MR 自动交付状态机。GitHub App 未配置时普通聊天和其他 Harness 能力仍可使用。

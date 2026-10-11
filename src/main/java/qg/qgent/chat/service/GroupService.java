@@ -6,8 +6,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import qg.qgent.agent.entity.AgentEntity;
-import qg.qgent.agent.mapper.AgentMapper;
 import qg.qgent.chat.dto.GroupLatestMessage;
 import qg.qgent.chat.dto.GroupCreateRequest;
 import qg.qgent.chat.dto.GroupInviteRequest;
@@ -18,7 +16,7 @@ import qg.qgent.chat.dto.GroupReadResponse;
 import qg.qgent.chat.dto.GroupResponse;
 import qg.qgent.chat.dto.GroupUpdateRequest;
 import qg.qgent.chat.entity.ChatGroupEntity;
-import qg.qgent.chat.mapper.GroupAgentMapper;
+import qg.qgent.chat.QgentIdentity;
 import qg.qgent.chat.mapper.GroupReadStateMapper;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
@@ -49,8 +47,6 @@ public class GroupService {
     private final ChatGroupMapper groupMapper;
     private final ProjectMemberMapper projectMemberMapper;
     private final ProjectMapper projectMapper;
-    private final GroupAgentMapper groupAgentMapper;
-    private final AgentMapper agentMapper;
     private final GroupUserMapper groupUserMapper;
     private final MessageMapper messageMapper;
     private final GroupReadStateMapper groupReadStateMapper;
@@ -60,16 +56,13 @@ public class GroupService {
 
     public GroupService(ChatGroupMapper groupMapper,
                         ProjectMemberMapper projectMemberMapper,
-                        ProjectMapper projectMapper, GroupAgentMapper groupAgentMapper,
-                        AgentMapper agentMapper, GroupUserMapper groupUserMapper,
+                        ProjectMapper projectMapper, GroupUserMapper groupUserMapper,
                         MessageMapper messageMapper, GroupReadStateMapper groupReadStateMapper,
                         UserGroupPreferenceMapper userGroupPreferenceMapper,
                         ProjectAccessService access, EventService eventService) {
         this.groupMapper = groupMapper;
         this.projectMemberMapper = projectMemberMapper;
         this.projectMapper = projectMapper;
-        this.groupAgentMapper = groupAgentMapper;
-        this.agentMapper = agentMapper;
         this.groupUserMapper = groupUserMapper;
         this.messageMapper = messageMapper;
         this.groupReadStateMapper = groupReadStateMapper;
@@ -99,6 +92,7 @@ public class GroupService {
         group.setCreatedBy(createdBy);
         group.setName(title);
         group.setDefaultGroup(true);
+        group.setQgentEnabled(true);
         group.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
         groupMapper.insert(group);
         eventService.publish(projectId, group.getId(), "group.created", id(group.getId()),
@@ -185,14 +179,8 @@ public class GroupService {
                 .map(m -> new GroupMemberResponse(m.getUserId().toString(), m.getDisplayName(), m.getAvatarUrl(),
                         null, "USER"))
                 .forEach(members::add);
-        // 群内参与聊天的 Agent 一并作为成员返回（群成员 = 真实用户 + Agent 混合）
-        List<UUID> agentIds = groupAgentMapper.selectAgentIds(groupId);
-        if (!agentIds.isEmpty()) {
-            for (AgentEntity agent : agentMapper.selectList(Wrappers.<AgentEntity>lambdaQuery()
-                    .in(AgentEntity::getId, agentIds))) {
-                members.add(new GroupMemberResponse(agent.getId().toString(), agent.getName(), agent.getAvatar(),
-                        null, "AGENT"));
-            }
+        if (Boolean.TRUE.equals(group.getQgentEnabled())) {
+            members.add(new GroupMemberResponse(QgentIdentity.ID.toString(), QgentIdentity.NAME, null, null, "AGENT"));
         }
         return members;
     }
@@ -247,7 +235,7 @@ public class GroupService {
         GroupLatestMessage latestMessage = latest == null ? null
                 : new GroupLatestMessage(latest.getSenderName(), latest.getText(), latest.getMessageType());
         long members = (isDefault(g) ? projectMemberMapper.countMembers(g.getProjectId()) : groupUserMapper.selectUserIds(g.getId()).size())
-                + groupAgentMapper.selectAgentIds(g.getId()).size();
+                + (Boolean.TRUE.equals(g.getQgentEnabled()) ? 1 : 0);
         GroupResponse response = new GroupResponse(g.getId().toString(), g.getProjectId().toString(),
                 g.getName(), id(g.getCreatedBy()), iso(g.getLastMessageAt()),
                 iso(g.getLastMessageAt() != null ? g.getLastMessageAt() : g.getCreatedAt()), latestMessage,
@@ -271,9 +259,10 @@ public class GroupService {
         group.setName(body.getTitle().trim());
         group.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
         validateInvites(actor, projectId, body.getUserIds(), body.getAgentIds());
+        group.setQgentEnabled(body.getAgentIds().contains(QgentIdentity.ID));
         groupMapper.insert(group);
         groupUserMapper.insertUser(group.getId(), actor);
-        addMembers(group.getId(), body.getUserIds(), body.getAgentIds());
+        addMembers(group.getId(), body.getUserIds());
         eventService.publish(projectId, group.getId(), "group.created", id(group.getId()),
                 Map.of("projectId", id(projectId), "groupId", id(group.getId())));
         return toResponse(group);
@@ -284,7 +273,12 @@ public class GroupService {
         ChatGroupEntity group = requireGroupMember(projectId, groupId, actor);
         validateInvites(actor, projectId, body.getUserIds(), body.getAgentIds());
         // 默认群的用户随项目同步，只需追加 Agent。
-        addMembers(groupId, isDefault(group) ? List.of() : body.getUserIds(), body.getAgentIds());
+        addMembers(groupId, isDefault(group) ? List.of() : body.getUserIds());
+        if (body.getAgentIds().contains(QgentIdentity.ID)) {
+            groupMapper.update(null, Wrappers.<ChatGroupEntity>lambdaUpdate()
+                    .set(ChatGroupEntity::getQgentEnabled, true).eq(ChatGroupEntity::getId, groupId));
+            group.setQgentEnabled(true);
+        }
         eventService.publish(projectId, groupId, "group.member.updated", id(groupId),
                 Map.of("projectId", id(projectId), "groupId", id(groupId)));
         return members(actor, projectId, groupId);
@@ -295,19 +289,13 @@ public class GroupService {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_GROUP_MEMBER", "请选择有效成员");
         }
         for (UUID userId : users) access.requireProjectMember(projectId, userId);
-        UUID teamId = projectMapper.selectById(projectId).getTeamId();
-        for (UUID agentId : agents) {
-            AgentEntity agent = agentMapper.selectById(agentId);
-            if (agent == null || !teamId.equals(agent.getTeamId()) || !"ACTIVE".equals(agent.getStatus())
-                    || !("TEAM".equals(agent.getVisibility()) || actor.equals(agent.getCreatedBy()))) {
-                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_GROUP_AGENT", "请选择团队中可用的 Agent");
-            }
+        if (agents.stream().anyMatch(id -> !QgentIdentity.ID.equals(id))) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_GROUP_AGENT", "只能邀请 Qgent");
         }
     }
 
-    private void addMembers(UUID groupId, List<UUID> users, List<UUID> agents) {
+    private void addMembers(UUID groupId, List<UUID> users) {
         users.stream().distinct().forEach(userId -> groupUserMapper.insertUser(groupId, userId));
-        agents.stream().distinct().forEach(agentId -> groupAgentMapper.insertAgent(groupId, agentId));
     }
 
     private String iso(LocalDateTime value) {

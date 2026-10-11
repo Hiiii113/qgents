@@ -9,7 +9,6 @@ import org.springframework.web.bind.annotation.*;
 import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.dto.MessageSendRequest;
 import qg.qgent.chat.service.MessageService;
-import qg.qgent.agent.service.AgentRunService;
 import qg.qgent.common.dto.PageSlice;
 import qg.qgent.common.web.ApiResponse;
 import qg.qgent.common.web.PagedApiResponse;
@@ -18,7 +17,7 @@ import qg.qgent.common.web.RequestIdFilter;
 import java.util.UUID;
 
 /**
- * 群聊消息接口：发送、分页查询、断线补拉、单条消息定位，以及取消消息触发的 Agent 执行。
+ * 群聊消息接口：发送、分页查询、断线补拉和单条消息定位。
  * 消息访问权限由服务层校验，响应携带当前请求的 requestId。
  */
 @RestController
@@ -26,11 +25,9 @@ import java.util.UUID;
 public class MessageController {
 
     private final MessageService messageService;
-    private final AgentRunService agentRuns;
 
-    public MessageController(MessageService messageService, AgentRunService agentRuns) {
+    public MessageController(MessageService messageService) {
         this.messageService = messageService;
-        this.agentRuns = agentRuns;
     }
 
     /**
@@ -82,17 +79,6 @@ public class MessageController {
                                      @PathVariable UUID groupId, @PathVariable UUID messageId,
                                      HttpServletRequest request) {
         return ok(messageService.getMessage(userId, projectId, groupId, messageId), request);
-    }
-
-    /**
-     * 请求取消指定消息触发的 Agent 执行，仅消息发送者或项目管理员可操作。
-     * 将运行中的根 AgentRun 标记为 CANCELLING，由运行循环处理取消；返回本次标记的根运行数量。
-     */
-    @PostMapping("/projects/{projectId}/groups/{groupId}/messages/{messageId}/cancel-agent")
-    public ApiResponse<?> cancelAgent(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
-                                      @PathVariable UUID groupId, @PathVariable UUID messageId,
-                                      HttpServletRequest request) {
-        return ok(java.util.Map.of("cancelledRuns", agentRuns.cancel(userId, projectId, groupId, messageId)), request);
     }
 
     private ApiResponse<?> ok(Object data, HttpServletRequest request) {

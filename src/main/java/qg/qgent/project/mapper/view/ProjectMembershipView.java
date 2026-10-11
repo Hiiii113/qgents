@@ -6,6 +6,7 @@ import java.util.UUID;
 
 @Data
 public class ProjectMembershipView {
+    private Boolean githubEnabled;
     private UUID id;
     private UUID teamId;
     private String name;

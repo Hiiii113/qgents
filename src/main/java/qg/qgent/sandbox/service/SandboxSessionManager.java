@@ -89,6 +89,16 @@ public class SandboxSessionManager {
         return session;
     }
 
+    /** Stops only commands recorded against the given AgentRun and waits for their worker bodies to exit. */
+    public void stopExecutionsByAgentRun(UUID agentRunId) {
+        if (agentRunId != null) executions.stopAndAwaitByAgentRun(agentRunId);
+    }
+
+    /** Requests cancellation for one AgentRun without blocking its caller on command completion. */
+    public void cancelExecutionsByAgentRun(UUID agentRunId) {
+        if (agentRunId != null) executions.cancelByAgentRun(agentRunId);
+    }
+
     /** 销毁会话对应的 Sandbox 并移除记录；Workspace 保留。销毁失败交给 Sandbox 后续清理，不阻断执行收尾。 */
     public void release(UUID workspaceId, UUID agentRunId) {
         if (workspaceId == null || agentRunId == null) {
@@ -118,7 +128,7 @@ public class SandboxSessionManager {
                 workspaceLeases.remove(workspaceId, lease);
             }
             try {
-                executions.cancelBySandbox(session.sandboxId());
+                executions.stopAndAwaitBySandbox(session.sandboxId());
                 sandboxes.destroy(session.sandboxId());
             } catch (RuntimeException ignored) {
                 // 销毁失败由 Sandbox 的清理任务兜底，不阻断执行结果返回。

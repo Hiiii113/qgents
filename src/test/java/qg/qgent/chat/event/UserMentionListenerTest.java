@@ -1,0 +1,55 @@
+package qg.qgent.chat.event;
+
+import org.junit.jupiter.api.Test;
+import qg.qgent.chat.QgentIdentity;
+import qg.qgent.chat.dto.Mention;
+import qg.qgent.chat.entity.ChatGroupEntity;
+import qg.qgent.chat.entity.MessageEntity;
+import qg.qgent.chat.mapper.ChatGroupMapper;
+import qg.qgent.chat.mapper.MessageMapper;
+import qg.qgent.chat.service.MessageService;
+
+import java.util.List;
+import java.util.UUID;
+
+import static org.mockito.Mockito.*;
+
+class UserMentionListenerTest {
+    private final MessageMapper messages = mock(MessageMapper.class);
+    private final ChatGroupMapper groups = mock(ChatGroupMapper.class);
+    private final MessageService service = mock(MessageService.class);
+    private final UserMentionListener listener = new UserMentionListener(messages, groups, service);
+
+    @Test
+    void userAndQgentMentionStillNotifiesUsersWithChatContext() {
+        var event = event(List.of(mention("USER", UUID.randomUUID()), mention("AGENT", QgentIdentity.ID)));
+        var message = new MessageEntity();
+        var group = new ChatGroupEntity();
+        group.setName("项目讨论");
+        when(messages.selectById(event.messageId())).thenReturn(message);
+        when(groups.selectById(event.groupId())).thenReturn(group);
+        when(service.extractTextPreview(message)).thenReturn("看一下这个需求");
+
+        listener.onMessageSent(event);
+
+        verify(service).notifyMentionedUsersAfterCommit(event, "项目讨论", "看一下这个需求");
+    }
+
+    @Test
+    void qgentOnlyAndOrdinaryMessagesDoNotCreateUserNotifications() {
+        listener.onMessageSent(event(List.of(mention("AGENT", QgentIdentity.ID))));
+        listener.onMessageSent(event(List.of()));
+        verifyNoInteractions(messages, groups, service);
+    }
+
+    private Mention mention(String type, UUID id) {
+        var mention = new Mention();
+        mention.setType(type);
+        mention.setId(id);
+        return mention;
+    }
+
+    private MessageSentEvent event(List<Mention> mentions) {
+        return new MessageSentEvent(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), mentions);
+    }
+}

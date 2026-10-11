@@ -2,8 +2,6 @@ package qg.qgent.chat.service;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import qg.qgent.agent.mapper.AgentMapper;
-import qg.qgent.agent.entity.AgentEntity;
 import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.chat.dto.GroupCreateRequest;
 import qg.qgent.chat.dto.GroupInviteRequest;
@@ -27,11 +25,9 @@ class ProjectChatTest {
     private final ChatGroupMapper groups = mock(ChatGroupMapper.class);
     private final ProjectAccessService access = mock(ProjectAccessService.class);
     private final GroupUserMapper users = mock(GroupUserMapper.class);
-    private final GroupAgentMapper agents = mock(GroupAgentMapper.class);
-    private final AgentMapper agentMapper = mock(AgentMapper.class);
     private final ProjectMapper projects = mock(ProjectMapper.class);
     private final GroupService service = new GroupService(groups, mock(ProjectMemberMapper.class),
-            projects, agents, agentMapper, users,
+            projects, users,
             mock(MessageMapper.class), mock(GroupReadStateMapper.class), mock(UserGroupPreferenceMapper.class),
             access, mock(EventService.class));
 
@@ -66,11 +62,9 @@ class ProjectChatTest {
     @Test
     void newGroupIncludesCreatorAndSelectedUsersAndAgents() {
         UUID projectId = UUID.randomUUID(), actor = UUID.randomUUID(), teammate = UUID.randomUUID();
-        UUID teamId = UUID.randomUUID(), agentId = UUID.randomUUID();
+        UUID teamId = UUID.randomUUID(), agentId = qg.qgent.chat.QgentIdentity.ID;
         ProjectEntity project = new ProjectEntity(); project.setTeamId(teamId);
         when(projects.selectById(projectId)).thenReturn(project);
-        AgentEntity agent = new AgentEntity(); agent.setTeamId(teamId); agent.setStatus("ACTIVE"); agent.setVisibility("TEAM");
-        when(agentMapper.selectById(agentId)).thenReturn(agent);
         GroupCreateRequest body = new GroupCreateRequest(); body.setTitle("  方案讨论  ");
         body.setUserIds(List.of(teammate)); body.setAgentIds(List.of(agentId));
         var response = service.create(actor, projectId, body);
@@ -81,7 +75,7 @@ class ProjectChatTest {
         assertThat(new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(response).has("description")).isFalse();
         verify(users).insertUser(saved.getValue().getId(), actor);
         verify(users).insertUser(saved.getValue().getId(), teammate);
-        verify(agents).insertAgent(saved.getValue().getId(), agentId);
+        assertThat(saved.getValue().getQgentEnabled()).isTrue();
         verify(access).requireProjectMember(projectId, teammate);
     }
 
@@ -112,12 +106,10 @@ class ProjectChatTest {
     }
 
     @Test
-    void rejectsAgentFromAnotherTeamBeforeSavingGroup() {
+    void rejectsArbitraryAssistantBeforeSavingGroup() {
         UUID projectId = UUID.randomUUID(), actor = UUID.randomUUID(), agentId = UUID.randomUUID();
         ProjectEntity project = new ProjectEntity(); project.setTeamId(UUID.randomUUID());
         when(projects.selectById(projectId)).thenReturn(project);
-        AgentEntity agent = new AgentEntity(); agent.setTeamId(UUID.randomUUID()); agent.setStatus("ACTIVE"); agent.setVisibility("TEAM");
-        when(agentMapper.selectById(agentId)).thenReturn(agent);
         GroupCreateRequest body = new GroupCreateRequest(); body.setTitle("讨论"); body.setAgentIds(List.of(agentId));
         assertThatThrownBy(() -> service.create(actor, projectId, body)).isInstanceOf(ApiException.class);
         verify(groups, never()).insert(any(ChatGroupEntity.class));

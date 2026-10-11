@@ -68,4 +68,12 @@ public interface ToolExecutionMapper extends BaseMapper<ToolExecutionEntity> {
             """)
     List<String> selectActiveIdsBySandbox(@Param("sandboxId") String sandboxId,
                                           @Param("instanceId") String instanceId);
+
+    @Select("""
+            SELECT id FROM tool_executions
+            WHERE agent_run_id = #{agentRunId} AND owner_instance_id = #{instanceId}
+              AND status IN ('QUEUED', 'RUNNING')
+            """)
+    List<String> selectActiveIdsByAgentRun(@Param("agentRunId") String agentRunId,
+                                           @Param("instanceId") String instanceId);
 }

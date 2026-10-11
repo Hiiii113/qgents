@@ -5,13 +5,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
-import qg.qgent.agent.mapper.AgentMapper;
 import qg.qgent.chat.dto.GroupPinResponse;
 import qg.qgent.chat.dto.GroupResponse;
 import qg.qgent.chat.dto.GroupUpdateRequest;
 import qg.qgent.chat.mapper.view.GroupLatestMessageRow;
 import qg.qgent.chat.entity.ChatGroupEntity;
-import qg.qgent.chat.mapper.GroupAgentMapper;
 import qg.qgent.chat.mapper.GroupReadStateMapper;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
@@ -42,8 +40,6 @@ class GroupPinServiceTest {
     private final ChatGroupMapper groupMapper = mock(ChatGroupMapper.class);
     private final ProjectMemberMapper projectMemberMapper = mock(ProjectMemberMapper.class);
     private final ProjectMapper projectMapper = mock(ProjectMapper.class);
-    private final GroupAgentMapper groupAgentMapper = mock(GroupAgentMapper.class);
-    private final AgentMapper agentMapper = mock(AgentMapper.class);
     private final MessageMapper messageMapper = mock(MessageMapper.class);
     private final GroupReadStateMapper groupReadStateMapper = mock(GroupReadStateMapper.class);
     private final UserGroupPreferenceMapper userGroupPreferenceMapper = mock(UserGroupPreferenceMapper.class);
@@ -51,7 +47,7 @@ class GroupPinServiceTest {
     private final EventService eventService = mock(EventService.class);
 
     private final GroupService service = new GroupService(groupMapper, projectMemberMapper,
-            projectMapper, groupAgentMapper, agentMapper, mock(qg.qgent.chat.mapper.GroupUserMapper.class),
+            projectMapper, mock(qg.qgent.chat.mapper.GroupUserMapper.class),
             messageMapper, groupReadStateMapper, userGroupPreferenceMapper, access, eventService);
 
     private final UUID projectId = UUID.randomUUID();
@@ -71,7 +67,6 @@ class GroupPinServiceTest {
     void stubDefaults() {
         when(groupMapper.selectById(groupId)).thenReturn(projectChat());
         when(projectMemberMapper.countMembers(projectId)).thenReturn(0L);
-        when(groupAgentMapper.selectAgentIds(any())).thenReturn(List.of());
     }
 
     @Test

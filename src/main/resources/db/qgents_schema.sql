@@ -108,6 +108,7 @@ CREATE TABLE IF NOT EXISTS
         name VARCHAR(255) NOT NULL COMMENT '项目名称',
         description TEXT NULL COMMENT '项目说明',
         avatar_url TEXT NULL COMMENT '项目头像URL（OSS 公共读长期地址，可为空）',
+        github_enabled TINYINT(1) NOT NULL DEFAULT 1 COMMENT '项目 GitHub 能力开关',
         status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE' COMMENT '项目状态枚举：ACTIVE/ARCHIVED',
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
         updated_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',
@@ -134,6 +135,7 @@ CREATE TABLE IF NOT EXISTS
         id BINARY(16) PRIMARY KEY COMMENT '项目群聊UUIDv7',
         project_id BINARY(16) NOT NULL COMMENT '所属项目ID',
         created_by BINARY(16) NOT NULL COMMENT '创建用户ID',
+        qgent_enabled TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Qgent 是否已加入群聊',
         default_group TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否为项目自动创建的默认群',
         name VARCHAR(255) NOT NULL COMMENT '群聊名称',
         last_message_at DATETIME (6) NULL COMMENT '最近消息时间（UTC）',
@@ -160,8 +162,8 @@ CREATE TABLE IF NOT EXISTS
         id BINARY(16) PRIMARY KEY COMMENT '消息UUIDv7',
         group_id BINARY(16) NOT NULL COMMENT '所属项目群聊ID',
         sequence_no BIGINT UNSIGNED NOT NULL COMMENT '群内单调递增消息序号',
+        sender_type VARCHAR(16) NOT NULL COMMENT '发送方 USER/AGENT/SYSTEM；AGENT 为固定 Qgent',
         author_user_id BINARY(16) NULL COMMENT '用户作者ID；Agent/系统消息时为空',
-        agent_id BINARY(16) NULL COMMENT 'Agent 作者ID；用户/系统消息时为空',
         client_message_id VARCHAR(128) NULL COMMENT '客户端生成的消息幂等ID',
         message_type VARCHAR(32) NOT NULL DEFAULT 'TEXT' COMMENT '消息类型枚举：TEXT/CODE/IMAGE/FILE/SYSTEM',
         content JSON NOT NULL COMMENT '按消息类型校验的结构化内容JSON',
@@ -171,7 +173,6 @@ CREATE TABLE IF NOT EXISTS
         UNIQUE KEY uk_msg_seq (group_id, sequence_no),
         UNIQUE KEY uk_msg_client (group_id, client_message_id),
         KEY idx_msg_user (author_user_id),
-        KEY idx_msg_agent (agent_id),
         KEY idx_msg_reply (reply_to_message_id),
         CONSTRAINT fk_msg_group FOREIGN KEY (group_id) REFERENCES chat_groups (id),
         CONSTRAINT fk_msg_user FOREIGN KEY (author_user_id) REFERENCES users (id),
@@ -179,12 +180,14 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT chk_message_sender CHECK (
             (
                 message_type = 'SYSTEM'
+                AND sender_type = 'SYSTEM'
                 AND author_user_id IS NULL
-                AND agent_id IS NULL
             )
             OR (
-                (author_user_id IS NOT NULL OR agent_id IS NOT NULL)
-                AND NOT (author_user_id IS NOT NULL AND agent_id IS NOT NULL)
+                message_type <> 'SYSTEM'
+                AND
+                ((sender_type = 'USER' AND author_user_id IS NOT NULL)
+                 OR (sender_type = 'AGENT' AND author_user_id IS NULL))
             )
         )
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目群聊有序消息，提及在MVP内以JSON保存';
@@ -278,26 +281,6 @@ CREATE TABLE IF NOT EXISTS
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '写接口幂等请求与脱敏响应缓存';
 
 
-CREATE TABLE IF NOT EXISTS agents (
-    id BINARY(16) PRIMARY KEY, team_id BINARY(16) NOT NULL, created_by BINARY(16) NULL,
-    name VARCHAR(255) NOT NULL, role VARCHAR(32) NOT NULL,
-    avatar TEXT NULL COMMENT 'Agent 头像URL', description TEXT NULL COMMENT 'Agent 用途描述',
-    github_enabled TINYINT NOT NULL DEFAULT 0 COMMENT '是否开启 GitHub 能力',
-    prompt TEXT NULL COMMENT 'Agent 系统提示词',
-    review_reason TEXT NULL COMMENT '发布审核拒绝原因（Team Owner 填写；批准为空）',
-    reviewed_by BINARY(16) NULL COMMENT '发布审核人（Team Owner）ID',
-    reviewed_at DATETIME(6) NULL COMMENT '发布审核时间（UTC）',
-    visibility VARCHAR(16) NOT NULL DEFAULT 'TEAM' COMMENT '可见性：PRIVATE（默认，仅创建者）/PENDING（提交发布审核）/TEAM（已批准共享，不可回私有）',
-    status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
-    is_default TINYINT NOT NULL DEFAULT 0 COMMENT '是否团队默认 Agent（每团队每角色至多一条）',
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
-    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',
-    default_role VARCHAR(32) GENERATED ALWAYS AS (IF(is_default = 1, role, NULL)) STORED COMMENT '默认Agent角色（唯一约束生成列）',
-    UNIQUE KEY uk_agents_team_default_role (team_id, default_role),
-    KEY idx_agent_team(team_id,status), CONSTRAINT fk_agent_team FOREIGN KEY(team_id) REFERENCES teams(id),
-    CONSTRAINT fk_agent_creator FOREIGN KEY(created_by) REFERENCES users(id),
-    CONSTRAINT ck_agent_visibility CHECK(visibility IN ('TEAM','PENDING','PRIVATE'))
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Team-scoped assignable Agent identities';
 
 -- 聊天 Agent 执行记录；关联触发消息与工作区，子 Agent 关联父运行。
 CREATE TABLE IF NOT EXISTS agent_runs (
@@ -305,7 +288,6 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     project_id BINARY(16) NOT NULL,
     group_id BINARY(16) NOT NULL,
     trigger_message_id BINARY(16) NULL,
-    agent_id BINARY(16) NOT NULL,
     parent_run_id BINARY(16) NULL,
     workspace_id BINARY(16) NULL COMMENT '本轮最近使用的工作区',
     created_by BINARY(16) NOT NULL,
@@ -320,15 +302,6 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     KEY idx_agent_run_message (trigger_message_id, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent loop 根运行及 subagent 运行';
 
-CREATE TABLE IF NOT EXISTS group_agents (
-    group_id BINARY(16) NOT NULL,
-    agent_id BINARY(16) NOT NULL,
-    joined_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
-    PRIMARY KEY (group_id, agent_id),
-    KEY idx_ga_agent(agent_id),
-    CONSTRAINT fk_ga_group FOREIGN KEY(group_id) REFERENCES chat_groups(id) ON DELETE CASCADE,
-    CONSTRAINT fk_ga_agent FOREIGN KEY(agent_id) REFERENCES agents(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='群聊 Agent 参与者（Agent 首次回群时自动加入）';
 
 CREATE TABLE IF NOT EXISTS workspaces (
     id BINARY(16) PRIMARY KEY, project_id BINARY(16) NOT NULL,
@@ -361,7 +334,6 @@ CREATE TABLE IF NOT EXISTS
 
 -- Agent 表创建后补充消息发送者外键。
 
-ALTER TABLE messages ADD CONSTRAINT fk_msg_agent FOREIGN KEY (agent_id) REFERENCES agents (id);
 
 CREATE TABLE IF NOT EXISTS
     notifications (
