@@ -1,7 +1,7 @@
 # Qgent 与 Harness 架构重构需求规格
 
 - 日期：2026-10-11
-- 状态：产品与架构方向已确认；本次整理需求，尚未实施运行代码。
+- 状态：R01～R11 已落实到前后端集成分支并完成本地自动化验证；真实外部服务联调未执行。
 - 范围：固定 Qgent 入口、临时子 Agent、执行环境与生命周期、领域分包、Skill/Memory、项目级 GitHub 能力，以及后置的实时事件整理。
 需求编号仅用于文档追踪，不引入产品内 Task、任务编号或任务状态机。
 
@@ -289,7 +289,7 @@
 | 聊天触发、群成员、回复与取消 | R01、R02、R09 | 普通消息不触发、结构化提及、幂等重试、固定身份、群权限、真实成果返回 | MessageSentListenerTest、ProjectChatTest、ChatComposer 测试 |
 | Harness 执行生命周期 | R02～R05 | 后台返回、结果交付、续接、单层限制、有界运行、独立选择、根取消、最后一个使用者结束前不释放环境 | AgentChatServiceTest、AgentRunServiceTest |
 | 模型 loop 与工具执行 | R02、R03、R06、R10 | 工具后继续、有效文本结束、轮次上限、并行屏障、结果顺序、实际身份传递 | AgentLoopTest、ToolCallExecutorTest |
-| 上下文与领域工具 | R04、R06～R09 | 聊天/Skill/Memory 可见范围、按需加载、输入预算、子任务必要背景、GitHub 项目开关 | ContextServiceTest、ActivateSkillToolTest、ChatHistorySearchToolTest、GitHubToolsTest |
+| 上下文与领域工具 | R04、R06～R09 | 聊天/Skill/Memory 可见范围、按需加载、输入预算、子任务必要背景、GitHub 项目开关 | ChatHistoryServiceTest、ActivateSkillToolTest、ChatHistorySearchToolTest、GitHubToolsTest |
 | 环境和命令 | R02、R05、R10 | 单次初始化、失败清理、租约、句柄归属、文件版本、输出游标、退出码、取消 | SandboxSessionManagerTest、SandboxCommandsTest、ToolExecutionServiceTest、CodingToolsTest |
 | 实时事件 | R11 | 提交后投递、接收人过滤、重连游标、事务重试、连接释放 | EventServiceTest |
 
@@ -337,6 +337,31 @@
 - R01～R10 汇总已确认的 Q1～Q11、既有长期产品要求及本轮已认可的架构分析；R11 来自已认可的后置架构整理建议。
 - 既有功能的保留验收不代表要重新实现整套 IM、Sandbox、Skill 审核或 GitHub App。
 - 验收层次已由用户确认：以聊天入口、Harness 执行生命周期和现有工具接口为主，重点验证后台返回、目录独立、取消和环境不提前释放。
-- 本文是需求规格，不代表已完成运行代码、数据库变更或真实服务联调。
+- 本文保留需求及验收依据；实现与本地验证记录见下节。建表脚本已更新，未变更真实数据库或声称完成外部服务联调。
 - 产品长期方向见[产品愿景](../target.md)，领域术语见[术语表](../../GLOSSARY.md)。
 - 仓库未配置工程 Skill 使用的 Issue tracker 与 triage 标签。本稿尚未发布远端 Issue，也未应用 ready-for-agent 标签；如需发布，先通过 setup-matt-pocock-skills 明确 tracker 和标签规则。
+
+## 实现与本地验收记录（2026-10-11）
+
+后端与前端均使用 `feat/qgent-harness-refactor` 集成分支；没有推送或部署。需求编号仅用于本规格追踪，未新增业务 Task 或远端 Issue。
+
+| 需求 | 实现及验收证据 |
+| --- | --- |
+| R01 | 固定 Qgent ID 与消息 senderType；删除永久 Agent 管理、默认角色、头像昵称及独立提示词入口、旧表与字段。MessageSentListenerTest、MessageServiceTest、ProjectChatTest 和前端提及、成员、设置测试覆盖现有聊天接口。 |
+| R02～R05 | Harness 管理根资源、独立子对话和后台一层委派。AgentChatServiceTest、AgentLoopTest、AgentRunServiceTest 覆盖立即返回、通知、续接、并发上限、共享默认环境、独立目录、停止及取消；ToolExecutionServiceTest、SandboxSessionManagerTest 验证命令 worker 退出后才释放环境。worktree 按需通过通用 Git 命令创建，不自动创建。 |
+| R06 | 执行位于 harness 的 runtime/context/service/tool/entity/mapper/config/integration；聊天历史、Skill、Memory、GitHub、Workspace 和附件能力归属各领域。WorkspaceSelection 保存每个对话的选择，Sandbox 保留实际容器和执行职责。clean 编译避免旧包残留。 |
+| R07 | 保留原 Skill 首次发布审核、可见性与编辑规则。SkillService 供给权限过滤后的目录和正文，activate_skill 工具按需加载；SkillServiceTest、SkillMemoryAdminAutoPublishTest、ActivateSkillToolTest 覆盖既有行为。 |
+| R08 | MemoryTools 提供查询、窗口读取、创建、修改、审核和归档，使用当前 actor/project 调用原 MemoryService；MemoryToolsTest 覆盖允许、拒绝与错误结果。 |
+| R09 | 项目 githubEnabled 默认开启，前端项目设置可修改；工具每次操作检查开关并按项目导入范围取得 App 凭证。GitHubToolsTest 使用 HTTP adapter 验证 PR API、Git、默认分支及动态关闭，不需要沙箱的 API 调用保持独立。 |
+| R10 | 文件版本、窗口与结构化检索、长命令句柄、输出游标、退出码及取消语义保留。工具记录实际 AgentRun/Workspace，取消请求与等待实际 worker 收尾分开。Sandbox 与工具相关测试覆盖这些接口。 |
+| R11 | EventService 保留领域发布入口；WebSocket、SSE 连接与传输职责分离，保留提交后发布、过滤、游标、心跳和共享 SSE pump，相关 realtime 测试通过。 |
+
+- 后端：`mvnw.cmd -q clean package` 成功；共 378 项测试，375 项通过、3 项按运行条件跳过。
+- 最终验证前遇到一次 Windows JUnit 临时目录清理异常（文件编辑断言通过）；`FileToolsTest` 单独重跑 11 项通过，随后完整 `clean package` 重跑通过，未修改文件工具行为。
+- 跳过项：1 项真实账号认证集成测试未启用；2 项 Linux root 文件所有权测试在当前 Windows 环境不适用。
+- 前端：`npm run lint`、`npm run test -- --run --pool=forks --maxWorkers=1`、`npm run build` 通过；33 个测试文件、90 项测试通过。
+- 修改了当前建表脚本，没有执行真实数据库迁移、清理 Workspace 或删除附件。
+- 本地 Docker daemon 不可用；真实 Docker/MySQL/Redis、DeepSeek 模型及 GitHub App/PR/push 的整链路未验证。可控模型、Fake 与 adapter 的验证结果不代表这些外部服务已联调成功。
+- 双轴审查：Standards 初审发现 1 项未引用生产代码和 1 项路径解析重复，已删除旧 helper 并复用目录解析；Spec 初审发现 1 项根终态覆盖取消的竞态，已通过状态条件更新修复。两轴复核均无遗留问题；前端两轴审查亦无遗留问题。
+- 根终态与取消通过 `RUNNING`/`CANCELLING` 条件更新决胜，取消先写入时最终状态和聊天结果均为取消，终态先写入时后续取消更新为 0。AgentRunServiceTest 覆盖两种顺序。
+- 标准 Skill 包导入、RAG/代码索引、跨根运行子对话恢复及新增 Diff/MR 卡片仍属本轮范围外。
