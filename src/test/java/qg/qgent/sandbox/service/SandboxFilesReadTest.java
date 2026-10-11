@@ -2,7 +2,6 @@ package qg.qgent.sandbox.service;
 
 import org.junit.jupiter.api.Test;
 import qg.qgent.sandbox.execution.dto.ToolExecutionResponse;
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -10,10 +9,10 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
-class SandboxCodeAccessTest {
+class SandboxFilesReadTest {
     private final UUID id=UUID.randomUUID(), executionId=UUID.randomUUID();
     private final SandboxToolService tools=mock(SandboxToolService.class);
-    private final SandboxCodeAccess access=new SandboxCodeAccess(tools);
+    private final SandboxFiles access=new SandboxFiles(tools);
     private void execution(String status, Map<String,Object> result) {
         var execution=new ToolExecutionResponse(); execution.setId(executionId); execution.setStatus(status); execution.setResult(result);
         execution.setFailureCode("PROCESS_EXIT_NONZERO"); execution.setFailureReason("invalid regex");

@@ -10,7 +10,7 @@ import qg.qgent.sandbox.execution.mapper.ToolExecutionMapper;
 import qg.qgent.sandbox.execution.service.ToolExecutionService;
 import qg.qgent.sandbox.runtime.ContainerRuntime;
 import qg.qgent.sandbox.runtime.FakeContainerRuntime;
-import qg.qgent.sandbox.service.SandboxCodeAccess;
+import qg.qgent.sandbox.service.SandboxFiles;
 import qg.qgent.sandbox.service.SandboxCommands;
 import qg.qgent.sandbox.service.SandboxSessionManager;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
@@ -46,7 +46,7 @@ class SandboxConfigurationTest {
             assertThat(context.getBean(ContainerRuntime.class)).isInstanceOf(FakeContainerRuntime.class);
             assertThat(context.getBean(ToolExecutionService.class)).isNotNull();
             assertThat(context.getBean(SandboxSessionManager.class)).isNotNull();
-            assertThat(context.getBean(SandboxCodeAccess.class)).isNotNull();
+            assertThat(context.getBean(SandboxFiles.class)).isNotNull();
             assertThat(context.getBean(SandboxCommands.class)).isNotNull();
             assertThat(context.getBeansWithAnnotation(org.springframework.web.bind.annotation.RestController.class)).isEmpty();
         }

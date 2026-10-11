@@ -27,8 +27,7 @@ import qg.qgent.sandbox.service.SandboxSessionManager;
 import qg.qgent.sandbox.service.SandboxSession;
 import qg.qgent.skill.dto.ContextSkill;
 import qg.qgent.skill.service.SkillService;
-import qg.qgent.workspace.service.WorkspaceCodeAccess;
-import qg.qgent.workspace.service.WorkspaceCodeWriter;
+import qg.qgent.sandbox.service.SandboxFiles;
 import qg.qgent.workspace.service.WorkspaceCommands;
 import qg.qgent.workspace.service.WorkspaceService;
 import qg.qgent.workspace.entity.WorkspaceEntity;
@@ -665,7 +664,7 @@ class AgentChatServiceTest {
         AgentRunService runs = mock(AgentRunService.class);
         MessageService messages = mock(MessageService.class);
         WorkspaceService workspaces = mock(WorkspaceService.class);
-        WorkspaceCodeAccess codeAccess = mock(WorkspaceCodeAccess.class);
+        SandboxFiles codeAccess = mock(SandboxFiles.class);
         SandboxSessionManager sessions = mock(SandboxSessionManager.class);
         ContextService context = mock(ContextService.class);
         SkillService skills = mock(SkillService.class);
@@ -707,7 +706,7 @@ class AgentChatServiceTest {
         var github = new GitHubCapability(projects, mock(WorkspaceCommands.class), mock(GitHubRepositoryService.class));
         var service = new AgentChatService(github, mock(WorkspaceCommands.class), workspaces, loop, context,
                 skills, history, messages, runs, sessions, codeAccess,
-                mock(WorkspaceCodeWriter.class), attachments, mock(MemoryService.class), new ObjectMapper(),
+                attachments, mock(MemoryService.class), new ObjectMapper(),
                 childExecutor, maxSubagents);
         MessageSentEvent event = new MessageSentEvent(actor, project, group, message, List.of());
         return new Fixture(service, event, messages, runs, root, workspaces, codeAccess, sessions);
@@ -788,5 +787,5 @@ class AgentChatServiceTest {
 
     private record Fixture(AgentChatService service, MessageSentEvent event, MessageService messages,
                            AgentRunService runs, AgentRunEntity root, WorkspaceService workspaces,
-                           WorkspaceCodeAccess codeAccess, SandboxSessionManager sessions) { }
+                           SandboxFiles codeAccess, SandboxSessionManager sessions) { }
 }

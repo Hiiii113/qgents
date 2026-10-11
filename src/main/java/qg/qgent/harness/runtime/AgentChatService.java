@@ -32,11 +32,10 @@ import qg.qgent.skill.service.SkillService;
 import qg.qgent.skill.tool.ActivateSkillTool;
 import qg.qgent.workspace.service.WorkspaceSelection;
 import qg.qgent.workspace.tool.WorkspaceTools;
-import qg.qgent.workspace.service.WorkspaceCodeAccess;
-import qg.qgent.workspace.service.WorkspaceCodeWriter;
+import qg.qgent.sandbox.service.SandboxFiles;
 import qg.qgent.workspace.service.WorkspaceCommands;
 import qg.qgent.workspace.service.WorkspaceService;
-import qg.qgent.workspace.tool.CodingTools;
+import qg.qgent.sandbox.tool.CodingTools;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -63,8 +62,7 @@ public class AgentChatService {
     private final MessageService messages;
     private final AgentRunService runService;
     private final SandboxSessionManager sessions;
-    private final WorkspaceCodeAccess codeAccess;
-    private final WorkspaceCodeWriter writer;
+    private final SandboxFiles files;
     private final AttachmentMediaLoader attachments;
     private final MemoryService memories;
     private final ObjectMapper json;
@@ -74,7 +72,7 @@ public class AgentChatService {
     public AgentChatService(GitHubCapability github, WorkspaceCommands workspaceCommands, WorkspaceService workspaces,
             AgentLoop loop, ContextService context, SkillService skills, ChatHistoryService history,
             MessageService messages, AgentRunService runService,
-            SandboxSessionManager sessions, WorkspaceCodeAccess codeAccess, WorkspaceCodeWriter writer,
+            SandboxSessionManager sessions, SandboxFiles files,
             AttachmentMediaLoader attachments, MemoryService memories, ObjectMapper json,
             @Qualifier("agentSubagentExecutor") Executor childExecutor,
             @Value("${app.agent.max-subagents:8}") int maxSubagents) {
@@ -89,8 +87,7 @@ public class AgentChatService {
         this.messages = messages;
         this.runService = runService;
         this.sessions = sessions;
-        this.codeAccess = codeAccess;
-        this.writer = writer;
+        this.files = files;
         this.attachments = attachments;
         this.memories = memories;
         this.json = json;
@@ -355,7 +352,7 @@ public class AgentChatService {
                         runService.save(execution.run);
                     });
             this.codingTools = new CodingTools(() -> ensureCodeEnvironment(work, execution),
-                    execution.workspace::directory, codeAccess, writer);
+                    execution.workspace::directory, files);
         }
 
         private ToolCallback[] callbacks() {

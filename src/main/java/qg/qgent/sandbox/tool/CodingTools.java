@@ -1,14 +1,11 @@
-package qg.qgent.workspace.tool;
+package qg.qgent.sandbox.tool;
 
 import qg.qgent.harness.tool.ParallelTool;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
-import qg.qgent.workspace.dto.WorkspaceWriteResult;
-import qg.qgent.workspace.service.WorkspaceCodeAccess;
-import qg.qgent.workspace.service.WorkspaceCodeWriter;
+import qg.qgent.sandbox.service.SandboxFiles;
 import qg.qgent.workspace.service.WorkspaceSelection;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.function.Supplier;
@@ -17,18 +14,17 @@ import java.util.function.Supplier;
 public class CodingTools {
     private final Supplier<UUID> workspace;
     private final Supplier<String> currentDirectory;
-    private final WorkspaceCodeAccess code;
-    private final WorkspaceCodeWriter writer;
+    private final SandboxFiles files;
     private final Map<String, String> hashes = new ConcurrentHashMap<>();
     private UUID selected;
 
-    public CodingTools(Supplier<UUID> workspace, WorkspaceCodeAccess code, WorkspaceCodeWriter writer) {
-        this(workspace, () -> ".", code, writer);
+    public CodingTools(Supplier<UUID> workspace, SandboxFiles files) {
+        this(workspace, () -> ".", files);
     }
 
     public CodingTools(Supplier<UUID> workspace, Supplier<String> currentDirectory,
-                       WorkspaceCodeAccess code, WorkspaceCodeWriter writer) {
-        this.workspace = workspace; this.currentDirectory = currentDirectory; this.code = code; this.writer = writer;
+                       SandboxFiles files) {
+        this.workspace = workspace; this.currentDirectory = currentDirectory; this.files = files;
     }
 
     @ParallelTool
@@ -37,7 +33,7 @@ public class CodingTools {
             @ToolParam(description = "工作区相对路径，默认根目录", required = false) String path,
             @ToolParam(description = "例如 **/*.java，默认 **", required = false) String glob,
             @ToolParam(description = "返回数量，1～1000，默认 200", required = false) Integer limit) {
-        return code.listFiles(workspaceId(), resolve(path), glob == null ? "**" : glob, number(limit, 200, 1000));
+        return files.listFiles(workspaceId(), resolve(path), glob == null ? "**" : glob, number(limit, 200, 1000));
     }
 
     @ParallelTool
@@ -46,7 +42,7 @@ public class CodingTools {
             @ToolParam(description = "起始行号，从 1 开始，默认 1", required = false) Integer startLine,
             @ToolParam(description = "最多返回行数，1～1000，默认 200", required = false) Integer lineCount) {
         path = resolveFile(path);
-        Map<String, Object> result = code.readFile(workspaceId(), path, number(startLine, 1, Integer.MAX_VALUE), number(lineCount, 200, 1000));
+        Map<String, Object> result = files.readFile(workspaceId(), path, number(startLine, 1, Integer.MAX_VALUE), number(lineCount, 200, 1000));
         if (Boolean.TRUE.equals(result.get("ok"))) hashes.put(path, (String) result.get("sha256"));
         return result;
     }
@@ -58,7 +54,7 @@ public class CodingTools {
             @ToolParam(description = "文件 glob，默认 **", required = false) String glob,
             @ToolParam(description = "最多命中数量，1～1000，默认 100", required = false) Integer limit) {
         if (pattern == null || pattern.isBlank()) throw new IllegalArgumentException("pattern 不能为空");
-        return code.searchCode(workspaceId(), pattern, resolve(path), glob == null ? "**" : glob, number(limit, 100, 1000));
+        return files.searchCode(workspaceId(), pattern, resolve(path), glob == null ? "**" : glob, number(limit, 100, 1000));
     }
 
     @Tool(name = "write_file", description = "写入完整 UTF-8 文件，自动创建父目录。新文件直接创建；已有文件必须先 read_file，使用已读取版本替换。已有未读取文件会拒绝，避免意外覆盖。")
@@ -68,7 +64,7 @@ public class CodingTools {
         if (content == null) throw new IllegalArgumentException("content 不能为 null");
         UUID id = workspaceId();
         String hash = hashes.get(path);
-        return outcome(path, hash == null ? writer.writeFile(id, path, content) : writer.replaceFile(id, path, hash, content));
+        return outcome(path, hash == null ? files.writeFile(id, path, content) : files.replaceFile(id, path, hash, content));
     }
 
     @Tool(name = "edit_file", description = "替换已有 UTF-8 文件的准确文本。先 read_file；默认 oldText 必须只匹配一处，多处时增加上下文或显式 replaceAll。newText 为空表示删除匹配文本。")
@@ -81,7 +77,7 @@ public class CodingTools {
         if (oldText == null || oldText.isEmpty() || newText == null) throw new IllegalArgumentException("oldText 不能为空，newText 不能为 null");
         String hash = hashes.get(path);
         if (hash == null) return error("FILE_NOT_READ", "请先 read_file 再编辑：" + path);
-        return outcome(path, writer.editFile(id, path, hash, oldText, newText, Boolean.TRUE.equals(replaceAll)));
+        return outcome(path, files.editFile(id, path, hash, oldText, newText, Boolean.TRUE.equals(replaceAll)));
     }
 
     @Tool(name = "apply_patch", description = "对已读取文件应用 unified diff。文件版本由系统保存；补丁必须精确匹配，失败后重新读取或改用 edit_file。")
@@ -92,15 +88,12 @@ public class CodingTools {
         String hash = hashes.get(path);
         if (hash == null) return error("FILE_NOT_READ", "请先 read_file 再应用补丁：" + path);
         if (patch == null || patch.isBlank()) throw new IllegalArgumentException("patch 不能为空");
-        return outcome(path, writer.patchFile(id, path, hash, patch));
+        return outcome(path, files.patchFile(id, path, hash, patch));
     }
 
-    private Map<String, Object> outcome(String path, WorkspaceWriteResult result) {
-        if (!result.isOk()) return error(result.getFailureCode() == null ? "TOOL_FAILED" : result.getFailureCode(), result.getError());
-        hashes.put(path, result.getNewSha256());
-        Map<String, Object> value = new LinkedHashMap<>();
-        value.put("ok", true); value.put("path", path); value.put("changed", result.isChanged()); value.put("sha256", result.getNewSha256());
-        return value;
+    private Map<String, Object> outcome(String path, Map<String, Object> result) {
+        if (Boolean.TRUE.equals(result.get("ok"))) hashes.put(path, (String) result.get("sha256"));
+        return result;
     }
 
     private synchronized UUID workspaceId() {
