@@ -1,4 +1,4 @@
-package qg.qgent.sandbox.filesystem.dto;
+package qg.qgent.workspace.dto;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 import java.util.UUID;

@@ -1,4 +1,4 @@
-package qg.qgent.sandbox.filesystem.service;
+package qg.qgent.workspace.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -6,7 +6,7 @@ import org.springframework.stereotype.Service;
 import qg.qgent.sandbox.exception.SandboxException;
 import qg.qgent.sandbox.config.SandboxProperties;
 import qg.qgent.sandbox.service.SandboxService;
-import qg.qgent.sandbox.filesystem.dto.*;
+import qg.qgent.workspace.dto.*;
 import java.nio.file.*;
 import java.time.Clock;
 import java.util.UUID;

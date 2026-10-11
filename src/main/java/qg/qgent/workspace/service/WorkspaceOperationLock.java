@@ -1,4 +1,4 @@
-package qg.qgent.sandbox.filesystem.service;
+package qg.qgent.workspace.service;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;

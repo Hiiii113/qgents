@@ -1,4 +1,4 @@
-package qg.qgent.sandbox.filesystem.dto;
+package qg.qgent.workspace.dto;
 import lombok.*;
 import java.util.UUID;
 @Data

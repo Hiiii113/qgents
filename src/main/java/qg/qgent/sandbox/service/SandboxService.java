@@ -12,7 +12,7 @@ import qg.qgent.sandbox.dto.ResourceLimitsRequest;
 import qg.qgent.sandbox.dto.SandboxResponse;
 import qg.qgent.sandbox.runtime.ContainerRuntime;
 import qg.qgent.sandbox.runtime.SandboxAllocation;
-import qg.qgent.sandbox.filesystem.service.WorkspaceOperationLock;
+import qg.qgent.workspace.service.WorkspaceOperationLock;
 
 import java.time.Clock;
 import java.time.Duration;

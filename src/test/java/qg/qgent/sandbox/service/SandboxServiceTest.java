@@ -9,7 +9,7 @@ import qg.qgent.sandbox.dto.CreateSandboxRequest;
 import qg.qgent.sandbox.dto.ResourceLimitsRequest;
 import qg.qgent.sandbox.dto.SandboxResponse;
 import qg.qgent.sandbox.runtime.FakeContainerRuntime;
-import qg.qgent.sandbox.filesystem.service.WorkspaceOperationLock;
+import qg.qgent.workspace.service.WorkspaceOperationLock;
 
 import java.nio.file.Path;
 import java.time.Clock;

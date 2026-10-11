@@ -1,11 +1,11 @@
-package qg.qgent.sandbox.filesystem.service;
+package qg.qgent.workspace.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import qg.qgent.sandbox.config.SandboxProperties;
 import qg.qgent.sandbox.service.SandboxService;
-import qg.qgent.sandbox.filesystem.dto.WorkspaceProvisionRequest;
+import qg.qgent.workspace.dto.WorkspaceProvisionRequest;
 
 import java.nio.file.Files;
 import java.nio.file.Path;

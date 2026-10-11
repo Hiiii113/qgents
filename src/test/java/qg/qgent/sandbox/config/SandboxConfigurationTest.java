@@ -15,6 +15,8 @@ import qg.qgent.sandbox.service.SandboxCommands;
 import qg.qgent.sandbox.service.SandboxSessionManager;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
 import qg.qgent.workspace.service.WorkspaceWriteLeaseService;
+import qg.qgent.workspace.service.WorkspaceOperationLock;
+import qg.qgent.workspace.service.WorkspaceStorageService;
 
 import java.nio.file.Path;
 
@@ -36,6 +38,7 @@ class SandboxConfigurationTest {
             context.registerBean(ToolExecutionLogMapper.class, () -> mock(ToolExecutionLogMapper.class));
             context.registerBean(WorkspaceMapper.class, () -> mock(WorkspaceMapper.class));
             context.registerBean(WorkspaceWriteLeaseService.class, () -> mock(WorkspaceWriteLeaseService.class));
+            context.register(WorkspaceOperationLock.class, WorkspaceStorageService.class);
             context.scan("qg.qgent.sandbox");
             context.refresh();
 

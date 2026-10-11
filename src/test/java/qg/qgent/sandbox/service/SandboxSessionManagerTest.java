@@ -1,12 +1,12 @@
 package qg.qgent.sandbox.service;
 
 import org.junit.jupiter.api.Test;
-import qg.qgent.sandbox.filesystem.service.WorkspaceStorageService;
+import qg.qgent.workspace.service.WorkspaceStorageService;
 import qg.qgent.sandbox.execution.service.ToolExecutionService;
 import qg.qgent.sandbox.config.SandboxProperties;
 import qg.qgent.sandbox.dto.CreateSandboxRequest;
 import qg.qgent.sandbox.dto.SandboxResponse;
-import qg.qgent.sandbox.filesystem.dto.WorkspaceResponse;
+import qg.qgent.workspace.dto.WorkspaceResponse;
 import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
 import qg.qgent.workspace.service.WorkspaceWriteLease;
