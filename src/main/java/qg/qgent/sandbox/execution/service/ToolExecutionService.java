@@ -16,6 +16,7 @@ import qg.qgent.sandbox.execution.dto.ToolContext;
 import qg.qgent.sandbox.execution.dto.ToolExecutionRequest;
 import qg.qgent.sandbox.execution.dto.ToolExecutionResponse;
 import qg.qgent.sandbox.execution.dto.ToolResult;
+import qg.qgent.sandbox.execution.output.CommandOutput;
 import qg.qgent.sandbox.execution.entity.ToolExecutionEntity;
 import qg.qgent.sandbox.execution.entity.ToolExecutionLogEntity;
 import qg.qgent.sandbox.execution.mapper.ToolExecutionLogMapper;
@@ -242,10 +243,10 @@ public class ToolExecutionService {
         if (!"command.run".equals(execution.getToolName())) throw new SandboxException(HttpStatus.UNPROCESSABLE_ENTITY,
                 "NOT_COMMAND_EXECUTION", "只有命令执行提供输出窗口");
         var sandbox = sandboxes.findAllocation(UUID.fromString(execution.getSandboxId()));
-        var directory = qg.qgent.sandbox.execution.handler.CommandOutput.directory(
+        var directory = CommandOutput.directory(
                 paths.resolveLocal(sandbox.getWorkspaceStorageKey()), executionId);
-        return Map.of("stdout", qg.qgent.sandbox.execution.handler.CommandOutput.read(directory, "stdout", stdoutOffset, count),
-                "stderr", qg.qgent.sandbox.execution.handler.CommandOutput.read(directory, "stderr", stderrOffset, count));
+        return Map.of("stdout", CommandOutput.read(directory, "stdout", stdoutOffset, count),
+                "stderr", CommandOutput.read(directory, "stderr", stderrOffset, count));
     }
 
     private void run(String executionId, SandboxAllocation sandbox, ToolExecutionRequest request) {

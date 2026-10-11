@@ -2,6 +2,7 @@ package qg.qgent.sandbox.runtime;
 
 import java.time.Duration;
 import java.util.List;
+import qg.qgent.sandbox.execution.output.CommandOutput;
 
 /**
  * 沙箱内参数数组命令执行器。
@@ -31,11 +32,7 @@ public interface CommandExecutor {
     default CommandExecutionResult execute(SandboxAllocation sandbox, String directory, List<String> command,
             Duration timeout, java.util.Map<String, String> environment, java.nio.file.Path outputDirectory) throws InterruptedException {
         CommandExecutionResult result = execute(sandbox, directory, command, timeout, environment);
-        try {
-            java.nio.file.Files.createDirectories(outputDirectory);
-            java.nio.file.Files.writeString(outputDirectory.resolve("stdout"), String.join("\n", result.getStandardOutput()));
-            java.nio.file.Files.writeString(outputDirectory.resolve("stderr"), String.join("\n", result.getStandardError()));
-        } catch (java.io.IOException exception) { throw new IllegalStateException("保存命令输出失败", exception); }
+        CommandOutput.save(outputDirectory, result, environment);
         return result;
     }
 }

@@ -8,14 +8,10 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import qg.qgent.sandbox.exception.SandboxException;
+import qg.qgent.sandbox.execution.output.CommandOutput.LimitedOutputStream;
 import qg.qgent.sandbox.config.SandboxProperties;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -102,7 +98,7 @@ public class DockerCommandExecutor implements CommandExecutor {
         } catch (RuntimeException exception) {
             throw dockerFailure("inspect", sandbox, exception);
         }
-        return new CommandExecutionResult(exitCode == null ? -1 : exitCode.intValue(), lines(stdout), lines(stderr));
+        return new CommandExecutionResult(exitCode == null ? -1 : exitCode.intValue(), stdout.lines(), stderr.lines());
     }
 
     /** Docker 异常只记录内部类别，接口统一返回稳定错误码，避免把引擎详情或宿主路径暴露给用户。 */
@@ -119,62 +115,6 @@ public class DockerCommandExecutor implements CommandExecutor {
             docker.startContainerCmd(containerId).exec();
         } catch (RuntimeException exception) {
             throw new IllegalStateException("终止超时命令后无法恢复沙箱容器", exception);
-        }
-    }
-
-    private List<String> lines(LimitedOutputStream output) {
-        String value = output.value();
-        if (output.isTruncated()) {
-            value += System.lineSeparator() + "[输出超过限制，已截断]";
-        }
-        return value.isEmpty() ? List.of() : Arrays.asList(value.split("\\R"));
-    }
-
-    static final class LimitedOutputStream extends OutputStream {
-        private final int limit;
-        private final ByteArrayOutputStream delegate;
-        private boolean truncated;
-        private final OutputStream fullOutput;
-
-        LimitedOutputStream(int limit, java.nio.file.Path path) {
-            this.limit = limit;
-            try {
-                if (path != null) java.nio.file.Files.createDirectories(path.getParent());
-                fullOutput = path == null ? OutputStream.nullOutputStream() : java.nio.file.Files.newOutputStream(path);
-            } catch (IOException exception) { throw new IllegalStateException("无法创建输出文件", exception); }
-            this.delegate = new ByteArrayOutputStream(Math.min(limit, 8192));
-        }
-
-        @Override
-        public void write(int value) throws IOException {
-            fullOutput.write(value);
-            if (delegate.size() < limit) {
-                delegate.write(value);
-            } else {
-                truncated = true;
-            }
-        }
-
-        @Override
-        public void write(byte[] values, int offset, int length) throws IOException {
-            fullOutput.write(values, offset, length);
-            fullOutput.flush();
-            int writable = Math.min(length, Math.max(0, limit - delegate.size()));
-            if (writable > 0) {
-                delegate.write(values, offset, writable);
-            }
-            truncated |= writable < length;
-        }
-
-        @Override
-        public void close() throws IOException { fullOutput.close(); }
-
-        String value() {
-            return delegate.toString(StandardCharsets.UTF_8);
-        }
-
-        boolean isTruncated() {
-            return truncated;
         }
     }
 }

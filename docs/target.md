@@ -126,6 +126,7 @@ IM 不承担固定的研发流程调度。GitHub 集成不承担后台自动交�
 
 本次已完成：
 
+- 2026-10-11：收拢 Sandbox 与工具执行职责。过期清理与正常释放均先取消并等待命令线程退出，再销毁容器；内部 `ActiveToolExecutions` 统一活动执行归属、线程与完成通知，持久状态转换仍由执行模块处理。模型文件工具归入 Sandbox，读写统一通过 `SandboxFiles`，删除 Workspace 读写接口和中间写入 DTO；各 Agent 保留独立版本缓存。命令输出保存、脱敏及窗口读取集中到 `sandbox.execution.output`，保留普通命令完整输出与带凭证命令有界脱敏输出的区别。干净编译与 Sandbox、Workspace、Harness、GitHub 相关测试通过（172 项通过、2 项平台相关测试跳过）；真实 Docker 联调尚未执行。
 - 2026-10-11：完成 Qgent/Harness 重构。用户只面对固定 Qgent，删除永久 Agent 管理与身份表；聊天保留结构化提及、群成员授权、回复、幂等和用户通知。主 Agent 可后台启动、等待、补充、停止和续接一层临时子对话；各对话保留独立历史、工具预算、Workspace 选择及目录，默认懒初始化共享根环境。根取消覆盖子运行及其仍在执行的命令，收尾等待命令 worker 退出后释放 Sandbox，保留 Workspace。
 - 2026-10-11：执行生命周期归入 `harness`；聊天历史、Skill、Memory、GitHub、附件与 Workspace 工具回到各自领域，持久目录与操作锁归入 Workspace，realtime 内部分离持久发布与 WebSocket/SSE 传输。保留 Skill 目录及按需激活；补齐 Memory 查询、窗口读取、创建、更新、提交审核、批准、驳回与归档工具，复用原权限和状态规则。GitHub 改为项目级默认开启，操作时读取最新开关，保留团队 App 和导入仓库范围；前端删除 Agent 管理入口并接入项目开关。
 - 2026-10-11：本轮后端 `mvnw.cmd -q clean package` 通过（375 项通过、3 项按运行条件跳过）；前端 lint、90 项测试及生产构建通过。核心行为通过可控模型与 adapter 验证，覆盖后台立即返回、同一子对话续接、单次环境初始化、目录独立、取消和环境不提前释放。建表脚本按当前模型更新，未修改真实数据库；真实 Docker、MySQL、模型与 GitHub 联调尚未执行。

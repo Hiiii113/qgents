@@ -1,4 +1,4 @@
-package qg.qgent.sandbox.runtime;
+package qg.qgent.sandbox.execution.output;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -7,12 +7,12 @@ import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
 import static org.assertj.core.api.Assertions.*;
 
-class DockerCommandOutputTest {
+class CommandOutputStreamTest {
     @TempDir Path root;
 
     @Test void preservesFullOutputOnDiskWhileBoundingMemory() throws Exception {
         Path file = root.resolve("stdout");
-        var stream = new DockerCommandExecutor.LimitedOutputStream(8, file);
+        var stream = new CommandOutput.LimitedOutputStream(8, file);
         try (stream) {
             stream.write("first chunk".getBytes(StandardCharsets.UTF_8));
             assertThat(Files.readString(file)).isEqualTo("first chunk");

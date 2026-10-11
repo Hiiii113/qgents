@@ -5,11 +5,12 @@ import org.springframework.stereotype.Component;
 import qg.qgent.sandbox.runtime.CommandExecutor;
 import qg.qgent.sandbox.execution.dto.ToolContext;
 import qg.qgent.sandbox.execution.dto.ToolResult;
+import qg.qgent.sandbox.execution.output.CommandOutput;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
-/** 执行 argv 数组；保存完整输出，结果只携带有界诊断尾部。 */
+/** 执行 argv 数组；普通命令保存完整输出，带凭证命令只保存有界脱敏输出。 */
 @Component
 @RequiredArgsConstructor
 public class CommandRunTool implements SandboxTool {
@@ -32,12 +33,7 @@ public class CommandRunTool implements SandboxTool {
                 result = executor.execute(context.getSandbox(), cwd, command, context.getTimeout(), context.getEnvironment(), output);
             } else {
                 result = executor.execute(context.getSandbox(), cwd, command, context.getTimeout(), context.getEnvironment());
-                java.nio.file.Files.createDirectories(output);
-                for (String stream : List.of("stdout", "stderr")) {
-                    String rawOutput = String.join("\n", "stdout".equals(stream) ? result.getStandardOutput() : result.getStandardError());
-                    var sanitized = CommandOutput.redact(Map.of("text", rawOutput), context.getEnvironment());
-                    java.nio.file.Files.writeString(output.resolve(stream), (String) sanitized.get("text"));
-                }
+                CommandOutput.save(output, result, context.getEnvironment());
             }
             var stdout = CommandOutput.redact(CommandOutput.tail(output, "stdout"), context.getEnvironment());
             var stderr = CommandOutput.redact(CommandOutput.tail(output, "stderr"), context.getEnvironment());
