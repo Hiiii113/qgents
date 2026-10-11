@@ -17,12 +17,13 @@ public class SandboxCleanupService {
 
     /**
      * 回收达到空闲期限或最大寿命的沙箱
-     * 先取消该沙箱中的活动执行，再销毁底层容器；不会删除持久 Workspace
+     * 先取消并等待执行线程退出，再销毁底层容器，避免与命令中断后的容器恢复竞争。
+     * 不会删除持久 Workspace。
      */
     @Scheduled(fixedDelayString = "${sandbox.cleanup-interval:30s}")
     public void cleanupExpiredSandboxes() {
         sandboxes.expiredSandboxIds().forEach(sandboxId -> {
-            executions.cancelBySandbox(sandboxId);
+            executions.stopAndAwaitBySandbox(sandboxId);
             sandboxes.destroy(sandboxId);
             log.info("sandbox reclaimed by scheduled cleanup sandboxId={}", sandboxId);
         });

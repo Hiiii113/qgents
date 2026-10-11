@@ -14,10 +14,14 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.mockito.Mockito.*;
 
 class SandboxCleanupServiceTest {
     @TempDir
@@ -39,8 +43,38 @@ class SandboxCleanupServiceTest {
 
         cleanup.cleanupExpiredSandboxes();
 
-        verify(executions).cancelBySandbox(request.getSandboxId());
+        verify(executions).stopAndAwaitBySandbox(request.getSandboxId());
         assertTrue(sandboxes.find(request.getSandboxId()).isEmpty());
+    }
+
+    @Test
+    void cleanupWaitsForExecutionWorkersBeforeDestroyingContainer() throws Exception {
+        SandboxService sandboxes = mock(SandboxService.class);
+        ToolExecutionService executions = mock(ToolExecutionService.class);
+        UUID sandboxId = UUID.randomUUID();
+        when(sandboxes.expiredSandboxIds()).thenReturn(List.of(sandboxId));
+        CountDownLatch stopping = new CountDownLatch(1), exited = new CountDownLatch(1);
+        doAnswer(invocation -> {
+            stopping.countDown();
+            assertTrue(exited.await(5, TimeUnit.SECONDS));
+            return null;
+        }).when(executions).stopAndAwaitBySandbox(sandboxId);
+        SandboxCleanupService cleanup = new SandboxCleanupService(sandboxes, executions);
+
+        try (var pool = Executors.newSingleThreadExecutor()) {
+            var future = pool.submit(cleanup::cleanupExpiredSandboxes);
+            try {
+                assertTrue(stopping.await(5, TimeUnit.SECONDS));
+                assertFalse(future.isDone());
+                verify(sandboxes, never()).destroy(any());
+            } finally {
+                exited.countDown();
+            }
+            future.get(5, TimeUnit.SECONDS);
+            var order = inOrder(executions, sandboxes);
+            order.verify(executions).stopAndAwaitBySandbox(sandboxId);
+            order.verify(sandboxes).destroy(sandboxId);
+        }
     }
 
     private CreateSandboxRequest request() {
