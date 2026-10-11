@@ -88,6 +88,8 @@
 - 修改代码时同步更新相关注释，直接说明用途、实际行为和必要原因；清理过时注释及难以理解的“契约 §…”、旧章节编号等引用，不用文档编号代替说明。
 - 行间及字段说明使用 `//`；类和方法的用途说明可保留简洁 Javadoc，不写旧流程或历史兼容说明。
 - 按业务领域分包，每个业务内部按需使用 `controller`、`service`、`dto`、`entity`、`mapper`、`config` 等子包；不再将所有业务堆在根目录的同名分层包中。
+- Agent 架构按已确认的单一 Qgent 入口收缩：删除永久 Agent 管理领域及其创建、审核、发布、角色、头像昵称与提示词配置；将执行能力集中到 `harness`，保留 AgentRun、父子运行、取消、环境和工具执行记录，不因删除身份管理而删除内部执行记录。
+- `harness` 按需划分 `runtime`、`context`、`service`、`tool`、`entity`、`mapper` 等子包，负责 loop、后台委派、上下文、执行生命周期和工具组装。业务工具留在 `chat`、`skill`、`memory`、`workspace`、`github` 等所属领域；Workspace 负责持久目录、访问和租约，Sandbox 负责 Docker、文件和命令执行。沿用 Spring AI、自有 loop 和进程内 Sandbox，不另外引入编排框架。
 
 ## 聊天、AgentRun、Workspace 与 Agent 附加能力
 
