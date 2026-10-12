@@ -2,6 +2,12 @@
 
 此文件记录本仓库的开发协作约定与 Qgents 的长期产品要求。开发协作约定适用于修改本仓库的 Codex；产品要求适用于 Qgents 的实现及产品内 Agent，不把两者的执行环境、模型配置或 Git 授权混为一谈。
 
+## Trellis 开发工作流
+
+- 本仓库使用 Trellis 管理开发规范、任务上下文和会话日志。新会话或接续工作时使用 `trellis-start`，或运行 `python .trellis/scripts/get_context.py`；按任务读取 [.trellis/workflow.md](.trellis/workflow.md)、[后端规范索引](.trellis/spec/backend/index.md)及[共享指南](.trellis/spec/guides/index.md)。
+- Trellis 通用模板与本文件冲突时，以本文件及 workflow 开头的项目适配为准；已授权实施持续完成，不增加任务创建、规划或提交确认。普通讨论不建任务，局部修复可直接执行，复杂工作按需持久化任务。
+- Matt 工程 Skill 保留并按需使用，不叠加第二套强制工作流；现有术语表和需求文档继续作为项目资料。
+
 ## 关联仓库
 
 - 前端仓库位于 `D:/code/qgents-fronted`（目录名为 `qgents-fronted`）；检查后端接口是否被前端使用时，到该仓库核对实际调用。

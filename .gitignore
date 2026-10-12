@@ -74,3 +74,7 @@ src/main/resources/rsa/private_key.pem
 scripts/
 
 /secrets/
+
+# Trellis 运行脚本随项目版本控制
+!/.trellis/scripts/
+!/.trellis/scripts/**
