@@ -3,6 +3,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
+    <!-- 继承 Spring Boot 的依赖及构建默认值；relativePath 为空表示从 Maven 仓库解析父 POM。 -->
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
@@ -17,10 +18,12 @@
     <name>Qgents</name>
     <description>Qgents 构建聚合与依赖管理</description>
 
+    <!-- 根工程只聚合模块，不生成应用 JAR；在仓库根目录执行 mvnw.cmd clean package。 -->
     <modules>
         <module>backend</module>
     </modules>
 
+    <!-- 项目统一维护的 Java 和依赖版本；未在此覆盖的版本继续使用 Spring Boot 默认值。 -->
     <properties>
         <java.version>21</java.version>
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
@@ -34,8 +37,10 @@
         <swagger-annotations.version>2.2.47</swagger-annotations.version>
     </properties>
 
+    <!-- 此处只约定版本，不自动引入依赖；实际使用的库在 backend/pom.xml 中声明。 -->
     <dependencyManagement>
         <dependencies>
+            <!-- BOM 统一 Spring AI 各组件的版本，避免逐个配置。 -->
             <dependency>
                 <groupId>org.springframework.ai</groupId>
                 <artifactId>spring-ai-bom</artifactId>
@@ -102,15 +107,18 @@
     </dependencyManagement>
 
     <build>
+        <!-- 供子模块继承的插件配置；实际参与后端构建的插件在子模块 plugins 中声明。 -->
         <pluginManagement>
             <plugins>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
                     <configuration>
+                        <!-- 使用独立 javac 编译为 Java 21，并保留方法参数名供框架反射使用。 -->
                         <release>${java.version}</release>
                         <fork>true</fork>
                         <parameters>true</parameters>
+                        <!-- 编译期运行 Lombok，生成构造器、访问器等代码。 -->
                         <annotationProcessorPaths>
                             <path>
                                 <groupId>org.projectlombok</groupId>
@@ -123,6 +131,7 @@
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
                     <configuration>
+                        <!-- Lombok 只在编译期使用，不打入可执行应用 JAR。 -->
                         <excludes>
                             <exclude>
                                 <groupId>org.projectlombok</groupId>

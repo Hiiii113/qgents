@@ -1,6 +1,9 @@
+# Agent 用户命令运行镜像，构建上下文为本目录；与根目录的后端应用镜像分别构建。
 FROM eclipse-temurin:21-jdk-noble
 
+# 构建参数可通过 docker build 的 --build-arg 选项覆盖；它们不是后端运行时环境变量。
 ARG NODE_MAJOR=22
+# UID/GID 必须与后端 DockerContainerRuntime 中的挂载权限设置一致。
 ARG USER_ID=10001
 ARG GROUP_ID=10001
 # 固定 Android 命令行工具的官方归档版本与校验和，保证镜像构建可复现。
@@ -9,6 +12,7 @@ ARG ANDROID_COMMAND_LINE_TOOLS_SHA256=4e4c464f145a7512b57d088ac6c278c03c9eea6108
 ARG ANDROID_API_LEVEL=35
 ARG ANDROID_BUILD_TOOLS_VERSION=35.0.0
 
+# 镜像内的工具版本与缓存位置；后端运行沙箱时将 HOME 和构建缓存挂为临时 tmpfs。
 ENV DEBIAN_FRONTEND=noninteractive \
     MAVEN_VERSION=3.9.11 \
     GRADLE_VERSION=8.10.2 \
@@ -22,6 +26,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     JAVA_TOOL_OPTIONS="-Djava.io.tmpdir=/home/developer/.cache -Djansi.tmpdir=/home/developer/.cache" \
     PATH=/opt/pnpm:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:$PATH
 
+# 安装通用构建与检索工具，创建非 root 开发用户；源码由运行时挂载到 /workspace。
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bash build-essential ca-certificates curl diffutils findutils gnupg git jq make \
@@ -60,7 +65,9 @@ RUN mkdir -p "${ANDROID_HOME}/cmdline-tools" "${ANDROID_USER_HOME}" \
     && chown -R developer:developer "${ANDROID_HOME}" "${ANDROID_USER_HOME}" \
     && rm -rf /tmp/android-command-line-tools /tmp/android-command-line-tools.zip
 
+# 后续用户命令以 developer 身份执行，默认从完整 Workspace 根目录开始。
 USER developer:developer
 WORKDIR /workspace
 
+# 保持容器可用，实际命令由后端通过 Docker exec 发起。
 CMD ["sleep", "infinity"]

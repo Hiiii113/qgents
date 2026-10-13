@@ -28,6 +28,18 @@ API 为 `http://localhost:8080/api/v1`，Swagger 为 `http://localhost:8080/swag
 
 ## 配置
 
+按用途查找配置文件（各文件内已注明参数含义与路径关系）：
+
+| 要配置的内容 | 文件 |
+| --- | --- |
+| 本地连接地址、密钥路径、可选服务开关 | [环境模板](.env.example)，复制为根目录 `.env` 后填写 |
+| 应用默认值、Agent 限制、Sandbox 资源与超时 | [application.yaml](backend/src/main/resources/application.yaml) |
+| 日志输出、滚动与保留期限 | [logback-spring.xml](backend/src/main/resources/logback-spring.xml) |
+| Java、依赖版本和构建插件 | [根 POM](pom.xml)；实际依赖和打包入口见 [后端 POM](backend/pom.xml) |
+| 本机开发依赖、Linux 完整部署 | [本地 Compose](docker-compose.yml)、[生产 Compose](docker-compose.production.yml) |
+| 后端运行镜像、Agent 命令执行镜像 | [应用 Dockerfile](Dockerfile)、[沙箱 Dockerfile](sandbox-images/dev-tools/Dockerfile) |
+| 本地 Maven 发行版 | [Wrapper 配置](.mvn/wrapper/maven-wrapper.properties) |
+
 - 默认使用 [DeepSeek 官方接口](https://api-docs.deepseek.com/zh-cn/)的 `deepseek-flash`，通过 `DEEPSEEK_API_KEY` 鉴权；使用 `AI_BASE_URL`、`AI_MODEL`、`AI_MAX_TOKENS` 配置地址、模型和输出上限。
 - 附件默认保存到 `ATTACHMENT_LOCAL_ROOT`，也支持 OSS；头像直传需要配置 OSS 公共访问地址。
 - GitHub App 可选，项目级 GitHub 能力默认开启，项目管理员可在项目设置关闭。配置见 [docs/github-app.md](docs/github-app.md)，导入仓库不自动 clone 或绑定 Workspace。

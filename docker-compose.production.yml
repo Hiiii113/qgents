@@ -1,6 +1,10 @@
+# Linux 容器部署：MySQL、Redis、API 和前端通过 Compose 网络互相访问。
+# 在仓库根目录执行 docker compose -f docker-compose.production.yml up -d。
+# ${变量:?提示} 为必填项，${变量:-默认值} 为可选项；变量来自 shell 或根目录 .env。
 name: qgents-production
 
 services:
+  # 数据库只供内部服务访问，不映射宿主机端口。
   mysql:
     image: mysql:8.4
     restart: unless-stopped
@@ -12,14 +16,17 @@ services:
       TZ: UTC
     volumes:
       - mysql_data:/var/lib/mysql
+      # 仅首次初始化空数据卷时执行建表脚本，重建容器不会覆盖已有数据库。
       - ./backend/src/main/resources/db/qgents_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
+      # $$ 留给容器内 shell 展开；确认应用用户能访问当前表结构。
       test: [CMD-SHELL, 'MYSQL_PWD="$$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u"$$MYSQL_USER" -D"$$MYSQL_DATABASE" -e "SELECT default_group FROM chat_groups LIMIT 0"']
       interval: 10s
       timeout: 5s
       start_period: 30s
       retries: 20
 
+  # Redis 使用密码和 AOF 持久化，API 通过 redis:6379 连接。
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -33,17 +40,21 @@ services:
       timeout: 5s
       retries: 20
 
-  # 只用于构建镜像，不常驻启动开发容器。
+  # 使用 --profile images build 构建沙箱镜像；常规 up 不启用此服务。
+  # 镜像由 API 在需要代码环境时用于创建临时容器。
   sandbox-image:
     profiles: [images]
     build: ./sandbox-images/dev-tools
     image: ${SANDBOX_DEV_TOOLS_IMAGE:-qgents/sandbox-dev-tools:0.2.0}
 
   api:
+    # 使用根目录 Dockerfile 构建 backend 模块。
     build: .
     restart: unless-stopped
+    # env_file 将 .env 注入 API；下方 environment 覆盖容器中不同的地址与路径。
     env_file: .env
     environment:
+      # 容器通过服务名访问数据库和 Redis，不使用本机开发的端口映射。
       DB_URL: jdbc:mysql://mysql:3306/qgents?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC
       DB_USERNAME: ${DB_USERNAME:?Set DB_USERNAME}
       DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
@@ -54,15 +65,18 @@ services:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?Set DEEPSEEK_API_KEY}
       SMTP_USERNAME: ${SMTP_USERNAME:?Set SMTP_USERNAME}
       SMTP_AUTH_CODE: ${SMTP_AUTH_CODE:?Set SMTP_AUTH_CODE}
+      # 下列路径位于 API 容器内，与 volumes 的挂载目标对应。
       RSA_PRIVATE_KEY_PATH: file:/run/qgents/rsa/private_key.pem
       GITHUB_APP_PRIVATE_KEY_PATH: /run/qgents/github/private-key.pem
       ATTACHMENT_LOCAL_ROOT: /app/data/attachments
       LOG_FILE: /app/logs/qgents.log
+      # 运维端口允许容器网络访问，但未通过 ports 发布到宿主机。
       MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
       MANAGEMENT_SERVER_PORT: "8081"
       SANDBOX_RUNTIME: docker
       SANDBOX_DOCKER_HOST: unix:///var/run/docker.sock
       SANDBOX_DEV_TOOLS_IMAGE: ${SANDBOX_DEV_TOOLS_IMAGE:-qgents/sandbox-dev-tools:0.2.0}
+      # 两个根目录对应同一份文件：一个供 API 读写，一个供宿主机 Docker 挂载。
       SANDBOX_WORKSPACE_LOCAL_ROOT: /var/lib/qgents/workspaces
       SANDBOX_WORKSPACE_DOCKER_HOST_ROOT: ${QGENTS_DATA_ROOT:-/srv/qgents}/workspaces
       SANDBOX_WORKSPACE_METADATA_ROOT: /var/lib/qgents/workspace-metadata
@@ -72,14 +86,18 @@ services:
         source: ${RSA_PRIVATE_KEY_FILE:-./backend/src/main/resources/rsa/private_key.pem}
         target: /run/qgents/rsa/private_key.pem
         read_only: true
+        # 私钥必须是已有文件；路径写错时直接失败，不自动创建同名目录。
         bind: {create_host_path: false}
       - ${QGENTS_DATA_ROOT:-/srv/qgents}/github-app:/run/qgents/github:ro
       - ${QGENTS_DATA_ROOT:-/srv/qgents}/workspaces:/var/lib/qgents/workspaces
       - ${QGENTS_DATA_ROOT:-/srv/qgents}/workspace-metadata:/var/lib/qgents/workspace-metadata
+      # 进程内 Sandbox 通过宿主机 Docker 引擎管理用户命令容器。
       - /var/run/docker.sock:/var/run/docker.sock
       - api_data:/app/data
       - api_logs:/app/logs
+    # 与宿主机 Docker socket 所属组一致，使 UID 10001 的 API 进程可连接 Docker。
     group_add: ["${DOCKER_GID:-999}"]
+    # API 仅映射到宿主机回环地址；浏览器通常通过 web 的 /api 代理访问。
     ports: ["127.0.0.1:${API_HOST_PORT:-8080}:8080"]
     extra_hosts: ["host.docker.internal:host-gateway"]
     healthcheck:
@@ -88,10 +106,12 @@ services:
       timeout: 5s
       start_period: 30s
       retries: 20
+    # 等待数据库表和 Redis 健康检查通过后启动 API。
     depends_on:
       mysql: {condition: service_healthy}
       redis: {condition: service_healthy}
 
+  # 前端源码来自相邻独立仓库；VITE 参数在镜像构建时写入静态资源，修改后需重建。
   web:
     build:
       context: ${FRONTEND_DIRECTORY:-../qgents-fronted}
@@ -104,6 +124,7 @@ services:
     depends_on:
       api: {condition: service_healthy}
 
+  # 可选出站代理：仅启用 proxy profile 时启动，使用方仍需配置代理地址。
   clash:
     image: metacubex/mihomo:latest
     profiles: [proxy]
@@ -111,6 +132,7 @@ services:
     ports: ["127.0.0.1:7890:7890"]
     volumes: [mihomo_config:/root/.config/mihomo]
 
+  # 可选 Cloudflare Tunnel：仅启用 tunnel profile 时启动，需填写隧道 token。
   cloudflared:
     image: cloudflare/cloudflared:latest
     profiles: [tunnel]
@@ -121,6 +143,7 @@ services:
     depends_on:
       web: {condition: service_healthy}
 
+# 命名卷保存数据库、Redis、附件、日志及代理配置；Workspace 使用上方宿主机绑定目录。
 volumes:
   mysql_data:
   redis_data:

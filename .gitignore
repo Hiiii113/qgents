@@ -1,24 +1,24 @@
-# Target directory
+# Maven 构建产物与本地依赖缓存；target/ 也匹配 backend/target/。
 target/
 .m2/
 .m2-local/
 .m2-temp/
 /data/
 
-# Compiled class file
+# Java 编译产物
 *.class
 
-# Log file
+# 应用日志与日志目录
 *.log
 logs/
 
-# BlueJ files
+# BlueJ 编辑器生成的上下文文件
 *.ctxt
 
-# Mobile Tools for Java (J2ME)
+# J2ME 工具生成的临时目录
 .mtj.tmp/
 
-# Package Files #
+# 打包产物与压缩文件
 *.jar
 *.war
 *.nar
@@ -27,18 +27,18 @@ logs/
 *.tar.gz
 *.rar
 
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+# JVM 崩溃与重放日志
 hs_err_pid*
 replay_pid*
 
-# intelliJ IDEA
+# IntelliJ IDEA 本机项目配置
 .idea/
 *.iml
 
-# VsCode
+# VS Code 本机项目配置
 .vscode/
 
-# ai files
+# 其他开发助手的本地状态
 .omc/
 .claude/
 
@@ -58,7 +58,7 @@ replay_pid*
 # RSA 私钥（只留后端，勿提交；公钥 public_key.pem 可提交）
 backend/src/main/resources/rsa/private_key.pem
 
-# Private keys
+# 默认忽略 PEM 文件，允许提交的公钥在下方单独放行。
 *.pem
 
 # 例外必须放在 *.pem 之后：git 以最后一条匹配规则为准
@@ -70,9 +70,10 @@ backend/src/main/resources/rsa/private_key.pem
 # 沙箱/工具临时目录
 .codex-test-tmp/
 
-# 脚本文件
+# 默认忽略 scripts/ 目录；受版本控制的 Trellis 脚本在下方单独放行。
 scripts/
 
+# 本机密钥目录
 /secrets/
 
 # Trellis 运行脚本随项目版本控制

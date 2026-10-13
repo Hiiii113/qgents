@@ -1,3 +1,6 @@
+# 本地开发：仅启动 MySQL 和 Redis，前后端在 Windows 本机运行。
+# 在仓库根目录执行 docker compose up -d --wait；变量来自 shell 或同目录 .env。
+# ${变量:?提示} 表示未填写时直接报错；${变量:-默认值} 表示允许使用默认值。
 name: qgents
 
 services:
@@ -6,10 +9,13 @@ services:
     restart: unless-stopped
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+    # AOF 将写入持久化到下方 redis_data 卷；应用连接仍需同一份密码。
     command: [redis-server, --appendonly, "yes", --requirepass, "${REDIS_PASSWORD}"]
     volumes: [redis_data:/data]
+    # 左侧为本机端口，右侧为容器端口；本机 API 的 REDIS_PORT 需与左侧一致。
     ports: ["127.0.0.1:${REDIS_HOST_PORT:-16379}:6379"]
     healthcheck:
+      # $$ 将变量留给容器内 shell 展开，避免 Compose 提前替换。
       test: [CMD-SHELL, 'REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG']
       interval: 10s
       timeout: 5s
@@ -24,17 +30,21 @@ services:
       MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
       TZ: UTC
+    # DB_URL 使用本机映射端口；仅监听 127.0.0.1。
     ports: ["127.0.0.1:${MYSQL_HOST_PORT:-13306}:3306"]
     volumes:
       - mysql_data:/var/lib/mysql
+      # 仅在数据库数据目录首次初始化时执行；复用已有卷不会重新建表。
       - ./backend/src/main/resources/db/qgents_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
+      # 检查应用用户能访问建表结果；LIMIT 0 不读取或修改业务数据。
       test: [CMD-SHELL, 'MYSQL_PWD="$$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u"$$MYSQL_USER" -D"$$MYSQL_DATABASE" -e "SELECT default_group FROM chat_groups LIMIT 0"']
       interval: 10s
       timeout: 5s
       start_period: 30s
       retries: 20
 
+# 命名卷保留数据库数据；普通容器重建会继续使用这些卷。
 volumes:
   redis_data:
   mysql_data:
