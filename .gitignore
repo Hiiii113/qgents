@@ -56,14 +56,14 @@ replay_pid*
 .env.*
 
 # RSA 私钥（只留后端，勿提交；公钥 public_key.pem 可提交）
-src/main/resources/rsa/private_key.pem
+backend/src/main/resources/rsa/private_key.pem
 
 # Private keys
 *.pem
 
 # 例外必须放在 *.pem 之后：git 以最后一条匹配规则为准
 # 主后端 RSA 公钥公开无风险，允许提交
-!src/main/resources/rsa/public_key.pem
+!backend/src/main/resources/rsa/public_key.pem
 # 环境变量配置示例允许提交
 !.env.example
 

@@ -2,8 +2,9 @@
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
 COPY pom.xml ./
+COPY backend/pom.xml ./backend/pom.xml
 RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp dependency:go-offline
-COPY src ./src
+COPY backend/src ./backend/src
 RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp -DskipTests package
 
 FROM eclipse-temurin:21-jre-noble
@@ -13,7 +14,7 @@ RUN apt-get update \
     && groupadd --gid 10001 qgents \
     && useradd --uid 10001 --gid qgents --create-home qgents
 WORKDIR /app
-COPY --from=build /build/target/qgents-0.0.1-SNAPSHOT.jar app.jar
+COPY --from=build /build/backend/target/qgents-0.0.1-SNAPSHOT.jar app.jar
 RUN mkdir -p /app/logs /app/data /var/lib/qgents/workspaces /var/lib/qgents/workspace-metadata \
     && chown -R qgents:qgents /app /var/lib/qgents
 USER 10001:10001

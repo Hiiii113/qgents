@@ -100,7 +100,7 @@
 ## 聊天、AgentRun、Workspace 与 Agent 附加能力
 
 - 聊天消息记录工作目标、进展讨论、补充信息和成果，不保留独立 Task 表、业务接口、编号或状态机。
-- 主后端与 Sandbox 合并为一个 Spring Boot 服务，根目录使用标准 `src/main`、`src/test`，按业务领域分包。Workspace 的文件读取、检索、修改及命令执行统一由进程内 Sandbox 模块完成，不经过内部 HTTP，也不保留双模式调用或宿主机命令回退。用户命令仍在 Docker 沙箱容器中运行。
+- 主后端与 Sandbox 合并为一个 Spring Boot 服务，后端集中在独立 Maven 模块 `backend/`，使用 `backend/src/main`、`backend/src/test`，模块内按业务领域分包；根 POM 负责聚合构建。Workspace 的文件读取、检索、修改及命令执行统一由进程内 Sandbox 模块完成，不经过内部 HTTP，也不保留双模式调用或宿主机命令回退。用户命令仍在 Docker 沙箱容器中运行。
 - Workspace 是独立资源，可通过工具管理。普通问答、RAG 及无需代码环境的检索不创建沙箱；首次需要代码环境时才创建沙箱并挂载选定 Workspace，未选择时新建、已选择时复用，同次运行后续工具复用环境。根据工具真实的环境依赖判断，不按工具名称或是否调用工具笼统判断。运行结束释放沙箱、保留 Workspace。
 - AgentRun 保留内部运行状态、触发消息、子运行和实际环境关联；一次运行成功只表示本轮 loop 正常结束，不等于用户长期目标已经完成。取消执行和工作区占用归属根 AgentRun，子 Agent 默认共用根运行环境和工作目录，各 Agent 独立保存当前目录及选中 Workspace，避免互相切换。需要隔离修改时按需在同一沙箱环境内创建 worktree，不为每个子 Agent 自动创建 worktree、分支或独立沙箱；主 Agent 负责划分修改范围并协调重叠修改。
 - 消息回复统一使用 replyToId + content，不保留 QUOTE、replyText 和客户端重复传递的引用正文。

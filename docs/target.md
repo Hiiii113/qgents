@@ -64,7 +64,7 @@ IM 不承担固定的研发流程调度。GitHub 集成不承担后台自动交�
 - 用户通过 `@Qgent` 提出要求，Agent 判断直接回答、调用工具还是委托子 Agent。继续工作时按需读取引用消息和聊天历史。
 - AgentRun 是内部执行记录，关联触发消息、独立执行标识、父子运行及实际环境，保存运行、失败、取消等状态。一轮执行成功不等于长期工作目标已完成。
 - 按触发消息取消执行，发送者或项目管理员可停止该消息已启动的根运行；子 Agent 随根运行停止。
-- 主后端与 Sandbox 合并为一个 Spring Boot 服务，使用根目录标准 `src/main`、`src/test` 和清晰的业务分包。工作区文件读取、检索、修改和命令执行统一由进程内 Sandbox 模块完成，不保留内部 HTTP 或双模式调用；用户命令仍在 Docker 沙箱中运行，不回退到宿主机执行。
+- 主后端与 Sandbox 合并为一个 Spring Boot 服务，源码集中在独立 Maven 模块 `backend/`，使用标准 `backend/src/main`、`backend/src/test` 和清晰的业务分包，根 POM 负责聚合构建。工作区文件读取、检索、修改和命令执行统一由进程内 Sandbox 模块完成，不保留内部 HTTP 或双模式调用；用户命令仍在 Docker 沙箱中运行，不回退到宿主机执行。
 - Workspace 独立持久化；只有首次调用需要代码环境的工具才创建沙箱并准备环境。未选择时新建，已选择时复用，同次运行后续工具复用环境。
 - 根 AgentRun 持有工作区写入租约；子 Agent 默认共用根运行打开的环境和工作目录，各 Agent 独立保存当前目录及选中 Workspace。需要隔离修改时按需在同一沙箱环境内创建 worktree，不为每个子 Agent 自动创建 worktree、分支或独立沙箱；主 Agent 划分修改范围并协调重叠修改。工具执行记录关联实际调用的 AgentRun 和 Workspace，统一使用应用数据源。文件工具同步执行，长命令使用独立线程池、执行句柄和进程内完成通知，避免 HTTP 与数据库轮询等待。
 - 一次工作可以切换多个 Workspace，已有 Workspace 可以用于后续不同工作。运行结束释放 Sandbox、保留工作目录。
@@ -126,6 +126,7 @@ IM 不承担固定的研发流程调度。GitHub 集成不承担后台自动交�
 
 本次已完成：
 
+- 2026-10-13：后端源码、资源和测试集中到独立 Maven 模块 `backend/`，根 POM 负责聚合构建及依赖、插件版本管理。后端与 Sandbox 仍为单个服务；`sandbox-images/` 保留独立镜像构建目录。同步 Docker 构建、Compose 建表挂载、RSA 默认路径和开发规范，本地 Maven 启动保持仓库根工作目录。`mvnw.cmd -q clean package` 通过（378 项通过、3 项按条件跳过），两份 Compose 配置校验通过；当前 Docker 引擎未运行，未验证镜像实际构建。
 - 2026-10-11：收拢 Sandbox 与工具执行职责。过期清理与正常释放均先取消并等待命令线程退出，再销毁容器；内部 `ActiveToolExecutions` 统一活动执行归属、线程与完成通知，持久状态转换仍由执行模块处理。模型文件工具归入 Sandbox，读写统一通过 `SandboxFiles`，删除 Workspace 读写接口和中间写入 DTO；各 Agent 保留独立版本缓存。命令输出保存、脱敏及窗口读取集中到 `sandbox.execution.output`，保留普通命令完整输出与带凭证命令有界脱敏输出的区别。干净编译与 Sandbox、Workspace、Harness、GitHub 相关测试通过（172 项通过、2 项平台相关测试跳过）；真实 Docker 联调尚未执行。
 - 2026-10-11：完成 Qgent/Harness 重构。用户只面对固定 Qgent，删除永久 Agent 管理与身份表；聊天保留结构化提及、群成员授权、回复、幂等和用户通知。主 Agent 可后台启动、等待、补充、停止和续接一层临时子对话；各对话保留独立历史、工具预算、Workspace 选择及目录，默认懒初始化共享根环境。根取消覆盖子运行及其仍在执行的命令，收尾等待命令 worker 退出后释放 Sandbox，保留 Workspace。
 - 2026-10-11：执行生命周期归入 `harness`；聊天历史、Skill、Memory、GitHub、附件与 Workspace 工具回到各自领域，持久目录与操作锁归入 Workspace，realtime 内部分离持久发布与 WebSocket/SSE 传输。保留 Skill 目录及按需激活；补齐 Memory 查询、窗口读取、创建、更新、提交审核、批准、驳回与归档工具，复用原权限和状态规则。GitHub 改为项目级默认开启，操作时读取最新开关，保留团队 App 和导入仓库范围；前端删除 Agent 管理入口并接入项目开关。

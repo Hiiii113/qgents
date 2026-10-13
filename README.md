@@ -4,13 +4,23 @@ IM 聊天、可选 GitHub App 集成和云端 Agent Harness。普通消息仅用
 
 后端与 Sandbox 为单个 Java 21 Spring Boot 应用，依赖 MySQL 和 Redis。前端位于相邻的 `../qgents-fronted` 仓库。
 
+## 仓库结构
+
+- `backend/`：独立 Maven 模块，包含应用源码、资源、建表脚本与测试，构建产物位于 `backend/target/`。
+- `pom.xml`：聚合后端模块，统一依赖版本及构建插件配置；Maven Wrapper 保留在根目录。
+- `sandbox-images/`：Agent 执行用户命令使用的沙箱镜像，独立于后端应用镜像构建。
+- 根目录 `Dockerfile`、Compose、`.env`：应用镜像、服务部署与本地配置。
+- `docs/`、`.trellis/`、`.agents/`：产品资料、开发规范与开发 Skill。
+
 ## 本地开发
 
 1. 将 `.env.example` 复制为 `.env`，填写数据库、Redis、`DEEPSEEK_API_KEY`、SMTP 和 JWT 配置。Spring 自动读取 `.env`。
-2. 启动 Docker Desktop（Linux containers），执行 `docker compose up -d --wait`，启动 MySQL 8.4 和 Redis。应用数据库用户使用 `qgents` 等非 root 用户。首次创建 MySQL 数据卷时自动执行 `src/main/resources/db/qgents_schema.sql`；复用已有数据卷不会重新建表。默认映射到本机 13306 和 16379，分别对应 `MYSQL_HOST_PORT`、`REDIS_HOST_PORT`，本机 API 的 `DB_URL` 与 `REDIS_PORT` 须使用这两个端口。
-3. 将已有登录 RSA 私钥放到 `RSA_PRIVATE_KEY_PATH` 指定位置，前端公钥和 keyId 须与其对应。项目公钥位于 `src/main/resources/rsa/public_key.pem`，仅有公钥无法生成对应私钥。
+2. 启动 Docker Desktop（Linux containers），执行 `docker compose up -d --wait`，启动 MySQL 8.4 和 Redis。应用数据库用户使用 `qgents` 等非 root 用户。首次创建 MySQL 数据卷时自动执行 `backend/src/main/resources/db/qgents_schema.sql`；复用已有数据卷不会重新建表。默认映射到本机 13306 和 16379，分别对应 `MYSQL_HOST_PORT`、`REDIS_HOST_PORT`，本机 API 的 `DB_URL` 与 `REDIS_PORT` 须使用这两个端口。
+3. 将已有登录 RSA 私钥放到 `RSA_PRIVATE_KEY_PATH` 指定位置，前端公钥和 keyId 须与其对应。项目公钥位于 `backend/src/main/resources/rsa/public_key.pem`，仅有公钥无法生成对应私钥。
 4. Windows Docker Desktop 使用 `SANDBOX_DOCKER_HOST=npipe:////./pipe/docker_engine`；本地运行时两个 Workspace 根目录指向同一实际目录。
-5. 执行 `docker build -t qgents/sandbox-dev-tools:0.2.0 sandbox-images/dev-tools`，再运行 `./mvnw.cmd spring-boot:run`。不涉及代码环境的工具无需 Docker。
+5. 执行 `docker build -t qgents/sandbox-dev-tools:0.2.0 sandbox-images/dev-tools`，再运行 `./mvnw.cmd -pl backend spring-boot:run`。不涉及代码环境的工具无需 Docker。
+
+以上命令均在仓库根目录执行。Maven 启动插件将应用工作目录固定为仓库根目录，继续从这里读取 `.env`；IDE 启动也使用仓库根目录作为工作目录。
 
 前端目录执行 `npm ci`、`npm run dev`，`.env` 使用 `VITE_USE_MOCK=false`、`VITE_API_BASE_URL=/api`、`API_PROXY_TARGET=http://localhost:8080`。页面入口为 `http://localhost:5173`。
 

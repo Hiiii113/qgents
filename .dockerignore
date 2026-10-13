@@ -1,9 +1,10 @@
 .git
 .env
 .env.*
-*.pem
-!src/main/resources/rsa/public_key.pem
+**/*.pem
+!backend/src/main/resources/rsa/public_key.pem
 target
+**/target
 .m2*
 .codex-test-tmp
 logs

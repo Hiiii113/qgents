@@ -27,7 +27,7 @@ services:
     ports: ["127.0.0.1:${MYSQL_HOST_PORT:-13306}:3306"]
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./src/main/resources/db/qgents_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./backend/src/main/resources/db/qgents_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
       test: [CMD-SHELL, 'MYSQL_PWD="$$MYSQL_PASSWORD" mysql -h 127.0.0.1 -u"$$MYSQL_USER" -D"$$MYSQL_DATABASE" -e "SELECT default_group FROM chat_groups LIMIT 0"']
       interval: 10s
