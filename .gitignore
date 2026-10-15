@@ -42,14 +42,8 @@ replay_pid*
 .omc/
 .claude/
 
-# 其他文档默认忽略；产品愿景、接入说明和已确认需求规格纳入版本控制
-/docs/*
-!/docs/target.md
-!/docs/github-app.md
-!/docs/sandbox-tools.md
-!/docs/specs/
-/docs/specs/*
-!/docs/specs/qgent-harness-refactor.md
+# 本地规划草稿不入库；正式文档和规格默认允许纳入版本控制。
+/docs/plans/
 
 # 环境变量文件（本地运行配置，一律不入库）
 .env
@@ -70,12 +64,5 @@ backend/src/main/resources/rsa/private_key.pem
 # 沙箱/工具临时目录
 .codex-test-tmp/
 
-# 默认忽略 scripts/ 目录；受版本控制的 Trellis 脚本在下方单独放行。
-scripts/
-
 # 本机密钥目录
 /secrets/
-
-# Trellis 运行脚本随项目版本控制
-!/.trellis/scripts/
-!/.trellis/scripts/**
