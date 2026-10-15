@@ -4,6 +4,7 @@ import com.aliyun.oss.HttpMethod;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSException;
 import com.aliyun.oss.model.GeneratePresignedUrlRequest;
+import com.aliyun.oss.model.GetObjectRequest;
 import com.aliyun.oss.model.OSSObject;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -72,5 +73,12 @@ public class AliyunOssAttachmentStorage implements AttachmentStorageStrategy {
         String resolvedType = contentType == null || contentType.isBlank() ? "application/octet-stream" : contentType;
         Long size = object.getObjectMetadata() == null ? null : object.getObjectMetadata().getContentLength();
         return new AttachmentContent(object.getObjectContent(), resolvedType, fileName, size);
+    }
+
+    @Override
+    public InputStream loadRange(String objectKey, long start, long end) {
+        GetObjectRequest request = new GetObjectRequest(properties.getBucketName(), objectKey);
+        request.setRange(start, end);
+        return oss.getObject(request).getObjectContent();
     }
 }

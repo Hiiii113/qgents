@@ -14,6 +14,7 @@ import qg.qgent.attachment.dto.UploadCredential;
 import qg.qgent.attachment.entity.AttachmentEntity;
 import qg.qgent.attachment.mapper.AttachmentMapper;
 import qg.qgent.attachment.storage.AttachmentContent;
+import qg.qgent.attachment.storage.AttachmentResource;
 import qg.qgent.attachment.storage.AttachmentStorageStrategy;
 import qg.qgent.auth.service.TokenService;
 import qg.qgent.common.util.UuidV7;
@@ -174,12 +175,24 @@ public class AttachmentService {
         return new MessageAttachmentPreview(!"UNSUPPORTED".equals(previewType), previewType);
     }
 
-    /** 预览和模型输入需要完整字节；普通下载使用 downloadContent 流式读取。 */
+    /** Agent 在已有大小预算内读取完整内容；浏览器预览使用 previewResource。 */
     public AttachmentPreviewContent previewContent(UUID actor, UUID projectId, UUID attachmentId) {
         AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
         AttachmentContent loaded = storage.loadContent(attachment.getObjectKey(), attachment.getFileName(), attachment.getMediaType());
         return new AttachmentPreviewContent(readAll(loaded.getStream()), classifyPreviewType(attachment),
                 attachment.getFileName(), attachment.getMediaType(), attachment.getSizeBytes());
+    }
+
+    /** 浏览器预览仅准备元数据，内容由 Spring 在写响应时按需打开。 */
+    public AttachmentPreviewResource previewResource(UUID actor, UUID projectId, UUID attachmentId) {
+        AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
+        long size = storage.objectSize(attachment.getObjectKey())
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ATTACHMENT_NOT_FOUND", "附件文件不存在"));
+        return new AttachmentPreviewResource(new AttachmentResource(storage, attachment.getObjectKey(),
+                attachment.getFileName(), attachment.getMediaType(), size), classifyPreviewType(attachment));
+    }
+
+    public record AttachmentPreviewResource(AttachmentResource resource, String previewType) {
     }
 
     private byte[] readAll(InputStream in) {

@@ -1,168 +1,225 @@
 package qg.qgent.attachment.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.servlet.http.HttpServletRequest;
+import com.fasterxml.jackson.databind.module.SimpleModule;
+import jakarta.servlet.Filter;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpHeaders;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
+import org.springframework.core.env.MapPropertySource;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.mock.web.MockHttpServletRequest;
-
-import qg.qgent.attachment.dto.AttachmentPreviewUrlResponse;
+import org.springframework.mock.web.MockServletContext;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;
+import org.springframework.web.servlet.config.annotation.EnableWebMvc;
+import qg.qgent.attachment.entity.AttachmentEntity;
+import qg.qgent.attachment.mapper.AttachmentMapper;
 import qg.qgent.attachment.service.AttachmentService;
-import qg.qgent.attachment.service.AttachmentService.AttachmentPreviewContent;
-import qg.qgent.common.web.ApiResponse;
+import qg.qgent.attachment.storage.AttachmentContent;
+import qg.qgent.attachment.storage.AttachmentStorageStrategy;
+import qg.qgent.attachment.web.AttachmentResponseFactory;
+import qg.qgent.auth.config.SecurityConfiguration;
+import qg.qgent.auth.security.JwtAuthenticationFilter;
+import qg.qgent.auth.service.TokenService;
+import qg.qgent.common.service.IdempotencyService;
+import qg.qgent.common.web.ApiException;
+import qg.qgent.common.web.GlobalExceptionHandler;
 import qg.qgent.common.web.RequestIdFilter;
+import qg.qgent.project.service.ProjectAccessService;
 
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Map;
+import java.util.OptionalLong;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-/**
- * 附件内联预览控制器单测：经过鉴权的预览响应、Range 206/416、raw 语义、preview-url 包装。
- * <p>
- * 直接调用控制器方法（与项目既有控制器测试一致），用真实 TokenService 签发短期 access token。
- */
+/** 经过实际 Spring MVC 与项目安全过滤链验证预览字节、范围、鉴权和资源关闭。 */
 class AttachmentControllerTest {
-
-    private final AttachmentService service = mock(AttachmentService.class);
-    private final ObjectMapper objectMapper = new ObjectMapper();
-    private final AttachmentController controller = new AttachmentController(service, objectMapper);
-    private HttpServletRequest request;
+    private AnnotationConfigWebApplicationContext context;
+    private MockMvc mvc;
+    private AttachmentStorageStrategy storage;
+    private AttachmentEntity attachment;
+    private final UUID actor = UUID.randomUUID(), project = UUID.randomUUID(), id = UUID.randomUUID();
+    private final byte[] bytes = "hello qwen".getBytes(StandardCharsets.UTF_8);
+    private final AtomicBoolean closed = new AtomicBoolean();
 
     @BeforeEach
     void setUp() {
-        request = mock(HttpServletRequest.class);
-        when(request.getAttribute(RequestIdFilter.ATTRIBUTE)).thenReturn("req-1");
+        context = new AnnotationConfigWebApplicationContext();
+        context.setServletContext(new MockServletContext());
+        context.getEnvironment().getPropertySources().addFirst(new MapPropertySource("test",
+                Map.of("app.cors-allowed-origins", "http://localhost")));
+        context.register(WebConfig.class);
+        context.refresh();
+        mvc = MockMvcBuilders.webAppContextSetup(context)
+                .addFilters(new RequestIdFilter(), context.getBean("springSecurityFilterChain", Filter.class)).build();
+        storage = context.getBean(AttachmentStorageStrategy.class);
+        attachment = new AttachmentEntity();
+        attachment.setId(id);
+        attachment.setProjectId(project);
+        attachment.setObjectKey("key");
+        attachment.setFileName("notes.txt");
+        attachment.setMediaType("text/plain");
+        attachment.setSizeBytes((long) bytes.length);
+        attachment.setStatus("READY");
+        when(context.getBean(AttachmentMapper.class).selectById(id)).thenReturn(attachment);
+        when(storage.objectSize("key")).thenReturn(OptionalLong.of(bytes.length));
+        when(storage.loadContent(any(), any(), any())).thenAnswer(invocation ->
+                new AttachmentContent(stream(bytes), attachment.getMediaType(), attachment.getFileName(), (long) bytes.length));
+        when(storage.loadRange(eq("key"), anyLong(), anyLong())).thenAnswer(invocation ->
+                stream(Arrays.copyOfRange(bytes, ((Long) invocation.getArgument(1)).intValue(),
+                        ((Long) invocation.getArgument(2)).intValue() + 1)));
+    }
+
+    @AfterEach
+    void closeContext() { context.close(); }
+
+    private ByteArrayInputStream stream(byte[] data) {
+        return new ByteArrayInputStream(data) {
+            @Override public void close() { closed.set(true); }
+        };
+    }
+
+    private String path() { return "/api/v1/projects/" + project + "/attachments/" + id; }
+    private String token() { return context.getBean(TokenService.class).access(actor); }
+
+    @Test
+    void fullPreviewUsesBearerAndClosesStream() throws Exception {
+        mvc.perform(get(path() + "/preview").header("Authorization", "Bearer " + token()))
+                .andExpect(status().isOk()).andExpect(content().bytes(bytes))
+                .andExpect(header().string("Content-Length", "10"))
+                .andExpect(header().string("Accept-Ranges", "bytes"))
+                .andExpect(header().string("Content-Type", "text/plain;charset=utf-8"));
+        assertThat(closed).isTrue();
+        verify(storage).loadContent("key", "notes.txt", "text/plain");
+        verify(storage, never()).loadRange(any(), anyLong(), anyLong());
+    }
+
+    @ParameterizedTest
+    @CsvSource({"bytes=0-4,0,4,hello", "bytes=6-,6,9,qwen", "bytes=-4,6,9,qwen", "bytes=0-999,0,9,hello qwen"})
+    void rangeUsesQueryTokenAndReadsOnlyRequestedRegion(String range, long start, long end, String expected) throws Exception {
+        mvc.perform(get(path() + "/preview").param("token", token()).header("Range", range))
+                .andExpect(status().isPartialContent()).andExpect(content().string(expected))
+                .andExpect(header().string("Content-Range", "bytes " + start + "-" + end + "/10"))
+                .andExpect(header().string("Content-Length", Long.toString(end - start + 1)));
+        verify(storage).loadRange("key", start, end);
+        verify(storage, never()).loadContent(any(), any(), any());
+        assertThat(closed).isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"bytes=10-", "bytes=4-2", "bytes=-0", "bytes=", "items=0-2", "bytes=0-1,3-4", "bytes=abc", "bytes=999999999999999999999999-"})
+    void rejectsInvalidRangesWithoutOpeningContent(String range) throws Exception {
+        mvc.perform(get(path() + "/preview").param("token", token()).header("Range", range))
+                .andExpect(status().isRequestedRangeNotSatisfiable())
+                .andExpect(header().string("Content-Range", "bytes */10"))
+                .andExpect(jsonPath("$.error.code").value("ATTACHMENT_RANGE_INVALID"))
+                .andExpect(jsonPath("$.requestId").isNotEmpty());
+        verify(storage, never()).loadContent(any(), any(), any());
+        verify(storage, never()).loadRange(any(), anyLong(), anyLong());
     }
 
     @Test
-    void previewServesRangeWithQueryToken() {
-        UUID projectId = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
-        byte[] data = "hello qwen".getBytes(StandardCharsets.UTF_8);
-        when(service.previewContent(actor, projectId, attachmentId)).thenReturn(
-                new AttachmentPreviewContent(data, "TEXT", "notes.txt", "text/plain", (long) data.length));
-
-        ResponseEntity<byte[]> resp = controller.preview(projectId, attachmentId,
-                null, "bytes=0-4", actor, request);
-
-        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.PARTIAL_CONTENT);
-        assertThat(resp.getHeaders().getFirst(HttpHeaders.CONTENT_RANGE)).isEqualTo("bytes 0-4/" + data.length);
-        assertThat(resp.getHeaders().getFirst(HttpHeaders.ACCEPT_RANGES)).isEqualTo("bytes");
-        assertThat(resp.getHeaders().getContentType().toString()).startsWith("text/plain");
-        assertThat(resp.getBody()).isEqualTo(Arrays.copyOfRange(data, 0, 5));
+    void rejectsMissingAndInvalidCredentials() throws Exception {
+        mvc.perform(get(path() + "/preview")).andExpect(status().isUnauthorized());
+        mvc.perform(get(path() + "/preview").param("token", "forged")).andExpect(status().isUnauthorized());
+        verifyNoInteractions(storage);
     }
 
     @Test
-    void previewSupportsSuffixRange() {
-        UUID projectId = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
-        byte[] data = "hello".getBytes(StandardCharsets.UTF_8);
-        when(service.previewContent(actor, projectId, attachmentId)).thenReturn(
-                new AttachmentPreviewContent(data, "TEXT", "notes.txt", "text/plain", (long) data.length));
-
-        ResponseEntity<byte[]> resp = controller.preview(projectId, attachmentId,
-                null, "bytes=-3", actor, request);
-
-        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.PARTIAL_CONTENT);
-        assertThat(resp.getHeaders().getFirst(HttpHeaders.CONTENT_RANGE)).isEqualTo("bytes 2-4/" + data.length);
-        assertThat(resp.getBody()).isEqualTo("llo".getBytes(StandardCharsets.UTF_8));
+    void rejectsNonMembersBeforeOpeningContent() throws Exception {
+        doThrow(new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "无权访问"))
+                .when(context.getBean(ProjectAccessService.class)).requireProjectMember(project, actor);
+        mvc.perform(get(path() + "/preview").param("token", token())).andExpect(status().isForbidden());
+        verifyNoInteractions(storage);
     }
 
     @Test
-    void previewReturns416ForUnsatisfiableRange() {
-        UUID projectId = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
-        byte[] data = "hello".getBytes(StandardCharsets.UTF_8);
-        when(service.previewContent(actor, projectId, attachmentId)).thenReturn(
-                new AttachmentPreviewContent(data, "TEXT", "notes.txt", "text/plain", (long) data.length));
-
-        ResponseEntity<byte[]> resp = controller.preview(projectId, attachmentId,
-                null, "bytes=99-100", actor, request);
-
-        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.REQUESTED_RANGE_NOT_SATISFIABLE);
-        assertThat(resp.getHeaders().getFirst(HttpHeaders.CONTENT_RANGE)).isEqualTo("bytes */" + data.length);
-        assertThat(resp.getHeaders().getFirst(HttpHeaders.ACCEPT_RANGES)).isEqualTo("bytes");
-        assertThat(resp.getBody()).isNotNull();
+    void rejectsPendingAttachment() throws Exception {
+        attachment.setStatus("PENDING");
+        mvc.perform(get(path() + "/preview").param("token", token())).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ATTACHMENT_NOT_READY"));
+        verifyNoInteractions(storage);
     }
 
     @Test
-    void previewServesFullContentViaHeaderChannel() {
-        UUID projectId = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
-        byte[] data = "hello".getBytes(StandardCharsets.UTF_8);
-        when(service.previewContent(actor, projectId, attachmentId)).thenReturn(
-                new AttachmentPreviewContent(data, "CODE", "Main.java", "application/octet-stream", (long) data.length));
-
-        // Authorization 头通道：@AuthenticationPrincipal 直接解析出 userId，无需 query token
-        ResponseEntity<byte[]> resp = controller.preview(projectId, attachmentId, null, null, actor, request);
-
-        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(resp.getHeaders().getFirst(HttpHeaders.ACCEPT_RANGES)).isEqualTo("bytes");
-        assertThat(resp.getHeaders().getContentType().toString()).startsWith("text/plain");
-        assertThat(resp.getBody()).isEqualTo(data);
+    void rawCodeKeepsOriginalMediaType() throws Exception {
+        attachment.setFileName("Main.java");
+        attachment.setMediaType("application/octet-stream");
+        mvc.perform(get(path() + "/preview").param("token", token()).param("raw", "1"))
+                .andExpect(status().isOk()).andExpect(content().bytes(bytes))
+                .andExpect(header().string("Content-Type", "application/octet-stream"));
     }
 
     @Test
-    void previewRawReturnsOriginalMediaType() {
-        UUID projectId = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
-        byte[] data = "def x = 1".getBytes(StandardCharsets.UTF_8);
-        when(service.previewContent(actor, projectId, attachmentId)).thenReturn(
-                new AttachmentPreviewContent(data, "CODE", "Main.java", "application/octet-stream", (long) data.length));
-
-        ResponseEntity<byte[]> resp = controller.preview(projectId, attachmentId,
-                1, null, actor, request);
-
-        assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(resp.getHeaders().getContentType().toString()).startsWith("application/octet-stream");
-        assertThat(resp.getBody()).isEqualTo(data);
+    void contentDownloadRemainsAuthenticatedAndClosesStream() throws Exception {
+        mvc.perform(get(path() + "/content").param("token", token())).andExpect(status().isUnauthorized());
+        mvc.perform(get(path() + "/content").header("Authorization", "Bearer " + token()))
+                .andExpect(status().isOk()).andExpect(content().bytes(bytes))
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("attachment;")));
+        assertThat(closed).isTrue();
     }
 
     @Test
-    void previewUrlWrapsServiceResponse() {
-        UUID projectId = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
-        AttachmentPreviewUrlResponse dto = new AttachmentPreviewUrlResponse();
-        dto.setAttachmentId(attachmentId.toString());
-        dto.setPreviewable(true);
-        dto.setPreviewType("IMAGE");
-        when(service.getPreviewInfo(actor, projectId, attachmentId)).thenReturn(dto);
+    void previewInfoReturnsMetadataWithoutOpeningFile() throws Exception {
+        mvc.perform(get(path() + "/preview-url").header("Authorization", "Bearer " + token()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.previewType").value("TEXT"))
+                .andExpect(jsonPath("$.data.previewUrl").isNotEmpty());
+        verify(storage, never()).loadContent(any(), any(), any());
+    }
 
-        ApiResponse<?> resp = controller.getPreviewInfo(actor, projectId, attachmentId, request);
-
-        assertThat(resp.data()).isSameAs(dto);
+    @ParameterizedTest
+    @ValueSource(strings = {"image/png", "application/pdf"})
+    void mediaPreviewsRemainInline(String type) throws Exception {
+        attachment.setMediaType(type);
+        mvc.perform(get(path() + "/preview").param("token", token()))
+                .andExpect(status().isOk()).andExpect(content().bytes(bytes))
+                .andExpect(header().string("Content-Type", type))
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("inline;")));
     }
 
     @Test
-    void uploadDelegatesRawBytesToService() throws IOException {
-        UUID projectId = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
-        MockHttpServletRequest req = new MockHttpServletRequest("PUT",
-                "/api/v1/projects/" + projectId + "/attachments/" + attachmentId);
-        req.setContent("file-bytes".getBytes(StandardCharsets.UTF_8));
+    void missingFileDoesNotOpenContent() throws Exception {
+        when(storage.objectSize("key")).thenReturn(OptionalLong.empty());
+        mvc.perform(get(path() + "/preview").param("token", token())).andExpect(status().isNotFound());
+        verify(storage, never()).loadContent(any(), any(), any());
+    }
 
-        controller.upload(actor, projectId, attachmentId, req);
+    @Test
+    void emptyFileRejectsRangeWithoutOpeningContent() throws Exception {
+        when(storage.objectSize("key")).thenReturn(OptionalLong.of(0));
+        mvc.perform(get(path() + "/preview").param("token", token()).header("Range", "bytes=0-"))
+                .andExpect(status().isRequestedRangeNotSatisfiable())
+                .andExpect(header().string("Content-Range", "bytes */0"));
+        verify(storage, never()).loadRange(any(), anyLong(), anyLong());
+    }
 
-        verify(service).uploadBytes(eq(actor), eq(projectId), eq(attachmentId), any(InputStream.class));
+    @Configuration
+    @EnableWebMvc
+    @EnableWebSecurity
+    @Import({SecurityConfiguration.class, JwtAuthenticationFilter.class, AttachmentController.class,
+            AttachmentResponseFactory.class, GlobalExceptionHandler.class})
+    static class WebConfig {
+        @Bean TokenService tokens() { return new TokenService("01234567890123456789012345678901", 15, 30, 30); }
+        @Bean AttachmentMapper mapper() { return mock(AttachmentMapper.class); }
+        @Bean AttachmentStorageStrategy storage() { return mock(AttachmentStorageStrategy.class); }
+        @Bean ProjectAccessService access() { return mock(ProjectAccessService.class); }
+        @Bean IdempotencyService idempotency() { return mock(IdempotencyService.class); }
+        @Bean com.fasterxml.jackson.databind.Module utcLocalDateTimeModule() { return new SimpleModule(); }
+        @Bean AttachmentService attachments() { return new AttachmentService(mapper(), storage(), access(), tokens(), 1024, 900); }
     }
 }

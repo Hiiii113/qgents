@@ -13,6 +13,10 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.nio.channels.Channels;
+import java.nio.channels.FileChannel;
+import java.nio.file.StandardOpenOption;
+import java.io.FilterInputStream;
 import java.util.OptionalLong;
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -103,6 +107,38 @@ public class LocalAttachmentStorage implements AttachmentStorageStrategy {
             return new AttachmentContent(Files.newInputStream(target), resolvedType, fileName, size);
         } catch (IOException e) {
             throw new IllegalStateException("Unable to read attachment from local storage: " + objectKey, e);
+        }
+    }
+
+    @Override
+    public InputStream loadRange(String objectKey, long start, long end) {
+        try {
+            FileChannel channel = FileChannel.open(resolve(objectKey), StandardOpenOption.READ);
+            try {
+                channel.position(start);
+            } catch (IOException | RuntimeException e) {
+                channel.close();
+                throw e;
+            }
+            // 定位后限制可读长度，避免为了读取尾段而扫描前面的文件内容。
+            return new FilterInputStream(Channels.newInputStream(channel)) {
+                private long remaining = end - start + 1;
+                @Override public int read() throws IOException {
+                    if (remaining == 0) return -1;
+                    int value = super.read();
+                    if (value != -1) remaining--;
+                    return value;
+                }
+                @Override public int read(byte[] bytes, int offset, int length) throws IOException {
+                    if (length == 0) return 0;
+                    if (remaining == 0) return -1;
+                    int count = in.read(bytes, offset, (int) Math.min(length, remaining));
+                    if (count != -1) remaining -= count;
+                    return count;
+                }
+            };
+        } catch (IOException e) {
+            throw new IllegalStateException("Unable to read attachment range: " + objectKey, e);
         }
     }
 

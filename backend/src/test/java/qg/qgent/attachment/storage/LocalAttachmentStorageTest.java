@@ -53,7 +53,9 @@ class LocalAttachmentStorageTest {
         AttachmentContent content = storage.loadContent(objectKey, "notes.txt", "text/plain");
         assertThat(content.getFileName()).isEqualTo("notes.txt");
         assertThat(content.getContentType()).isEqualTo("text/plain");
-        assertThat(content.getStream().readAllBytes()).isEqualTo(payload);
+        try (var stream = content.getStream()) {
+            assertThat(stream.readAllBytes()).isEqualTo(payload);
+        }
     }
 
     @Test
@@ -63,6 +65,22 @@ class LocalAttachmentStorageTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> storage.loadContent("../../etc/passwd", null, null))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void readsOnlyTheRequestedFileRegion() throws Exception {
+        LocalAttachmentStorage storage = storage();
+        String key = "projects/" + UUID.randomUUID() + "/attachments/" + UUID.randomUUID();
+        byte[] payload = "0123456789".getBytes(StandardCharsets.UTF_8);
+        storage.storeBytes(key, new ByteArrayInputStream(payload), payload.length, 1024);
+        try (var stream = storage.loadRange(key, 6, 8)) {
+            assertThat(stream.read()).isEqualTo('6');
+            assertThat(stream.readAllBytes()).isEqualTo("78".getBytes(StandardCharsets.UTF_8));
+            assertThat(stream.read()).isEqualTo(-1);
+        }
+        try (var stream = storage.loadRange(key, 0, 0)) {
+            assertThat(stream.readAllBytes()).containsExactly((byte) '0');
+        }
     }
 
     @Test

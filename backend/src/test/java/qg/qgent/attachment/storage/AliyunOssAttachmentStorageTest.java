@@ -5,6 +5,8 @@ import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSException;
 import com.aliyun.oss.model.GeneratePresignedUrlRequest;
 import com.aliyun.oss.model.ObjectMetadata;
+import com.aliyun.oss.model.GetObjectRequest;
+import com.aliyun.oss.model.OSSObject;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import qg.qgent.attachment.config.AliyunOssProperties;
@@ -68,5 +70,22 @@ class AliyunOssAttachmentStorageTest {
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_DIRECT_UPLOAD_REQUIRED"));
         verifyNoInteractions(oss);
+    }
+
+    @Test
+    void readsOssRangeAndReleasesTheStream() throws Exception {
+        properties.setBucketName("bucket");
+        OSSObject object = new OSSObject();
+        var input = spy(new ByteArrayInputStream(new byte[] {1, 2, 3}));
+        object.setObjectContent(input);
+        when(oss.getObject(any(GetObjectRequest.class))).thenReturn(object);
+        try (var stream = storage.loadRange("key", 100, 102)) {
+            assertThat(stream.readAllBytes()).containsExactly((byte) 1, (byte) 2, (byte) 3);
+        }
+        var request = ArgumentCaptor.forClass(GetObjectRequest.class);
+        verify(oss).getObject(request.capture());
+        assertThat(request.getValue().getRange()).containsExactly(100L, 102L);
+        assertThat(request.getValue().getKey()).isEqualTo("key");
+        verify(input).close();
     }
 }
