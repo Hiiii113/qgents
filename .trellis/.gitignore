@@ -7,6 +7,11 @@
 # Session/window scoped runtime state
 .runtime/
 
+# Personal journals and completed task archives stay on the local machine.
+/workspace/*
+!/workspace/index.md
+/tasks/archive/
+
 # Ralph Loop state file
 .ralph-state.json
 

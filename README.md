@@ -10,7 +10,10 @@ IM 聊天、可选 GitHub App 集成和云端 Agent Harness。普通消息仅用
 - `pom.xml`：聚合后端模块，统一依赖版本及构建插件配置；Maven Wrapper 保留在根目录。
 - `sandbox-images/`：Agent 执行用户命令使用的沙箱镜像，独立于后端应用镜像构建。
 - 根目录 `Dockerfile`、Compose、`.env`：应用镜像、服务部署与本地配置。
-- `docs/`、`.trellis/`、`.agents/`：产品资料、开发规范与开发 Skill。
+- `docs/`：产品愿景、接入说明与正式规格。
+- `.trellis/`、`.agents/`、`.codex/`：团队共享的开发规范、Skill 和 Codex 配置；个人会话日志、已完成任务归档及运行状态仅本地保存。
+
+`backend/target/`、日志、本地 `.env` 和 `secrets/` 均为本机生成物或运行配置，不纳入版本控制。
 
 ## 本地开发
 

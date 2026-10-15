@@ -1,7 +1,3 @@
 # Maven Wrapper：Unix 脚本保持 LF，Windows 批处理保持 CRLF。
 /mvnw text eol=lf
 *.cmd text eol=crlf
-
-# Trellis 会话日志按块追加，合并冲突时保留双方新增内容。
-# index.md 由脚本重新生成，不适用追加合并；任务状态以 task.json 为准。
-.trellis/workspace/*/journal-*.md merge=union
