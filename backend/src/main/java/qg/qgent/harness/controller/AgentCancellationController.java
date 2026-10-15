@@ -1,4 +1,4 @@
-package qg.qgent.harness.integration;
+package qg.qgent.harness.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
