@@ -185,9 +185,8 @@ class AttachmentControllerTest {
                 "/api/v1/projects/" + projectId + "/attachments/" + attachmentId);
         req.setContent("file-bytes".getBytes(StandardCharsets.UTF_8));
 
-        controller.upload(actor, projectId, attachmentId, "application/octet-stream", req);
+        controller.upload(actor, projectId, attachmentId, req);
 
-        verify(service).uploadBytes(eq(actor), eq(projectId), eq(attachmentId), any(InputStream.class),
-                eq("application/octet-stream"));
+        verify(service).uploadBytes(eq(actor), eq(projectId), eq(attachmentId), any(InputStream.class));
     }
 }

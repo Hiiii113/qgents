@@ -20,8 +20,6 @@ import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.service.ProjectAccessService;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.LocalDateTime;
@@ -52,7 +50,7 @@ public class AttachmentService {
         this.downloadExpirySeconds = downloadExpirySeconds;
     }
 
-    /** 先保存 PENDING 记录，再返回后端上传地址。 */
+    /** 先保存 PENDING 记录，再按存储配置返回 OSS 直传或本地上传地址。 */
     @Transactional
     public AttachmentUploadCredentialResponse createCredential(UUID actor, UUID projectId,
                                                                AttachmentCreateRequest body) {
@@ -98,45 +96,34 @@ public class AttachmentService {
     public AttachmentStatusResponse confirmUpload(UUID actor, UUID projectId, UUID attachmentId) {
         access.requireProjectMember(projectId, actor);
         AttachmentEntity attachment = requireAttachment(projectId, attachmentId);
+        if ("READY".equals(attachment.getStatus())) {
+            return new AttachmentStatusResponse(attachment.getId().toString(), "READY");
+        }
         if (!"PENDING".equals(attachment.getStatus())) {
             throw new ApiException(HttpStatus.CONFLICT, "ATTACHMENT_NOT_PENDING", "附件已确认或不可确认");
         }
-        if (!storage.objectExists(attachment.getObjectKey())) {
-            throw new ApiException(HttpStatus.CONFLICT, "ATTACHMENT_NOT_UPLOADED", "附件尚未上传到对象存储，请先上传再确认");
+        var actualSize = storage.objectSize(attachment.getObjectKey());
+        if (actualSize.isEmpty()) {
+            throw new ApiException(HttpStatus.CONFLICT, "ATTACHMENT_NOT_UPLOADED", "附件尚未上传，请先上传再确认");
+        }
+        if (actualSize.getAsLong() > maxSizeBytes) {
+            throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "ATTACHMENT_TOO_LARGE", "文件大小超过上限 " + maxSizeBytes + " 字节");
+        }
+        if (actualSize.getAsLong() != attachment.getSizeBytes()) {
+            throw new ApiException(HttpStatus.CONFLICT, "ATTACHMENT_SIZE_MISMATCH", "实际文件大小与申请上传时不一致");
         }
         attachment.setStatus("READY");
         attachmentMapper.updateById(attachment);
         return new AttachmentStatusResponse(attachment.getId().toString(), attachment.getStatus());
     }
 
-    public void uploadBytes(UUID actor, UUID projectId, UUID attachmentId, InputStream bytes, String contentType) {
+    public void uploadBytes(UUID actor, UUID projectId, UUID attachmentId, InputStream bytes) {
         access.requireProjectMember(projectId, actor);
         AttachmentEntity attachment = requireAttachment(projectId, attachmentId);
         if (!"PENDING".equals(attachment.getStatus())) {
             throw new ApiException(HttpStatus.CONFLICT, "ATTACHMENT_NOT_PENDING", "附件不可上传（状态非待上传）");
         }
-        byte[] data = readBounded(bytes);
-        storage.storeBytes(attachment.getObjectKey(), new ByteArrayInputStream(data), contentType);
-    }
-
-    private byte[] readBounded(InputStream in) {
-        try (InputStream stream = in) {
-            ByteArrayOutputStream out = new ByteArrayOutputStream();
-            byte[] buf = new byte[8192];
-            long total = 0;
-            int n;
-            while ((n = stream.read(buf)) != -1) {
-                total += n;
-                if (total > maxSizeBytes) {
-                    throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "ATTACHMENT_TOO_LARGE",
-                            "文件大小超过上限 " + maxSizeBytes + " 字节");
-                }
-                out.write(buf, 0, n);
-            }
-            return out.toByteArray();
-        } catch (IOException e) {
-            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "ATTACHMENT_READ_FAILED", "读取附件内容失败");
-        }
+        storage.storeBytes(attachment.getObjectKey(), bytes, attachment.getSizeBytes(), maxSizeBytes);
     }
 
     public AttachmentContent downloadContent(UUID actor, UUID projectId, UUID attachmentId) {

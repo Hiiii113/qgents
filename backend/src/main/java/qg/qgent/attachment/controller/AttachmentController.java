@@ -48,7 +48,7 @@ public class AttachmentController {
         this.objectMapper = objectMapper;
     }
 
-    @Operation(summary = "创建附件上传记录", description = "返回后端 PUT 上传地址；上传完成后调用确认接口。")
+    @Operation(summary = "申请附件上传", description = "按存储配置返回 OSS 直传或后端 PUT 地址；上传完成后调用确认接口。")
     @PostMapping("/projects/{projectId}/attachments")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<?> createCredential(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
@@ -64,14 +64,13 @@ public class AttachmentController {
         return ok(data, request);
     }
 
-    @Operation(summary = "代理上传附件字节", description = "客户端把文件字节 PUT 到后端，服务端写入当前存储策略（OSS/本地磁盘）；响应 204，随后调用 confirm 置 READY。")
+    @Operation(summary = "上传本地存储附件", description = "仅本地磁盘模式接收文件字节；OSS 模式使用申请接口返回的直传地址。随后调用 confirm 置 READY。")
     @PutMapping("/projects/{projectId}/attachments/{attachmentId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void upload(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
             @PathVariable UUID attachmentId,
-            @RequestHeader(value = HttpHeaders.CONTENT_TYPE, required = false) String contentType,
             HttpServletRequest request) throws IOException {
-        attachmentService.uploadBytes(userId, projectId, attachmentId, request.getInputStream(), contentType);
+        attachmentService.uploadBytes(userId, projectId, attachmentId, request.getInputStream());
     }
 
     @Operation(summary = "获取附件临时下载地址", description = "返回短期有效的预签名 GET 地址，客户端据此下载/预览文件；过期需重新签发。")

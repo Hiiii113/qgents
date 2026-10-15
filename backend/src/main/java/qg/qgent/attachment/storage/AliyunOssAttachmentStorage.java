@@ -2,8 +2,9 @@ package qg.qgent.attachment.storage;
 
 import com.aliyun.oss.HttpMethod;
 import com.aliyun.oss.OSS;
+import com.aliyun.oss.OSSException;
+import com.aliyun.oss.model.GeneratePresignedUrlRequest;
 import com.aliyun.oss.model.OSSObject;
-import com.aliyun.oss.model.ObjectMetadata;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -16,8 +17,9 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Date;
 import java.util.Map;
+import java.util.OptionalLong;
 
-/** 后端接收附件并写入 OSS，下载可使用预签名 URL。 */
+/** 浏览器使用签名地址直传 OSS；后端读取对象元数据与内容。 */
 @Component
 @ConditionalOnProperty(prefix = "aliyun.oss", name = "enabled", havingValue = "true")
 public class AliyunOssAttachmentStorage implements AttachmentStorageStrategy {
@@ -33,21 +35,16 @@ public class AliyunOssAttachmentStorage implements AttachmentStorageStrategy {
     @Override
     public UploadCredential createCredential(String objectKey, String mediaType) {
         LocalDateTime expiry = LocalDateTime.now(ZoneOffset.UTC).plusSeconds(properties.getPresignExpirySeconds());
-        // 代理上传：uploadUrl 指向后端代理端点（相对路径，前端按 API base origin 解析），
-        // 字节经 storeBytes 写入 OSS。Content-Type 透传给前端便于回传（代理端点不强依赖该头）。
+        GeneratePresignedUrlRequest request = new GeneratePresignedUrlRequest(
+                properties.getBucketName(), objectKey, HttpMethod.PUT);
+        request.setExpiration(Date.from(expiry.toInstant(ZoneOffset.UTC)));
         Map<String, String> headers = mediaType == null || mediaType.isBlank()
                 ? Map.of()
                 : Map.of("Content-Type", mediaType);
-        return new UploadCredential("/api/v1/" + objectKey, "PUT", headers, expiry);
-    }
-
-    @Override
-    public void storeBytes(String objectKey, InputStream bytes, String contentType) {
-        ObjectMetadata metadata = new ObjectMetadata();
-        if (contentType != null && !contentType.isBlank()) {
-            metadata.setContentType(contentType);
+        if (!headers.isEmpty()) {
+            request.setContentType(mediaType);
         }
-        oss.putObject(properties.getBucketName(), objectKey, bytes, metadata);
+        return new UploadCredential(oss.generatePresignedUrl(request).toString(), "PUT", headers, expiry);
     }
 
     @Override
@@ -58,8 +55,15 @@ public class AliyunOssAttachmentStorage implements AttachmentStorageStrategy {
     }
 
     @Override
-    public boolean objectExists(String objectKey) {
-        return oss.doesObjectExist(properties.getBucketName(), objectKey);
+    public OptionalLong objectSize(String objectKey) {
+        try {
+            return OptionalLong.of(oss.getObjectMetadata(properties.getBucketName(), objectKey).getContentLength());
+        } catch (OSSException e) {
+            if ("NoSuchKey".equals(e.getErrorCode())) {
+                return OptionalLong.empty();
+            }
+            throw e;
+        }
     }
 
     @Override

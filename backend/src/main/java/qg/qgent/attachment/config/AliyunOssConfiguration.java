@@ -18,7 +18,8 @@ public class AliyunOssConfiguration {
             throw new IllegalStateException(
                     "aliyun.oss 已启用但缺少 endpoint/bucket-name/access-key-id/access-key-secret 配置（请通过环境变量设置）");
         }
-        return new OSSClientBuilder().build(properties.getEndpoint(), properties.getAccessKeyId(),
+        return new OSSClientBuilder()
+                .build(properties.getEndpoint(), properties.getAccessKeyId(),
                 properties.getAccessKeySecret());
     }
 }

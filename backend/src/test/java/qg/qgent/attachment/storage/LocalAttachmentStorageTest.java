@@ -45,11 +45,11 @@ class LocalAttachmentStorageTest {
         String objectKey = "projects/" + projectId + "/attachments/" + attachmentId;
         byte[] payload = "hello qwen".getBytes(StandardCharsets.UTF_8);
 
-        assertThat(storage.objectExists(objectKey)).isFalse();
+        assertThat(storage.objectSize(objectKey)).isEmpty();
 
-        storage.storeBytes(objectKey, new ByteArrayInputStream(payload), "text/plain");
+        storage.storeBytes(objectKey, new ByteArrayInputStream(payload), payload.length, 1024);
 
-        assertThat(storage.objectExists(objectKey)).isTrue();
+        assertThat(storage.objectSize(objectKey)).hasValue(payload.length);
         AttachmentContent content = storage.loadContent(objectKey, "notes.txt", "text/plain");
         assertThat(content.getFileName()).isEqualTo("notes.txt");
         assertThat(content.getContentType()).isEqualTo("text/plain");
@@ -59,9 +59,29 @@ class LocalAttachmentStorageTest {
     @Test
     void rejectsPathTraversalObjectKey() {
         LocalAttachmentStorage storage = storage();
-        assertThatThrownBy(() -> storage.storeBytes("../evil.txt", new ByteArrayInputStream(new byte[0]), null))
+        assertThatThrownBy(() -> storage.storeBytes("../evil.txt", new ByteArrayInputStream(new byte[0]), 0, 1024))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> storage.loadContent("../../etc/passwd", null, null))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void failedUploadsNeverPublishPartialFiles() throws Exception {
+        LocalAttachmentStorage storage = storage();
+        String key = "projects/" + UUID.randomUUID() + "/attachments/" + UUID.randomUUID();
+        assertThatThrownBy(() -> storage.storeBytes(key, new ByteArrayInputStream(new byte[5]), 6, 10))
+                .isInstanceOf(qg.qgent.common.web.ApiException.class);
+        assertThat(storage.objectSize(key)).isEmpty();
+        assertThatThrownBy(() -> storage.storeBytes(key, new ByteArrayInputStream(new byte[11]), 11, 10))
+                .isInstanceOf(qg.qgent.common.web.ApiException.class);
+        assertThat(storage.objectSize(key)).isEmpty();
+        java.io.InputStream broken = new java.io.InputStream() {
+            @Override public int read() throws java.io.IOException { throw new java.io.IOException("interrupted"); }
+        };
+        assertThatThrownBy(() -> storage.storeBytes(key, broken, 6, 10)).isInstanceOf(IllegalStateException.class);
+        assertThat(storage.objectSize(key)).isEmpty();
+        try (var files = java.nio.file.Files.walk(root)) {
+            assertThat(files.filter(java.nio.file.Files::isRegularFile).toList()).isEmpty();
+        }
     }
 }

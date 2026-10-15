@@ -93,7 +93,7 @@ app:
   attachment-max-size-bytes: ${APP_ATTACHMENT_MAX_SIZE_BYTES:52428800}
   attachment-download-expiry-seconds: ${APP_ATTACHMENT_DOWNLOAD_EXPIRY_SECONDS:900}
 
-# 开启 OSS 后附件使用 OSS 存储；头像直传还需配置可公开访问的 public-base-url。
+# 开启 OSS 后附件由浏览器直传，endpoint 须可公开访问并配置 Bucket CORS；头像另需 public-base-url。
 aliyun:
   oss:
     enabled: ${ALIYUN_OSS_ENABLED:false}

@@ -45,6 +45,8 @@ API 为 `http://localhost:8080/api/v1`，Swagger 为 `http://localhost:8080/swag
 
 - 默认使用 [DeepSeek 官方接口](https://api-docs.deepseek.com/zh-cn/)的 `deepseek-flash`，通过 `DEEPSEEK_API_KEY` 鉴权；使用 `AI_BASE_URL`、`AI_MODEL`、`AI_MAX_TOKENS` 配置地址、模型和输出上限。
 - 附件默认保存到 `ATTACHMENT_LOCAL_ROOT`，也支持 OSS；头像直传需要配置 OSS 公共访问地址。
+- 开启 OSS 后，附件由浏览器通过短期签名 PUT 地址直传；`ALIYUN_OSS_ENDPOINT` 必须使用浏览器可访问的 HTTPS 地址。Bucket CORS 允许实际前端 Origin、`PUT` 方法及 `Content-Type` 请求头；浏览器使用后端返回的签名地址和请求头，不向 OSS 发送本系统的登录凭证。Bucket 配置由部署者维护。
+- 两种存储均在上传后调用确认接口，后端核对实际大小与申请大小及配置上限，再将附件置为可用；重复确认可重试。大小核验发生在确认阶段，签名 PUT 本身不保证限制上传体积。
 - GitHub App 可选，项目级 GitHub 能力默认开启，项目管理员可在项目设置关闭。配置见 [docs/github-app.md](docs/github-app.md)，导入仓库不自动 clone 或绑定 Workspace。
 - `FRONTEND_URL` 为页面入口；独立 API 域名部署时将页面来源加入 `CORS_ALLOWED_ORIGINS`。
 

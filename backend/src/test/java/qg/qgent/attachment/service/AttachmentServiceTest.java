@@ -188,10 +188,10 @@ class AttachmentServiceTest {
         byte[] payload = "hello qwen".getBytes(StandardCharsets.UTF_8);
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "doc.pdf", "application/pdf", "PENDING"));
 
-        service.uploadBytes(actor, projectId, attachmentId, new ByteArrayInputStream(payload), "application/pdf");
+        service.uploadBytes(actor, projectId, attachmentId, new ByteArrayInputStream(payload));
 
         verify(storage).storeBytes(eq("projects/" + projectId + "/attachments/" + attachmentId),
-                any(InputStream.class), eq("application/pdf"));
+                any(InputStream.class), eq(10L), eq(52428800L));
     }
 
     @Test
@@ -201,7 +201,7 @@ class AttachmentServiceTest {
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "x.txt", "text/plain", "READY"));
 
         assertThatThrownBy(() -> service.uploadBytes(UUID.randomUUID(), projectId, attachmentId,
-                new ByteArrayInputStream("data".getBytes(StandardCharsets.UTF_8)), null))
+                new ByteArrayInputStream("data".getBytes(StandardCharsets.UTF_8))))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> {
                     assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_NOT_PENDING");
@@ -216,21 +216,21 @@ class AttachmentServiceTest {
         when(mapper.selectById(attachmentId)).thenReturn(null);
 
         assertThatThrownBy(() -> service.uploadBytes(UUID.randomUUID(), projectId, attachmentId,
-                new ByteArrayInputStream("data".getBytes(StandardCharsets.UTF_8)), null))
+                new ByteArrayInputStream("data".getBytes(StandardCharsets.UTF_8))))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_NOT_FOUND"));
     }
 
     @Test
-    void uploadBytesRejectsExceedingMaxSize() {
-        AttachmentService small = new AttachmentService(mapper, storage, access, tokens, 10, 900);
+    void uploadBytesRejectsExceedingMaxSize(@TempDir Path root) {
+        AttachmentService small = new AttachmentService(mapper, new LocalAttachmentStorage(root.toString(), 900), access, tokens, 10, 900);
         UUID projectId = UUID.randomUUID();
         UUID attachmentId = UUID.randomUUID();
         byte[] oversized = "more-than-ten-bytes".getBytes(StandardCharsets.UTF_8);
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "big.txt", "text/plain", "PENDING"));
 
         assertThatThrownBy(() -> small.uploadBytes(UUID.randomUUID(), projectId, attachmentId,
-                new ByteArrayInputStream(oversized), "text/plain"))
+                new ByteArrayInputStream(oversized)))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> {
                     assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_TOO_LARGE");
@@ -247,7 +247,7 @@ class AttachmentServiceTest {
                 .when(access).requireProjectMember(projectId, actor);
 
         assertThatThrownBy(() -> service.uploadBytes(actor, projectId, attachmentId,
-                new ByteArrayInputStream("data".getBytes(StandardCharsets.UTF_8)), null))
+                new ByteArrayInputStream("data".getBytes(StandardCharsets.UTF_8))))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("FORBIDDEN"));
     }
@@ -288,7 +288,7 @@ class AttachmentServiceTest {
                 .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_NOT_UPLOADED"));
 
         byte[] data = "hello".getBytes(StandardCharsets.UTF_8);
-        localService.uploadBytes(actor, projectId, id, new ByteArrayInputStream(data), "text/plain");
+        localService.uploadBytes(actor, projectId, id, new ByteArrayInputStream(data));
         assertThat(localService.confirmUpload(actor, projectId, id).getStatus()).isEqualTo("READY");
         assertThat(localService.previewContent(actor, projectId, id).bytes()).isEqualTo(data);
         assertThat(localService.messagePreview(projectId, id.toString()).getPreviewType()).isEqualTo("TEXT");
@@ -306,6 +306,31 @@ class AttachmentServiceTest {
         assertThat(r.getPreviewType()).as("%s (%s) 应为 %s", fileName, mediaType, expected).isEqualTo(expected);
     }
 
+    @Test
+    void confirmationChecksStoredSizeBeforeMarkingReady() {
+        UUID project = UUID.randomUUID(), id = UUID.randomUUID(), actor = UUID.randomUUID();
+        AttachmentEntity entity = attachment(id, project, "file.txt", "text/plain", "PENDING");
+        when(mapper.selectById(id)).thenReturn(entity);
+        when(storage.objectSize(entity.getObjectKey())).thenReturn(java.util.OptionalLong.empty());
+        assertThatThrownBy(() -> service.confirmUpload(actor, project, id))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_NOT_UPLOADED"));
+        when(storage.objectSize(entity.getObjectKey())).thenReturn(java.util.OptionalLong.of(9));
+        assertThatThrownBy(() -> service.confirmUpload(actor, project, id))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_SIZE_MISMATCH"));
+        when(storage.objectSize(entity.getObjectKey())).thenReturn(java.util.OptionalLong.of(52428801));
+        assertThatThrownBy(() -> service.confirmUpload(actor, project, id))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_TOO_LARGE"));
+        assertThat(entity.getStatus()).isEqualTo("PENDING");
+        org.mockito.Mockito.verify(mapper, org.mockito.Mockito.never()).updateById(any(AttachmentEntity.class));
+        when(storage.objectSize(entity.getObjectKey())).thenReturn(java.util.OptionalLong.of(10));
+        assertThat(service.confirmUpload(actor, project, id).getStatus()).isEqualTo("READY");
+        assertThat(service.confirmUpload(actor, project, id).getStatus()).isEqualTo("READY");
+        verify(mapper).updateById(entity);
+    }
+
     private AttachmentEntity attachment(UUID id, UUID projectId, String fileName, String mediaType, String status) {
         AttachmentEntity value = new AttachmentEntity();
         value.setId(id);
@@ -314,6 +339,7 @@ class AttachmentServiceTest {
         value.setFileName(fileName);
         value.setMediaType(mediaType);
         value.setStatus(status);
+        value.setSizeBytes(10L);
         return value;
     }
 }
