@@ -17,3 +17,14 @@ secrets
 *.log
 # 产品文档不参与应用编译。
 docs
+# 开发协作资料、编辑器配置和本地工具缓存不参与后端镜像构建。
+.agents
+.codex
+.trellis
+.idea
+.vscode
+**/__pycache__
+**/*.pyc
+.DS_Store
+Thumbs.db
+Desktop.ini

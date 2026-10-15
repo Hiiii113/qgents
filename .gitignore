@@ -38,6 +38,13 @@ replay_pid*
 # VS Code 本机项目配置
 .vscode/
 
+# 操作系统和 Python 工具生成的本地文件。
+.DS_Store
+Thumbs.db
+Desktop.ini
+__pycache__/
+*.py[cod]
+
 # 其他开发助手的本地状态
 .omc/
 .claude/

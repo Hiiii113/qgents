@@ -13,7 +13,7 @@ IM 聊天、可选 GitHub App 集成和云端 Agent Harness。普通消息仅用
 - `docs/`：产品愿景、接入说明与正式规格。
 - `.trellis/`、`.agents/`、`.codex/`：团队共享的开发规范、Skill 和 Codex 配置；个人会话日志、已完成任务归档及运行状态仅本地保存。
 
-`backend/target/`、日志、本地 `.env` 和 `secrets/` 均为本机生成物或运行配置，不纳入版本控制。
+`backend/target/`、日志、本地 `.env` 和 `secrets/` 均为本机生成物或运行配置，不纳入版本控制。Docker 构建也排除这些内容及开发协作目录。
 
 ## 本地开发
 
