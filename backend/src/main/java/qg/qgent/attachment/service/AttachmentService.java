@@ -131,7 +131,7 @@ public class AttachmentService {
         return storage.loadContent(attachment.getObjectKey(), attachment.getFileName(), attachment.getMediaType());
     }
 
-    public AttachmentPreviewUrlResponse previewUrl(UUID actor, UUID projectId, UUID attachmentId) {
+    public AttachmentPreviewUrlResponse getPreviewInfo(UUID actor, UUID projectId, UUID attachmentId) {
         AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
         String previewType = classifyPreviewType(attachment);
         String downloadUrl = null;

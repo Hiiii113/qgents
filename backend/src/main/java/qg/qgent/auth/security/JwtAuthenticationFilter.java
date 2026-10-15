@@ -40,10 +40,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
             throws ServletException, IOException {
-        // 读取请求中的 Bearer Token。
+        // 预览供 img/iframe 直接访问，仅此 GET 路径允许 query token；Bearer 优先。
         String header = req.getHeader("Authorization");
-        if (header != null && header.startsWith("Bearer ")) {
-            var userId = tokens.verifyAccess(header.substring(7));
+        String token = header != null && header.startsWith("Bearer ") ? header.substring(7) : null;
+        if (token == null && "GET".equals(req.getMethod())
+                && req.getRequestURI().substring(req.getContextPath().length())
+                        .matches("/api/v1/projects/[^/]+/attachments/[^/]+/preview")) {
+            token = req.getParameter("token");
+        }
+        if (token != null && !token.isBlank()) {
+            var userId = tokens.verifyAccess(token);
             if (userId == null) {
                 unauthorized(req, res);
                 return;

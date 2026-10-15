@@ -20,8 +20,6 @@ import qg.qgent.attachment.dto.AttachmentStatusResponse;
 import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.attachment.service.AttachmentService.AttachmentPreviewContent;
 import qg.qgent.attachment.storage.AttachmentContent;
-import qg.qgent.auth.service.TokenService;
-import qg.qgent.common.web.ApiException;
 import qg.qgent.common.web.ApiResponse;
 import qg.qgent.common.web.RequestIdFilter;
 
@@ -38,13 +36,10 @@ import java.util.UUID;
 public class AttachmentController {
 
     private final AttachmentService attachmentService;
-    private final TokenService tokenService;
     private final ObjectMapper objectMapper;
 
-    public AttachmentController(AttachmentService attachmentService, TokenService tokenService,
-            ObjectMapper objectMapper) {
+    public AttachmentController(AttachmentService attachmentService, ObjectMapper objectMapper) {
         this.attachmentService = attachmentService;
-        this.tokenService = tokenService;
         this.objectMapper = objectMapper;
     }
 
@@ -83,27 +78,19 @@ public class AttachmentController {
 
     @Operation(summary = "获取附件预览元数据与签名预览地址", description = "返回预览类型与短期签名预览地址（带 token），前端可直接交给 img/iframe/系统查看器打开。")
     @GetMapping("/projects/{projectId}/attachments/{attachmentId}/preview-url")
-    public ApiResponse<?> previewUrl(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
+    public ApiResponse<?> getPreviewInfo(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
             @PathVariable UUID attachmentId, HttpServletRequest request) {
-        return ok(attachmentService.previewUrl(userId, projectId, attachmentId), request);
+        return ok(attachmentService.getPreviewInfo(userId, projectId, attachmentId), request);
     }
 
     @Operation(summary = "获取附件内联预览内容（双通道鉴权 + Range）", description = "内联返回附件字节，浏览器/系统查看器直接展示；支持 Authorization 头或 ?token= 双通道鉴权与 HTTP Range 分段。")
     @GetMapping("/projects/{projectId}/attachments/{attachmentId}/preview")
     public ResponseEntity<byte[]> preview(@PathVariable UUID projectId, @PathVariable UUID attachmentId,
-            @RequestParam(name = "token", required = false) String token,
             @RequestParam(name = "raw", required = false) Integer raw,
             @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader,
             @AuthenticationPrincipal UUID userId,
             HttpServletRequest request) {
-        UUID actor = userId;
-        if (actor == null && token != null && !token.isBlank()) {
-            actor = tokenService.verifyAccess(token);
-        }
-        if (actor == null) {
-            throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "需要登录");
-        }
-        AttachmentPreviewContent pc = attachmentService.previewContent(actor, projectId, attachmentId);
+        AttachmentPreviewContent pc = attachmentService.previewContent(userId, projectId, attachmentId);
         byte[] data = pc.bytes();
         String contentType = resolvePreviewContentType(pc.previewType(), pc.mediaType(), raw);
         ContentDisposition cd = ContentDisposition.builder("inline")

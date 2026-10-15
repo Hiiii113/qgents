@@ -79,9 +79,6 @@ public class SecurityConfiguration {
                         // WebSocket 握手升级为 HTTP GET，需放行初始请求；真实鉴权由
                         // RealtimeAuthInterceptor 解析 query token 完成（浏览器升级无法携带 Authorization 头）。
                         .requestMatchers("/api/v1/ws/realtime").permitAll()
-                        // 附件内联预览：浏览器 <img>/新标签页/iframe 无法携带 Authorization 头，
-                        // 与 WebSocket 握手一致，由控制器解析 ?token= 完成鉴权（Authorization 头仍可用）。
-                        .requestMatchers(HttpMethod.GET, "/api/v1/projects/*/attachments/*/preview").permitAll()
                         // Prometheus 在本地监控端口抓取指标，不携带业务 JWT；只暴露
                         // 监控所需的只读端点，业务接口仍必须登录。
                         .requestMatchers("/actuator/prometheus", "/actuator/health", "/actuator/info").permitAll()

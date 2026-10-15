@@ -56,7 +56,7 @@ class AttachmentServiceTest {
         when(storage.createDownloadUrl(eq("projects/" + projectId + "/attachments/" + attachmentId), eq(900L)))
                 .thenReturn("https://oss.example/photo.png");
 
-        AttachmentPreviewUrlResponse r = service.previewUrl(actor, projectId, attachmentId);
+        AttachmentPreviewUrlResponse r = service.getPreviewInfo(actor, projectId, attachmentId);
 
         assertThat(r.getAttachmentId()).isEqualTo(attachmentId.toString());
         assertThat(r.getFileName()).isEqualTo("photo.png");
@@ -79,7 +79,7 @@ class AttachmentServiceTest {
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "doc.pdf", "application/pdf", "READY"));
         doThrow(new UnsupportedOperationException()).when(storage).createDownloadUrl(any(), anyLong());
 
-        AttachmentPreviewUrlResponse r = service.previewUrl(actor, projectId, attachmentId);
+        AttachmentPreviewUrlResponse r = service.getPreviewInfo(actor, projectId, attachmentId);
 
         assertThat(r.getDownloadUrl()).isNull();
         assertThat(r.getPreviewUrl()).contains("?token=");
@@ -91,7 +91,7 @@ class AttachmentServiceTest {
         UUID attachmentId = UUID.randomUUID();
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "x.txt", "text/plain", "PENDING"));
 
-        assertThatThrownBy(() -> service.previewUrl(UUID.randomUUID(), projectId, attachmentId))
+        assertThatThrownBy(() -> service.getPreviewInfo(UUID.randomUUID(), projectId, attachmentId))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> {
                     assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_NOT_READY");
@@ -106,7 +106,7 @@ class AttachmentServiceTest {
         UUID attachmentId = UUID.randomUUID();
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, otherProject, "x.txt", "text/plain", "READY"));
 
-        assertThatThrownBy(() -> service.previewUrl(UUID.randomUUID(), projectId, attachmentId))
+        assertThatThrownBy(() -> service.getPreviewInfo(UUID.randomUUID(), projectId, attachmentId))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_NOT_FOUND"));
     }
@@ -117,7 +117,7 @@ class AttachmentServiceTest {
         UUID attachmentId = UUID.randomUUID();
         when(mapper.selectById(attachmentId)).thenReturn(null);
 
-        assertThatThrownBy(() -> service.previewUrl(UUID.randomUUID(), projectId, attachmentId))
+        assertThatThrownBy(() -> service.getPreviewInfo(UUID.randomUUID(), projectId, attachmentId))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_NOT_FOUND"));
     }
@@ -292,7 +292,7 @@ class AttachmentServiceTest {
         assertThat(localService.confirmUpload(actor, projectId, id).getStatus()).isEqualTo("READY");
         assertThat(localService.previewContent(actor, projectId, id).bytes()).isEqualTo(data);
         assertThat(localService.messagePreview(projectId, id.toString()).getPreviewType()).isEqualTo("TEXT");
-        assertThat(localService.previewUrl(actor, projectId, id).getDownloadUrl()).isNull();
+        assertThat(localService.getPreviewInfo(actor, projectId, id).getDownloadUrl()).isNull();
     }
 
     private void assertPreviewType(String fileName, String mediaType, String expected) {
@@ -301,7 +301,7 @@ class AttachmentServiceTest {
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, fileName, mediaType, "READY"));
         doThrow(new UnsupportedOperationException()).when(storage).createDownloadUrl(any(), anyLong());
 
-        AttachmentPreviewUrlResponse r = service.previewUrl(UUID.randomUUID(), projectId, attachmentId);
+        AttachmentPreviewUrlResponse r = service.getPreviewInfo(UUID.randomUUID(), projectId, attachmentId);
 
         assertThat(r.getPreviewType()).as("%s (%s) 应为 %s", fileName, mediaType, expected).isEqualTo(expected);
     }
