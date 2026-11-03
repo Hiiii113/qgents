@@ -18,7 +18,7 @@
     <name>Qgents</name>
     <description>Qgents 构建聚合与依赖管理</description>
 
-    <!-- 根工程只聚合模块，不生成应用 JAR；在仓库根目录执行 mvnw.cmd clean package。 -->
+    <!-- 根工程只聚合模块，不生成应用 JAR；使用 JDK 21 和 Maven 在仓库根目录执行 mvn clean package。 -->
     <modules>
         <module>backend</module>
     </modules>

@@ -40,9 +40,9 @@ public class AttachmentService {
     private final long downloadExpirySeconds;
 
     public AttachmentService(AttachmentMapper attachmentMapper, AttachmentStorageStrategy storage,
-                             ProjectAccessService access, TokenService tokens,
-                             @Value("${app.attachment-max-size-bytes:52428800}") long maxSizeBytes,
-                             @Value("${app.attachment-download-expiry-seconds:900}") long downloadExpirySeconds) {
+            ProjectAccessService access, TokenService tokens,
+            @Value("${app.attachment-max-size-bytes:52428800}") long maxSizeBytes,
+            @Value("${app.attachment-download-expiry-seconds:900}") long downloadExpirySeconds) {
         this.attachmentMapper = attachmentMapper;
         this.storage = storage;
         this.access = access;
@@ -54,14 +54,15 @@ public class AttachmentService {
     /** 先保存 PENDING 记录，再按存储配置返回 OSS 直传或本地上传地址。 */
     @Transactional
     public AttachmentUploadCredentialResponse createCredential(UUID actor, UUID projectId,
-                                                               AttachmentCreateRequest body) {
+            AttachmentCreateRequest body) {
         access.requireProjectMember(projectId, actor);
         long sizeBytes = body.getSizeBytes();
         if (sizeBytes <= 0) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_SIZE_REQUIRED", "文件大小必须大于 0");
         }
         if (sizeBytes > maxSizeBytes) {
-            throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "ATTACHMENT_TOO_LARGE", "文件大小超过上限 " + maxSizeBytes + " 字节");
+            throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "ATTACHMENT_TOO_LARGE",
+                    "文件大小超过上限 " + maxSizeBytes + " 字节");
         }
         AttachmentEntity attachment = new AttachmentEntity();
         attachment.setId(UuidV7.next());
@@ -108,7 +109,8 @@ public class AttachmentService {
             throw new ApiException(HttpStatus.CONFLICT, "ATTACHMENT_NOT_UPLOADED", "附件尚未上传，请先上传再确认");
         }
         if (actualSize.getAsLong() > maxSizeBytes) {
-            throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "ATTACHMENT_TOO_LARGE", "文件大小超过上限 " + maxSizeBytes + " 字节");
+            throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "ATTACHMENT_TOO_LARGE",
+                    "文件大小超过上限 " + maxSizeBytes + " 字节");
         }
         if (actualSize.getAsLong() != attachment.getSizeBytes()) {
             throw new ApiException(HttpStatus.CONFLICT, "ATTACHMENT_SIZE_MISMATCH", "实际文件大小与申请上传时不一致");
@@ -178,7 +180,8 @@ public class AttachmentService {
     /** Agent 在已有大小预算内读取完整内容；浏览器预览使用 previewResource。 */
     public AttachmentPreviewContent previewContent(UUID actor, UUID projectId, UUID attachmentId) {
         AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
-        AttachmentContent loaded = storage.loadContent(attachment.getObjectKey(), attachment.getFileName(), attachment.getMediaType());
+        AttachmentContent loaded = storage.loadContent(attachment.getObjectKey(), attachment.getFileName(),
+                attachment.getMediaType());
         return new AttachmentPreviewContent(readAll(loaded.getStream()), classifyPreviewType(attachment),
                 attachment.getFileName(), attachment.getMediaType(), attachment.getSizeBytes());
     }
@@ -247,7 +250,8 @@ public class AttachmentService {
         return "UNSUPPORTED";
     }
 
-    public record AttachmentPreviewMetadata(String previewType, Long sizeBytes) {}
+    public record AttachmentPreviewMetadata(String previewType, Long sizeBytes) {
+    }
 
     @lombok.Value
     public static class MessageAttachmentPreview {
@@ -256,7 +260,8 @@ public class AttachmentService {
     }
 
     public record AttachmentPreviewContent(byte[] bytes, String previewType, String fileName,
-                                           String mediaType, Long sizeBytes) {}
+            String mediaType, Long sizeBytes) {
+    }
 
     private AttachmentEntity requireReadyAttachment(UUID actor, UUID projectId, UUID attachmentId) {
         access.requireProjectMember(projectId, actor);

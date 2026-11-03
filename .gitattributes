@@ -1,3 +1,0 @@
-# Maven Wrapper：Unix 脚本保持 LF，Windows 批处理保持 CRLF。
-/mvnw text eol=lf
-*.cmd text eol=crlf

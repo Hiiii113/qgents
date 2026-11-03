@@ -8,7 +8,7 @@ COPY pom.xml ./
 COPY backend/pom.xml ./backend/pom.xml
 RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp dependency:go-offline
 COPY backend/src ./backend/src
-# 镜像打包跳过测试，提交前在宿主机执行 mvnw.cmd clean package 完成验证。
+# 镜像打包跳过测试，提交前使用 JDK 21 和 Maven 在宿主机执行 mvn clean package。
 RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp -DskipTests package
 
 # 运行阶段：curl 用于 Compose 健康检查，CA 证书用于 HTTPS 访问。

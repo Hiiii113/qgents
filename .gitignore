@@ -56,9 +56,6 @@ __pycache__/
 .env
 .env.*
 
-# RSA 私钥（只留后端，勿提交；公钥 public_key.pem 可提交）
-backend/src/main/resources/rsa/private_key.pem
-
 # 默认忽略 PEM 文件，允许提交的公钥在下方单独放行。
 *.pem
 
