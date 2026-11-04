@@ -1,5 +1,5 @@
 # 默认仅启动 MySQL 和 Redis；启用 production profile 时同时启动 API 和前端。
-# 本地执行 docker compose up -d --wait；部署执行 docker compose -p qgents-production --profile production up -d。
+# 本地执行 docker compose up -d --wait；部署执行 docker compose --profile production up -d。
 # ${变量:?提示} 表示未填写时直接报错；${变量:-默认值} 表示允许使用默认值。
 name: qgents
 
