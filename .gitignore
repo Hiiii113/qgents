@@ -1,4 +1,4 @@
-# Maven 构建产物与本地依赖缓存；target/ 也匹配 backend/target/。
+# Maven 构建产物与本地依赖缓存。
 target/
 .m2/
 .m2-local/
@@ -61,7 +61,7 @@ __pycache__/
 
 # 例外必须放在 *.pem 之后：git 以最后一条匹配规则为准
 # 主后端 RSA 公钥公开无风险，允许提交
-!backend/src/main/resources/rsa/public_key.pem
+!src/main/resources/rsa/public_key.pem
 # 环境变量配置示例允许提交
 !.env.example
 

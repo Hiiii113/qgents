@@ -5,9 +5,8 @@ FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /build
 # 先复制 POM 预取依赖；源码变化时可复用依赖层和 BuildKit 的 Maven 缓存。
 COPY pom.xml ./
-COPY backend/pom.xml ./backend/pom.xml
 RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp dependency:go-offline
-COPY backend/src ./backend/src
+COPY src ./src
 # 镜像打包跳过测试，提交前使用 JDK 21 和 Maven 在宿主机执行 mvn clean package。
 RUN --mount=type=cache,target=/root/.m2 mvn -B -ntp -DskipTests package
 
@@ -19,7 +18,7 @@ RUN apt-get update \
     && groupadd --gid 10001 qgents \
     && useradd --uid 10001 --gid qgents --create-home qgents
 WORKDIR /app
-COPY --from=build /build/backend/target/qgents-0.0.1-SNAPSHOT.jar app.jar
+COPY --from=build /build/target/qgents-0.0.1-SNAPSHOT.jar app.jar
 # 固定 UID/GID 10001；宿主机挂载目录也需允许此用户写入。
 RUN mkdir -p /app/logs /app/data /var/lib/qgents/workspaces /var/lib/qgents/workspace-metadata \
     && chown -R qgents:qgents /app /var/lib/qgents

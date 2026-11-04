@@ -1,6 +1,6 @@
 # Agent 开发沙箱镜像
 
-此目录保留在仓库根目录的 `sandbox-images/` 下，作为独立 Docker 构建上下文。后端应用位于 `backend/`；该镜像提供 Agent 执行用户命令的环境，由后端按需创建容器，不参与 Maven 模块构建。
+此目录保留在仓库根目录的 `sandbox-images/` 下，作为独立 Docker 构建上下文。后端应用源码位于 `src/`；该镜像提供 Agent 执行用户命令的环境，由后端按需创建容器，不参与 Maven 模块构建。
 
 内置 Git、JDK、Maven、Node、Python 和 ripgrep，完整工作区挂载到 `/workspace`。
 Agent 通过参数数组命令选择仓库、创建分支和提交；GitHub 认证由 Agent 可选工具提供临时环境。

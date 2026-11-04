@@ -1,5 +1,5 @@
 -- Qgents 全新数据库建表脚本，MySQL 8.0.16+。
--- mysql -u <user> -p <database> < backend/src/main/resources/db/qgents_schema.sql
+-- mysql -u <user> -p <database> < src/main/resources/db/qgents_schema.sql
 SET
     NAMES utf8mb4;
 

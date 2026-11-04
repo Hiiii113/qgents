@@ -20,7 +20,7 @@ App 需要按实际操作配置仓库权限。clone/fetch 需要 Contents 读取
 
 Token 和权限范围说明见 [GitHub 官方安装认证文档](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app-installation)。
 
-开发数据库结构以 `backend/src/main/resources/db/qgents_schema.sql` 为准；包含团队安装、一次性安装回调和项目导入仓库表。代码修改不会自动重建已有数据库。
+开发数据库结构以 `src/main/resources/db/qgents_schema.sql` 为准；包含团队安装、一次性安装回调和项目导入仓库表。代码修改不会自动重建已有数据库。
 
 ## 使用步骤
 
