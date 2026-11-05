@@ -85,7 +85,11 @@ class AgentChatServiceTest {
                 return reply("子任务结果");
             }
             return switch (rootCalls.incrementAndGet()) {
-                case 1 -> toolCall("start_subagent", "{\"instruction\":\"独立分析接口\"}");
+                case 1 -> {
+                    assertThat(prompt.getInstructions()).anySatisfy(item ->
+                            assertThat(item.getText()).contains("published-skill", "适用于测试任务"));
+                    yield toolCall("start_subagent", "{\"instruction\":\"独立分析接口\"}");
+                }
                 case 2 -> {
                     rootFinishedText.countDown();
                     yield reply("我先继续处理");
@@ -108,7 +112,7 @@ class AgentChatServiceTest {
         future.get(5, TimeUnit.SECONDS);
 
         assertThat(rootCalls.get()).isEqualTo(3);
-        assertThat(childInput.get()).contains("published-skill", "activate_skill").doesNotContain("root-only context");
+        assertThat(childInput.get()).contains("published-skill", "适用于测试任务", "activate_skill").doesNotContain("root-only context");
         assertThat(childToolNames.get()).doesNotContain("start_subagent", "wait_subagent", "get_subagent_result",
                 "message_subagent", "continue_subagent", "stop_subagent", "cancel_agent");
         verify(fixture.messages()).sendAsAgent(eq(group), argThat(request ->
@@ -673,7 +677,7 @@ class AgentChatServiceTest {
         GroupContext groupContext = new GroupContext();
         groupContext.setTitle("root-only context");
         groupContext.setConversation(List.of());
-        groupContext.setSkills(List.of(new ContextSkill(UUID.randomUUID(), "published-skill")));
+        groupContext.setSkills(List.of(new ContextSkill(UUID.randomUUID(), "published-skill", "适用于测试任务")));
         when(context.buildForGroup(actor, project, group, 30)).thenReturn(groupContext);
         when(skills.publishedCatalog(actor, project)).thenReturn(groupContext.getSkills());
         when(attachments.load(actor, project, List.of())).thenReturn(new AttachmentMediaLoader.Result(List.of(), ""));

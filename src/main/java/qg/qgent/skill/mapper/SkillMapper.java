@@ -39,13 +39,14 @@ public interface SkillMapper extends BaseMapper<SkillEntity> {
     List<SkillEntity> listSkills(@Param("projectId") UUID projectId, @Param("actor") UUID actor,
                                  @Param("status") String status, @Param("tag") String tag, @Param("admin") boolean admin);
 
-    /** 查询默认上下文可见的已发布 Skill 目录。刻意只投影 ID 与名称，不读取正文。 */
-    @Select("SELECT id, name FROM skills WHERE project_id = #{projectId} "
+    /** 查询默认上下文可见的已发布 Skill 目录，不读取正文。 */
+    @Select("SELECT id, name, description FROM skills WHERE project_id = #{projectId} "
             + "AND (visibility = 'PROJECT_SHARED' OR created_by = #{actor}) "
             + "AND status = 'PUBLISHED' ORDER BY updated_at DESC")
     @Results({
             @Result(column = "id", property = "id", id = true, typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "name", property = "name")
+            @Result(column = "name", property = "name"),
+            @Result(column = "description", property = "description")
     })
     List<ContextSkill> listPublishedCatalog(@Param("projectId") UUID projectId, @Param("actor") UUID actor);
 

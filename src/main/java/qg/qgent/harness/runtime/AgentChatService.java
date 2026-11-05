@@ -157,6 +157,7 @@ public class AgentChatService {
     private String systemPrompt(boolean child) {
         String identity = child ? "你是 Qgent 委派的一名临时子 Agent。" : "你是 Qgent，项目群聊中的固定助手。";
         return identity + "按当前任务决定直接回答或调用工具；有效的普通文本回复即结束本轮 loop。"
+                + "根据 Skill 目录中的名称和描述判断是否需要，调用 activate_skill 读取完整内容。"
                 + "问答、聊天检索、Skill、Memory 和无需代码目录的远端操作不需要沙箱。首次调用代码工具时才准备工作区与 Docker 沙箱。"
                 + "主 Agent 可按需派发一层独立子任务；子 Agent 不能继续委派。完成、失败或需要补充信息时如实交付。"
                 + "只通过当前聊天组织成果，准确说明进展、需要的信息、实际修改和验证结果。GitHub 能力可选，按目标决定 clone、分支、commit、push 和 PR。"
@@ -299,7 +300,7 @@ public class AgentChatService {
 
     private String childInstruction(WorkContext work, String instruction) {
         try {
-            return instruction + "\n\n当前项目可激活的 Skill 目录（只含 ID 和名称；需要时调用 activate_skill 读取正文）：\n"
+            return instruction + "\n\n当前项目可激活的 Skill 目录（包含 ID、名称和用途描述；需要时调用 activate_skill 读取正文）：\n"
                     + json.writeValueAsString(skills.publishedCatalog(work.event.actor(), work.event.projectId()));
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("无法序列化 Skill 目录", exception);

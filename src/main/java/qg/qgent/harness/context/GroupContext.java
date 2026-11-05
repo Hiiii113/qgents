@@ -33,7 +33,7 @@ public class GroupContext {
     @Schema(description = "近期群聊消息")
     private List<ContextMessage> conversation;
 
-    @Schema(description = "项目已发布 Skill 目录，仅包含 ID 与名称")
+    @Schema(description = "项目已发布 Skill 目录，包含 ID、名称和用途描述")
     private List<ContextSkill> skills;
 
     @Schema(description = "项目已批准的 Memory")
