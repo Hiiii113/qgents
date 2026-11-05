@@ -11,7 +11,9 @@ import qg.qgent.memory.service.MemoryService;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.service.EventService;
-import qg.qgent.skill.dto.SkillCreateRequest;
+import org.springframework.mock.web.MockMultipartFile;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 import qg.qgent.skill.dto.SkillResponse;
 import qg.qgent.skill.entity.SkillEntity;
 import qg.qgent.skill.mapper.SkillMapper;
@@ -49,7 +51,7 @@ class SkillMemoryAdminAutoPublishTest {
     private final UUID member = UUID.randomUUID();
 
     @Test
-    void skillCreatedByAdminIsPublishedImmediately() {
+    void skillCreatedByAdminIsPublishedImmediately() throws Exception {
         when(access.isProjectAdmin(projectId, admin)).thenReturn(true);
         final SkillEntity[] created = new SkillEntity[1];
         when(skillMapper.insert(any(SkillEntity.class))).thenAnswer(invocation -> {
@@ -59,7 +61,7 @@ class SkillMemoryAdminAutoPublishTest {
         // selectById 返回 create 内部对象同一引用：create 对状态的上架修改对 response 可见
         when(skillMapper.selectById(any())).thenAnswer(invocation -> created[0]);
 
-        SkillResponse response = skillService.create(admin, projectId, skillRequest("规范", "PROJECT_SHARED"));
+        SkillResponse response = skillService.create(admin, projectId, skillFile("规范"), "PROJECT_SHARED", List.of());
 
         assertEquals("PUBLISHED", response.getStatus());
         verify(skillMapper, never()).updateById(any(SkillEntity.class));
@@ -67,19 +69,19 @@ class SkillMemoryAdminAutoPublishTest {
     }
 
     @Test
-    void skillCreatedByMemberStaysDraftWhenProjectShared() {
+    void skillCreatedByMemberStaysDraftWhenProjectShared() throws Exception {
         when(access.isProjectAdmin(projectId, member)).thenReturn(false);
         SkillEntity entity = skillEntity();
         when(skillMapper.selectById(any())).thenReturn(entity);
 
-        SkillResponse response = skillService.create(member, projectId, skillRequest("规范", "PROJECT_SHARED"));
+        SkillResponse response = skillService.create(member, projectId, skillFile("规范"), "PROJECT_SHARED", List.of());
 
         assertEquals("DRAFT", response.getStatus());
         verify(eventService, never()).publish(any(), any(), eq("skill.published"), any(), any());
     }
 
     @Test
-    void privateSkillCreatedByMemberIsPublishedImmediately() {
+    void privateSkillCreatedByMemberIsPublishedImmediately() throws Exception {
         // PRIVATE 仅创建者自己可用，不共享，任何人创建即生效无需审核
         when(access.isProjectAdmin(projectId, member)).thenReturn(false);
         final SkillEntity[] created = new SkillEntity[1];
@@ -89,7 +91,7 @@ class SkillMemoryAdminAutoPublishTest {
         });
         when(skillMapper.selectById(any())).thenAnswer(invocation -> created[0]);
 
-        SkillResponse response = skillService.create(member, projectId, skillRequest("个人工具", "PRIVATE"));
+        SkillResponse response = skillService.create(member, projectId, skillFile("个人工具"), "PRIVATE", List.of());
 
         assertEquals("PUBLISHED", response.getStatus());
         verify(skillMapper, never()).updateById(any(SkillEntity.class));
@@ -140,12 +142,9 @@ class SkillMemoryAdminAutoPublishTest {
         verify(eventService, never()).publish(any(), any(), eq("memory.approved"), any(), any());
     }
 
-    private SkillCreateRequest skillRequest(String name, String visibility) {
-        SkillCreateRequest request = new SkillCreateRequest();
-        request.setName(name);
-        request.setContent("内容");
-        request.setVisibility(visibility);
-        return request;
+    private MockMultipartFile skillFile(String name) {
+        String content = "---\nname: " + name + "\ndescription: 测试用途\n---\n内容";
+        return new MockMultipartFile("file", "SKILL.md", "text/markdown", content.getBytes(StandardCharsets.UTF_8));
     }
 
     private MemoryCreateRequest memoryRequest(String title) {

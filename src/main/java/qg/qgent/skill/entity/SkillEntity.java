@@ -29,6 +29,8 @@ public class SkillEntity {
     // Skill 名称。
     private String name;
 
+    private String description;
+
     // 可复用操作规范正文（MEDIUMTEXT）。
     private String content;
 

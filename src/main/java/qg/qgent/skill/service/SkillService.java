@@ -10,7 +10,8 @@ import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.service.EventService;
-import qg.qgent.skill.dto.SkillCreateRequest;
+import org.springframework.web.multipart.MultipartFile;
+
 import qg.qgent.skill.dto.SkillResponse;
 import qg.qgent.skill.dto.SkillUpdateRequest;
 import qg.qgent.skill.entity.SkillEntity;
@@ -39,13 +40,17 @@ public class SkillService {
     private final UserMapper userMapper;
     private final EventService eventService;
 
+    public SkillDocument preview(UUID actor, UUID projectId, MultipartFile file) {
+        access.requireProjectMember(projectId, actor);
+        return SkillDocument.fromFile(file);
+    }
+
     /** 私有 Skill 和管理员创建的共享 Skill 直接发布，其他共享 Skill 先建草稿。 */
     @Transactional
-    public SkillResponse create(UUID actor, UUID projectId, SkillCreateRequest request) {
+    public SkillResponse create(UUID actor, UUID projectId, MultipartFile file, String visibility, List<String> tags) {
         access.requireProjectMember(projectId, actor);
-        String visibility = request.getVisibility() == null || request.getVisibility().isBlank()
-                ? "PRIVATE"
-                : request.getVisibility().trim();
+        SkillDocument document = SkillDocument.fromFile(file);
+        visibility = visibility == null || visibility.isBlank() ? "PRIVATE" : visibility.trim();
         if (!VISIBILITIES.contains(visibility)) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_VISIBILITY",
                     "可见性仅支持 PRIVATE 或 PROJECT_SHARED");
@@ -54,9 +59,10 @@ public class SkillService {
         skill.setId(UuidV7.next());
         skill.setProjectId(projectId);
         skill.setCreatedBy(actor);
-        skill.setName(request.getName().trim());
-        skill.setContent(request.getContent().trim());
-        skill.setTags(request.getTags());
+        skill.setName(document.name());
+        skill.setDescription(document.description());
+        skill.setContent(document.content());
+        skill.setTags(tags);
         skill.setVisibility(visibility);
         boolean autoPublish = "PRIVATE".equals(visibility) || access.isProjectAdmin(projectId, actor);
         skill.setStatus(autoPublish ? "PUBLISHED" : "DRAFT");
@@ -93,15 +99,11 @@ public class SkillService {
     @Transactional
     public SkillResponse update(UUID actor, UUID projectId, UUID skillId, SkillUpdateRequest request) {
         SkillEntity skill = requireEditable(actor, projectId, skillId);
-        if (request.getName() != null && request.getName().isBlank()
-                || request.getContent() != null && request.getContent().isBlank()) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_SKILL_CONTENT", "Skill 名称和正文不能为空");
-        }
-        if (request.getName() != null) {
-            skill.setName(request.getName().trim());
-        }
         if (request.getContent() != null) {
-            skill.setContent(request.getContent().trim());
+            SkillDocument document = SkillDocument.parse(request.getContent());
+            skill.setName(document.name());
+            skill.setDescription(document.description());
+            skill.setContent(document.content());
         }
         if (request.getTags() != null) {
             skill.setTags(request.getTags());
@@ -215,7 +217,7 @@ public class SkillService {
 
     private SkillResponse toResponse(SkillEntity skill) {
         return new SkillResponse(skill.getId().toString(), skill.getProjectId().toString(), skill.getName(),
-                skill.getContent(), skill.getTags(), skill.getVisibility(), skill.getStatus(),
+                skill.getDescription(), skill.getContent(), skill.getTags(), skill.getVisibility(), skill.getStatus(),
                 userSummary(skill.getCreatedBy()), userSummary(skill.getReviewerId()), skill.getRejectionReason(),
                 skill.getReviewedAt(), skill.getCreatedAt(), skill.getUpdatedAt());
     }

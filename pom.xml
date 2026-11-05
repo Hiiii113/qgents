@@ -101,6 +101,10 @@
     </dependencyManagement>
 
     <dependencies>
+        <dependency>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
+        </dependency>
         <!-- 模型接入：使用 OpenAI 兼容协议连接 DeepSeek，Agent loop 由项目自行控制。 -->
         <dependency>
             <groupId>org.springframework.ai</groupId>

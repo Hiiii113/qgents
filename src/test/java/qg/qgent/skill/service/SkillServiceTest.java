@@ -3,6 +3,8 @@ package qg.qgent.skill.service;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.mock.web.MockMultipartFile;
+import java.nio.charset.StandardCharsets;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.service.EventService;
@@ -29,21 +31,37 @@ class SkillServiceTest {
     void ownerCanEditAllActiveStatesWithoutChangingPublicationStatus(String status) {
         SkillEntity skill = skill(status, "PRIVATE");
         SkillUpdateRequest request = new SkillUpdateRequest();
-        request.setContent(" 新内容 ");
+        String content = "---\nname: revised\ndescription: 更新后的用途\n---\n 新内容 \n";
+        request.setContent(content);
 
         var result = service.update(owner, projectId, skill.getId(), request);
 
-        assertThat(result.getContent()).isEqualTo("新内容");
+        assertThat(result.getContent()).isEqualTo(content);
+        assertThat(result.getName()).isEqualTo("revised");
+        assertThat(result.getDescription()).isEqualTo("更新后的用途");
         assertThat(result.getStatus()).isEqualTo(status);
         verify(mapper).updateById(skill);
         verify(events).publish(eq(projectId), isNull(), eq("skill.updated"), eq(skill.getId().toString()), any());
     }
 
     @Test
+    void editingTagsDoesNotChangeFileOrMetadata() {
+        SkillEntity skill = skill("PUBLISHED", "PRIVATE");
+        skill.setDescription("用途");
+        SkillUpdateRequest request = new SkillUpdateRequest();
+        request.setTags(java.util.List.of("tag"));
+        var result = service.update(owner, projectId, skill.getId(), request);
+        assertThat(result.getName()).isEqualTo("规范");
+        assertThat(result.getDescription()).isEqualTo("用途");
+        assertThat(result.getContent()).isEqualTo("内容");
+        assertThat(result.getTags()).containsExactly("tag");
+    }
+
+    @Test
     void rejectedSkillCanBeEditedAndResubmitted() {
         SkillEntity skill = skill("REJECTED", "PROJECT_SHARED");
         SkillUpdateRequest request = new SkillUpdateRequest();
-        request.setContent("修订内容");
+        request.setContent("---\nname: revised\ndescription: 修订说明\n---\n修订内容");
         service.update(owner, projectId, skill.getId(), request);
         assertThat(service.submitReview(owner, projectId, skill.getId()).getStatus()).isEqualTo("PENDING_REVIEW");
     }
@@ -59,7 +77,7 @@ class SkillServiceTest {
     void adminCanEditAndArchiveSharedPublishedSkill() {
         SkillEntity skill = skill("PUBLISHED", "PROJECT_SHARED");
         SkillUpdateRequest request = new SkillUpdateRequest();
-        request.setName("新名称");
+        request.setContent("---\nname: revised\ndescription: 新用途\n---\n新内容");
         service.update(other, projectId, skill.getId(), request);
         service.archive(other, projectId, skill.getId());
         verify(access, times(2)).requireProjectAdmin(projectId, other);
@@ -103,6 +121,18 @@ class SkillServiceTest {
         request.setContent(" ");
         assertThatThrownBy(() -> service.update(owner, projectId, skill.getId(), request)).isInstanceOf(ApiException.class);
         verify(mapper, never()).updateById(any(SkillEntity.class));
+    }
+
+    @Test
+    void previewChecksMembershipAndDoesNotSave() throws Exception {
+        String content = "---\nname: example\ndescription: 用途\n---\n正文\n";
+        var file = new MockMultipartFile("file", "SKILL.md", "text/markdown", content.getBytes(StandardCharsets.UTF_8));
+        var preview = service.preview(owner, projectId, file);
+        assertThat(preview.name()).isEqualTo("example");
+        assertThat(preview.description()).isEqualTo("用途");
+        assertThat(preview.content()).isEqualTo(content);
+        verify(access).requireProjectMember(projectId, owner);
+        verify(mapper, never()).insert(any(SkillEntity.class));
     }
 
     @Test

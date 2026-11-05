@@ -25,7 +25,10 @@ public class SkillResponse {
     @Schema(description = "Skill 名称")
     private String name;
 
-    @Schema(description = "可复用操作规范正文")
+    @Schema(description = "Skill 用途描述")
+    private String description;
+
+    @Schema(description = "完整 SKILL.md 内容")
     private String content;
 
     @Schema(description = "标签列表")
