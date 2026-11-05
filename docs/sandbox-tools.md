@@ -32,7 +32,7 @@
 ```json
 {
   "ok": true,
-  "executionId": "UUID",
+  "executionId": "自增执行编号（十进制字符串）",
   "status": "SUCCEEDED",
   "running": false,
   "exitCode": 1,

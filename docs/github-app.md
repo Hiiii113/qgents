@@ -24,18 +24,18 @@ Token 和权限范围说明见 [GitHub 官方安装认证文档](https://docs.gi
 
 ## 使用步骤
 
-所有用户接口使用 Qgents 登录 Token。项目写接口还需要 `Idempotency-Key`。
+所有用户接口使用 Qgents 登录 Token。实体 ID 均为无前缀十进制字符串。
 
 1. 团队所有者调用 `POST /api/v1/teams/{teamId}/integrations/github/installations?client=WEB`，取得安装 URL。`client` 可选 WEB 或 MOBILE。
 2. 用户打开 URL 安装 App，选择授权仓库。回调通过 10 分钟内有效的一次性 state 保存团队连接，再跳转到 Web 或 Mobile 的 GitHub 集成页面。
-3. 团队成员调用 `GET /api/v1/teams/{teamId}/integrations/github/repositories`，获取可导入仓库。返回的 `installationId` 是本地 UUID，`repositoryId` 是 GitHub 数字 ID。
+3. 团队成员调用 `GET /api/v1/teams/{teamId}/integrations/github/repositories`，获取可导入仓库。返回的 `installationId` 是本地自增 ID（十进制字符串），`repositoryId` 是 GitHub 数字 ID。
 4. 项目管理员调用 `POST /api/v1/projects/{projectId}/repositories`：
 
 ```json
-{"installationId":"安装记录的UUID","repositoryId":123456}
+{"installationId":"安装记录的自增 ID","repositoryId":123456}
 ```
 
-5. 调用 `GET /api/v1/projects/{projectId}/repositories` 查看导入记录；重复导入同一仓库返回已有记录。移除用 `DELETE /api/v1/projects/{projectId}/repositories/{repositoryId}`，此处 ID 是导入记录 UUID，不是 GitHub 数字 ID。
+5. 调用 `GET /api/v1/projects/{projectId}/repositories` 查看导入记录；重复导入同一仓库返回已有记录。移除用 `DELETE /api/v1/projects/{projectId}/repositories/{repositoryId}`，此处 ID 是导入记录的自增 ID，不是 GitHub 数字 ID。
 6. 项目 GitHub 能力默认开启。项目管理员可以在项目设置修改，也可以调用项目更新接口：
 
 ```text
