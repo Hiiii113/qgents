@@ -1,5 +1,7 @@
 package qg.qgent.realtime.websocket;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
@@ -11,7 +13,6 @@ import qg.qgent.auth.service.TokenService;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -36,7 +37,7 @@ class RealtimeAuthInterceptorTest {
     @Test
     void validTokenPassesAndInjectsUserId() {
         TokenService tokens = mock(TokenService.class);
-        UUID userId = UUID.randomUUID();
+        Long userId = TestIds.next();
         when(tokens.verifyAccess("abc")).thenReturn(userId);
         RealtimeAuthInterceptor interceptor = new RealtimeAuthInterceptor(tokens);
 

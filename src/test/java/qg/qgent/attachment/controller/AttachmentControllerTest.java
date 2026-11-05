@@ -1,5 +1,7 @@
 package qg.qgent.attachment.controller;
 
+import qg.qgent.support.TestIds;
+
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import jakarta.servlet.Filter;
 import org.junit.jupiter.api.AfterEach;
@@ -28,7 +30,6 @@ import qg.qgent.attachment.web.AttachmentResponseFactory;
 import qg.qgent.auth.config.SecurityConfiguration;
 import qg.qgent.auth.security.JwtAuthenticationFilter;
 import qg.qgent.auth.service.TokenService;
-import qg.qgent.common.service.IdempotencyService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.common.web.GlobalExceptionHandler;
 import qg.qgent.common.web.RequestIdFilter;
@@ -39,7 +40,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.OptionalLong;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -53,7 +53,7 @@ class AttachmentControllerTest {
     private MockMvc mvc;
     private AttachmentStorageStrategy storage;
     private AttachmentEntity attachment;
-    private final UUID actor = UUID.randomUUID(), project = UUID.randomUUID(), id = UUID.randomUUID();
+    private final Long actor = TestIds.next(), project = TestIds.next(), id = TestIds.next();
     private final byte[] bytes = "hello qwen".getBytes(StandardCharsets.UTF_8);
     private final AtomicBoolean closed = new AtomicBoolean();
 
@@ -218,7 +218,6 @@ class AttachmentControllerTest {
         @Bean AttachmentMapper mapper() { return mock(AttachmentMapper.class); }
         @Bean AttachmentStorageStrategy storage() { return mock(AttachmentStorageStrategy.class); }
         @Bean ProjectAccessService access() { return mock(ProjectAccessService.class); }
-        @Bean IdempotencyService idempotency() { return mock(IdempotencyService.class); }
         @Bean com.fasterxml.jackson.databind.Module utcLocalDateTimeModule() { return new SimpleModule(); }
         @Bean AttachmentService attachments() { return new AttachmentService(mapper(), storage(), access(), tokens(), 1024, 900); }
     }

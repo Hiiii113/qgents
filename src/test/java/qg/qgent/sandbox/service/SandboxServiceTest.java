@@ -1,5 +1,7 @@
 package qg.qgent.sandbox.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -16,7 +18,6 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -93,7 +94,7 @@ class SandboxServiceTest {
 
         CreateSandboxRequest conflict = request();
         conflict.setSandboxId(request.getSandboxId());
-        conflict.setAgentRunId(UUID.randomUUID());
+        conflict.setAgentRunId(TestIds.next());
 
         var exception = assertThrows(qg.qgent.sandbox.exception.SandboxException.class,
                 () -> service.create(conflict));
@@ -103,10 +104,10 @@ class SandboxServiceTest {
 
     private CreateSandboxRequest request() {
         CreateSandboxRequest request = new CreateSandboxRequest();
-        request.setSandboxId(UUID.randomUUID());
-        request.setAgentRunId(UUID.randomUUID());
-        request.setAgentRunId(UUID.randomUUID());
-        request.setWorkspaceStorageKey("workspaces/" + UUID.randomUUID());
+        request.setSandboxId(java.util.UUID.randomUUID());
+        request.setAgentRunId(TestIds.next());
+        request.setAgentRunId(TestIds.next());
+        request.setWorkspaceStorageKey("workspaces/" + java.util.UUID.randomUUID());
         request.setImageProfile("dev-tools");
         return request;
     }

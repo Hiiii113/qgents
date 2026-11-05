@@ -6,14 +6,13 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 @Data
 @TableName("refresh_tokens")
 public class RefreshTokenEntity {
-    @TableId(type = IdType.INPUT)
-    private UUID id;
-    private UUID userId;
+    @TableId(type = IdType.AUTO)
+    private Long id;
+    private Long userId;
     private byte[] tokenHash;
     private LocalDateTime expiresAt;
     private LocalDateTime revokedAt;

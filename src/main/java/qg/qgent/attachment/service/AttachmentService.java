@@ -17,7 +17,6 @@ import qg.qgent.attachment.storage.AttachmentContent;
 import qg.qgent.attachment.storage.AttachmentResource;
 import qg.qgent.attachment.storage.AttachmentStorageStrategy;
 import qg.qgent.auth.service.TokenService;
-import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.service.ProjectAccessService;
 
@@ -27,7 +26,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Locale;
 import java.util.Set;
-import java.util.UUID;
 
 /** 文件存储独立于附件元数据；上传确认后可供消息展示和 Agent 读取。 */
 @Service
@@ -53,7 +51,7 @@ public class AttachmentService {
 
     /** 先保存 PENDING 记录，再按存储配置返回 OSS 直传或本地上传地址。 */
     @Transactional
-    public AttachmentUploadCredentialResponse createCredential(UUID actor, UUID projectId,
+    public AttachmentUploadCredentialResponse createCredential(Long actor, Long projectId,
             AttachmentCreateRequest body) {
         access.requireProjectMember(projectId, actor);
         long sizeBytes = body.getSizeBytes();
@@ -65,22 +63,23 @@ public class AttachmentService {
                     "文件大小超过上限 " + maxSizeBytes + " 字节");
         }
         AttachmentEntity attachment = new AttachmentEntity();
-        attachment.setId(UuidV7.next());
         attachment.setProjectId(projectId);
         attachment.setUploadedBy(actor);
-        attachment.setObjectKey("projects/" + projectId + "/attachments/" + attachment.getId());
         attachment.setFileName(body.getFileName().trim());
         attachment.setMediaType(body.getContentType());
         attachment.setSizeBytes(sizeBytes);
         attachment.setStatus("PENDING");
+        // 对象键包含附件自增 ID，先插入取回 ID 再补写。
         attachmentMapper.insert(attachment);
+        attachment.setObjectKey("projects/" + projectId + "/attachments/" + attachment.getId());
+        attachmentMapper.updateById(attachment);
 
         UploadCredential credential = storage.createCredential(attachment.getObjectKey(), attachment.getMediaType());
         return new AttachmentUploadCredentialResponse(attachment.getId().toString(), credential.getUploadUrl(),
                 credential.getMethod(), credential.getExpiresAt(), credential.getHeaders());
     }
 
-    public AttachmentDownloadUrlResponse downloadUrl(UUID actor, UUID projectId, UUID attachmentId) {
+    public AttachmentDownloadUrlResponse downloadUrl(Long actor, Long projectId, Long attachmentId) {
         access.requireProjectMember(projectId, actor);
         AttachmentEntity attachment = requireAttachment(projectId, attachmentId);
         LocalDateTime expiresAt = LocalDateTime.now(ZoneOffset.UTC).plusSeconds(downloadExpirySeconds);
@@ -95,7 +94,7 @@ public class AttachmentService {
     }
 
     @Transactional
-    public AttachmentStatusResponse confirmUpload(UUID actor, UUID projectId, UUID attachmentId) {
+    public AttachmentStatusResponse confirmUpload(Long actor, Long projectId, Long attachmentId) {
         access.requireProjectMember(projectId, actor);
         AttachmentEntity attachment = requireAttachment(projectId, attachmentId);
         if ("READY".equals(attachment.getStatus())) {
@@ -120,7 +119,7 @@ public class AttachmentService {
         return new AttachmentStatusResponse(attachment.getId().toString(), attachment.getStatus());
     }
 
-    public void uploadBytes(UUID actor, UUID projectId, UUID attachmentId, InputStream bytes) {
+    public void uploadBytes(Long actor, Long projectId, Long attachmentId, InputStream bytes) {
         access.requireProjectMember(projectId, actor);
         AttachmentEntity attachment = requireAttachment(projectId, attachmentId);
         if (!"PENDING".equals(attachment.getStatus())) {
@@ -129,12 +128,12 @@ public class AttachmentService {
         storage.storeBytes(attachment.getObjectKey(), bytes, attachment.getSizeBytes(), maxSizeBytes);
     }
 
-    public AttachmentContent downloadContent(UUID actor, UUID projectId, UUID attachmentId) {
+    public AttachmentContent downloadContent(Long actor, Long projectId, Long attachmentId) {
         AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
         return storage.loadContent(attachment.getObjectKey(), attachment.getFileName(), attachment.getMediaType());
     }
 
-    public AttachmentPreviewUrlResponse getPreviewInfo(UUID actor, UUID projectId, UUID attachmentId) {
+    public AttachmentPreviewUrlResponse getPreviewInfo(Long actor, Long projectId, Long attachmentId) {
         AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
         String previewType = classifyPreviewType(attachment);
         String downloadUrl = null;
@@ -153,16 +152,16 @@ public class AttachmentService {
     }
 
     /** Agent 读取文件前，先用类型和大小判断是否放入模型上下文。 */
-    public AttachmentPreviewMetadata previewMetadata(UUID actor, UUID projectId, UUID attachmentId) {
+    public AttachmentPreviewMetadata previewMetadata(Long actor, Long projectId, Long attachmentId) {
         AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
         return new AttachmentPreviewMetadata(classifyPreviewType(attachment), attachment.getSizeBytes());
     }
 
     /** 消息回显只补充类型，避免将会过期的 token URL 存进消息。 */
-    public MessageAttachmentPreview messagePreview(UUID projectId, String attachmentId) {
-        UUID id;
+    public MessageAttachmentPreview messagePreview(Long projectId, String attachmentId) {
+        Long id;
         try {
-            id = UUID.fromString(attachmentId);
+            id = Long.valueOf(attachmentId);
         } catch (IllegalArgumentException | NullPointerException e) {
             return null;
         }
@@ -178,7 +177,7 @@ public class AttachmentService {
     }
 
     /** Agent 在已有大小预算内读取完整内容；浏览器预览使用 previewResource。 */
-    public AttachmentPreviewContent previewContent(UUID actor, UUID projectId, UUID attachmentId) {
+    public AttachmentPreviewContent previewContent(Long actor, Long projectId, Long attachmentId) {
         AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
         AttachmentContent loaded = storage.loadContent(attachment.getObjectKey(), attachment.getFileName(),
                 attachment.getMediaType());
@@ -187,7 +186,7 @@ public class AttachmentService {
     }
 
     /** 浏览器预览仅准备元数据，内容由 Spring 在写响应时按需打开。 */
-    public AttachmentPreviewResource previewResource(UUID actor, UUID projectId, UUID attachmentId) {
+    public AttachmentPreviewResource previewResource(Long actor, Long projectId, Long attachmentId) {
         AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
         long size = storage.objectSize(attachment.getObjectKey())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ATTACHMENT_NOT_FOUND", "附件文件不存在"));
@@ -263,7 +262,7 @@ public class AttachmentService {
             String mediaType, Long sizeBytes) {
     }
 
-    private AttachmentEntity requireReadyAttachment(UUID actor, UUID projectId, UUID attachmentId) {
+    private AttachmentEntity requireReadyAttachment(Long actor, Long projectId, Long attachmentId) {
         access.requireProjectMember(projectId, actor);
         AttachmentEntity attachment = requireAttachment(projectId, attachmentId);
         if (!"READY".equals(attachment.getStatus())) {
@@ -272,7 +271,7 @@ public class AttachmentService {
         return attachment;
     }
 
-    private AttachmentEntity requireAttachment(UUID projectId, UUID attachmentId) {
+    private AttachmentEntity requireAttachment(Long projectId, Long attachmentId) {
         AttachmentEntity attachment = attachmentMapper.selectById(attachmentId);
         if (attachment == null || !projectId.equals(attachment.getProjectId())) {
             throw new ApiException(HttpStatus.NOT_FOUND, "ATTACHMENT_NOT_FOUND", "附件不存在或无权访问");

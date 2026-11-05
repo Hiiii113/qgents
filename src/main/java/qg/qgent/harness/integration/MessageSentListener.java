@@ -17,7 +17,6 @@ import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.service.MessageService;
 
 import java.util.List;
-import java.util.UUID;
 
 /** 将已提交的 Qgent 提及适配为 Harness 运行；普通聊天和用户提及不调用模型。 */
 @Component
@@ -39,7 +38,7 @@ public class MessageSentListener {
     @Async("agentExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onMessageSent(MessageSentEvent event) {
-        UUID messageId = event.messageId();
+        Long messageId = event.messageId();
         List<Mention> mentions = event.mentions();
         if (mentions == null || mentions.isEmpty()) {
             return;

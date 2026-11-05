@@ -2,13 +2,12 @@ package qg.qgent.project.mapper.view;
 
 import lombok.Data;
 
-import java.util.UUID;
 
 @Data
 public class ProjectMembershipView {
     private Boolean githubEnabled;
-    private UUID id;
-    private UUID teamId;
+    private Long id;
+    private Long teamId;
     private String name;
     private String description;
     private String role;

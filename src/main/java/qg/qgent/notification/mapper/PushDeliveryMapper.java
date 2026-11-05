@@ -10,7 +10,6 @@ import qg.qgent.notification.entity.PushDeliveryEntity;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.UUID;
 
 /** 推送队列数据访问；认领使用条件更新防止多实例重复发送。 */
 @Mapper
@@ -23,16 +22,16 @@ public interface PushDeliveryMapper extends BaseMapper<PushDeliveryEntity> {
 
     @Update("UPDATE push_deliveries SET status='SENDING', attempt_count=attempt_count+1, updated_at=#{now} "
             + "WHERE id=#{id} AND status IN ('PENDING','FAILED') AND next_attempt_at <= #{now}")
-    int claim(@Param("id") UUID id, @Param("now") LocalDateTime now);
+    int claim(@Param("id") Long id, @Param("now") LocalDateTime now);
 
     @Update("UPDATE push_deliveries SET status='SENT', provider_message_id=#{providerMessageId}, "
             + "last_error_code=NULL, sent_at=#{now}, updated_at=#{now} WHERE id=#{id} AND status='SENDING'")
-    int markSent(@Param("id") UUID id, @Param("providerMessageId") String providerMessageId,
+    int markSent(@Param("id") Long id, @Param("providerMessageId") String providerMessageId,
                  @Param("now") LocalDateTime now);
 
     @Update("UPDATE push_deliveries SET status='FAILED', last_error_code=#{errorCode}, "
             + "next_attempt_at=#{nextAttemptAt}, updated_at=#{now} WHERE id=#{id} AND status='SENDING'")
-    int markFailed(@Param("id") UUID id, @Param("errorCode") String errorCode,
+    int markFailed(@Param("id") Long id, @Param("errorCode") String errorCode,
                    @Param("nextAttemptAt") LocalDateTime nextAttemptAt, @Param("now") LocalDateTime now);
 
     @Update("UPDATE push_deliveries SET status='FAILED', last_error_code='PUSH_WORKER_INTERRUPTED', "

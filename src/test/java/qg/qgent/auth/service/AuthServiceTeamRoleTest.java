@@ -1,5 +1,7 @@
 package qg.qgent.auth.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -18,7 +20,6 @@ import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
 
 import java.util.List;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyCollection;
@@ -28,9 +29,9 @@ import static org.mockito.Mockito.when;
 class AuthServiceTeamRoleTest {
     @Test
     void meDoesNotExposeExtraOwnerRoleAsCanonicalOwner() {
-        UUID userId = UUID.randomUUID();
-        UUID canonicalOwner = UUID.randomUUID();
-        UUID teamId = UUID.randomUUID();
+        Long userId = TestIds.next();
+        Long canonicalOwner = TestIds.next();
+        Long teamId = TestIds.next();
         UserMapper userMapper = mock(UserMapper.class);
         TeamMapper teamMapper = mock(TeamMapper.class);
         TeamMemberMapper memberMapper = mock(TeamMemberMapper.class);
@@ -63,9 +64,9 @@ class AuthServiceTeamRoleTest {
 
     @Test
     void meIncludesCanonicalOwnerProjectsWithoutProjectMembership() {
-        UUID userId = UUID.randomUUID();
-        UUID teamId = UUID.randomUUID();
-        UUID projectId = UUID.randomUUID();
+        Long userId = TestIds.next();
+        Long teamId = TestIds.next();
+        Long projectId = TestIds.next();
         UserMapper userMapper = mock(UserMapper.class);
         TeamMapper teamMapper = mock(TeamMapper.class);
         TeamMemberMapper memberMapper = mock(TeamMemberMapper.class);

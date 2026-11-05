@@ -8,14 +8,13 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 @Data
 @TableName("teams")
 public class TeamEntity {
-    @TableId(type = IdType.INPUT)
-    private UUID id;
-    private UUID ownerUserId;
+    @TableId(type = IdType.AUTO)
+    private Long id;
+    private Long ownerUserId;
     private String name;
     // 团队简介，可为空；由 Team Owner 在创建/修改团队时设置。
     private String description;

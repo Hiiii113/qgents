@@ -8,7 +8,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.util.UriComponentsBuilder;
 import qg.qgent.auth.service.TokenService;
-import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.github.client.GitHubAppClient;
 import qg.qgent.github.config.GitHubAppProperties;
@@ -20,7 +19,6 @@ import qg.qgent.project.service.ProjectAccessService;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.UUID;
 
 /** 团队连接 App、项目导入仓库，以及 Agent 操作所需的安装凭证。 */
 @Service
@@ -36,13 +34,12 @@ public class GitHubRepositoryService {
     private final TokenService tokens;
 
     @Transactional
-    public InstallationUrl createInstallationUrl(UUID actor, UUID teamId, String client) {
+    public InstallationUrl createInstallationUrl(Long actor, Long teamId, String client) {
         requireOwner(actor, teamId);
         app.requireConfigured();
         if (!List.of("WEB", "MOBILE").contains(client)) throw invalid("client 必须为 WEB 或 MOBILE");
         String raw = tokens.opaque();
         var state = new GitHubInstallationStateEntity();
-        state.setId(UuidV7.next());
         state.setActorId(actor);
         state.setTeamId(teamId);
         state.setStateHash(tokens.hash(raw));
@@ -75,7 +72,6 @@ public class GitHubRepositoryService {
             throw new ApiException(HttpStatus.CONFLICT, "GITHUB_INSTALLATION_TEAM_CONFLICT", "此安装已连接其他团队");
         if (installation == null) {
             installation = new GitHubInstallationEntity();
-            installation.setId(UuidV7.next());
             installation.setTeamId(state.getTeamId());
             installation.setProviderInstallationId(providerId);
             apply(installation, app.installation(providerId));
@@ -89,13 +85,13 @@ public class GitHubRepositoryService {
         return new CallbackResult(state.getTeamId(), state.getClient());
     }
 
-    public List<GitHubInstallationEntity> listInstallations(UUID actor, UUID teamId) {
+    public List<GitHubInstallationEntity> listInstallations(Long actor, Long teamId) {
         access.requireTeamMember(teamId, actor);
         return installations.selectList(Wrappers.<GitHubInstallationEntity>lambdaQuery()
                 .eq(GitHubInstallationEntity::getTeamId, teamId));
     }
 
-    public List<AvailableRepository> listTeamRepositories(UUID actor, UUID teamId) {
+    public List<AvailableRepository> listTeamRepositories(Long actor, Long teamId) {
         return listInstallations(actor, teamId).stream().filter(i -> !Boolean.TRUE.equals(i.getSuspended()))
                 .flatMap(i -> app.repositories(i.getProviderInstallationId()).stream()
                         .map(r -> new AvailableRepository(i.getId(), r.repositoryId(), r.fullName(), r.defaultBranch(),
@@ -103,7 +99,7 @@ public class GitHubRepositoryService {
     }
 
     @Transactional
-    public GitHubInstallationEntity sync(UUID actor, UUID teamId, UUID installationId) {
+    public GitHubInstallationEntity sync(Long actor, Long teamId, Long installationId) {
         requireOwner(actor, teamId);
         var installation = requireInstallation(teamId, installationId);
         refresh(installation);
@@ -113,20 +109,20 @@ public class GitHubRepositoryService {
 
     /** 解除本系统的团队连接并移除对应导入记录，不卸载 GitHub 账号上的 App。 */
     @Transactional
-    public void removeInstallation(UUID actor, UUID teamId, UUID installationId) {
+    public void removeInstallation(Long actor, Long teamId, Long installationId) {
         requireOwner(actor, teamId);
         requireInstallation(teamId, installationId);
         installations.deleteById(installationId);
     }
 
-    public List<ProjectRepositoryEntity> listProjectRepositories(UUID actor, UUID projectId) {
+    public List<ProjectRepositoryEntity> listProjectRepositories(Long actor, Long projectId) {
         access.requireProjectMember(projectId, actor);
         return repositories.selectList(Wrappers.<ProjectRepositoryEntity>lambdaQuery()
                 .eq(ProjectRepositoryEntity::getProjectId, projectId));
     }
 
     @Transactional
-    public ProjectRepositoryEntity importRepository(UUID actor, UUID projectId, UUID installationId, long repositoryId) {
+    public ProjectRepositoryEntity importRepository(Long actor, Long projectId, Long installationId, long repositoryId) {
         access.requireProjectAdmin(projectId, actor);
         var installation = requireInstallation(projects.selectById(projectId).getTeamId(), installationId);
         if (Boolean.TRUE.equals(installation.getSuspended())) throw invalid("GitHub App 安装已暂停");
@@ -138,7 +134,6 @@ public class GitHubRepositoryService {
                 .eq(ProjectRepositoryEntity::getProviderRepositoryId, repositoryId));
         if (existing != null) return existing;
         var repository = new ProjectRepositoryEntity();
-        repository.setId(UuidV7.next());
         repository.setProjectId(projectId);
         repository.setInstallationId(installationId);
         apply(repository, remote);
@@ -150,14 +145,14 @@ public class GitHubRepositoryService {
     }
 
     @Transactional
-    public void removeRepository(UUID actor, UUID projectId, UUID repositoryId) {
+    public void removeRepository(Long actor, Long projectId, Long repositoryId) {
         access.requireProjectAdmin(projectId, actor);
         repositories.delete(Wrappers.<ProjectRepositoryEntity>lambdaQuery()
                 .eq(ProjectRepositoryEntity::getProjectId, projectId).eq(ProjectRepositoryEntity::getId, repositoryId));
     }
 
     /** Agent 每次操作都检查当前项目访问权和导入关系，再取得仅授权目标仓库的凭证。 */
-    public String repositoryToken(UUID actor, UUID projectId, UUID teamId, String fullName) {
+    public String repositoryToken(Long actor, Long projectId, Long teamId, String fullName) {
         access.requireProjectMember(projectId, actor);
         if (!teamId.equals(projects.selectById(projectId).getTeamId())) throw invalid("Agent 不属于项目团队");
         var repository = repositories.selectOne(Wrappers.<ProjectRepositoryEntity>lambdaQuery()
@@ -214,14 +209,14 @@ public class GitHubRepositoryService {
                 .eq(GitHubInstallationEntity::getProviderInstallationId, id));
     }
 
-    private GitHubInstallationEntity requireInstallation(UUID teamId, UUID id) {
+    private GitHubInstallationEntity requireInstallation(Long teamId, Long id) {
         var installation = installations.selectById(id);
         if (installation == null || !teamId.equals(installation.getTeamId()))
             throw new ApiException(HttpStatus.NOT_FOUND, "GITHUB_INSTALLATION_NOT_FOUND", "GitHub App 安装不存在或不属于团队");
         return installation;
     }
 
-    private void requireOwner(UUID actor, UUID teamId) {
+    private void requireOwner(Long actor, Long teamId) {
         access.requireTeamMember(teamId, actor);
         if (!access.isCanonicalTeamOwner(teamId, actor))
             throw new ApiException(HttpStatus.FORBIDDEN, "TEAM_OWNER_REQUIRED", "需要团队所有者权限");
@@ -233,7 +228,7 @@ public class GitHubRepositoryService {
 
     private LocalDateTime now() { return LocalDateTime.now(ZoneOffset.UTC); }
     public record InstallationUrl(String installationUrl, LocalDateTime expiresAt) {}
-    public record CallbackResult(UUID teamId, String client) {}
-    public record AvailableRepository(UUID installationId, long repositoryId, String fullName,
+    public record CallbackResult(Long teamId, String client) {}
+    public record AvailableRepository(Long installationId, long repositoryId, String fullName,
                                       String defaultBranch, String htmlUrl, boolean privateRepository) {}
 }

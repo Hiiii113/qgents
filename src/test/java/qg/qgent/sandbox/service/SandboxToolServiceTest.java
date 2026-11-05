@@ -1,5 +1,7 @@
 package qg.qgent.sandbox.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -9,7 +11,6 @@ import qg.qgent.sandbox.execution.service.ToolExecutionService;
 
 import java.time.Duration;
 import java.util.Map;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -20,7 +21,8 @@ class SandboxToolServiceTest {
 
     @Test
     void childRunAndActualWorkspaceArePassedDirectlyToExecution() {
-        UUID root = UUID.randomUUID(), child = UUID.randomUUID(), workspace = UUID.randomUUID(), sandbox = UUID.randomUUID();
+        Long root = TestIds.next(), child = TestIds.next(), workspace = TestIds.next();
+        java.util.UUID sandbox = java.util.UUID.randomUUID();
         SandboxSessionManager sessions = mock(SandboxSessionManager.class);
         ToolExecutionService executions = mock(ToolExecutionService.class);
         when(sessions.require(workspace)).thenReturn(new SandboxSession(root, workspace, sandbox, "key"));
@@ -32,7 +34,6 @@ class SandboxToolServiceTest {
         verify(executions).execute(eq(sandbox), request.capture());
         assertThat(request.getValue().getAgentRunId()).isEqualTo(child);
         assertThat(request.getValue().getWorkspaceId()).isEqualTo(workspace);
-        assertThat(request.getValue().getExecutionId()).isNotNull();
         verify(sessions).renewWriteLease(workspace);
         verifyNoMoreInteractions(executions);
     }

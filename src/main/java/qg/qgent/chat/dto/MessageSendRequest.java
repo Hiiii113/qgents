@@ -8,7 +8,6 @@ import lombok.Data;
 
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * 发送消息请求。
@@ -31,14 +30,14 @@ public class MessageSendRequest {
     @Schema(description = "结构化内容，如 {\"text\":\"...\"}；CODE 需 language+code，IMAGE/FILE 需 url")
     private Map<String, Object> content;
 
-    // 提及对象列表（可空）：对象数组 Mention[]，每项 {@code { type: "USER"|"AGENT", id: <UUID> }}。
+    // 提及对象列表（可空）：对象数组 Mention[]，每项 {@code { type: "USER"|"AGENT", id: 十进制字符串 }}。
     // 提及本身不携带任何任务或执行环境配置。
-    @Schema(description = "提及对象列表 Mention[]，每项 { type: USER|AGENT, id: UUID }；不提及传 null 或 []")
+    @Schema(description = "提及对象列表 Mention[]，每项 { type: USER|AGENT, id: 十进制字符串 }；不提及传 null 或 []")
     private List<Mention> mentions;
 
     // 回复或引用的原消息 ID（可空），必须属于同一群。
-    @Schema(description = "回复或引用的原消息 ID，必须属于同一群")
-    private UUID replyToId;
+    @Schema(description = "回复或引用的原消息 ID，必须属于同一群", type = "string")
+    private Long replyToId;
 
     // 客户端幂等 ID（≤128，可空），同一群内唯一。
     @Size(max = 128)

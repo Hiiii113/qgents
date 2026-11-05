@@ -10,11 +10,9 @@ import org.apache.ibatis.annotations.ResultMap;
 import org.apache.ibatis.annotations.Select;
 
 import qg.qgent.skill.dto.ContextSkill;
-import qg.qgent.common.persistence.typehandler.UuidBinaryTypeHandler;
 import qg.qgent.skill.entity.SkillEntity;
 
 import java.util.List;
-import java.util.UUID;
 
 /** Skill 数据访问。 */
 @Mapper
@@ -29,14 +27,14 @@ public interface SkillMapper extends BaseMapper<SkillEntity> {
             "ORDER BY updated_at DESC",
             "</script>"})
     @Results(id = "skill", value = {
-            @Result(column = "id", property = "id", id = true, typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "project_id", property = "projectId", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "created_by", property = "createdBy", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "submitted_by", property = "submittedBy", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "reviewer_id", property = "reviewerId", typeHandler = UuidBinaryTypeHandler.class),
+            @Result(column = "id", property = "id", id = true),
+            @Result(column = "project_id", property = "projectId"),
+            @Result(column = "created_by", property = "createdBy"),
+            @Result(column = "submitted_by", property = "submittedBy"),
+            @Result(column = "reviewer_id", property = "reviewerId"),
             @Result(column = "tags", property = "tags", typeHandler = JacksonTypeHandler.class)
     })
-    List<SkillEntity> listSkills(@Param("projectId") UUID projectId, @Param("actor") UUID actor,
+    List<SkillEntity> listSkills(@Param("projectId") Long projectId, @Param("actor") Long actor,
                                  @Param("status") String status, @Param("tag") String tag, @Param("admin") boolean admin);
 
     /** 查询默认上下文可见的已发布 Skill 目录，不读取正文。 */
@@ -44,17 +42,17 @@ public interface SkillMapper extends BaseMapper<SkillEntity> {
             + "AND (visibility = 'PROJECT_SHARED' OR created_by = #{actor}) "
             + "AND status = 'PUBLISHED' ORDER BY updated_at DESC")
     @Results({
-            @Result(column = "id", property = "id", id = true, typeHandler = UuidBinaryTypeHandler.class),
+            @Result(column = "id", property = "id", id = true),
             @Result(column = "name", property = "name"),
             @Result(column = "description", property = "description")
     })
-    List<ContextSkill> listPublishedCatalog(@Param("projectId") UUID projectId, @Param("actor") UUID actor);
+    List<ContextSkill> listPublishedCatalog(@Param("projectId") Long projectId, @Param("actor") Long actor);
 
     /** 读取一条当前用户可见的已发布 Skill 正文，供显式激活使用。 */
     @Select("SELECT * FROM skills WHERE id = #{skillId} AND project_id = #{projectId} "
             + "AND (visibility = 'PROJECT_SHARED' OR created_by = #{actor}) "
             + "AND status = 'PUBLISHED'")
     @ResultMap("skill")
-    SkillEntity findVisiblePublishedById(@Param("projectId") UUID projectId, @Param("actor") UUID actor,
-                                         @Param("skillId") UUID skillId);
+    SkillEntity findVisiblePublishedById(@Param("projectId") Long projectId, @Param("actor") Long actor,
+                                         @Param("skillId") Long skillId);
 }

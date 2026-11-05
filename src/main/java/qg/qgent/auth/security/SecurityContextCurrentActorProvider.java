@@ -7,22 +7,21 @@ import org.springframework.stereotype.Component;
 
 import qg.qgent.common.web.ApiException;
 
-import java.util.UUID;
 
 @Component
 public class SecurityContextCurrentActorProvider implements CurrentActorProvider {
 
     @Override
-    public UUID currentUserId() {
+    public Long currentUserId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated() || "anonymousUser".equals(authentication.getPrincipal())) {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHENTICATED", "Authentication is required");
         }
         try {
-            return UUID.fromString(authentication.getName());
+            return Long.valueOf(authentication.getName());
         } catch (IllegalArgumentException exception) {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "INVALID_AUTHENTICATED_SUBJECT",
-                    "Authenticated subject must be a UUID user ID");
+                    "Authenticated subject must be a decimal user ID");
         }
     }
 }

@@ -13,7 +13,6 @@ import qg.qgent.memory.dto.MemoryCreateRequest;
 import qg.qgent.memory.dto.MemoryUpdateRequest;
 import qg.qgent.memory.service.MemoryService;
 
-import java.util.UUID;
 
 /** 共享 Memory 接口 */
 @RestController
@@ -28,7 +27,7 @@ public class MemoryController {
 
     /** 查询可见 Memory，支持状态、标签过滤。 */
     @GetMapping("/projects/{projectId}/memories")
-    public ApiResponse<?> list(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
+    public ApiResponse<?> list(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
                                @RequestParam(value = "status", required = false) String status,
                                @RequestParam(value = "tag", required = false) String tag, HttpServletRequest request) {
         return ok(memoryService.list(userId, projectId, status, tag), request);
@@ -37,50 +36,50 @@ public class MemoryController {
     /** 手动创建 Memory；管理员直接发布，普通成员保存草稿。 */
     @PostMapping("/projects/{projectId}/memories")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<?> create(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
+    public ApiResponse<?> create(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
                                  @Valid @RequestBody MemoryCreateRequest body, HttpServletRequest request) {
         return ok(memoryService.create(userId, projectId, body), request);
     }
 
     /** 获取 Memory 详情。 */
     @GetMapping("/projects/{projectId}/memories/{memoryId}")
-    public ApiResponse<?> get(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
-                              @PathVariable UUID memoryId, HttpServletRequest request) {
+    public ApiResponse<?> get(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
+                              @PathVariable Long memoryId, HttpServletRequest request) {
         return ok(memoryService.get(userId, projectId, memoryId), request);
     }
 
     /** 编辑草稿或审核中内容。 */
     @PatchMapping("/projects/{projectId}/memories/{memoryId}")
-    public ApiResponse<?> update(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
-                                 @PathVariable UUID memoryId, @Valid @RequestBody MemoryUpdateRequest body, HttpServletRequest request) {
+    public ApiResponse<?> update(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
+                                 @PathVariable Long memoryId, @Valid @RequestBody MemoryUpdateRequest body, HttpServletRequest request) {
         return ok(memoryService.update(userId, projectId, memoryId, body), request);
     }
 
     /** 提交 Memory 审核。 */
     @PostMapping("/projects/{projectId}/memories/{memoryId}/submit-review")
-    public ApiResponse<?> submitReview(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
-                                       @PathVariable UUID memoryId, HttpServletRequest request) {
+    public ApiResponse<?> submitReview(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
+                                       @PathVariable Long memoryId, HttpServletRequest request) {
         return ok(memoryService.submitReview(userId, projectId, memoryId), request);
     }
 
     /** 批准并发布 Memory（Project Admin）。 */
     @PostMapping("/projects/{projectId}/memories/{memoryId}/approve")
-    public ApiResponse<?> approve(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
-                                  @PathVariable UUID memoryId, HttpServletRequest request) {
+    public ApiResponse<?> approve(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
+                                  @PathVariable Long memoryId, HttpServletRequest request) {
         return ok(memoryService.approve(userId, projectId, memoryId), request);
     }
 
     /** 拒绝 Memory 并给出原因（Project Admin）。 */
     @PostMapping("/projects/{projectId}/memories/{memoryId}/reject")
-    public ApiResponse<?> reject(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
-                                 @PathVariable UUID memoryId, @Valid @RequestBody RejectRequest body, HttpServletRequest request) {
+    public ApiResponse<?> reject(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
+                                 @PathVariable Long memoryId, @Valid @RequestBody RejectRequest body, HttpServletRequest request) {
         return ok(memoryService.reject(userId, projectId, memoryId, body.getReason()), request);
     }
 
     /** 归档 Memory（Project Admin）。 */
     @PostMapping("/projects/{projectId}/memories/{memoryId}/archive")
-    public ApiResponse<?> archive(@AuthenticationPrincipal UUID userId, @PathVariable UUID projectId,
-                                  @PathVariable UUID memoryId, HttpServletRequest request) {
+    public ApiResponse<?> archive(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
+                                  @PathVariable Long memoryId, HttpServletRequest request) {
         return ok(memoryService.archive(userId, projectId, memoryId), request);
     }
 

@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
 @Data
 @TableName("tool_execution_logs")
 public class ToolExecutionLogEntity {
-    private String executionId;
+    private Long executionId;
     private Long sequenceNo;
     private String stream;
     private String content;

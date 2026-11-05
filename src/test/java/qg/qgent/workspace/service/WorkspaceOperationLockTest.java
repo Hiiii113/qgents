@@ -6,7 +6,6 @@ import org.junit.jupiter.api.io.TempDir;
 import qg.qgent.sandbox.config.SandboxProperties;
 
 import java.nio.file.Path;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -21,7 +20,7 @@ class WorkspaceOperationLockTest {
         SandboxProperties properties = new SandboxProperties();
         properties.setWorkspaceMetadataRoot(root.toString());
         WorkspaceOperationLock lock = new WorkspaceOperationLock(properties);
-        String storageKey = "workspaces/" + UUID.randomUUID();
+        String storageKey = "workspaces/" + java.util.UUID.randomUUID();
         AtomicInteger active = new AtomicInteger();
         AtomicInteger maximum = new AtomicInteger();
         CountDownLatch start = new CountDownLatch(1);

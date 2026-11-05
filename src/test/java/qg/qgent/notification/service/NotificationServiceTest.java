@@ -1,5 +1,7 @@
 package qg.qgent.notification.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DuplicateKeyException;
@@ -8,7 +10,6 @@ import qg.qgent.notification.entity.NotificationEntity;
 import qg.qgent.notification.mapper.NotificationMapper;
 import qg.qgent.realtime.service.EventService;
 
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -21,10 +22,15 @@ class NotificationServiceTest {
 
     @Test
     void notificationPersistsAndPublishesToRecipient() {
-        UUID recipient = UUID.randomUUID();
+        Long recipient = TestIds.next();
         PushNotificationService push = mock(PushNotificationService.class);
+        when(mapper.insert(any(NotificationEntity.class))).thenAnswer(invocation -> {
+            NotificationEntity entity = invocation.getArgument(0);
+            entity.setId(TestIds.next());
+            return 1;
+        });
         NotificationService service = new NotificationService(mapper, events, push);
-        service.notify(recipient, UUID.randomUUID(), null, "INVITED", "团队邀请", "欢迎", null);
+        service.notify(recipient, TestIds.next(), null, "INVITED", "团队邀请", "欢迎", null);
         ArgumentCaptor<NotificationEntity> notification = ArgumentCaptor.forClass(NotificationEntity.class);
         verify(mapper).insert(notification.capture());
         assertEquals("INVITED", notification.getValue().getKind());

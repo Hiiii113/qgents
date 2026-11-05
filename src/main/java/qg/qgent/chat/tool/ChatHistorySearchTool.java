@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /** 当前群聊的历史消息检索与全文读取；检索次数按 AgentRun 计数。 */
@@ -25,13 +24,13 @@ public class ChatHistorySearchTool {
     private static final int MAX_MESSAGE_CHARS = 200;
 
     private final ChatHistoryService history;
-    private final UUID actor;
-    private final UUID projectId;
-    private final UUID groupId;
+    private final Long actor;
+    private final Long projectId;
+    private final Long groupId;
     private final int maxSearches;
     private final AtomicInteger searchesUsed = new AtomicInteger();
 
-    public ChatHistorySearchTool(ChatHistoryService history, UUID actor, UUID projectId, UUID groupId,
+    public ChatHistorySearchTool(ChatHistoryService history, Long actor, Long projectId, Long groupId,
                                  int maxSearches) {
         this.history = history;
         this.actor = actor;
@@ -93,8 +92,8 @@ public class ChatHistorySearchTool {
 
     @ParallelTool
     @Tool(name = "read_chat_message", description = "按消息 ID 读取当前群消息全文及 replyToId；用于展开搜索命中或读取回复的原消息，不需要沙箱")
-    public ContextMessage readChatMessage(@ToolParam(description = "消息 UUID，来自上下文、搜索结果或 replyToId") String messageId) {
-        return history.readChatMessage(actor, projectId, groupId, UUID.fromString(messageId));
+    public ContextMessage readChatMessage(@ToolParam(description = "消息 ID，来自上下文、搜索结果或 replyToId") String messageId) {
+        return history.readChatMessage(actor, projectId, groupId, Long.valueOf(messageId));
     }
 
     private String excerpt(String text) {

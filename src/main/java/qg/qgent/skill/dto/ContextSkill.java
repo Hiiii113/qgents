@@ -5,7 +5,6 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.UUID;
 
 /**
  * 上下文中的一条可激活 Skill 目录记录。
@@ -20,7 +19,7 @@ public class ContextSkill {
 
     // Skill ID，用于调用 activate_skill。
     @Schema(description = "Skill ID，可用于 activate_skill")
-    private UUID id;
+    private Long id;
 
     // Skill 名称。
     @Schema(description = "Skill 名称")

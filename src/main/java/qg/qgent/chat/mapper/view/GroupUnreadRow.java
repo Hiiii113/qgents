@@ -2,7 +2,6 @@ package qg.qgent.chat.mapper.view;
 
 import lombok.Data;
 
-import java.util.UUID;
 
 /**
  * 群未读计数查询结果行：{@code MessageMapper.countUnreadByGroupIds} 的映射结果。
@@ -14,7 +13,7 @@ import java.util.UUID;
 public class GroupUnreadRow {
 
     // 所属项目群聊 ID。
-    private UUID groupId;
+    private Long groupId;
 
     // 该群未读消息数（sequence_no > 已读游标 且非本人）。
     private Long unread;

@@ -28,7 +28,7 @@ import java.util.Map;
 @ConditionalOnProperty(prefix = "aliyun.oss", name = "enabled", havingValue = "false", matchIfMissing = true)
 public class LocalAttachmentStorage implements AttachmentStorageStrategy {
 
-    private static final String OBJECT_KEY_PATTERN = "projects/[0-9a-fA-F-]{36}/attachments/[0-9a-fA-F-]{36}";
+    private static final String OBJECT_KEY_PATTERN = "projects/[0-9]+/attachments/[0-9]+";
 
     private final Path root;
     private final Duration expiry;

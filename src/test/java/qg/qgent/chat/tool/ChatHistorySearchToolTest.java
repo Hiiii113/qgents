@@ -1,5 +1,7 @@
 package qg.qgent.chat.tool;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.support.ToolCallbacks;
 
@@ -9,7 +11,6 @@ import qg.qgent.chat.service.ChatHistoryService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -20,9 +21,9 @@ import static org.mockito.Mockito.when;
 class ChatHistorySearchToolTest {
 
     private final ChatHistoryService contextService = mock(ChatHistoryService.class);
-    private final UUID actor = UUID.randomUUID();
-    private final UUID projectId = UUID.randomUUID();
-    private final UUID groupId = UUID.randomUUID();
+    private final Long actor = TestIds.next();
+    private final Long projectId = TestIds.next();
+    private final Long groupId = TestIds.next();
 
     @Test
     void onlyQueriesCurrentGroupAndReturnsAtMostTenTruncatedMessages() {

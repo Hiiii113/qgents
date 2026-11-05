@@ -1,5 +1,7 @@
 package qg.qgent.attachment.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
@@ -22,7 +24,6 @@ import qg.qgent.project.service.ProjectAccessService;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -49,9 +50,9 @@ class AttachmentServiceTest {
 
     @Test
     void previewUrlReturnsSignedTokenUrlAndMetadata() {
-        UUID projectId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long actor = TestIds.next();
+        Long attachmentId = TestIds.next();
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "photo.png", "image/png", "READY"));
         when(storage.createDownloadUrl(eq("projects/" + projectId + "/attachments/" + attachmentId), eq(900L)))
                 .thenReturn("https://oss.example/photo.png");
@@ -73,9 +74,9 @@ class AttachmentServiceTest {
 
     @Test
     void previewUrlKeepsPreviewUrlWhenDownloadUnsupported() {
-        UUID projectId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long actor = TestIds.next();
+        Long attachmentId = TestIds.next();
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "doc.pdf", "application/pdf", "READY"));
         doThrow(new UnsupportedOperationException()).when(storage).createDownloadUrl(any(), anyLong());
 
@@ -87,11 +88,11 @@ class AttachmentServiceTest {
 
     @Test
     void previewUrlRejectsNotReady() {
-        UUID projectId = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long attachmentId = TestIds.next();
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "x.txt", "text/plain", "PENDING"));
 
-        assertThatThrownBy(() -> service.getPreviewInfo(UUID.randomUUID(), projectId, attachmentId))
+        assertThatThrownBy(() -> service.getPreviewInfo(TestIds.next(), projectId, attachmentId))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> {
                     assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_NOT_READY");
@@ -101,32 +102,32 @@ class AttachmentServiceTest {
 
     @Test
     void previewUrlRejectsAttachmentNotInProject() {
-        UUID projectId = UUID.randomUUID();
-        UUID otherProject = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long otherProject = TestIds.next();
+        Long attachmentId = TestIds.next();
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, otherProject, "x.txt", "text/plain", "READY"));
 
-        assertThatThrownBy(() -> service.getPreviewInfo(UUID.randomUUID(), projectId, attachmentId))
+        assertThatThrownBy(() -> service.getPreviewInfo(TestIds.next(), projectId, attachmentId))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_NOT_FOUND"));
     }
 
     @Test
     void previewUrlRejectsMissingAttachment() {
-        UUID projectId = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long attachmentId = TestIds.next();
         when(mapper.selectById(attachmentId)).thenReturn(null);
 
-        assertThatThrownBy(() -> service.getPreviewInfo(UUID.randomUUID(), projectId, attachmentId))
+        assertThatThrownBy(() -> service.getPreviewInfo(TestIds.next(), projectId, attachmentId))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_NOT_FOUND"));
     }
 
     @Test
     void previewMetadataReturnsTypeAndDeclaredSizeWithoutReadingBytes() {
-        UUID projectId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long actor = TestIds.next();
+        Long attachmentId = TestIds.next();
         AttachmentEntity entity = attachment(attachmentId, projectId, "photo.png", "image/png", "READY");
         entity.setSizeBytes(102400L);
         when(mapper.selectById(attachmentId)).thenReturn(entity);
@@ -139,20 +140,20 @@ class AttachmentServiceTest {
 
     @Test
     void previewMetadataRejectsNotReady() {
-        UUID projectId = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long attachmentId = TestIds.next();
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "x.txt", "text/plain", "PENDING"));
 
-        assertThatThrownBy(() -> service.previewMetadata(UUID.randomUUID(), projectId, attachmentId))
+        assertThatThrownBy(() -> service.previewMetadata(TestIds.next(), projectId, attachmentId))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_NOT_READY"));
     }
 
     @Test
     void previewContentReadsBytesAndClassifiesType() {
-        UUID projectId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long actor = TestIds.next();
+        Long attachmentId = TestIds.next();
         byte[] payload = "hello qwen".getBytes(StandardCharsets.UTF_8);
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "doc.pdf", "application/pdf", "READY"));
         when(storage.loadContent(any(), any(), any())).thenReturn(
@@ -168,11 +169,11 @@ class AttachmentServiceTest {
 
     @Test
     void previewContentRejectsNotReady() {
-        UUID projectId = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long attachmentId = TestIds.next();
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "x.txt", "text/plain", "FAILED"));
 
-        assertThatThrownBy(() -> service.previewContent(UUID.randomUUID(), projectId, attachmentId))
+        assertThatThrownBy(() -> service.previewContent(TestIds.next(), projectId, attachmentId))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> {
                     assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_NOT_READY");
@@ -182,9 +183,9 @@ class AttachmentServiceTest {
 
     @Test
     void uploadBytesStoresPendingAttachmentBytes() {
-        UUID projectId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long actor = TestIds.next();
+        Long attachmentId = TestIds.next();
         byte[] payload = "hello qwen".getBytes(StandardCharsets.UTF_8);
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "doc.pdf", "application/pdf", "PENDING"));
 
@@ -196,11 +197,11 @@ class AttachmentServiceTest {
 
     @Test
     void uploadBytesRejectsNotPending() {
-        UUID projectId = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long attachmentId = TestIds.next();
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "x.txt", "text/plain", "READY"));
 
-        assertThatThrownBy(() -> service.uploadBytes(UUID.randomUUID(), projectId, attachmentId,
+        assertThatThrownBy(() -> service.uploadBytes(TestIds.next(), projectId, attachmentId,
                 new ByteArrayInputStream("data".getBytes(StandardCharsets.UTF_8))))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> {
@@ -211,11 +212,11 @@ class AttachmentServiceTest {
 
     @Test
     void uploadBytesRejectsMissingAttachment() {
-        UUID projectId = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long attachmentId = TestIds.next();
         when(mapper.selectById(attachmentId)).thenReturn(null);
 
-        assertThatThrownBy(() -> service.uploadBytes(UUID.randomUUID(), projectId, attachmentId,
+        assertThatThrownBy(() -> service.uploadBytes(TestIds.next(), projectId, attachmentId,
                 new ByteArrayInputStream("data".getBytes(StandardCharsets.UTF_8))))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_NOT_FOUND"));
@@ -224,12 +225,12 @@ class AttachmentServiceTest {
     @Test
     void uploadBytesRejectsExceedingMaxSize(@TempDir Path root) {
         AttachmentService small = new AttachmentService(mapper, new LocalAttachmentStorage(root.toString(), 900), access, tokens, 10, 900);
-        UUID projectId = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long attachmentId = TestIds.next();
         byte[] oversized = "more-than-ten-bytes".getBytes(StandardCharsets.UTF_8);
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "big.txt", "text/plain", "PENDING"));
 
-        assertThatThrownBy(() -> small.uploadBytes(UUID.randomUUID(), projectId, attachmentId,
+        assertThatThrownBy(() -> small.uploadBytes(TestIds.next(), projectId, attachmentId,
                 new ByteArrayInputStream(oversized)))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> {
@@ -240,9 +241,9 @@ class AttachmentServiceTest {
 
     @Test
     void uploadBytesRejectsNonMember() {
-        UUID projectId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long actor = TestIds.next();
+        Long attachmentId = TestIds.next();
         doThrow(new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "无权访问"))
                 .when(access).requireProjectMember(projectId, actor);
 
@@ -268,20 +269,21 @@ class AttachmentServiceTest {
     void localUploadLifecycleRequiresStoredFileBeforeConfirmation(@TempDir Path root) {
         LocalAttachmentStorage local = new LocalAttachmentStorage(root.toString(), 900);
         AttachmentService localService = new AttachmentService(mapper, local, access, tokens, 1024, 900);
-        UUID actor = UUID.randomUUID();
-        UUID projectId = UUID.randomUUID();
+        Long actor = TestIds.next();
+        Long projectId = TestIds.next();
         AttachmentCreateRequest body = new AttachmentCreateRequest();
         body.setFileName("notes.txt");
         body.setContentType("text/plain");
         body.setSizeBytes(5L);
         when(mapper.insert(any(AttachmentEntity.class))).thenAnswer(invocation -> {
             AttachmentEntity entity = invocation.getArgument(0);
+            entity.setId(TestIds.next());
             when(mapper.selectById(entity.getId())).thenReturn(entity);
             return 1;
         });
 
         AttachmentUploadCredentialResponse credential = localService.createCredential(actor, projectId, body);
-        UUID id = UUID.fromString(credential.getAttachmentId());
+        Long id = Long.valueOf(credential.getAttachmentId());
         assertThat(credential.getUploadUrl()).isEqualTo("/api/v1/projects/" + projectId + "/attachments/" + id);
         assertThatThrownBy(() -> localService.confirmUpload(actor, projectId, id))
                 .isInstanceOf(ApiException.class)
@@ -296,19 +298,19 @@ class AttachmentServiceTest {
     }
 
     private void assertPreviewType(String fileName, String mediaType, String expected) {
-        UUID projectId = UUID.randomUUID();
-        UUID attachmentId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long attachmentId = TestIds.next();
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, fileName, mediaType, "READY"));
         doThrow(new UnsupportedOperationException()).when(storage).createDownloadUrl(any(), anyLong());
 
-        AttachmentPreviewUrlResponse r = service.getPreviewInfo(UUID.randomUUID(), projectId, attachmentId);
+        AttachmentPreviewUrlResponse r = service.getPreviewInfo(TestIds.next(), projectId, attachmentId);
 
         assertThat(r.getPreviewType()).as("%s (%s) 应为 %s", fileName, mediaType, expected).isEqualTo(expected);
     }
 
     @Test
     void confirmationChecksStoredSizeBeforeMarkingReady() {
-        UUID project = UUID.randomUUID(), id = UUID.randomUUID(), actor = UUID.randomUUID();
+        Long project = TestIds.next(), id = TestIds.next(), actor = TestIds.next();
         AttachmentEntity entity = attachment(id, project, "file.txt", "text/plain", "PENDING");
         when(mapper.selectById(id)).thenReturn(entity);
         when(storage.objectSize(entity.getObjectKey())).thenReturn(java.util.OptionalLong.empty());
@@ -331,7 +333,7 @@ class AttachmentServiceTest {
         verify(mapper).updateById(entity);
     }
 
-    private AttachmentEntity attachment(UUID id, UUID projectId, String fileName, String mediaType, String status) {
+    private AttachmentEntity attachment(Long id, Long projectId, String fileName, String mediaType, String status) {
         AttachmentEntity value = new AttachmentEntity();
         value.setId(id);
         value.setProjectId(projectId);

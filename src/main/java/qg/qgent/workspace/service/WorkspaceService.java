@@ -3,13 +3,12 @@ package qg.qgent.workspace.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import qg.qgent.common.util.UuidV7;
 
 import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
 
-import java.util.UUID;
 import java.util.List;
+import java.util.UUID;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
@@ -20,11 +19,11 @@ public class WorkspaceService {
 
     private final WorkspaceMapper workspaceMapper;
 
-    public WorkspaceEntity create(UUID projectId) {
+    /** 存储键使用随机 UUID，避免把自增 ID 暴露到目录名和容器标签。 */
+    public WorkspaceEntity create(Long projectId) {
         WorkspaceEntity workspace = new WorkspaceEntity();
-        workspace.setId(UuidV7.next());
         workspace.setProjectId(projectId);
-        workspace.setStorageKey("workspaces/" + workspace.getId());
+        workspace.setStorageKey("workspaces/" + UUID.randomUUID());
         workspace.setStatus("PROVISIONING");
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         workspace.setCreatedAt(now);
@@ -33,13 +32,13 @@ public class WorkspaceService {
         return workspace;
     }
 
-    public List<WorkspaceEntity> list(UUID projectId) {
+    public List<WorkspaceEntity> list(Long projectId) {
         return workspaceMapper.selectList(Wrappers.<WorkspaceEntity>lambdaQuery()
                 .eq(WorkspaceEntity::getProjectId, projectId)
                 .orderByDesc(WorkspaceEntity::getUpdatedAt).last("LIMIT 100"));
     }
 
-    public WorkspaceEntity require(UUID projectId, UUID workspaceId) {
+    public WorkspaceEntity require(Long projectId, Long workspaceId) {
         WorkspaceEntity workspace = workspaceMapper.selectById(workspaceId);
         if (workspace == null || !projectId.equals(workspace.getProjectId())
                 || "ARCHIVED".equals(workspace.getStatus()))

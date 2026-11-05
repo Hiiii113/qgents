@@ -1,5 +1,7 @@
 package qg.qgent.sandbox.execution.handler;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import qg.qgent.sandbox.runtime.CommandExecutionResult;
@@ -26,7 +28,7 @@ class CommandRunToolTest {
         Files.createDirectory(root.resolve("selected"));
         var executor = mock(CommandExecutor.class);
         var context = new ToolContext(null, root, "/workspace", Duration.ofSeconds(10));
-        context.setExecutionId(java.util.UUID.randomUUID());
+        context.setExecutionId(TestIds.next());
         context.setEnvironment(Map.of("GIT_CONFIG_COUNT", "1", "GIT_CONFIG_VALUE_0", "very-secret-value"));
         when(executor.execute(any(), anyString(), anyList(), any(), anyMap()))
                 .thenReturn(new CommandExecutionResult(17, List.of("101 results"), List.of("failed very-secret-value")));
@@ -45,7 +47,7 @@ class CommandRunToolTest {
     @Test
     void nonStreamingRuntimeUsesTheSameOutputWindows() throws Exception {
         var context = new ToolContext(null, root, "/workspace", Duration.ofSeconds(10));
-        context.setExecutionId(java.util.UUID.randomUUID());
+        context.setExecutionId(TestIds.next());
         var result = new CommandRunTool(new FakeCommandExecutor()).execute(context,
                 Map.of("command", List.of("echo", "hello")));
 

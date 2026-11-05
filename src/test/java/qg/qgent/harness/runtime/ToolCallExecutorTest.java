@@ -1,5 +1,7 @@
 package qg.qgent.harness.runtime;
 
+import qg.qgent.support.TestIds;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -12,7 +14,6 @@ import qg.qgent.sandbox.dto.SandboxExecutionContext;
 
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -127,7 +128,7 @@ class ToolCallExecutorTest {
 
     @Test
     void propagatesRunIdentityAndLoggingContextToEveryParallelCall() {
-        UUID runId = UUID.randomUUID();
+        Long runId = TestIds.next();
         Map<String, String> previous = MDC.getCopyOfContextMap();
         SandboxExecutionContext.set(runId);
         MDC.put("requestId", "parallel-request");

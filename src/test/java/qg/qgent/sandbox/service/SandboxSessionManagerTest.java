@@ -1,5 +1,7 @@
 package qg.qgent.sandbox.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import qg.qgent.workspace.service.WorkspaceStorageService;
 import qg.qgent.sandbox.execution.service.ToolExecutionService;
@@ -12,7 +14,6 @@ import qg.qgent.workspace.mapper.WorkspaceMapper;
 import qg.qgent.workspace.service.WorkspaceWriteLease;
 import qg.qgent.workspace.service.WorkspaceWriteLeaseService;
 
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -31,9 +32,9 @@ class SandboxSessionManagerTest {
     private final WorkspaceWriteLeaseService leases = mock(WorkspaceWriteLeaseService.class);
     private final SandboxSessionManager sessions = new SandboxSessionManager(sandboxes, storage, executions,
             new SandboxProperties(), workspaces, leases);
-    private final UUID projectId = UUID.randomUUID();
-    private final UUID workspaceId = UUID.randomUUID();
-    private final UUID runId = UUID.randomUUID();
+    private final Long projectId = TestIds.next();
+    private final Long workspaceId = TestIds.next();
+    private final Long runId = TestIds.next();
     private final WorkspaceWriteLease lease = mock(WorkspaceWriteLease.class);
 
     @Test
@@ -41,13 +42,14 @@ class SandboxSessionManagerTest {
         WorkspaceEntity workspace = new WorkspaceEntity();
         workspace.setProjectId(projectId);
         workspace.setStatus("PROVISIONING");
+        workspace.setStorageKey("workspaces/" + java.util.UUID.randomUUID());
         when(workspaces.selectById(workspaceId)).thenReturn(workspace);
         when(leases.acquire(projectId, workspaceId, runId)).thenReturn(lease);
         WorkspaceResponse ready = new WorkspaceResponse();
-        ready.setStorageKey("workspaces/" + workspaceId);
-        when(storage.provision(eq(workspaceId), any())).thenReturn(ready);
+        ready.setStorageKey("workspaces/" + java.util.UUID.randomUUID());
+        when(storage.provision(eq(workspaceId), eq(workspace.getStorageKey()), any())).thenReturn(ready);
         SandboxResponse sandbox = new SandboxResponse();
-        sandbox.setId(UUID.randomUUID());
+        sandbox.setId(java.util.UUID.randomUUID());
         when(sandboxes.create(any())).thenReturn(sandbox);
 
         SandboxSession session = sessions.acquire(runId, projectId, workspaceId);
@@ -67,7 +69,7 @@ class SandboxSessionManagerTest {
         when(workspaces.selectById(workspaceId)).thenReturn(workspace);
         when(leases.acquire(projectId, workspaceId, runId)).thenReturn(lease);
         IllegalStateException failure = new IllegalStateException("Sandbox unavailable");
-        when(storage.provision(eq(workspaceId), any())).thenThrow(failure);
+        when(storage.provision(eq(workspaceId), any(), any())).thenThrow(failure);
 
         assertThatThrownBy(() -> sessions.acquire(runId, projectId, workspaceId)).isSameAs(failure);
 
@@ -86,10 +88,10 @@ class SandboxSessionManagerTest {
         when(workspaces.selectById(workspaceId)).thenReturn(workspace);
         when(leases.acquire(projectId, workspaceId, runId)).thenReturn(lease);
         WorkspaceResponse ready = new WorkspaceResponse();
-        ready.setStorageKey("workspaces/" + workspaceId);
-        when(storage.provision(eq(workspaceId), any())).thenReturn(ready);
+        ready.setStorageKey("workspaces/" + java.util.UUID.randomUUID());
+        when(storage.provision(eq(workspaceId), eq(workspace.getStorageKey()), any())).thenReturn(ready);
         SandboxResponse sandbox = new SandboxResponse();
-        sandbox.setId(UUID.randomUUID());
+        sandbox.setId(java.util.UUID.randomUUID());
         when(sandboxes.create(any())).thenReturn(sandbox);
         sessions.acquire(runId, projectId, workspaceId);
         CountDownLatch waitingForCommands = new CountDownLatch(1), releaseCommands = new CountDownLatch(1);

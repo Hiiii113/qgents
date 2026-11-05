@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 
 import qg.qgent.attachment.config.AliyunOssProperties;
 import qg.qgent.attachment.dto.UploadCredential;
-import qg.qgent.common.util.UuidV7;
+import java.util.UUID;
 import qg.qgent.common.web.ApiException;
 
 import java.net.URL;
@@ -19,7 +19,6 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 
 /** 签发用户头像 OSS 上传地址、确认上传并删除旧对象。 */
 @Component
@@ -36,7 +35,7 @@ public class AvatarStorageService {
     private final AliyunOssProperties properties;
 
     /** 生成用户头像对象键并签发 OSS PUT 上传地址；图片最大 5 MB。 */
-    public AvatarCredential createCredential(UUID userId, String mediaType, Long sizeBytes) {
+    public AvatarCredential createCredential(Long userId, String mediaType, Long sizeBytes) {
         OSS oss = requireConfigured();
         requirePublicUrl(); // 缺公共读基础 URL 时先失败，避免客户端已经直传对象后才在 confirm 处报错
         String normalizedMediaType = mediaType == null ? "" : mediaType.trim().toLowerCase(Locale.ROOT);
@@ -52,7 +51,7 @@ public class AvatarStorageService {
                     "头像大小超过上限 " + MAX_SIZE_BYTES + " 字节");
         }
         String extension = extensionFor(normalizedMediaType);
-        String objectKey = "avatars/" + userId + "/" + UuidV7.next() + "." + extension;
+        String objectKey = "avatars/" + userId + "/" + UUID.randomUUID() + "." + extension;
         Date expiresAt = new Date(System.currentTimeMillis() + properties.getPresignExpirySeconds() * 1000L);
         URL url = oss.generatePresignedUrl(properties.getBucketName(), objectKey, expiresAt, HttpMethod.PUT);
         LocalDateTime expiry = LocalDateTime.ofInstant(expiresAt.toInstant(), ZoneOffset.UTC);

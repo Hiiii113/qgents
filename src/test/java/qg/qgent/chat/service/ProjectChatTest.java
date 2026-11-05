@@ -1,5 +1,7 @@
 package qg.qgent.chat.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import qg.qgent.project.entity.ProjectEntity;
@@ -16,7 +18,6 @@ import qg.qgent.project.mapper.*;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.user.mapper.*;
-import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -31,13 +32,22 @@ class ProjectChatTest {
             mock(MessageMapper.class), mock(GroupReadStateMapper.class), mock(UserGroupPreferenceMapper.class),
             access, mock(EventService.class));
 
+    @org.junit.jupiter.api.BeforeEach
+    void assignGeneratedGroupIds() {
+        when(groups.insert(any(ChatGroupEntity.class))).thenAnswer(call -> {
+            call.getArgument(0, ChatGroupEntity.class).setId(TestIds.next());
+            return 1;
+        });
+    }
+
     @Test
     void projectCreationCreatesOneDefaultChatAndRepeatedEnsureReusesIt() {
-        UUID projectId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long actor = TestIds.next();
         ChatGroupEntity[] stored = new ChatGroupEntity[1];
         when(groups.insert(any(ChatGroupEntity.class))).thenAnswer(call -> {
             stored[0] = call.getArgument(0);
+            stored[0].setId(TestIds.next());
             return 1;
         });
         when(groups.selectById(any())).thenAnswer(call -> stored[0]);
@@ -50,7 +60,7 @@ class ProjectChatTest {
 
     @Test
     void projectMemberCanAccessChatWithoutSeparateGroupMembership() {
-        UUID projectId = UUID.randomUUID(), groupId = UUID.randomUUID(), actor = UUID.randomUUID();
+        Long projectId = TestIds.next(), groupId = TestIds.next(), actor = TestIds.next();
         ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setProjectId(projectId);
@@ -61,8 +71,8 @@ class ProjectChatTest {
 
     @Test
     void newGroupIncludesCreatorAndSelectedUsersAndAgents() {
-        UUID projectId = UUID.randomUUID(), actor = UUID.randomUUID(), teammate = UUID.randomUUID();
-        UUID teamId = UUID.randomUUID(), agentId = qg.qgent.chat.QgentIdentity.ID;
+        Long projectId = TestIds.next(), actor = TestIds.next(), teammate = TestIds.next();
+        Long teamId = TestIds.next(), agentId = qg.qgent.chat.QgentIdentity.ID;
         ProjectEntity project = new ProjectEntity(); project.setTeamId(teamId);
         when(projects.selectById(projectId)).thenReturn(project);
         GroupCreateRequest body = new GroupCreateRequest(); body.setTitle("  方案讨论  ");
@@ -81,11 +91,11 @@ class ProjectChatTest {
 
     @Test
     void newGroupRequiresInvitedMembershipAndIsHiddenFromOthers() {
-        UUID projectId = UUID.randomUUID(), groupId = UUID.randomUUID(), actor = UUID.randomUUID();
+        Long projectId = TestIds.next(), groupId = TestIds.next(), actor = TestIds.next();
         ChatGroupEntity group = new ChatGroupEntity(); group.setId(groupId); group.setProjectId(projectId); group.setDefaultGroup(false);
         when(groups.selectById(groupId)).thenReturn(group);
         when(groups.listByProject(projectId)).thenReturn(List.of(group));
-        when(users.selectUserIds(groupId)).thenReturn(List.of(UUID.randomUUID()));
+        when(users.selectUserIds(groupId)).thenReturn(List.of(TestIds.next()));
         assertThatThrownBy(() -> service.requireGroupMember(projectId, groupId, actor)).isInstanceOf(ApiException.class);
         assertThat(service.list(actor, projectId)).isEmpty();
         when(users.selectUserIds(groupId)).thenReturn(List.of(actor));
@@ -94,7 +104,7 @@ class ProjectChatTest {
 
     @Test
     void inviteAddsMembersToExistingGroupWithoutChangingItsIdentity() {
-        UUID projectId = UUID.randomUUID(), groupId = UUID.randomUUID(), actor = UUID.randomUUID(), teammate = UUID.randomUUID();
+        Long projectId = TestIds.next(), groupId = TestIds.next(), actor = TestIds.next(), teammate = TestIds.next();
         ChatGroupEntity group = new ChatGroupEntity(); group.setId(groupId); group.setProjectId(projectId); group.setDefaultGroup(false);
         when(groups.selectById(groupId)).thenReturn(group);
         when(users.selectUserIds(groupId)).thenReturn(List.of(actor));
@@ -107,8 +117,8 @@ class ProjectChatTest {
 
     @Test
     void rejectsArbitraryAssistantBeforeSavingGroup() {
-        UUID projectId = UUID.randomUUID(), actor = UUID.randomUUID(), agentId = UUID.randomUUID();
-        ProjectEntity project = new ProjectEntity(); project.setTeamId(UUID.randomUUID());
+        Long projectId = TestIds.next(), actor = TestIds.next(), agentId = TestIds.next();
+        ProjectEntity project = new ProjectEntity(); project.setTeamId(TestIds.next());
         when(projects.selectById(projectId)).thenReturn(project);
         GroupCreateRequest body = new GroupCreateRequest(); body.setTitle("讨论"); body.setAgentIds(List.of(agentId));
         assertThatThrownBy(() -> service.create(actor, projectId, body)).isInstanceOf(ApiException.class);

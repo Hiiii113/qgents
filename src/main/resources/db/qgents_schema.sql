@@ -5,11 +5,11 @@ SET
 
 CREATE TABLE IF NOT EXISTS
     users (
-        id BINARY(16) PRIMARY KEY COMMENT '用户UUIDv7（二进制存储）',
+        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '用户ID',
         email VARCHAR(320) NOT NULL COMMENT '归一化后的用户登录邮箱，用于大小写无关唯一校验',
         display_name VARCHAR(120) NOT NULL COMMENT '用户展示名称',
         avatar_url TEXT NULL COMMENT '用户头像URL',
-        last_team_id BINARY(16) NULL COMMENT '用户最近选择的团队，失去权限后回退到首个可用团队',
+        last_team_id BIGINT NULL COMMENT '用户最近选择的团队，失去权限后回退到首个可用团队',
         avatar_object_key VARCHAR(512) NULL COMMENT '当前头像对象键（OSS avatars/{userId}/...），用于替换时定位并删除旧头像',
         password_hash VARCHAR(255) NOT NULL COMMENT '密码单向哈希，禁止存储明文',
         status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE' COMMENT '账号状态枚举：ACTIVE/DISABLED',
@@ -20,8 +20,8 @@ CREATE TABLE IF NOT EXISTS
 
 CREATE TABLE IF NOT EXISTS
     refresh_tokens (
-        id BINARY(16) PRIMARY KEY COMMENT '刷新令牌记录UUIDv7',
-        user_id BINARY(16) NOT NULL COMMENT '令牌所属用户ID',
+        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '刷新令牌记录ID',
+        user_id BIGINT NOT NULL COMMENT '令牌所属用户ID',
         token_hash BINARY(32) NOT NULL COMMENT '刷新令牌SHA-256哈希，禁止存储明文',
         expires_at DATETIME (6) NOT NULL COMMENT '令牌过期时间（UTC）',
         revoked_at DATETIME (6) NULL COMMENT '令牌撤销时间（UTC），为空表示未撤销',
@@ -33,8 +33,8 @@ CREATE TABLE IF NOT EXISTS
 
 CREATE TABLE IF NOT EXISTS
     password_reset_tokens (
-        id BINARY(16) PRIMARY KEY COMMENT '密码重置记录UUIDv7',
-        user_id BINARY(16) NOT NULL COMMENT '申请重置的用户ID',
+        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '密码重置记录ID',
+        user_id BIGINT NOT NULL COMMENT '申请重置的用户ID',
         token_hash BINARY(32) NOT NULL COMMENT '重置令牌SHA-256哈希，禁止存储明文',
         expires_at DATETIME (6) NOT NULL COMMENT '令牌过期时间（UTC）',
         used_at DATETIME (6) NULL COMMENT '令牌使用时间（UTC）',
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS
 
 CREATE TABLE IF NOT EXISTS
     email_verification_codes (
-        id BINARY(16) PRIMARY KEY COMMENT '验证码记录UUIDv7',
+        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '验证码记录ID',
         email VARCHAR(320) NOT NULL COMMENT '归一化邮箱（小写）',
         code_hash BINARY(32) NOT NULL COMMENT '验证码SHA-256哈希，禁止存储明文',
         expires_at DATETIME (6) NOT NULL COMMENT '验证码过期时间（UTC）',
@@ -58,8 +58,8 @@ CREATE TABLE IF NOT EXISTS
 
 CREATE TABLE IF NOT EXISTS
     teams (
-        id BINARY(16) PRIMARY KEY COMMENT '团队UUIDv7',
-        owner_user_id BINARY(16) NOT NULL COMMENT '团队所有者用户ID',
+        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '团队ID',
+        owner_user_id BIGINT NOT NULL COMMENT '团队所有者用户ID',
         name VARCHAR(255) NOT NULL COMMENT '团队名称',
         description TEXT NULL COMMENT '团队简介',
         avatar_url TEXT NULL COMMENT '团队头像URL（OSS 公共读长期地址，可为空）',
@@ -72,8 +72,8 @@ CREATE TABLE IF NOT EXISTS
 
 CREATE TABLE IF NOT EXISTS
     team_members (
-        team_id BINARY(16) NOT NULL COMMENT '团队ID',
-        user_id BINARY(16) NOT NULL COMMENT '成员用户ID',
+        team_id BIGINT NOT NULL COMMENT '团队ID',
+        user_id BIGINT NOT NULL COMMENT '成员用户ID',
         role VARCHAR(32) NOT NULL COMMENT '团队角色枚举：TEAM_OWNER/TEAM_MEMBER',
         joined_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '加入时间（UTC）',
         PRIMARY KEY (team_id, user_id),
@@ -84,9 +84,9 @@ CREATE TABLE IF NOT EXISTS
 
 CREATE TABLE IF NOT EXISTS
     team_invitations (
-        id BINARY(16) PRIMARY KEY COMMENT '团队邀请UUIDv7',
-        team_id BINARY(16) NOT NULL COMMENT '目标团队ID',
-        invited_by BINARY(16) NOT NULL COMMENT '邀请发起用户ID',
+        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '团队邀请ID',
+        team_id BIGINT NOT NULL COMMENT '目标团队ID',
+        invited_by BIGINT NOT NULL COMMENT '邀请发起用户ID',
         email_normalized VARCHAR(320) NOT NULL COMMENT '被邀请邮箱归一化值',
         token_hash BINARY(32) NOT NULL COMMENT '邀请令牌SHA-256哈希',
         status VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT '邀请状态枚举：PENDING/ACCEPTED/REVOKED/EXPIRED',
@@ -102,9 +102,9 @@ CREATE TABLE IF NOT EXISTS
 
 CREATE TABLE IF NOT EXISTS
     projects (
-        id BINARY(16) PRIMARY KEY COMMENT '项目UUIDv7',
-        team_id BINARY(16) NOT NULL COMMENT '所属团队ID',
-        created_by BINARY(16) NOT NULL COMMENT '项目创建用户ID',
+        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '项目ID',
+        team_id BIGINT NOT NULL COMMENT '所属团队ID',
+        created_by BIGINT NOT NULL COMMENT '项目创建用户ID',
         name VARCHAR(255) NOT NULL COMMENT '项目名称',
         description TEXT NULL COMMENT '项目说明',
         avatar_url TEXT NULL COMMENT '项目头像URL（OSS 公共读长期地址，可为空）',
@@ -120,8 +120,8 @@ CREATE TABLE IF NOT EXISTS
 
 CREATE TABLE IF NOT EXISTS
     project_members (
-        project_id BINARY(16) NOT NULL COMMENT '项目ID',
-        user_id BINARY(16) NOT NULL COMMENT '项目成员用户ID',
+        project_id BIGINT NOT NULL COMMENT '项目ID',
+        user_id BIGINT NOT NULL COMMENT '项目成员用户ID',
         role VARCHAR(32) NOT NULL COMMENT '项目角色枚举：PROJECT_ADMIN/PROJECT_MEMBER',
         joined_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '加入项目时间（UTC）',
         PRIMARY KEY (project_id, user_id),
@@ -132,9 +132,9 @@ CREATE TABLE IF NOT EXISTS
 
 CREATE TABLE IF NOT EXISTS
     chat_groups (
-        id BINARY(16) PRIMARY KEY COMMENT '项目群聊UUIDv7',
-        project_id BINARY(16) NOT NULL COMMENT '所属项目ID',
-        created_by BINARY(16) NOT NULL COMMENT '创建用户ID',
+        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '项目群聊ID',
+        project_id BIGINT NOT NULL COMMENT '所属项目ID',
+        created_by BIGINT NOT NULL COMMENT '创建用户ID',
         qgent_enabled TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Qgent 是否已加入群聊',
         default_group TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否为项目自动创建的默认群',
         name VARCHAR(255) NOT NULL COMMENT '群聊名称',
@@ -142,7 +142,7 @@ CREATE TABLE IF NOT EXISTS
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
         updated_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',
         KEY idx_chat_project (project_id),
-        default_project_id BINARY(16) GENERATED ALWAYS AS (IF(default_group, project_id, NULL)) STORED,
+        default_project_id BIGINT GENERATED ALWAYS AS (IF(default_group, project_id, NULL)) STORED,
         UNIQUE KEY uk_chat_default_project (default_project_id),
         KEY idx_rg_creator (created_by),
         CONSTRAINT fk_rg_project FOREIGN KEY (project_id) REFERENCES projects (id),
@@ -150,8 +150,8 @@ CREATE TABLE IF NOT EXISTS
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目需求讨论与协作上下文群';
 
 CREATE TABLE IF NOT EXISTS group_users (
-    group_id BINARY(16) NOT NULL,
-    user_id BINARY(16) NOT NULL,
+    group_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL,
     PRIMARY KEY (group_id, user_id),
     CONSTRAINT fk_gu_group FOREIGN KEY (group_id) REFERENCES chat_groups(id) ON DELETE CASCADE,
     CONSTRAINT fk_gu_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -159,16 +159,16 @@ CREATE TABLE IF NOT EXISTS group_users (
 
 CREATE TABLE IF NOT EXISTS
     messages (
-        id BINARY(16) PRIMARY KEY COMMENT '消息UUIDv7',
-        group_id BINARY(16) NOT NULL COMMENT '所属项目群聊ID',
+        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '消息ID',
+        group_id BIGINT NOT NULL COMMENT '所属项目群聊ID',
         sequence_no BIGINT UNSIGNED NOT NULL COMMENT '群内单调递增消息序号',
         sender_type VARCHAR(16) NOT NULL COMMENT '发送方 USER/AGENT/SYSTEM；AGENT 为固定 Qgent',
-        author_user_id BINARY(16) NULL COMMENT '用户作者ID；Agent/系统消息时为空',
+        author_user_id BIGINT NULL COMMENT '用户作者ID；Agent/系统消息时为空',
         client_message_id VARCHAR(128) NULL COMMENT '客户端生成的消息幂等ID',
         message_type VARCHAR(32) NOT NULL DEFAULT 'TEXT' COMMENT '消息类型枚举：TEXT/CODE/IMAGE/FILE/SYSTEM',
         content JSON NOT NULL COMMENT '按消息类型校验的结构化内容JSON',
         mentions JSON NULL COMMENT '提及对象JSON数组，元素含type(USER/AGENT)和id',
-        reply_to_message_id BINARY(16) NULL COMMENT '回复或引用的原消息ID',
+        reply_to_message_id BIGINT NULL COMMENT '回复或引用的原消息ID',
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '发送时间（UTC）',
         UNIQUE KEY uk_msg_seq (group_id, sequence_no),
         UNIQUE KEY uk_msg_client (group_id, client_message_id),
@@ -194,10 +194,10 @@ CREATE TABLE IF NOT EXISTS
 
 CREATE TABLE IF NOT EXISTS
     attachments (
-        id BINARY(16) PRIMARY KEY COMMENT '附件UUIDv7',
-        project_id BINARY(16) NOT NULL COMMENT '附件所属项目ID，用于上传前权限隔离',
-        uploaded_by BINARY(16) NOT NULL COMMENT '上传用户ID',
-        object_key VARCHAR(512) NOT NULL COMMENT '对象存储内部键，不含临时访问凭证',
+        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '附件ID',
+        project_id BIGINT NOT NULL COMMENT '附件所属项目ID，用于上传前权限隔离',
+        uploaded_by BIGINT NOT NULL COMMENT '上传用户ID',
+        object_key VARCHAR(512) NULL COMMENT '对象存储内部键（含附件自增ID），不含临时访问凭证',
         file_name VARCHAR(512) NOT NULL COMMENT '原始文件名',
         media_type VARCHAR(255) NULL COMMENT 'MIME媒体类型',
         size_bytes BIGINT UNSIGNED NULL COMMENT '文件大小，单位字节',
@@ -211,18 +211,18 @@ CREATE TABLE IF NOT EXISTS
 
 CREATE TABLE IF NOT EXISTS
     skills (
-        id BINARY(16) PRIMARY KEY COMMENT 'Skill UUIDv7',
-        project_id BINARY(16) NOT NULL COMMENT '所属项目ID',
-        created_by BINARY(16) NOT NULL COMMENT '创建用户ID',
+        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT 'Skill ID',
+        project_id BIGINT NOT NULL COMMENT '所属项目ID',
+        created_by BIGINT NOT NULL COMMENT '创建用户ID',
         name VARCHAR(255) NOT NULL COMMENT 'Skill名称',
         description TEXT NOT NULL COMMENT 'Skill用途描述',
         content MEDIUMTEXT NOT NULL COMMENT '完整SKILL.md内容',
         tags JSON NULL COMMENT '标签JSON字符串数组',
         visibility VARCHAR(32) NOT NULL DEFAULT 'PRIVATE' COMMENT '可见性枚举：PRIVATE/PROJECT_SHARED',
         status VARCHAR(32) NOT NULL DEFAULT 'DRAFT' COMMENT '状态枚举：DRAFT/PENDING_REVIEW/PUBLISHED/REJECTED/ARCHIVED',
-        submitted_by BINARY(16) NULL COMMENT '最近提交审核用户ID',
+        submitted_by BIGINT NULL COMMENT '最近提交审核用户ID',
         submitted_at DATETIME (6) NULL COMMENT '最近提交审核时间（UTC）',
-        reviewer_id BINARY(16) NULL COMMENT '最近审核用户ID',
+        reviewer_id BIGINT NULL COMMENT '最近审核用户ID',
         rejection_reason TEXT NULL COMMENT '最近驳回原因',
         reviewed_at DATETIME (6) NULL COMMENT '最近审核时间（UTC）',
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
@@ -238,17 +238,17 @@ CREATE TABLE IF NOT EXISTS
 
 CREATE TABLE IF NOT EXISTS
     memories (
-        id BINARY(16) PRIMARY KEY COMMENT 'Memory UUIDv7',
-        project_id BINARY(16) NOT NULL COMMENT '所属项目ID',
-        created_by BINARY(16) NOT NULL COMMENT '创建用户ID',
+        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT 'Memory ID',
+        project_id BIGINT NOT NULL COMMENT '所属项目ID',
+        created_by BIGINT NOT NULL COMMENT '创建用户ID',
         title VARCHAR(255) NOT NULL COMMENT '知识标题',
         content MEDIUMTEXT NOT NULL COMMENT '经确认的项目事实正文',
         category VARCHAR(64) NOT NULL COMMENT '知识分类标识',
         tags JSON NULL COMMENT '标签JSON字符串数组',
         status VARCHAR(32) NOT NULL DEFAULT 'DRAFT' COMMENT '状态枚举：DRAFT/PENDING_REVIEW/APPROVED/REJECTED/ARCHIVED',
-        submitted_by BINARY(16) NULL COMMENT '最近提交审核用户ID',
+        submitted_by BIGINT NULL COMMENT '最近提交审核用户ID',
         submitted_at DATETIME (6) NULL COMMENT '最近提交审核时间（UTC）',
-        reviewer_id BINARY(16) NULL COMMENT '最近审核用户ID',
+        reviewer_id BIGINT NULL COMMENT '最近审核用户ID',
         rejection_reason TEXT NULL COMMENT '最近驳回原因',
         reviewed_at DATETIME (6) NULL COMMENT '最近审核时间（UTC）',
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
@@ -262,36 +262,15 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT fk_memory_submitter FOREIGN KEY (submitted_by) REFERENCES users (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目确认知识，MVP标签内嵌JSON';
 
-CREATE TABLE IF NOT EXISTS
-    idempotency_records (
-        id BINARY(16) PRIMARY KEY COMMENT '幂等记录UUIDv7',
-        actor_user_id BINARY(16) NULL COMMENT '已认证调用用户ID；匿名请求为空',
-        actor_fingerprint BINARY(32) NOT NULL COMMENT '调用者稳定指纹SHA-256',
-        scope VARCHAR(255) NOT NULL COMMENT '幂等业务作用域，如HTTP方法与路由模板',
-        idempotency_key VARCHAR(255) NOT NULL COMMENT '客户端Idempotency-Key原值',
-        request_hash BINARY(32) NOT NULL COMMENT '规范化请求体SHA-256，用于检测同键不同请求',
-        response_status SMALLINT UNSIGNED NULL COMMENT '首次请求HTTP响应状态码',
-        response_body_redacted JSON NULL COMMENT '确认不含Token或Secret的脱敏响应JSON',
-        resource_id BINARY(16) NULL COMMENT '首次请求创建或变更的资源UUID',
-        created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '首次请求时间（UTC）',
-        expires_at DATETIME (6) NOT NULL COMMENT '幂等记录失效时间（UTC）',
-        UNIQUE KEY uk_idempotency (actor_fingerprint, scope, idempotency_key),
-        KEY idx_idem_user (actor_user_id),
-        KEY idx_idem_expiry (expires_at),
-        CONSTRAINT fk_idem_user FOREIGN KEY (actor_user_id) REFERENCES users (id)
-    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '写接口幂等请求与脱敏响应缓存';
-
-
-
 -- 聊天 Agent 执行记录；关联触发消息与工作区，子 Agent 关联父运行。
 CREATE TABLE IF NOT EXISTS agent_runs (
-    id BINARY(16) PRIMARY KEY,
-    project_id BINARY(16) NOT NULL,
-    group_id BINARY(16) NOT NULL,
-    trigger_message_id BINARY(16) NULL,
-    parent_run_id BINARY(16) NULL,
-    workspace_id BINARY(16) NULL COMMENT '本轮最近使用的工作区',
-    created_by BINARY(16) NOT NULL,
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    project_id BIGINT NOT NULL,
+    group_id BIGINT NOT NULL,
+    trigger_message_id BIGINT NULL,
+    parent_run_id BIGINT NULL,
+    workspace_id BIGINT NULL COMMENT '本轮最近使用的工作区',
+    created_by BIGINT NOT NULL,
     status VARCHAR(16) NOT NULL,
     instruction TEXT NOT NULL,
     result MEDIUMTEXT NULL,
@@ -305,9 +284,9 @@ CREATE TABLE IF NOT EXISTS agent_runs (
 
 
 CREATE TABLE IF NOT EXISTS workspaces (
-    id BINARY(16) PRIMARY KEY, project_id BINARY(16) NOT NULL,
-    storage_key VARCHAR(512) NOT NULL COMMENT 'Opaque storage key, not a host path', status VARCHAR(32) NOT NULL DEFAULT 'PROVISIONING',
-    write_lease_agent_run_id BINARY(16) NULL COMMENT '当前工作区写入租约所属根 AgentRun',
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, project_id BIGINT NOT NULL,
+    storage_key VARCHAR(512) NOT NULL COMMENT 'Opaque storage key（workspaces/随机UUID）, not a host path', status VARCHAR(32) NOT NULL DEFAULT 'PROVISIONING',
+    write_lease_agent_run_id BIGINT NULL COMMENT '当前工作区写入租约所属根 AgentRun',
     write_lease_token VARCHAR(64) NULL COMMENT 'Opaque write lease fencing token',
     write_lease_expires_at DATETIME(6) NULL COMMENT 'UTC write lease expiry',
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6), updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
@@ -319,9 +298,9 @@ CREATE TABLE IF NOT EXISTS workspaces (
 
 CREATE TABLE IF NOT EXISTS
     events (
-        id BINARY(16) PRIMARY KEY COMMENT '事件UUIDv7',
-        project_id BINARY(16) NOT NULL COMMENT '所属项目ID',
-        group_id BINARY(16) NULL COMMENT '可选关联项目群聊ID',
+        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '事件ID',
+        project_id BIGINT NOT NULL COMMENT '所属项目ID',
+        group_id BIGINT NULL COMMENT '可选关联项目群聊ID',
         sequence_no BIGINT UNSIGNED NOT NULL COMMENT '项目内单调递增事件序号，作为SSE游标',
         event_type VARCHAR(64) NOT NULL COMMENT '事件类型，如message.created/agent-run.updated',
         resource_id VARCHAR(128) NULL COMMENT '关联资源ID字符串，如agentRunId',
@@ -338,10 +317,10 @@ CREATE TABLE IF NOT EXISTS
 
 CREATE TABLE IF NOT EXISTS
     notifications (
-        id BINARY(16) PRIMARY KEY COMMENT '通知UUIDv7',
-        recipient_user_id BINARY(16) NOT NULL COMMENT '接收通知的用户ID',
-        project_id BINARY(16) NULL COMMENT '关联项目ID；系统级通知为空',
-        group_id BINARY(16) NULL COMMENT '关联项目群聊ID；非群通知为空',
+        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '通知ID',
+        recipient_user_id BIGINT NOT NULL COMMENT '接收通知的用户ID',
+        project_id BIGINT NULL COMMENT '关联项目ID；系统级通知为空',
+        group_id BIGINT NULL COMMENT '关联项目群聊ID；非群通知为空',
         kind VARCHAR(64) NOT NULL COMMENT '通知类型：MESSAGE_MENTION/INVITED/TEAM_JOINED/PROJECT_ADDED',
         title VARCHAR(255) NOT NULL COMMENT '一行通知标题',
         description TEXT NULL COMMENT '通知描述正文',
@@ -358,8 +337,8 @@ CREATE TABLE IF NOT EXISTS
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '用户通知中心';
 
 CREATE TABLE IF NOT EXISTS push_devices (
-    id BINARY(16) PRIMARY KEY COMMENT '推送设备UUIDv7',
-    user_id BINARY(16) NOT NULL COMMENT '设备所属用户ID',
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '推送设备ID',
+    user_id BIGINT NOT NULL COMMENT '设备所属用户ID',
     installation_id VARCHAR(128) NOT NULL COMMENT '客户端安装实例稳定ID',
     platform VARCHAR(16) NOT NULL COMMENT '平台：ANDROID/IOS',
     provider VARCHAR(16) NOT NULL DEFAULT 'FCM' COMMENT '推送提供方：FCM',
@@ -377,9 +356,9 @@ CREATE TABLE IF NOT EXISTS push_devices (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='移动端离线推送设备注册';
 
 CREATE TABLE IF NOT EXISTS push_deliveries (
-    id BINARY(16) PRIMARY KEY COMMENT '推送投递UUIDv7',
-    notification_id BINARY(16) NOT NULL COMMENT '对应的持久通知ID',
-    device_id BINARY(16) NOT NULL COMMENT '目标设备ID',
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '推送投递ID',
+    notification_id BIGINT NOT NULL COMMENT '对应的持久通知ID',
+    device_id BIGINT NOT NULL COMMENT '目标设备ID',
     status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT 'PENDING/SENDING/SENT/FAILED',
     attempt_count INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '实际投递尝试次数',
     next_attempt_at DATETIME(6) NOT NULL COMMENT '下次允许重试时间（UTC）',
@@ -396,10 +375,10 @@ CREATE TABLE IF NOT EXISTS push_deliveries (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='可恢复、幂等的移动端推送投递Outbox';
 
 CREATE TABLE IF NOT EXISTS notification_events (
-    id BINARY(16) PRIMARY KEY COMMENT '事件UUIDv7',
-    recipient_user_id BINARY(16) NOT NULL COMMENT '接收通知的用户ID',
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '事件ID',
+    recipient_user_id BIGINT NOT NULL COMMENT '接收通知的用户ID',
     sequence_no BIGINT NOT NULL COMMENT '用户内单调递增事件序号（SSE 游标）',
-    notification_id BINARY(16) NULL COMMENT '关联通知ID',
+    notification_id BIGINT NULL COMMENT '关联通知ID',
     kind VARCHAR(32) NULL COMMENT '通知类型（MENTIONED/INVITED 等）',
     payload JSON NULL COMMENT '脱敏事件载荷',
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '产生时间（UTC）',
@@ -408,8 +387,8 @@ CREATE TABLE IF NOT EXISTS notification_events (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='通知级 SSE 事件（用户维度游标）';
 
 CREATE TABLE IF NOT EXISTS team_events (
-    id BINARY(16) PRIMARY KEY COMMENT '事件UUIDv7',
-    team_id BINARY(16) NOT NULL COMMENT '所属团队ID',
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '事件ID',
+    team_id BIGINT NOT NULL COMMENT '所属团队ID',
     sequence_no BIGINT NOT NULL COMMENT '团队内单调递增事件序号（SSE 游标）',
     event_type VARCHAR(64) NOT NULL COMMENT '事件类型（project.member.added/team.member.updated/activity.created）',
     resource_id VARCHAR(64) NULL COMMENT '关联资源ID（projectId 等）',
@@ -422,8 +401,8 @@ CREATE TABLE IF NOT EXISTS team_events (
 
 CREATE TABLE IF NOT EXISTS
     group_read_state (
-        user_id BINARY(16) NOT NULL COMMENT '用户ID',
-        group_id BINARY(16) NOT NULL COMMENT '项目群聊ID',
+        user_id BIGINT NOT NULL COMMENT '用户ID',
+        group_id BIGINT NOT NULL COMMENT '项目群聊ID',
         last_read_sequence_no BIGINT UNSIGNED NULL COMMENT '已读游标（群内消息序号，NULL 视为 0）',
         updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',
         PRIMARY KEY (user_id, group_id),
@@ -434,8 +413,8 @@ CREATE TABLE IF NOT EXISTS
 -- 全新整库初始化时上方 users 建表已含该列，此处仅服务已存在的库；已存在该列的库自动跳过。
 CREATE TABLE IF NOT EXISTS
     user_group_preference (
-        user_id BINARY(16) NOT NULL COMMENT '用户ID',
-        group_id BINARY(16) NOT NULL COMMENT '项目群聊ID',
+        user_id BIGINT NOT NULL COMMENT '用户ID',
+        group_id BIGINT NOT NULL COMMENT '项目群聊ID',
         pinned TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否置顶（0/1）',
         updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',
         PRIMARY KEY (user_id, group_id),
@@ -444,8 +423,8 @@ CREATE TABLE IF NOT EXISTS
 
 -- 团队 App 连接和项目仓库导入；不绑定 Workspace。
 CREATE TABLE IF NOT EXISTS github_installations (
-    id BINARY(16) PRIMARY KEY,
-    team_id BINARY(16) NOT NULL,
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    team_id BIGINT NOT NULL,
     provider_installation_id BIGINT NOT NULL,
     account_login VARCHAR(255) NOT NULL,
     account_type VARCHAR(32) NOT NULL,
@@ -455,9 +434,9 @@ CREATE TABLE IF NOT EXISTS github_installations (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='团队 GitHub App 安装授权';
 
 CREATE TABLE IF NOT EXISTS github_installation_states (
-    id BINARY(16) PRIMARY KEY,
-    team_id BINARY(16) NOT NULL,
-    actor_id BINARY(16) NOT NULL,
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    team_id BIGINT NOT NULL,
+    actor_id BIGINT NOT NULL,
     state_hash BINARY(32) NOT NULL,
     client VARCHAR(16) NOT NULL,
     expires_at DATETIME(6) NOT NULL,
@@ -468,9 +447,9 @@ CREATE TABLE IF NOT EXISTS github_installation_states (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='一次性 App 安装回调凭据';
 
 CREATE TABLE IF NOT EXISTS project_repositories (
-    id BINARY(16) PRIMARY KEY,
-    project_id BINARY(16) NOT NULL,
-    installation_id BINARY(16) NOT NULL,
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    project_id BIGINT NOT NULL,
+    installation_id BIGINT NOT NULL,
     provider_repository_id BIGINT NOT NULL,
     full_name VARCHAR(255) NOT NULL,
     default_branch VARCHAR(255) NOT NULL,
@@ -482,11 +461,11 @@ CREATE TABLE IF NOT EXISTS project_repositories (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目显式导入的 GitHub 仓库';
 
 CREATE TABLE IF NOT EXISTS tool_executions (
-    id CHAR(36) PRIMARY KEY COMMENT '执行编号',
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '执行编号',
     owner_instance_id VARCHAR(128) NOT NULL COMMENT '实际运行该执行的应用实例编号',
     sandbox_id CHAR(36) NOT NULL COMMENT '沙箱编号',
-    agent_run_id CHAR(36) NULL COMMENT '实际调用的 AgentRun 编号',
-    workspace_id CHAR(36) NULL COMMENT '实际使用的 Workspace 编号',
+    agent_run_id BIGINT NULL COMMENT '实际调用的 AgentRun 编号',
+    workspace_id BIGINT NULL COMMENT '实际使用的 Workspace 编号',
     tool_name VARCHAR(64) NOT NULL COMMENT '服务端注册的工具名称',
     arguments_json JSON NOT NULL COMMENT '工具结构化参数',
     status VARCHAR(24) NOT NULL COMMENT '执行状态',
@@ -508,7 +487,7 @@ CREATE TABLE IF NOT EXISTS tool_executions (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='沙箱工具执行记录';
 
 CREATE TABLE IF NOT EXISTS tool_execution_logs (
-    execution_id CHAR(36) NOT NULL COMMENT '工具执行编号',
+    execution_id BIGINT NOT NULL COMMENT '工具执行编号',
     sequence_no BIGINT NOT NULL COMMENT '执行内递增序号',
     stream VARCHAR(16) NOT NULL COMMENT '日志流类型',
     content TEXT NOT NULL COMMENT '经过长度限制的日志内容',

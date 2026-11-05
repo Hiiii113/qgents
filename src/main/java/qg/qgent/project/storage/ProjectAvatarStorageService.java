@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 
 import qg.qgent.attachment.config.AliyunOssProperties;
 import qg.qgent.attachment.dto.UploadCredential;
-import qg.qgent.common.util.UuidV7;
+import java.util.UUID;
 import qg.qgent.common.web.ApiException;
 
 import java.net.URL;
@@ -19,7 +19,6 @@ import java.util.Date;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 
 /** 签发项目头像 OSS 上传凭证，确认对象存在后返回公共 URL。 */
 @Component
@@ -35,7 +34,7 @@ public class ProjectAvatarStorageService {
     private final AliyunOssProperties properties;
 
     /** 为项目签发头像直传凭证：对象键 {@code projects/{projectId}/{uuid}.{ext}}，预签名 PUT。 */
-    public ProjectAvatarCredential createCredential(UUID projectId, String mediaType, Long sizeBytes) {
+    public ProjectAvatarCredential createCredential(Long projectId, String mediaType, Long sizeBytes) {
         OSS oss = requireConfigured();
         requirePublicUrl();
         String normalizedMediaType = mediaType == null ? "" : mediaType.trim().toLowerCase(Locale.ROOT);
@@ -51,7 +50,7 @@ public class ProjectAvatarStorageService {
                     "头像大小超过上限 " + MAX_SIZE_BYTES + " 字节");
         }
         String extension = extensionFor(normalizedMediaType);
-        String objectKey = "projects/" + projectId + "/" + UuidV7.next() + "." + extension;
+        String objectKey = "projects/" + projectId + "/" + UUID.randomUUID() + "." + extension;
         Date expiresAt = new Date(System.currentTimeMillis() + properties.getPresignExpirySeconds() * 1000L);
         URL url = oss.generatePresignedUrl(properties.getBucketName(), objectKey, expiresAt, HttpMethod.PUT);
         LocalDateTime expiry = LocalDateTime.ofInstant(expiresAt.toInstant(), ZoneOffset.UTC);
@@ -59,7 +58,7 @@ public class ProjectAvatarStorageService {
     }
 
     /** 确认项目头像已上传并返回长期公共读 URL；校验对象存在且属于该项目命名空间。 */
-    public String confirmAvatar(UUID projectId, String objectKey) {
+    public String confirmAvatar(Long projectId, String objectKey) {
         OSS oss = requireConfigured();
         if (objectKey == null || objectKey.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "AVATAR_OBJECT_KEY_REQUIRED", "缺少头像对象键");

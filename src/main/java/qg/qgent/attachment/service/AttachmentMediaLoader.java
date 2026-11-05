@@ -18,7 +18,6 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
-import java.util.UUID;
 
 /** 将群聊图片转换为多模态输入，将文本和代码附件加入提示词；无法读取的附件保留上下文中的引用。 */
 @Slf4j
@@ -35,7 +34,7 @@ public class AttachmentMediaLoader {
     private final AttachmentService attachmentService;
 
     /** 以当前用户身份读取群聊附件，返回图片媒体和内联文本。 */
-    public Result load(UUID actor, UUID projectId, List<ContextMessage> conversation) {
+    public Result load(Long actor, Long projectId, List<ContextMessage> conversation) {
         List<Media> media = new ArrayList<>();
         StringBuilder extraText = new StringBuilder();
         if (actor == null || projectId == null || conversation == null) {
@@ -54,9 +53,9 @@ public class AttachmentMediaLoader {
         return new Result(media, extraText.toString());
     }
 
-    private void attachImage(UUID actor, UUID projectId, ContextMessage message, List<Media> media) {
+    private void attachImage(Long actor, Long projectId, ContextMessage message, List<Media> media) {
         try {
-            UUID attachmentId = UUID.fromString(message.getAttachmentId());
+            Long attachmentId = Long.valueOf(message.getAttachmentId());
             AttachmentService.AttachmentPreviewMetadata meta =
                     attachmentService.previewMetadata(actor, projectId, attachmentId);
             if (!"IMAGE".equals(meta.previewType()) || meta.sizeBytes() == null
@@ -86,9 +85,9 @@ public class AttachmentMediaLoader {
         }
     }
 
-    private void appendFileText(UUID actor, UUID projectId, ContextMessage message, StringBuilder extraText) {
+    private void appendFileText(Long actor, Long projectId, ContextMessage message, StringBuilder extraText) {
         try {
-            UUID attachmentId = UUID.fromString(message.getAttachmentId());
+            Long attachmentId = Long.valueOf(message.getAttachmentId());
             AttachmentService.AttachmentPreviewMetadata meta =
                     attachmentService.previewMetadata(actor, projectId, attachmentId);
             if (!"TEXT".equals(meta.previewType()) && !"CODE".equals(meta.previewType())) {

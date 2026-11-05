@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
@@ -43,7 +44,7 @@ public class GlobalExceptionHandler {
                 .body(error("INVALID_ARGUMENT", "请求参数不合法", details, request));
     }
 
-    // 处理参数类型转换失败（如 path/query 中的 UUID 格式错误）
+    // 处理参数类型转换失败（如 path/query 中的数字 ID 格式错误）
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     ResponseEntity<?> typeMismatch(MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
         log.warn("Type mismatch [{}]: parameter={}", request.getRequestURI(), ex.getName());
@@ -67,6 +68,15 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AsyncRequestNotUsableException.class)
     void asyncRequestNotUsable(AsyncRequestNotUsableException ex, HttpServletRequest request) {
         log.info("Async request (SSE) client disconnected [{}]: {}", request.getRequestURI(), ex.getMessage());
+    }
+
+    // multipart 超过容器限制时在进入控制器前抛出；按上传超限返回 413，不落到 500 兜底。
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    ResponseEntity<?> uploadTooLarge(MaxUploadSizeExceededException ex, HttpServletRequest request) {
+        log.warn("Upload too large [{}]: {}", request.getRequestURI(), ex.getMessage());
+        return ResponseEntity
+                .status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(error("UPLOAD_TOO_LARGE", "上传文件超过大小限制", List.of(), request));
     }
 
     // 未映射的路径/方法：路径不存在（404）或方法不匹配（405）。必须在 Exception 兜底之前命中，

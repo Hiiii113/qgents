@@ -2,6 +2,7 @@ package qg.qgent.github.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,7 +14,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 import qg.qgent.common.web.ApiResponse;
 import qg.qgent.common.web.RequestIdFilter;
 import qg.qgent.github.service.GitHubRepositoryService;
-import java.util.UUID;
 
 /** 团队 App 安装管理与项目仓库导入；导入不会创建执行环境。 */
 @RestController
@@ -32,27 +32,27 @@ public class GitHubRepositoryController {
     }
 
     @PostMapping("/teams/{teamId}/integrations/github/installations")
-    public ApiResponse<?> install(@AuthenticationPrincipal UUID actor, @PathVariable UUID teamId,
+    public ApiResponse<?> install(@AuthenticationPrincipal Long actor, @PathVariable Long teamId,
             @RequestParam(defaultValue = "WEB") String client, HttpServletRequest request) {
         return ok(service.createInstallationUrl(actor, teamId, client), request);
     }
 
     @GetMapping("/teams/{teamId}/integrations/github/installations")
-    public ApiResponse<?> installations(@AuthenticationPrincipal UUID actor, @PathVariable UUID teamId,
+    public ApiResponse<?> installations(@AuthenticationPrincipal Long actor, @PathVariable Long teamId,
                                        HttpServletRequest request) {
         return ok(service.listInstallations(actor, teamId), request);
     }
 
     @PostMapping("/teams/{teamId}/integrations/github/installations/{installationId}/sync")
-    public ApiResponse<?> sync(@AuthenticationPrincipal UUID actor, @PathVariable UUID teamId,
-            @PathVariable UUID installationId, HttpServletRequest request) {
+    public ApiResponse<?> sync(@AuthenticationPrincipal Long actor, @PathVariable Long teamId,
+            @PathVariable Long installationId, HttpServletRequest request) {
         return ok(service.sync(actor, teamId, installationId), request);
     }
 
     @DeleteMapping("/teams/{teamId}/integrations/github/installations/{installationId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void disconnect(@AuthenticationPrincipal UUID actor, @PathVariable UUID teamId,
-                           @PathVariable UUID installationId) {
+    public void disconnect(@AuthenticationPrincipal Long actor, @PathVariable Long teamId,
+                           @PathVariable Long installationId) {
         service.removeInstallation(actor, teamId, installationId);
     }
 
@@ -68,28 +68,28 @@ public class GitHubRepositoryController {
     }
 
     @GetMapping("/teams/{teamId}/integrations/github/repositories")
-    public ApiResponse<?> available(@AuthenticationPrincipal UUID actor, @PathVariable UUID teamId,
+    public ApiResponse<?> available(@AuthenticationPrincipal Long actor, @PathVariable Long teamId,
                                    HttpServletRequest request) {
         return ok(service.listTeamRepositories(actor, teamId), request);
     }
 
     @GetMapping("/projects/{projectId}/repositories")
-    public ApiResponse<?> imported(@AuthenticationPrincipal UUID actor, @PathVariable UUID projectId,
+    public ApiResponse<?> imported(@AuthenticationPrincipal Long actor, @PathVariable Long projectId,
                                   HttpServletRequest request) {
         return ok(service.listProjectRepositories(actor, projectId), request);
     }
 
     @PostMapping("/projects/{projectId}/repositories")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<?> importRepository(@AuthenticationPrincipal UUID actor, @PathVariable UUID projectId,
+    public ApiResponse<?> importRepository(@AuthenticationPrincipal Long actor, @PathVariable Long projectId,
             @Valid @RequestBody ImportRequest body, HttpServletRequest request) {
         return ok(service.importRepository(actor, projectId, body.installationId(), body.repositoryId()), request);
     }
 
     @DeleteMapping("/projects/{projectId}/repositories/{repositoryId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void removeRepository(@AuthenticationPrincipal UUID actor, @PathVariable UUID projectId,
-                                @PathVariable UUID repositoryId) {
+    public void removeRepository(@AuthenticationPrincipal Long actor, @PathVariable Long projectId,
+                                @PathVariable Long repositoryId) {
         service.removeRepository(actor, projectId, repositoryId);
     }
 
@@ -97,5 +97,7 @@ public class GitHubRepositoryController {
         return ApiResponse.ok(value, (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
     }
 
-    public record ImportRequest(@NotNull UUID installationId, @Positive long repositoryId) {}
+    /** installationId 是本地安装记录自增 ID，前端以十进制字符串提交。 */
+    public record ImportRequest(@NotNull @Schema(type = "string") Long installationId,
+                                @Positive long repositoryId) {}
 }

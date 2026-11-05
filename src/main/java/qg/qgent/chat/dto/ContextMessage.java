@@ -32,7 +32,7 @@ public class ContextMessage {
     @Schema(description = "消息正文")
     private String text;
 
-    // 附件 ID（IMAGE/FILE 消息，UUID 字符串）；其他类型为空。供多模态链路按此读取附件字节。
+    // 附件 ID（IMAGE/FILE 消息，十进制字符串）；其他类型为空。供多模态链路按此读取附件字节。
     @Schema(description = "附件 ID（IMAGE/FILE 消息）")
     private String attachmentId;
 

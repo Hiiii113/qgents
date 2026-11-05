@@ -1,5 +1,7 @@
 package qg.qgent.memory.controller;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -14,7 +16,6 @@ import qg.qgent.memory.dto.MemoryResponse;
 import qg.qgent.memory.service.MemoryService;
 
 import java.util.List;
-import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -26,8 +27,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /** 删除专用 AI 草稿路由后，基础 Memory 接口仍正常提供服务。 */
 class MemoryControllerTest {
-    private final UUID actor = UUID.randomUUID();
-    private final UUID projectId = UUID.randomUUID();
+    private final Long actor = TestIds.next();
+    private final Long projectId = TestIds.next();
     private final MemoryService service = mock(MemoryService.class);
     private final MockMvc mvc = MockMvcBuilders.standaloneSetup(new MemoryController(service))
             .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver()).build();

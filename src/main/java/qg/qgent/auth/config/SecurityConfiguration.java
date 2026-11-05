@@ -21,14 +21,12 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import qg.qgent.auth.security.JwtAuthenticationFilter;
-import qg.qgent.common.service.IdempotencyService;
-import qg.qgent.common.web.IdempotencyFilter;
 
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
-/** 配置 JWT 鉴权、公开接口、幂等过滤器和跨域规则。 */
+/** 配置 JWT 鉴权、公开接口和跨域规则。 */
 @Slf4j
 @Configuration
 public class SecurityConfiguration {
@@ -45,15 +43,9 @@ public class SecurityConfiguration {
         return new BCryptPasswordEncoder(12);
     }
 
-    /** 幂等过滤器 Bean：在 JwtAuthenticationFilter 之后注册，保证读取请求体前鉴权已就绪。 */
+    /** 配置无状态认证及请求访问规则。 */
     @Bean
-    IdempotencyFilter idempotencyFilter(IdempotencyService idempotency, ObjectMapper mapper) {
-        return new IdempotencyFilter(idempotency, mapper);
-    }
-
-    /** 配置无状态认证及请求访问规则，幂等过滤器在 JWT 鉴权之后执行。 */
-    @Bean
-    SecurityFilterChain security(HttpSecurity http, JwtAuthenticationFilter jwt, IdempotencyFilter idempotency,
+    SecurityFilterChain security(HttpSecurity http, JwtAuthenticationFilter jwt,
                                  ObjectMapper mapper, @Qualifier("cors") CorsConfigurationSource corsConfigurationSource) throws Exception {
         return http
                 .csrf(c -> c.disable())
@@ -95,8 +87,6 @@ public class SecurityConfiguration {
                                     "requestId", String.valueOf(req.getAttribute("requestId"))));
                 }))
                 .addFilterBefore(jwt, UsernamePasswordAuthenticationFilter.class)
-                // 幂等过滤器在 JWT 之后执行，处理项目路径下的 POST、PUT、PATCH 和 DELETE。
-                .addFilterAfter(idempotency, JwtAuthenticationFilter.class)
                 .build();
     }
 
@@ -109,9 +99,8 @@ public class SecurityConfiguration {
                 .filter(origin -> !origin.isEmpty())
                 .toList());
         c.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        // 允许的请求头：Idempotency-Key（写接口幂等）、Last-Event-ID（SSE 续传）
-        c.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Request-Id", "Idempotency-Key",
-                "Last-Event-ID"));
+        // 允许的请求头：Last-Event-ID（SSE 续传）
+        c.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Request-Id", "Last-Event-ID"));
         // 当前认证使用 Authorization Bearer，不启用跨域凭证（Cookie）传递。
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", c);

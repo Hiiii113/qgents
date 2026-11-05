@@ -18,7 +18,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.config.PerformanceMetrics;
-import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.entity.NotificationEventEntity;
 import qg.qgent.notification.mapper.NotificationEventMapper;
@@ -43,7 +42,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -107,7 +105,7 @@ public class EventService implements RealtimeEventPublisher {
 
     /** 业务事务提交后，独立保存项目事件并推送；事件失败不回滚业务。 */
     @Override
-    public void publish(UUID projectId, UUID groupId, String eventType, String resourceId,
+    public void publish(Long projectId, Long groupId, String eventType, String resourceId,
                         Map<String, Object> payload) {
         EventRequest request = new EventRequest(projectId, groupId, eventType, resourceId, payload);
         // 业务事实提交后才允许事件落库。这样 events 的行锁、外键检查或重试耗尽都不会把
@@ -151,7 +149,7 @@ public class EventService implements RealtimeEventPublisher {
     private void persistAfterCommit(EventRequest request) {
         for (int attempt = 0; attempt < EVENT_DEADLOCK_RETRIES; attempt++) {
             try {
-                Set<UUID> recipients = eventTransaction.execute(status -> persistInNewTransaction(request));
+                Set<Long> recipients = eventTransaction.execute(status -> persistInNewTransaction(request));
                 if (recipients != null) {
                     // TransactionTemplate 已在返回前完成 commit；不得让浏览器看到领先于数据库的刷新信号。
                     broadcast(recipients, "project", id(request.projectId), id(request.groupId), null, null,
@@ -189,10 +187,9 @@ public class EventService implements RealtimeEventPublisher {
     }
 
     /** 在 REQUIRES_NEW 事务中分配项目序号、写入事件并返回提交后 fan-out 所需的信息。 */
-    private Set<UUID> persistInNewTransaction(EventRequest request) {
+    private Set<Long> persistInNewTransaction(EventRequest request) {
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         EventEntity event = new EventEntity();
-        event.setId(UuidV7.next());
         event.setProjectId(request.projectId);
         event.setGroupId(request.groupId);
         // 并发安全：先持有项目行锁，把同项目事件写入串行化；再以锁定读取当前已提交的
@@ -239,7 +236,7 @@ public class EventService implements RealtimeEventPublisher {
         }
     }
 
-    private Set<UUID> projectMembers(UUID projectId) {
+    private Set<Long> projectMembers(Long projectId) {
         return projectMemberMapper.selectMembers(projectId).stream()
                 .map(m -> m.getUserId()).collect(Collectors.toSet());
     }
@@ -247,7 +244,7 @@ public class EventService implements RealtimeEventPublisher {
     /** 发布一条通知级事件。 按用户维度分配单调递增序号；payload 必须为已脱敏内容。 */
     @Transactional
     @Override
-    public void publishNotification(UUID recipientUserId, UUID notificationId, String eventType,
+    public void publishNotification(Long recipientUserId, Long notificationId, String eventType,
                                     Map<String, Object> payload) {
         if (recipientUserId == null) {
             return;
@@ -255,7 +252,6 @@ public class EventService implements RealtimeEventPublisher {
         userMapper.selectByIdForUpdate(recipientUserId);
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         NotificationEventEntity event = new NotificationEventEntity();
-        event.setId(UuidV7.next());
         event.setRecipientUserId(recipientUserId);
         event.setSequenceNo(notificationEventMapper.maxSequence(recipientUserId) + 1);
         event.setNotificationId(notificationId);
@@ -269,7 +265,7 @@ public class EventService implements RealtimeEventPublisher {
     }
 
     /** 订阅当前用户的通知事件，支持 Last-Event-ID 续传。 */
-    public SseEmitter notificationStream(UUID userId, Long lastEventId) {
+    public SseEmitter notificationStream(Long userId, Long lastEventId) {
         long cursor = resolveCursor(lastEventId, () -> notificationEventMapper.minSequence(userId),
                 () -> notificationEventMapper.maxSequence(userId));
         return sseTransport.open("notification", userId, cursor, after ->
@@ -282,14 +278,13 @@ public class EventService implements RealtimeEventPublisher {
     /** 发布一条团队级事件。 按团队维度分配单调递增序号；payload 必须为已脱敏内容。 */
     @Transactional
     @Override
-    public void publishTeamEvent(UUID teamId, String eventType, String resourceId, Map<String, Object> payload) {
+    public void publishTeamEvent(Long teamId, String eventType, String resourceId, Map<String, Object> payload) {
         if (teamId == null) {
             return;
         }
         teamMapper.selectByIdForUpdate(teamId);
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         TeamEventEntity event = new TeamEventEntity();
-        event.setId(UuidV7.next());
         event.setTeamId(teamId);
         event.setSequenceNo(teamEventMapper.maxSequence(teamId) + 1);
         event.setEventType(eventType);
@@ -298,13 +293,13 @@ public class EventService implements RealtimeEventPublisher {
         event.setCreatedAt(now);
         teamEventMapper.insert(event);
         // WebSocket 用户级聚合：推送给本团队全部成员（其所有在线连接都收到）
-        Set<UUID> members = teamMemberMapper.selectByTeamId(teamId).stream()
+        Set<Long> members = teamMemberMapper.selectByTeamId(teamId).stream()
                 .map(m -> m.getUserId()).collect(Collectors.toSet());
         fan(members, "team", null, null, id(teamId), null, resourceId, eventType, payload);
     }
 
     /** 订阅团队事件；调用者必须是团队成员。 */
-    public SseEmitter teamStream(UUID teamId, UUID userId, Long lastEventId) {
+    public SseEmitter teamStream(Long teamId, Long userId, Long lastEventId) {
         projectAccess.requireTeamMember(teamId, userId);
         long cursor = resolveCursor(lastEventId, () -> teamEventMapper.minSequence(teamId),
                 () -> teamEventMapper.maxSequence(teamId));
@@ -315,7 +310,7 @@ public class EventService implements RealtimeEventPublisher {
     }
 
     /** 订阅项目事件；保留项目群聊过滤和轮询耗时统计。 */
-    public SseEmitter stream(UUID projectId, UUID userId, Long lastEventId) {
+    public SseEmitter stream(Long projectId, Long userId, Long lastEventId) {
         projectAccess.requireProjectMember(projectId, userId);
         long cursor = resolveCursor(lastEventId, () -> eventMapper.minSequence(projectId),
                 () -> eventMapper.maxSequence(projectId));
@@ -328,7 +323,7 @@ public class EventService implements RealtimeEventPublisher {
     }
 
     /** 每次读取事件时核对成员，已有连接也能收到刚创建或刚被邀请的群事件。 */
-    private boolean canSeeGroup(UUID groupId, UUID userId) {
+    private boolean canSeeGroup(Long groupId, Long userId) {
         ChatGroupEntity group = groupMapper.selectById(groupId);
         return group != null && (Boolean.TRUE.equals(group.getDefaultGroup())
                 || groupMapper.selectUserIds(groupId).contains(userId));
@@ -353,7 +348,7 @@ public class EventService implements RealtimeEventPublisher {
     }
 
     /** 提交后向目标用户的全部在线连接推送；失败只记日志。 */
-    private void fan(Set<UUID> userIds, String scope, String projectId, String groupId, String teamId,
+    private void fan(Set<Long> userIds, String scope, String projectId, String groupId, String teamId,
                      String recipientUserId, String resourceId, String eventType, Map<String, Object> payload) {
         if (TransactionSynchronizationManager.isSynchronizationActive()) {
             // 事务提交前浏览器若据 WS 帧立即查询，可能读不到尚未提交的事件/消息。
@@ -370,7 +365,7 @@ public class EventService implements RealtimeEventPublisher {
         broadcast(userIds, scope, projectId, groupId, teamId, recipientUserId, resourceId, eventType, payload);
     }
 
-    private void broadcast(Set<UUID> userIds, String scope, String projectId, String groupId, String teamId,
+    private void broadcast(Set<Long> userIds, String scope, String projectId, String groupId, String teamId,
                            String recipientUserId, String resourceId, String eventType, Map<String, Object> payload) {
         try {
             realtimeTransport.broadcastToUsers(userIds, RealtimeFrame.of(eventType, scope, projectId, groupId,
@@ -380,12 +375,12 @@ public class EventService implements RealtimeEventPublisher {
         }
     }
 
-    private String id(UUID value) {
+    private String id(Long value) {
         return value == null ? null : value.toString();
     }
 
     /** 单条待持久化的项目 SSE 事件；仅在当前线程的事务同步生命周期内保存。 */
-    private record EventRequest(UUID projectId, UUID groupId, String eventType, String resourceId,
+    private record EventRequest(Long projectId, Long groupId, String eventType, String resourceId,
                                 Map<String, Object> payload) {
     }
 

@@ -7,10 +7,8 @@ import org.apache.ibatis.annotations.Result;
 import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.Select;
 
-import qg.qgent.common.persistence.typehandler.UuidBinaryTypeHandler;
 
 import java.util.List;
-import java.util.UUID;
 
 /** 用户 × 群置顶偏好数据访问（表 user_group_preference）。 */
 @Mapper
@@ -20,7 +18,7 @@ public interface UserGroupPreferenceMapper {
     @Insert("INSERT INTO user_group_preference (user_id, group_id, pinned) "
             + "VALUES (#{userId}, #{groupId}, #{pinned}) "
             + "ON DUPLICATE KEY UPDATE pinned = VALUES(pinned)")
-    void upsertPin(@Param("userId") UUID userId, @Param("groupId") UUID groupId, @Param("pinned") boolean pinned);
+    void upsertPin(@Param("userId") Long userId, @Param("groupId") Long groupId, @Param("pinned") boolean pinned);
 
     /** 批量取某用户在一组群中的置顶群 ID（仅 pinned = true 者），一次 IN 查询避免 N+1。 */
     @Select({"<script>",
@@ -29,7 +27,7 @@ public interface UserGroupPreferenceMapper {
             + "(<foreach collection='groupIds' item='gid' separator=','>#{gid}</foreach>)",
             "</script>"})
     @Results({
-            @Result(column = "group_id", property = "groupId", typeHandler = UuidBinaryTypeHandler.class)
+            @Result(column = "group_id", property = "groupId")
     })
-    List<UUID> selectPinnedGroupIds(@Param("userId") UUID userId, @Param("groupIds") List<UUID> groupIds);
+    List<Long> selectPinnedGroupIds(@Param("userId") Long userId, @Param("groupIds") List<Long> groupIds);
 }

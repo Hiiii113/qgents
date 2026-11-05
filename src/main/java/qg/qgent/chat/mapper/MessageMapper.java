@@ -6,10 +6,8 @@ import org.apache.ibatis.annotations.*;
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.mapper.view.GroupLatestMessageRow;
 import qg.qgent.chat.mapper.view.GroupUnreadRow;
-import qg.qgent.common.persistence.typehandler.UuidBinaryTypeHandler;
 
 import java.util.List;
-import java.util.UUID;
 
 /** 群消息数据访问。 */
 @Mapper
@@ -23,7 +21,7 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
      * @return 下一个序号（当前最大值 + 1，空群为 1）
      */
     @Select("select coalesce(max(sequence_no), 0) + 1 from messages where group_id=#{groupId}")
-    Long nextSequence(UUID groupId);
+    Long nextSequence(Long groupId);
 
     /**
      * 按群内消息序号拉取增量消息，返回严格升序结果。
@@ -34,18 +32,16 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
             + "FROM messages WHERE group_id = #{groupId} AND sequence_no > #{afterSequence} "
             + "ORDER BY sequence_no ASC LIMIT #{limit}")
     @Results({
-            @Result(column = "id", property = "id", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "group_id", property = "groupId",
-                    typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "author_user_id", property = "authorUserId", typeHandler = UuidBinaryTypeHandler.class),
+            @Result(column = "id", property = "id"),
+            @Result(column = "group_id", property = "groupId"),
+            @Result(column = "author_user_id", property = "authorUserId"),
             @Result(column = "sender_type", property = "senderType"),
-            @Result(column = "reply_to_message_id", property = "replyToMessageId",
-                    typeHandler = UuidBinaryTypeHandler.class),
+            @Result(column = "reply_to_message_id", property = "replyToMessageId"),
             @Result(column = "message_type", property = "messageType"),
             @Result(column = "content", property = "content"),
             @Result(column = "mentions", property = "mentions")
     })
-    List<MessageEntity> selectAfterSequence(@Param("groupId") UUID groupId,
+    List<MessageEntity> selectAfterSequence(@Param("groupId") Long groupId,
                                              @Param("afterSequence") long afterSequence,
                                              @Param("limit") int limit);
 
@@ -71,14 +67,13 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
             "(<foreach collection='groupIds' item='groupId' separator=','>#{groupId}</foreach>)",
             "</script>"})
     @Results({
-            @Result(column = "group_id", property = "groupId",
-                    typeHandler = UuidBinaryTypeHandler.class),
+            @Result(column = "group_id", property = "groupId"),
             @Result(column = "sender_name", property = "senderName"),
             @Result(column = "text", property = "text"),
             @Result(column = "message_type", property = "messageType"),
             @Result(column = "created_at", property = "createdAt")
     })
-    List<GroupLatestMessageRow> selectLatestByGroupIds(@Param("groupIds") List<UUID> groupIds);
+    List<GroupLatestMessageRow> selectLatestByGroupIds(@Param("groupIds") List<Long> groupIds);
 
     /**
      * 按关键字检索项目内群消息的文本内容。
@@ -103,17 +98,15 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
             "ORDER BY m.sequence_no DESC LIMIT #{limit}",
             "</script>"})
     @Results({
-            @Result(column = "id", property = "id", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "group_id", property = "groupId",
-                    typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "author_user_id", property = "authorUserId", typeHandler = UuidBinaryTypeHandler.class),
+            @Result(column = "id", property = "id"),
+            @Result(column = "group_id", property = "groupId"),
+            @Result(column = "author_user_id", property = "authorUserId"),
             @Result(column = "sender_type", property = "senderType"),
-            @Result(column = "reply_to_message_id", property = "replyToMessageId",
-                    typeHandler = UuidBinaryTypeHandler.class),
+            @Result(column = "reply_to_message_id", property = "replyToMessageId"),
             @Result(column = "message_type", property = "messageType"),
             @Result(column = "content", property = "content")
     })
-    List<MessageEntity> searchByQuery(@Param("projectId") UUID projectId, @Param("groupIds") List<UUID> groupIds,
+    List<MessageEntity> searchByQuery(@Param("projectId") Long projectId, @Param("groupIds") List<Long> groupIds,
                                       @Param("q") String q, @Param("limit") int limit);
 
     /**
@@ -135,23 +128,21 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
             "GROUP BY m.group_id",
             "</script>"})
     @Results({
-            @Result(column = "group_id", property = "groupId",
-                    typeHandler = UuidBinaryTypeHandler.class),
+            @Result(column = "group_id", property = "groupId"),
             @Result(column = "unread", property = "unread")
     })
-    List<GroupUnreadRow> countUnreadByGroupIds(@Param("groupIds") List<UUID> groupIds,
-                                               @Param("userId") UUID userId);
+    List<GroupUnreadRow> countUnreadByGroupIds(@Param("groupIds") List<Long> groupIds,
+                                               @Param("userId") Long userId);
 
     /**
      * 统计当前用户在指定可见群中「@ 我」的未读消息数（排除本人消息）。
      * mentions 为 JSON 数组（如 {@code [{"type":"USER","id":"..."}]}），用 JSON_CONTAINS 匹配
      * {@code {"type":"USER","id":当前用户}}；未读 = sequence_no 大于已读游标。
      * <p>
-     * 注意：mentions 里存的 id 是 Jackson 序列化的字符串 UUID；而 {@code userId} 参数受全局
-     * {@link UuidBinaryTypeHandler} 影响会以 BINARY(16) 绑定，直接 CAST 成乱码，JSON_CONTAINS
-     * 永远匹配不上。因此 JSON 匹配必须使用独立传入的字符串参数 {@code userIdText}。
+     * 注意：mentions 里存的 id 是十进制字符串，而 {@code userId} 是数值参数；JSON_CONTAINS
+     * 不会在字符串与数值之间隐式匹配，因此 JSON 匹配必须使用独立传入的字符串参数 {@code userIdText}。
      * @param groupIds   已确认可见的群 ID
-     * @param userId     当前用户 ID（BINARY(16) 绑定，用于游标/发送者比较）
+     * @param userId     当前用户 ID（用于游标/发送者比较）
      * @param userIdText 当前用户 ID 的字符串形式（JSON 匹配用）
      * @return 群 ID → @ 我的未读消息数
      */
@@ -168,12 +159,11 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
             "GROUP BY m.group_id",
             "</script>"})
     @Results({
-            @Result(column = "group_id", property = "groupId",
-                    typeHandler = UuidBinaryTypeHandler.class),
+            @Result(column = "group_id", property = "groupId"),
             @Result(column = "unread", property = "unread")
     })
-    List<GroupUnreadRow> countMentionUnreadByGroupIds(@Param("groupIds") List<UUID> groupIds,
-                                                      @Param("userId") UUID userId,
+    List<GroupUnreadRow> countMentionUnreadByGroupIds(@Param("groupIds") List<Long> groupIds,
+                                                      @Param("userId") Long userId,
                                                       @Param("userIdText") String userIdText);
 
     /**
@@ -198,5 +188,5 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
             "<foreach collection='groupIds' item='rid' open='(' separator=',' close=')'>#{rid}</foreach> ",
             "and reply_to_message_id is not null) as tmp)",
             "</script>"})
-    int deleteUnreferencedMessages(@Param("groupIds") List<UUID> groupIds);
+    int deleteUnreferencedMessages(@Param("groupIds") List<Long> groupIds);
 }

@@ -1,12 +1,13 @@
 package qg.qgent.chat.service;
 
+import qg.qgent.support.TestIds;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.common.web.ApiException;
 
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -18,20 +19,20 @@ class ChatHistoryServiceTest {
 
     @Test
     void codeAndAttachmentsUseTheirStructuredContent() {
-        UUID group = UUID.randomUUID();
+        Long group = TestIds.next();
         MessageEntity message = new MessageEntity();
-        message.setId(UUID.randomUUID());
+        message.setId(TestIds.next());
         message.setGroupId(group);
         message.setMessageType("CODE");
         message.setContent("{\"language\":\"java\",\"code\":\"return 42;\"}");
         when(messages.selectById(message.getId())).thenReturn(message);
-        assertThat(service.readChatMessage(UUID.randomUUID(), UUID.randomUUID(), group, message.getId()).getText())
+        assertThat(service.readChatMessage(TestIds.next(), TestIds.next(), group, message.getId()).getText())
                 .isEqualTo("return 42;");
 
-        String attachmentId = UUID.randomUUID().toString();
+        String attachmentId = Long.toString(TestIds.next());
         message.setMessageType("IMAGE");
         message.setContent("{\"attachmentId\":\"" + attachmentId + "\",\"mediaType\":\"image/png\"}");
-        var context = service.readChatMessage(UUID.randomUUID(), UUID.randomUUID(), group, message.getId());
+        var context = service.readChatMessage(TestIds.next(), TestIds.next(), group, message.getId());
         assertThat(context.getAttachmentId()).isEqualTo(attachmentId);
         assertThat(context.getMediaType()).isEqualTo("image/png");
         assertThat(context.getText()).isEmpty();
@@ -39,8 +40,8 @@ class ChatHistoryServiceTest {
 
     @Test
     void readingMessagePreservesFullBodyAndReplyRelationship() {
-        UUID actor = UUID.randomUUID(), project = UUID.randomUUID(), group = UUID.randomUUID();
-        UUID id = UUID.randomUUID(), original = UUID.randomUUID();
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next();
+        Long id = TestIds.next(), original = TestIds.next();
         MessageEntity message = new MessageEntity();
         message.setId(id);
         message.setGroupId(group);
@@ -57,11 +58,11 @@ class ChatHistoryServiceTest {
 
     @Test
     void messageFromAnotherGroupIsNotReturned() {
-        UUID id = UUID.randomUUID();
+        Long id = TestIds.next();
         MessageEntity message = new MessageEntity();
-        message.setGroupId(UUID.randomUUID());
+        message.setGroupId(TestIds.next());
         when(messages.selectById(id)).thenReturn(message);
-        assertThatThrownBy(() -> service.readChatMessage(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), id))
+        assertThatThrownBy(() -> service.readChatMessage(TestIds.next(), TestIds.next(), TestIds.next(), id))
                 .isInstanceOf(ApiException.class);
     }
 }

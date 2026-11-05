@@ -1,5 +1,7 @@
 package qg.qgent.user.storage;
 
+import qg.qgent.support.TestIds;
+
 import com.aliyun.oss.OSS;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.ObjectProvider;
@@ -9,7 +11,6 @@ import qg.qgent.attachment.config.AliyunOssProperties;
 import qg.qgent.common.web.ApiException;
 
 import java.net.URL;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -55,7 +56,7 @@ class AvatarStorageServiceTest {
 
     @Test
     void credentialThrows501WhenOssDisabled() {
-        assertThatThrownBy(() -> disabled().createCredential(UUID.randomUUID(), "image/png", 1000L))
+        assertThatThrownBy(() -> disabled().createCredential(TestIds.next(), "image/png", 1000L))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> {
                     ApiException ex = (ApiException) e;
@@ -66,14 +67,14 @@ class AvatarStorageServiceTest {
 
     @Test
     void credentialRejectsNonImageMediaType() {
-        assertThatThrownBy(() -> enabled().createCredential(UUID.randomUUID(), "text/plain", 1000L))
+        assertThatThrownBy(() -> enabled().createCredential(TestIds.next(), "text/plain", 1000L))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("AVATAR_MEDIA_TYPE_REJECTED"));
     }
 
     @Test
     void credentialRejectsOversized() {
-        assertThatThrownBy(() -> enabled().createCredential(UUID.randomUUID(), "image/png",
+        assertThatThrownBy(() -> enabled().createCredential(TestIds.next(), "image/png",
                 AvatarStorageService.MAX_SIZE_BYTES + 1))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).status()).isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE));
@@ -81,7 +82,7 @@ class AvatarStorageServiceTest {
 
     @Test
     void credentialGeneratesServerSideOwnPrefixObjectKey() throws Exception {
-        UUID userId = UUID.randomUUID();
+        Long userId = TestIds.next();
         when(oss.generatePresignedUrl(eq("my-bucket"), any(String.class), any(java.util.Date.class), any()))
                 .thenReturn(new URL("https://put-url"));
         AvatarStorageService.AvatarCredential credential =
@@ -106,7 +107,7 @@ class AvatarStorageServiceTest {
 
     @Test
     void credentialThrows501WhenPublicBaseUrlMissing() {
-        assertThatThrownBy(() -> enabledWithoutPublicUrl().createCredential(UUID.randomUUID(), "image/png", 1000L))
+        assertThatThrownBy(() -> enabledWithoutPublicUrl().createCredential(TestIds.next(), "image/png", 1000L))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> {
                     ApiException ex = (ApiException) e;

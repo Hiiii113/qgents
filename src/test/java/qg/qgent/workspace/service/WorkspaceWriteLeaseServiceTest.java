@@ -1,12 +1,13 @@
 package qg.qgent.workspace.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
 import qg.qgent.common.web.ApiException;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
 
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -23,7 +24,7 @@ class WorkspaceWriteLeaseServiceTest {
     @Test
     void acquireReturnsOpaqueTokenOnlyAfterDatabaseCasWins() {
         WorkspaceMapper mapper = mock(WorkspaceMapper.class);
-        UUID projectId = UUID.randomUUID(), workspaceId = UUID.randomUUID(), agentRunId = UUID.randomUUID();
+        Long projectId = TestIds.next(), workspaceId = TestIds.next(), agentRunId = TestIds.next();
         when(mapper.claimWriteLease(eq(projectId), eq(workspaceId), eq(agentRunId), any())).thenReturn(1);
 
         WorkspaceWriteLeaseService service = new WorkspaceWriteLeaseService(mapper);
@@ -41,7 +42,7 @@ class WorkspaceWriteLeaseServiceTest {
         when(mapper.claimWriteLease(any(), any(), any(), any())).thenReturn(0);
 
         ApiException error = assertThrows(ApiException.class, () -> new WorkspaceWriteLeaseService(mapper)
-                .acquire(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID()));
+                .acquire(TestIds.next(), TestIds.next(), TestIds.next()));
 
         assertEquals(HttpStatus.CONFLICT, error.status());
         assertEquals("WORKSPACE_WRITE_LEASE_HELD", error.code());
@@ -50,7 +51,7 @@ class WorkspaceWriteLeaseServiceTest {
     @Test
     void renewalOrReleaseCanOnlyUseTheOwningToken() {
         WorkspaceMapper mapper = mock(WorkspaceMapper.class);
-        UUID projectId = UUID.randomUUID(), workspaceId = UUID.randomUUID(), agentRunId = UUID.randomUUID();
+        Long projectId = TestIds.next(), workspaceId = TestIds.next(), agentRunId = TestIds.next();
         WorkspaceWriteLease lease = new WorkspaceWriteLease(projectId, workspaceId, agentRunId, "lease-token");
         when(mapper.renewWriteLease(projectId, workspaceId, agentRunId, "lease-token")).thenReturn(0);
         WorkspaceWriteLeaseService service = new WorkspaceWriteLeaseService(mapper);

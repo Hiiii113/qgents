@@ -1,5 +1,7 @@
 package qg.qgent.memory.tool;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.http.HttpStatus;
@@ -12,7 +14,6 @@ import qg.qgent.memory.service.MemoryService;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,8 +25,8 @@ import static org.mockito.Mockito.when;
 
 class MemoryToolsTest {
     private final MemoryService memories = mock(MemoryService.class);
-    private final UUID actor = UUID.randomUUID();
-    private final UUID projectId = UUID.randomUUID();
+    private final Long actor = TestIds.next();
+    private final Long projectId = TestIds.next();
 
     @Test
     void listsRelevantMemorySummariesWithinTheToolInputBudget() {
@@ -54,7 +55,7 @@ class MemoryToolsTest {
 
     @Test
     void readsARequestedWindowFromMemoryVisibleToTheTriggeringUser() {
-        UUID memoryId = UUID.randomUUID();
+        Long memoryId = TestIds.next();
         when(memories.get(actor, projectId, memoryId)).thenReturn(memory("History", "0123456789"));
         MemoryTools tools = new MemoryTools(memories, actor, projectId);
 
@@ -93,7 +94,7 @@ class MemoryToolsTest {
 
     @Test
     void updatesAndRunsExistingStateActionsThroughMemoryService() {
-        UUID memoryId = UUID.randomUUID();
+        Long memoryId = TestIds.next();
         MemoryResponse pending = memory("Decision", "Updated body");
         pending.setStatus("PENDING_REVIEW");
         MemoryResponse approved = memory("Decision", "Updated body");
@@ -138,7 +139,7 @@ class MemoryToolsTest {
 
     @Test
     void returnsTheExistingServiceRestrictionWhenAnApprovedMemoryCannotBeEdited() {
-        UUID memoryId = UUID.randomUUID();
+        Long memoryId = TestIds.next();
         when(memories.update(eq(actor), eq(projectId), eq(memoryId), any(MemoryUpdateRequest.class)))
                 .thenThrow(new ApiException(HttpStatus.CONFLICT, "MEMORY_STATE_CONFLICT",
                         "Memory 当前状态不允许该操作: APPROVED"));
@@ -157,7 +158,7 @@ class MemoryToolsTest {
     }
 
     private MemoryResponse memory(String title, String content) {
-        return new MemoryResponse(UUID.randomUUID().toString(), projectId.toString(), title, content,
+        return new MemoryResponse(Long.toString(TestIds.next()), projectId.toString(), title, content,
                 "ENGINEERING_DECISION", List.of("architecture"), "APPROVED", null, null, null, null, null);
     }
 }

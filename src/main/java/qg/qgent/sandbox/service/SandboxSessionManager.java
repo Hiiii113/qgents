@@ -3,7 +3,7 @@ package qg.qgent.sandbox.service;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import qg.qgent.common.util.UuidV7;
+import java.util.UUID;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.sandbox.execution.service.ToolExecutionService;
 import qg.qgent.workspace.service.WorkspaceStorageService;
@@ -32,9 +32,9 @@ public class SandboxSessionManager {
     private final SandboxProperties properties;
     private final WorkspaceMapper workspaceMapper;
     private final WorkspaceWriteLeaseService writeLeases;
-    private final Map<UUID, SandboxSession> sessions = new ConcurrentHashMap<>();
-    private final Map<UUID, ReentrantLock> acquireLocks = new ConcurrentHashMap<>();
-    private final Map<UUID, WorkspaceWriteLease> workspaceLeases = new ConcurrentHashMap<>();
+    private final Map<Long, SandboxSession> sessions = new ConcurrentHashMap<>();
+    private final Map<Long, ReentrantLock> acquireLocks = new ConcurrentHashMap<>();
+    private final Map<Long, WorkspaceWriteLease> workspaceLeases = new ConcurrentHashMap<>();
 
     public SandboxSessionManager(SandboxService sandboxes, WorkspaceStorageService storage,
                                  ToolExecutionService executions, SandboxProperties properties,
@@ -48,7 +48,7 @@ public class SandboxSessionManager {
     }
 
     /** 为根 AgentRun 准备指定工作区的沙箱会话；同一持有者复用已有会话。 */
-    public SandboxSession acquire(UUID agentRunId, UUID projectId, UUID workspaceId) {
+    public SandboxSession acquire(Long agentRunId, Long projectId, Long workspaceId) {
         ReentrantLock acquireLock = acquireLocks.computeIfAbsent(workspaceId, ignored -> new ReentrantLock());
         // 初始化或释放已由其他线程处理时返回冲突，避免等待 沙箱初始化。
         if (!acquireLock.tryLock()) {
@@ -81,7 +81,7 @@ public class SandboxSessionManager {
     }
 
     /** 返回指定 Workspace 的当前会话；不存在时抛错，供 Sandbox 工具在调用工具前断言。 */
-    public SandboxSession require(UUID workspaceId) {
+    public SandboxSession require(Long workspaceId) {
         SandboxSession session = sessions.get(workspaceId);
         if (session == null) {
             throw new IllegalStateException("no sandbox session for workspace " + workspaceId);
@@ -90,17 +90,17 @@ public class SandboxSessionManager {
     }
 
     /** Stops only commands recorded against the given AgentRun and waits for their worker bodies to exit. */
-    public void stopExecutionsByAgentRun(UUID agentRunId) {
+    public void stopExecutionsByAgentRun(Long agentRunId) {
         if (agentRunId != null) executions.stopAndAwaitByAgentRun(agentRunId);
     }
 
     /** Requests cancellation for one AgentRun without blocking its caller on command completion. */
-    public void cancelExecutionsByAgentRun(UUID agentRunId) {
+    public void cancelExecutionsByAgentRun(Long agentRunId) {
         if (agentRunId != null) executions.cancelByAgentRun(agentRunId);
     }
 
     /** 销毁会话对应的 Sandbox 并移除记录；Workspace 保留。销毁失败交给 Sandbox 后续清理，不阻断执行收尾。 */
-    public void release(UUID workspaceId, UUID agentRunId) {
+    public void release(Long workspaceId, Long agentRunId) {
         if (workspaceId == null || agentRunId == null) {
             return;
         }
@@ -144,7 +144,7 @@ public class SandboxSessionManager {
      * 每次 Sandbox 工具提交前验证并续租持久化写入权。租约已丢失时不能再向同一 Workspace
      * 发起命令、文件写入或测试，避免过期 AgentRun 与后来者并发修改文件。
      */
-    void renewWriteLease(UUID workspaceId) {
+    void renewWriteLease(Long workspaceId) {
         WorkspaceWriteLease lease = workspaceLeases.get(workspaceId);
         SandboxSession session = sessions.get(workspaceId);
         if (lease == null || session == null || !session.agentRunId().equals(lease.getAgentRunId())) {
@@ -174,15 +174,15 @@ public class SandboxSessionManager {
         });
     }
 
-    private SandboxSession doAcquire(UUID agentRunId, UUID projectId, UUID workspaceId) {
+    private SandboxSession doAcquire(Long agentRunId, Long projectId, Long workspaceId) {
         WorkspaceEntity workspace = workspaceMapper.selectById(workspaceId);
         if (workspace == null || !projectId.equals(workspace.getProjectId()))
             throw new IllegalArgumentException("工作区不存在");
         WorkspaceProvisionRequest provision = new WorkspaceProvisionRequest();
         provision.setProjectId(projectId);
-        WorkspaceResponse ready = storage.provision(workspaceId, provision);
+        WorkspaceResponse ready = storage.provision(workspaceId, workspace.getStorageKey(), provision);
         CreateSandboxRequest request = new CreateSandboxRequest();
-        request.setSandboxId(UuidV7.next());
+        request.setSandboxId(UUID.randomUUID());
         request.setAgentRunId(agentRunId);
         request.setWorkspaceStorageKey(ready.getStorageKey());
         request.setImageProfile(properties.getImageProfile());

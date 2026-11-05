@@ -7,7 +7,6 @@ import org.springframework.stereotype.Service;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
 
-import java.util.UUID;
 
 /** Sandbox 工作区的写入租约：领取、续租和释放均通过数据库条件更新完成。 */
 @Service
@@ -16,12 +15,12 @@ public class WorkspaceWriteLeaseService {
     private final WorkspaceMapper workspaces;
 
     /** 领取一把新的写入租约。若另一个 AgentRun 正在写入，返回稳定冲突码而不修改对方状态。 */
-    public WorkspaceWriteLease acquire(UUID projectId, UUID workspaceId, UUID agentRunId) {
+    public WorkspaceWriteLease acquire(Long projectId, Long workspaceId, Long agentRunId) {
         if (projectId == null || workspaceId == null || agentRunId == null) {
             throw new ApiException(HttpStatus.CONFLICT, "WORKSPACE_WRITE_LEASE_CONTEXT_INVALID",
                     "Workspace write lease context is incomplete");
         }
-        String token = UUID.randomUUID().toString();
+        String token = java.util.UUID.randomUUID().toString();
         if (workspaces.claimWriteLease(projectId, workspaceId, agentRunId, token) != 1) {
             throw new ApiException(HttpStatus.CONFLICT, "WORKSPACE_WRITE_LEASE_HELD",
                     "Workspace is currently being modified by another AgentRun");

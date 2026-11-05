@@ -27,7 +27,6 @@ import java.security.interfaces.RSAPrivateCrtKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.RSAPublicKeySpec;
 import java.util.Base64;
-import java.util.UUID;
 import javax.crypto.Cipher;
 
 @org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable(named = "QGENTS_INTEGRATION_TESTS", matches = "true")
@@ -76,12 +75,9 @@ public class FixedAccountAuthIntegrationTest {
         // 注册现在需要邮箱验证码：直接向验证码表插入一条已知验证码（模拟邮件已发送），再带码注册。
         String testCode = "123456";
         byte[] codeHash = java.security.MessageDigest.getInstance("SHA-256").digest(testCode.getBytes(StandardCharsets.UTF_8));
-        UUID codeIdUuid = UUID.randomUUID();
-        byte[] codeIdBytes = new byte[16];
-        java.nio.ByteBuffer.wrap(codeIdBytes).putLong(codeIdUuid.getMostSignificantBits()).putLong(codeIdUuid.getLeastSignificantBits());
         jdbcTemplate.update("DELETE FROM email_verification_codes WHERE email = ?", fixedEmail);
-        jdbcTemplate.update("INSERT INTO email_verification_codes (id, email, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
-                codeIdBytes, fixedEmail, codeHash,
+        jdbcTemplate.update("INSERT INTO email_verification_codes (email, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?)",
+                fixedEmail, codeHash,
                 java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).plusMinutes(10),
                 java.time.LocalDateTime.now(java.time.ZoneOffset.UTC));
 
@@ -118,34 +114,26 @@ public class FixedAccountAuthIntegrationTest {
         AuthTokensResponse loginTokens = objectMapper.treeToValue(loginRoot.get("data"), AuthTokensResponse.class);
 
         // 4. 为该固定账号检查并创建团队
-        byte[] userIdBytes = jdbcTemplate.queryForObject("SELECT id FROM users WHERE email = ?", byte[].class, fixedEmail);
-        Assertions.assertNotNull(userIdBytes, "用户应该存在");
+        Long userId = jdbcTemplate.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, fixedEmail);
+        Assertions.assertNotNull(userId, "用户应该存在");
 
-        byte[] teamIdBytes = null;
+        Long teamId;
         try {
-            teamIdBytes = jdbcTemplate.queryForObject("SELECT team_id FROM team_members WHERE user_id = ? LIMIT 1", byte[].class, userIdBytes);
+            teamId = jdbcTemplate.queryForObject("SELECT team_id FROM team_members WHERE user_id = ? LIMIT 1",
+                    Long.class, userId);
         } catch (org.springframework.dao.EmptyResultDataAccessException e) {
             // 没有团队，创建一个
-            UUID newTeamUuid = UUID.randomUUID();
-            teamIdBytes = new byte[16];
-            java.nio.ByteBuffer.wrap(teamIdBytes)
-                    .putLong(newTeamUuid.getMostSignificantBits())
-                    .putLong(newTeamUuid.getLeastSignificantBits());
-
-            jdbcTemplate.update("INSERT INTO teams (id, owner_user_id, name) VALUES (?, ?, ?)",
-                    teamIdBytes, userIdBytes, "Fixed Dev Team");
+            jdbcTemplate.update("INSERT INTO teams (owner_user_id, name) VALUES (?, ?)", userId, "Fixed Dev Team");
+            teamId = jdbcTemplate.queryForObject("SELECT id FROM teams WHERE owner_user_id = ? ORDER BY id DESC LIMIT 1",
+                    Long.class, userId);
             jdbcTemplate.update("INSERT INTO team_members (team_id, user_id, role) VALUES (?, ?, ?)",
-                    teamIdBytes, userIdBytes, "TEAM_OWNER");
+                    teamId, userId, "TEAM_OWNER");
         }
-
-        // 还原 UUID 以打印
-        java.nio.ByteBuffer bb = java.nio.ByteBuffer.wrap(teamIdBytes);
-        UUID teamUuid = new UUID(bb.getLong(), bb.getLong());
 
         System.out.println("\n\n=======================================================");
         System.out.println("🚀🚀🚀 [开发环境固定账号] 登录成功！用于 Apifox 测试：");
         System.out.println("-------------------------------------------------------");
-        System.out.println("团队 UUID (teamId): " + teamUuid);
+        System.out.println("团队 ID (teamId): " + teamId);
         System.out.println("-------------------------------------------------------");
         System.out.println("认证验证完成；敏感账号与 Token 不写入测试日志。");
         System.out.println("=======================================================\n\n");

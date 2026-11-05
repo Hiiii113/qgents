@@ -13,7 +13,6 @@ import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
 import qg.qgent.user.storage.AvatarStorageService;
 
-import java.util.UUID;
 
 /** 确认上传后保存用户头像 URL 和对象键，并尝试删除旧头像。 */
 @Service
@@ -24,7 +23,7 @@ public class AvatarService {
     private final AvatarStorageService storage;
 
     /** 为当前用户签发头像直传凭证。 */
-    public AvatarCredentialResponse credential(UUID userId, String mediaType, Long sizeBytes) {
+    public AvatarCredentialResponse credential(Long userId, String mediaType, Long sizeBytes) {
         AvatarStorageService.AvatarCredential credential = storage.createCredential(userId, mediaType, sizeBytes);
         return new AvatarCredentialResponse(credential.objectKey(), credential.credential().getUploadUrl(),
                 credential.credential().getMethod(), credential.credential().getHeaders(),
@@ -33,7 +32,7 @@ public class AvatarService {
 
     /** 确认头像上传并落库：校验对象属于当前用户、已真实上传，切换当前头像并尽力删除旧对象。 */
     @Transactional
-    public AvatarConfirmResponse confirm(UUID userId, AvatarConfirmRequest body) {
+    public AvatarConfirmResponse confirm(Long userId, AvatarConfirmRequest body) {
         String objectKey = body.getObjectKey();
         requireOwnObject(userId, objectKey);
         UserEntity user = userMapper.selectById(userId);
@@ -53,7 +52,7 @@ public class AvatarService {
     }
 
     /** 校验对象键必须属于当前用户自己的头像前缀，防止客户端用他人对象键覆盖他人头像。 */
-    private void requireOwnObject(UUID userId, String objectKey) {
+    private void requireOwnObject(Long userId, String objectKey) {
         String ownedPrefix = "avatars/" + userId + "/";
         if (objectKey == null || !objectKey.startsWith(ownedPrefix)) {
             throw new ApiException(HttpStatus.FORBIDDEN, "AVATAR_OBJECT_KEY_FORBIDDEN",

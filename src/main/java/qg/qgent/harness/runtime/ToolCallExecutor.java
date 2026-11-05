@@ -13,7 +13,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorCompletionService;
 import java.util.concurrent.ExecutorService;
@@ -34,7 +33,7 @@ final class ToolCallExecutor {
 
     Result execute(List<ToolCall> calls, Map<String, ToolCallback> callbacks, BooleanSupplier cancelled) {
         List<ToolResponse> results = new ArrayList<>(Collections.nCopies(calls.size(), null));
-        UUID runId = SandboxExecutionContext.currentAgentRunId();
+        Long runId = SandboxExecutionContext.currentAgentRunId();
         Map<String, String> context = MDC.getCopyOfContextMap();
         try (ExecutorService pool = Executors.newFixedThreadPool(maxParallel,
                 Thread.ofVirtual().name("agent-tool-", 0).factory())) {
@@ -57,7 +56,7 @@ final class ToolCallExecutor {
 
     private boolean parallel(ExecutorService pool, List<ToolCall> calls, Map<String, ToolCallback> callbacks,
             int start, int end, List<ToolResponse> results, BooleanSupplier cancelled,
-            UUID runId, Map<String, String> context) {
+            Long runId, Map<String, String> context) {
         var completed = new ExecutorCompletionService<CompletedCall>(pool);
         int next = start, active = 0;
         boolean stopped = false;
@@ -66,7 +65,7 @@ final class ToolCallExecutor {
             while (!stopped && next < end && active < maxParallel) {
                 int index = next++;
                 completed.submit(() -> {
-                    UUID previousRun = SandboxExecutionContext.currentAgentRunId();
+                    Long previousRun = SandboxExecutionContext.currentAgentRunId();
                     Map<String, String> previousContext = MDC.getCopyOfContextMap();
                     SandboxExecutionContext.set(runId);
                     setMdc(context);

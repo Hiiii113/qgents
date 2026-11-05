@@ -6,23 +6,22 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 /** 项目中的持久化工作目录，目录内的文件和仓库由 Agent 管理。 */
 @Data
 @TableName("workspaces")
 public class WorkspaceEntity {
     // 工作区 ID。
-    @TableId(type = IdType.INPUT)
-    private UUID id;
+    @TableId(type = IdType.AUTO)
+    private Long id;
     // 所属项目。
-    private UUID projectId;
+    private Long projectId;
     // 工作区存储相对路径。
     private String storageKey;
     // 准备状态：创建时为 PROVISIONING，Sandbox 准备完成后为 READY。
     private String status;
     // 当前持有写入租约的根 AgentRun，不代表工作区的归属。
-    private UUID writeLeaseAgentRunId;
+    private Long writeLeaseAgentRunId;
     // 续租和释放时匹配的随机令牌。
     private String writeLeaseToken;
     // 租约过期时间（UTC）；每次 Sandbox 工具调用前续租。

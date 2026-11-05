@@ -9,22 +9,21 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.UUID;
 
 /** 项目 Skill 的内容、可见范围和审核状态；已发布正文由 Agent 通过 activate_skill 按需读取。 */
 @Data
 @TableName(value = "skills", autoResultMap = true)
 public class SkillEntity {
 
-    // Skill ID（UUIDv7，BINARY(16)）。
-    @TableId(type = IdType.INPUT)
-    private UUID id;
+    // Skill ID。
+    @TableId(type = IdType.AUTO)
+    private Long id;
 
-    // 所属项目 ID（UUIDv7，BINARY(16)）。
-    private UUID projectId;
+    // 所属项目 ID。
+    private Long projectId;
 
-    // 创建用户 ID（UUIDv7，BINARY(16)）。
-    private UUID createdBy;
+    // 创建用户 ID。
+    private Long createdBy;
 
     // Skill 名称。
     private String name;
@@ -44,14 +43,14 @@ public class SkillEntity {
     // 状态枚举：DRAFT / PENDING_REVIEW / PUBLISHED / REJECTED / ARCHIVED。
     private String status;
 
-    // 最近提交审核用户 ID（UUIDv7，BINARY(16)）；从未提交审核时为空。
-    private UUID submittedBy;
+    // 最近提交审核用户 ID；从未提交审核时为空。
+    private Long submittedBy;
 
     // 最近提交审核时间（UTC）；从未提交审核时为空。
     private LocalDateTime submittedAt;
 
-    // 最近审核用户 ID（UUIDv7，BINARY(16)）；可为空。
-    private UUID reviewerId;
+    // 最近审核用户 ID；可为空。
+    private Long reviewerId;
 
     // 最近驳回原因；可为空。
     private String rejectionReason;

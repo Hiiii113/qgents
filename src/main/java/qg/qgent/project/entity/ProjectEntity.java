@@ -7,16 +7,15 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
-import java.util.UUID;
 
 @Data
 @TableName(value = "projects", autoResultMap = true)
 public class ProjectEntity {
     private Boolean githubEnabled = true;
-    @TableId(type = IdType.INPUT)
-    private UUID id;
-    private UUID teamId;
-    private UUID createdBy;
+    @TableId(type = IdType.AUTO)
+    private Long id;
+    private Long teamId;
+    private Long createdBy;
     private String name;
     private String description;
     // 项目头像 URL（OSS 公共读长期地址，可为空；确认上传后通过修改项目接口保存）。

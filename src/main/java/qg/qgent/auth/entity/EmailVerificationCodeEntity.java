@@ -6,7 +6,6 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 /**
  * 注册邮箱验证码记录：注册前向邮箱发送 6 位数字验证码，注册时校验通过才创建账号。
@@ -15,8 +14,8 @@ import java.util.UUID;
 @Data
 @TableName("email_verification_codes")
 public class EmailVerificationCodeEntity {
-    @TableId(type = IdType.INPUT)
-    private UUID id;
+    @TableId(type = IdType.AUTO)
+    private Long id;
     // 归一化邮箱（小写）。
     private String email;
     // 验证码 SHA-256 哈希，禁止存储明文。

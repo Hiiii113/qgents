@@ -42,7 +42,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -107,7 +106,7 @@ public class AgentChatService {
             sessions.cancelExecutionsByAgentRun(root.getId());
             if (Thread.currentThread() != rootWorker) rootWorker.interrupt();
         });
-        UUID previousRunId = SandboxExecutionContext.currentAgentRunId();
+        Long previousRunId = SandboxExecutionContext.currentAgentRunId();
         SandboxExecutionContext.set(root.getId());
         String status = "FAILED";
         String resultText = "Agent 执行失败，请稍后重试";
@@ -183,7 +182,7 @@ public class AgentChatService {
             finishChild(work, child, "CANCELLED", "子 Agent 已停止", 0);
             return;
         }
-        UUID previousRunId = SandboxExecutionContext.currentAgentRunId();
+        Long previousRunId = SandboxExecutionContext.currentAgentRunId();
         SandboxExecutionContext.set(child.run.getId());
         int totalRounds = 0;
         try {
@@ -265,10 +264,10 @@ public class AgentChatService {
         });
     }
 
-    private UUID ensureCodeEnvironment(WorkContext work, WorkContext.AgentExecution execution) {
+    private Long ensureCodeEnvironment(WorkContext work, WorkContext.AgentExecution execution) {
         synchronized (work.environmentLock) {
             if (work.isCancelled() || execution.isStopRequested()) throw new IllegalStateException("Agent 运行已取消");
-            UUID workspaceId = execution.workspace.workspaceId();
+            Long workspaceId = execution.workspace.workspaceId();
             if (workspaceId == null) {
                 if (work.defaultWorkspaceId == null) {
                     work.defaultWorkspaceId = workspaces.create(work.event.projectId()).getId();
@@ -313,8 +312,8 @@ public class AgentChatService {
         return "Agent 执行失败：" + (message == null || message.isBlank() ? "请稍后重试" : message);
     }
 
-    private UUID requiredRunId(String value) {
-        try { return UUID.fromString(value == null ? "" : value); }
+    private Long requiredId(String value) {
+        try { return Long.valueOf(value == null ? "" : value); }
         catch (IllegalArgumentException exception) { throw new IllegalArgumentException("子 Agent runId 无效"); }
     }
 
@@ -367,13 +366,13 @@ public class AgentChatService {
         @Tool(name = "start_subagent", description = "后台启动一个独立子 Agent 并立即返回 runId。仅主 Qgent 可调用；说明明确任务、修改范围、必要背景和期望结果。")
         public Map<String, Object> startSubagent(
                 @ToolParam(description = "子任务和必要背景") String instruction,
-                @ToolParam(description = "可选初始 Workspace UUID；未提供时继承当前选择", required = false) String workspaceId,
+                @ToolParam(description = "可选初始 Workspace ID；未提供时继承当前选择", required = false) String workspaceId,
                 @ToolParam(description = "可选初始工作目录；未提供时继承当前目录", required = false) String directory) {
             if (!canDelegate) return error("子 Agent 不允许继续委派");
             if (instruction == null || instruction.isBlank()) return error("子任务内容不能为空");
             if (!work.hasChildCapacity(maxSubagents)) return error("同时运行的子 Agent 已达到上限，请等待或复用现有子对话");
-            UUID selected = workspaceId == null || workspaceId.isBlank() ? execution.workspace.workspaceId()
-                    : workspaces.require(work.event.projectId(), requiredRunId(workspaceId)).getId();
+            Long selected = workspaceId == null || workspaceId.isBlank() ? execution.workspace.workspaceId()
+                    : workspaces.require(work.event.projectId(), requiredId(workspaceId)).getId();
             String childDirectory = directory == null || directory.isBlank() ? execution.workspace.directory()
                     : WorkspaceSelection.resolveDirectory(".", directory);
             AgentRunEntity run = runService.startChild(execution.run, instruction, selected);
@@ -436,9 +435,9 @@ public class AgentChatService {
         }
 
         @Tool(name = "cancel_agent", description = "停止指定聊天消息启动的整次 Qgent 根运行；取消会传播给所属子 Agent。")
-        public Map<String, Object> cancelAgent(@ToolParam(description = "触发执行的用户消息 UUID") String messageId) {
+        public Map<String, Object> cancelAgent(@ToolParam(description = "触发执行的用户消息 ID") String messageId) {
             int cancelled = runService.cancel(work.event.actor(), work.event.projectId(), work.event.groupId(),
-                    requiredRunId(messageId));
+                    requiredId(messageId));
             return Map.of("ok", true, "cancelledRuns", cancelled);
         }
 
@@ -476,7 +475,7 @@ public class AgentChatService {
         }
 
         private WorkContext.AgentExecution child(String runId) {
-            WorkContext.AgentExecution child = work.children.get(requiredRunId(runId));
+            WorkContext.AgentExecution child = work.children.get(requiredId(runId));
             if (child == null) throw new IllegalArgumentException("该子 Agent 不属于当前根运行");
             return child;
         }
@@ -486,8 +485,8 @@ public class AgentChatService {
                     "result", child.run.getResult() == null ? "" : child.run.getResult(), "waiting", waiting);
         }
 
-        private UUID requireCodeEnvironment() {
-            UUID workspace = execution.workspace.workspaceId();
+        private Long requireCodeEnvironment() {
+            Long workspace = execution.workspace.workspaceId();
             if (workspace == null || !work.openedWorkspaces.contains(workspace))
                 throw new IllegalArgumentException("请先通过代码工具或 run_command 初始化当前 Workspace");
             return ensureCodeEnvironment(work, execution);

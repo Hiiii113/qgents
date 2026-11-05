@@ -14,7 +14,6 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
@@ -28,10 +27,10 @@ public class GitHubTools {
     private final Function<String, String> credential;
     private final Supplier<?> repositories;
     private final WorkspaceCommands commands;
-    private final Supplier<UUID> workspace;
+    private final Supplier<Long> workspace;
 
     public GitHubTools(RestClient http, Function<String, String> credential, WorkspaceCommands commands,
-                       Supplier<UUID> workspace, Supplier<?> repositories) {
+                       Supplier<Long> workspace, Supplier<?> repositories) {
         this.http = http;
         this.credential = credential;
         this.repositories = repositories;

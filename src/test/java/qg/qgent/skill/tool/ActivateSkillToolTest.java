@@ -1,5 +1,7 @@
 package qg.qgent.skill.tool;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.support.ToolCallbacks;
 
@@ -7,7 +9,6 @@ import qg.qgent.skill.service.SkillService;
 import qg.qgent.skill.entity.SkillEntity;
 
 import java.util.Map;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -20,12 +21,12 @@ import static org.mockito.Mockito.when;
 class ActivateSkillToolTest {
 
     private final SkillService contextService = mock(SkillService.class);
-    private final UUID actor = UUID.randomUUID();
-    private final UUID projectId = UUID.randomUUID();
+    private final Long actor = TestIds.next();
+    private final Long projectId = TestIds.next();
 
     @Test
     void exposesNativeToolAndReturnsOnlyExplicitlyActivatedBody() {
-        UUID skillId = UUID.randomUUID();
+        Long skillId = TestIds.next();
         SkillEntity skill = new SkillEntity();
         skill.setName("database-migration");
         skill.setContent("完整迁移规范");
@@ -41,7 +42,7 @@ class ActivateSkillToolTest {
 
     @Test
     void repeatedActivationDoesNotUseAnotherBudgetOrReadAgain() {
-        UUID skillId = UUID.randomUUID();
+        Long skillId = TestIds.next();
         SkillEntity skill = new SkillEntity();
         skill.setName("migration");
         skill.setContent("body");
@@ -60,14 +61,14 @@ class ActivateSkillToolTest {
     void sixthDifferentSkillIsRejectedWithoutServiceCall() {
         ActivateSkillTool tool = new ActivateSkillTool(contextService, actor, projectId);
         for (int index = 0; index < 5; index++) {
-            UUID skillId = UUID.randomUUID();
+            Long skillId = TestIds.next();
             SkillEntity skill = new SkillEntity();
             skill.setName("skill-" + index);
             when(contextService.activateSkill(actor, projectId, skillId)).thenReturn(skill);
             assertThat(tool.activateSkill(skillId.toString())).containsEntry("ok", true);
         }
 
-        assertThat(tool.activateSkill(UUID.randomUUID().toString())).containsEntry("ok", false)
+        assertThat(tool.activateSkill(Long.toString(TestIds.next()))).containsEntry("ok", false)
                 .containsEntry("error", "activate_skill 激活预算已用尽（已激活 5/5 个不同 Skill），请基于当前上下文继续");
         verify(contextService, times(5)).activateSkill(eq(actor), eq(projectId), any());
     }

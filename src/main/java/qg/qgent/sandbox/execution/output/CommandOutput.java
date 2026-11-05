@@ -12,12 +12,11 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.UUID;
 
 /** 统一命令输出的流式保存、有界脱敏保存和读取窗口；输出位于工作区旁侧目录。 */
 public final class CommandOutput {
     private CommandOutput() { }
-    public static Path directory(Path workspace, UUID id) {
+    public static Path directory(Path workspace, Long id) {
         return workspace.getParent().resolve(".qgents-output").resolve(workspace.getFileName()).resolve(id.toString());
     }
 

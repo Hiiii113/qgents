@@ -7,7 +7,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.config.PushProperties;
 import qg.qgent.notification.dto.PushDeviceRegistrationRequest;
@@ -22,7 +21,6 @@ import qg.qgent.notification.mapper.PushDeviceMapper;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.UUID;
 
 /** 手机设备注册和推送队列调度；设备凭证加密保存，发送失败按配置重试。 */
 @Service
@@ -37,7 +35,7 @@ public class PushNotificationService {
 
     /** 注册或刷新一个安装实例；相同用户与 installationId 重试只更新同一行。 */
     @Transactional
-    public PushDeviceResponse register(UUID userId, PushDeviceRegistrationRequest request) {
+    public PushDeviceResponse register(Long userId, PushDeviceRegistrationRequest request) {
         if (!properties.deliveryConfigured()) {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "PUSH_NOT_CONFIGURED", "离线推送服务尚未配置");
         }
@@ -47,7 +45,6 @@ public class PushNotificationService {
         boolean newDevice = device == null;
         if (newDevice) {
             device = new PushDeviceEntity();
-            device.setId(UuidV7.next());
             device.setUserId(userId);
             device.setInstallationId(installationId);
             device.setProvider("FCM");
@@ -70,7 +67,7 @@ public class PushNotificationService {
 
     /** 注销安装实例；重复注销不报错。 */
     @Transactional
-    public void unregister(UUID userId, String installationId) {
+    public void unregister(Long userId, String installationId) {
         PushDeviceEntity existing = deviceMapper.selectInstallation(userId, installationId);
         if (existing != null && Boolean.TRUE.equals(existing.getActive())) {
             existing.setActive(false);
@@ -84,7 +81,6 @@ public class PushNotificationService {
         if (notification == null || notification.getRecipientUserId() == null) return;
         for (PushDeviceEntity device : deviceMapper.selectActiveByUser(notification.getRecipientUserId())) {
             PushDeliveryEntity delivery = new PushDeliveryEntity();
-            delivery.setId(UuidV7.next());
             delivery.setNotificationId(notification.getId());
             delivery.setDeviceId(device.getId());
             delivery.setStatus("PENDING");

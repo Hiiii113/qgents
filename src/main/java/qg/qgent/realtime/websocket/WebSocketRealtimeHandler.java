@@ -14,7 +14,6 @@ import qg.qgent.realtime.service.RealtimeHub;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.UUID;
 
 /** 注册在线连接、发送连接确认和心跳，断线时移除连接。 */
 @Component
@@ -33,7 +32,7 @@ public class WebSocketRealtimeHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         Object raw = session.getAttributes().get(RealtimeAuthInterceptor.USER_ID_ATTR);
-        if (!(raw instanceof UUID userId)) {
+        if (!(raw instanceof Long userId)) {
             session.close(CloseStatus.NOT_ACCEPTABLE);
             return;
         }
@@ -45,7 +44,7 @@ public class WebSocketRealtimeHandler extends TextWebSocketHandler {
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        UUID userId = sessionUserId(session);
+        Long userId = sessionUserId(session);
         if (userId != null) {
             hub.unregister(userId, session);
         }
@@ -53,7 +52,7 @@ public class WebSocketRealtimeHandler extends TextWebSocketHandler {
 
     @Override
     public void handleTransportError(WebSocketSession session, Throwable exception) {
-        UUID userId = sessionUserId(session);
+        Long userId = sessionUserId(session);
         if (userId != null) {
             hub.unregister(userId, session);
         }
@@ -74,7 +73,7 @@ public class WebSocketRealtimeHandler extends TextWebSocketHandler {
             try {
                 session.sendMessage(new PingMessage(ByteBuffer.wrap(new byte[0])));
             } catch (IOException | IllegalStateException e) {
-                UUID userId = sessionUserId(session);
+                Long userId = sessionUserId(session);
                 if (userId != null) {
                     hub.unregister(userId, session);
                 }
@@ -87,8 +86,8 @@ public class WebSocketRealtimeHandler extends TextWebSocketHandler {
         });
     }
 
-    private UUID sessionUserId(WebSocketSession session) {
+    private Long sessionUserId(WebSocketSession session) {
         Object raw = session.getAttributes().get(RealtimeAuthInterceptor.USER_ID_ATTR);
-        return raw instanceof UUID userId ? userId : null;
+        return raw instanceof Long userId ? userId : null;
     }
 }

@@ -20,7 +20,7 @@ public class ChatHistoryService {
     private final GroupService groupService;
     private final ObjectMapper mapper;
 
-    public List<ContextMessage> recentMessages(UUID actor, UUID projectId, UUID groupId, Integer limit) {
+    public List<ContextMessage> recentMessages(Long actor, Long projectId, Long groupId, Integer limit) {
         groupService.requireGroupMember(projectId, groupId, actor);
         int size = Math.min(Math.max(limit == null ? 50 : limit, 1), 200);
         List<MessageEntity> newest = new ArrayList<>(messageMapper.selectList(Wrappers.<MessageEntity>lambdaQuery()
@@ -30,7 +30,7 @@ public class ChatHistoryService {
     }
 
     /** 在指定项目群聊内按关键字检索历史聊天记录。Skill 与 Memory 不属于聊天检索范围。 */
-    public List<ContextMessage> searchChatHistory(UUID actor, UUID projectId, UUID groupId, String query,
+    public List<ContextMessage> searchChatHistory(Long actor, Long projectId, Long groupId, String query,
                                                    Integer limit) {
         groupService.requireGroupMember(projectId, groupId, actor);
         if (query == null || query.isBlank()) {
@@ -42,7 +42,7 @@ public class ChatHistoryService {
                 .toList();
     }
 
-    public ContextMessage readChatMessage(UUID actor, UUID projectId, UUID groupId, UUID messageId) {
+    public ContextMessage readChatMessage(Long actor, Long projectId, Long groupId, Long messageId) {
         groupService.requireGroupMember(projectId, groupId, actor);
         MessageEntity message = messageMapper.selectById(messageId);
         if (message == null || !groupId.equals(message.getGroupId()))

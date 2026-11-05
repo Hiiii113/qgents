@@ -36,7 +36,7 @@ public class TokenService {
     }
 
     // 生成 access token
-    public String access(UUID userId) {
+    public String access(Long userId) {
         Instant now = Instant.now();
         return JWT.create()
                 .withIssuer("qgents")
@@ -49,9 +49,9 @@ public class TokenService {
     }
 
     // 验证 access token 并返回用户ID
-    public UUID verifyAccess(String token) {
+    public Long verifyAccess(String token) {
         try {
-            return UUID.fromString(
+            return Long.valueOf(
                     JWT.require(algorithm)
                             .withIssuer("qgents")
                             .withAudience("qgents-api")

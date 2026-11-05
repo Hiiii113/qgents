@@ -1,16 +1,17 @@
 package qg.qgent.sandbox.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import qg.qgent.sandbox.execution.dto.ToolExecutionResponse;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
 class SandboxFilesReadTest {
-    private final UUID id=UUID.randomUUID(), executionId=UUID.randomUUID();
+    private final Long id=TestIds.next(), executionId=TestIds.next();
     private final SandboxToolService tools=mock(SandboxToolService.class);
     private final SandboxFiles access=new SandboxFiles(tools);
     private void execution(String status, Map<String,Object> result) {

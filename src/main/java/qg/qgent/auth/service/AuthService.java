@@ -19,7 +19,6 @@ import qg.qgent.auth.mail.VerificationCodeMailer;
 import qg.qgent.auth.mapper.EmailVerificationCodeMapper;
 import qg.qgent.auth.mapper.PasswordResetTokenMapper;
 import qg.qgent.auth.mapper.RefreshTokenMapper;
-import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.dto.ProjectResponse;
 import qg.qgent.project.mapper.ProjectMapper;
@@ -95,7 +94,6 @@ public class AuthService {
         verifyCode(email, input.getVerificationCode());
 
         UserEntity user = new UserEntity();
-        user.setId(UuidV7.next());
         user.setEmail(email);
         user.setDisplayName(input.getDisplayName().trim());
         user.setPasswordHash(passwords.encode(password));
@@ -128,7 +126,6 @@ public class AuthService {
         String code = String.format(Locale.ROOT, "%06d", new Random().nextInt(1_000_000));
         // 存储哈希，禁止明文落库
         EmailVerificationCodeEntity record = new EmailVerificationCodeEntity();
-        record.setId(UuidV7.next());
         record.setEmail(email);
         record.setCodeHash(tokens.hash(code));
         record.setExpiresAt(utc(Instant.now().plus(VERIFICATION_TTL)));
@@ -202,7 +199,7 @@ public class AuthService {
     }
 
     @Transactional
-    public void logout(UUID userId, String raw) {
+    public void logout(Long userId, String raw) {
         RefreshTokenEntity token = refreshTokenMapper.selectOne(Wrappers.<RefreshTokenEntity>lambdaQuery()
                 .eq(RefreshTokenEntity::getTokenHash, tokens.hash(raw))
                 .isNull(RefreshTokenEntity::getRevokedAt)
@@ -228,7 +225,6 @@ public class AuthService {
         String code = String.format(Locale.ROOT, "%06d", new Random().nextInt(1_000_000));
         // 插入到数据库：token_hash 存验证码 SHA-256 哈希，禁止明文
         PasswordResetTokenEntity reset = new PasswordResetTokenEntity();
-        reset.setId(UuidV7.next());
         reset.setUserId(user.getId());
         reset.setTokenHash(tokens.hash(code));
         reset.setExpiresAt(utc(tokens.resetExpiry()));
@@ -265,12 +261,12 @@ public class AuthService {
     }
 
     @Transactional
-    public CurrentUserResponse me(UUID userId) {
+    public CurrentUserResponse me(Long userId) {
         UserEntity user = requireUser(userId);
         List<TeamResponse> availableTeams = teams(userId);
-        UUID currentTeamId = availableTeams.stream().map(team -> UUID.fromString(team.getId()))
+        Long currentTeamId = availableTeams.stream().map(team -> Long.valueOf(team.getId()))
                 .filter(id -> id.equals(user.getLastTeamId())).findFirst()
-                .orElseGet(() -> availableTeams.isEmpty() ? null : UUID.fromString(availableTeams.getFirst().getId()));
+                .orElseGet(() -> availableTeams.isEmpty() ? null : Long.valueOf(availableTeams.getFirst().getId()));
         if (!Objects.equals(currentTeamId, user.getLastTeamId())) {
             saveTeam(userId, currentTeamId);
         }
@@ -279,7 +275,7 @@ public class AuthService {
     }
 
     @Transactional
-    public void selectTeam(UUID userId, UUID teamId) {
+    public void selectTeam(Long userId, Long teamId) {
         TeamEntity team = teamMapper.selectById(teamId);
         if (team == null || !"ACTIVE".equals(team.getStatus())
                 || teamMemberMapper.selectByTeamAndUser(teamId, userId) == null) {
@@ -288,12 +284,12 @@ public class AuthService {
         saveTeam(userId, teamId);
     }
 
-    private void saveTeam(UUID userId, UUID teamId) {
+    private void saveTeam(Long userId, Long teamId) {
         userMapper.updateLastTeam(userId, teamId);
     }
 
     @Transactional
-    public UserResponse updateMe(UUID userId, UserUpdateRequest input) {
+    public UserResponse updateMe(Long userId, UserUpdateRequest input) {
         if (input.getDisplayName() == null && input.getAvatarUrl() == null) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", "至少提供一个修改字段");
         }
@@ -312,7 +308,6 @@ public class AuthService {
     private AuthTokensResponse issue(UserEntity user) {
         String refresh = tokens.opaque();
         RefreshTokenEntity entity = new RefreshTokenEntity();
-        entity.setId(UuidV7.next());
         entity.setUserId(user.getId());
         entity.setTokenHash(tokens.hash(refresh));
         entity.setExpiresAt(utc(tokens.refreshExpiry()));
@@ -326,7 +321,7 @@ public class AuthService {
                 .eq(UserEntity::getEmail, email));
     }
 
-    private UserEntity requireUser(UUID userId) {
+    private UserEntity requireUser(Long userId) {
         UserEntity user = userMapper.selectById(userId);
         if (user == null) {
             throw unauthorized("UNAUTHORIZED", "用户不存在");
@@ -334,12 +329,12 @@ public class AuthService {
         return user;
     }
 
-    private List<TeamResponse> teams(UUID userId) {
+    private List<TeamResponse> teams(Long userId) {
         List<TeamMemberEntity> members = teamMemberMapper.selectByUserId(userId);
         if (members.isEmpty()) {
             return Collections.emptyList();
         }
-        Map<UUID, TeamEntity> teams = teamMapper.selectBatchIds(
+        Map<Long, TeamEntity> teams = teamMapper.selectBatchIds(
                         members.stream().map(TeamMemberEntity::getTeamId).toList()).stream()
                 .filter(team -> "ACTIVE".equals(team.getStatus()))
                 .collect(Collectors.toMap(TeamEntity::getId, Function.identity()));
@@ -358,13 +353,13 @@ public class AuthService {
                 }).toList();
     }
 
-    private int memberCount(UUID teamId) {
+    private int memberCount(Long teamId) {
         Long count = teamMemberMapper.selectCount(Wrappers.<TeamMemberEntity>lambdaQuery()
                 .eq(TeamMemberEntity::getTeamId, teamId));
         return count == null ? 0 : count.intValue();
     }
 
-    private List<ProjectResponse> projects(UUID userId) {
+    private List<ProjectResponse> projects(Long userId) {
         // 单次查询合并项目成员权限与 canonical Team Owner 兜底，并由 SQL 去重。
         // memberCount 由项目列表/详情接口补齐，此处不额外统计（前端缺失时隐藏）。
         return projectMapper.selectAccessibleByUser(userId).stream()

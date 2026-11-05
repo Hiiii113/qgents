@@ -10,7 +10,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -19,22 +18,22 @@ import java.util.function.BooleanSupplier;
 /** Root-owned execution resources shared by the main run and its temporary children. */
 final class WorkContext {
     final MessageSentEvent event;
-    final UUID rootRunId;
+    final Long rootRunId;
     final Object environmentLock = new Object();
-    final java.util.Set<UUID> openedWorkspaces = ConcurrentHashMap.newKeySet();
-    final Map<UUID, AgentExecution> children = new ConcurrentHashMap<>();
-    final Map<UUID, Object> toolsets = new ConcurrentHashMap<>();
-    private final java.util.Set<UUID> cancelledCommandRuns = ConcurrentHashMap.newKeySet();
-    volatile UUID defaultWorkspaceId;
+    final java.util.Set<Long> openedWorkspaces = ConcurrentHashMap.newKeySet();
+    final Map<Long, AgentExecution> children = new ConcurrentHashMap<>();
+    final Map<Long, Object> toolsets = new ConcurrentHashMap<>();
+    private final java.util.Set<Long> cancelledCommandRuns = ConcurrentHashMap.newKeySet();
+    volatile Long defaultWorkspaceId;
 
     private final Object notificationLock = new Object();
-    private final Map<UUID, Message> notifications = new LinkedHashMap<>();
+    private final Map<Long, Message> notifications = new LinkedHashMap<>();
     // Guarded by notificationLock so the final notice and zero-active state become visible together.
     private int activeChildren;
     private volatile boolean cancelled;
     private volatile boolean closing;
 
-    WorkContext(MessageSentEvent event, UUID rootRunId) {
+    WorkContext(MessageSentEvent event, Long rootRunId) {
         this.event = event;
         this.rootRunId = rootRunId;
     }
@@ -95,7 +94,7 @@ final class WorkContext {
         }
     }
 
-    boolean markCommandsCancelled(UUID runId) {
+    boolean markCommandsCancelled(Long runId) {
         return cancelledCommandRuns.add(runId);
     }
 
@@ -142,7 +141,7 @@ final class WorkContext {
         }
     }
 
-    boolean consumeNotification(UUID childRunId) {
+    boolean consumeNotification(Long childRunId) {
         synchronized (notificationLock) { return notifications.remove(childRunId) != null; }
     }
 
@@ -193,7 +192,7 @@ final class WorkContext {
         final WorkspaceSelection workspace;
 
         AgentExecution(AgentRunEntity run, AgentLoop.Conversation conversation,
-                       UUID selectedWorkspace, String currentDirectory) {
+                       Long selectedWorkspace, String currentDirectory) {
             this.run = run;
             this.conversation = conversation;
             this.workspace = new WorkspaceSelection(selectedWorkspace, currentDirectory);

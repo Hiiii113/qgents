@@ -9,25 +9,24 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 import java.util.Map;
-import java.util.UUID;
 
 /** 按用户保存的实时通知事件；sequenceNo 用于 SSE 断线续传。 */
 @Data
 @TableName(value = "notification_events", autoResultMap = true)
 public class NotificationEventEntity {
 
-    // 事件 ID（UUIDv7）。
-    @TableId(type = IdType.INPUT)
-    private UUID id;
+    // 事件 ID。
+    @TableId(type = IdType.AUTO)
+    private Long id;
 
     // 接收通知的用户 ID。
-    private UUID recipientUserId;
+    private Long recipientUserId;
 
     // 用户内单调递增事件序号（SSE 游标）。
     private Long sequenceNo;
 
     // 关联通知 ID；可为空。
-    private UUID notificationId;
+    private Long notificationId;
 
     // 事件名称，例如 notification.created。
     private String kind;

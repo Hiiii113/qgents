@@ -11,7 +11,6 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 
 /** 每次 AgentRun 按需读取完整 Skill 正文；已激活集合仅在本次运行内有效。 */
 @Slf4j
@@ -20,11 +19,11 @@ public class ActivateSkillTool {
     private static final int MAX_ACTIVATIONS = 5;
 
     private final SkillService skills;
-    private final UUID actor;
-    private final UUID projectId;
-    private final Set<UUID> activatedSkillIds = new LinkedHashSet<>();
+    private final Long actor;
+    private final Long projectId;
+    private final Set<Long> activatedSkillIds = new LinkedHashSet<>();
 
-    public ActivateSkillTool(SkillService skills, UUID actor, UUID projectId) {
+    public ActivateSkillTool(SkillService skills, Long actor, Long projectId) {
         this.skills = skills;
         this.actor = actor;
         this.projectId = projectId;
@@ -35,13 +34,13 @@ public class ActivateSkillTool {
             + "仅在当前上下文确实需要该操作规范时调用。每个 AgentRun 最多激活 5 个不同 Skill，"
             + "重复激活不会重复消耗预算")
     public Map<String, Object> activateSkill(
-            @ToolParam(description = "默认上下文 Skill 目录中的 UUID skillId") String skillId) {
+            @ToolParam(description = "默认上下文 Skill 目录中的数字 skillId") String skillId) {
         Map<String, Object> result = new LinkedHashMap<>();
-        UUID parsedSkillId;
+        Long parsedSkillId;
         try {
-            parsedSkillId = UUID.fromString(skillId == null ? "" : skillId.trim());
+            parsedSkillId = Long.valueOf(skillId == null ? "" : skillId.trim());
         } catch (IllegalArgumentException exception) {
-            return error(result, "activate_skill 的 skillId 必须是 Skill 目录中的有效 UUID");
+            return error(result, "activate_skill 的 skillId 必须是 Skill 目录中的有效 Long");
         }
         if (activatedSkillIds.contains(parsedSkillId)) {
             result.put("ok", true);

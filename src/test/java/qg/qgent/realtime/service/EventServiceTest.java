@@ -1,5 +1,7 @@
 package qg.qgent.realtime.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -35,7 +37,6 @@ import qg.qgent.user.mapper.UserMapper;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.function.LongFunction;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -61,9 +62,9 @@ class EventServiceTest {
     @Test
     void projectPublisherPersistsAnEventThenSendsItToTheCurrentGroupMembers() {
         Fixture fixture = new Fixture();
-        UUID projectId = UUID.randomUUID();
-        UUID groupId = UUID.randomUUID();
-        UUID invitedUser = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long groupId = TestIds.next();
+        Long invitedUser = TestIds.next();
         ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setDefaultGroup(false);
@@ -99,7 +100,7 @@ class EventServiceTest {
     @Test
     void projectPublisherWaitsForBusinessCommitAndKeepsInvocationOrder() {
         Fixture fixture = new Fixture();
-        UUID projectId = UUID.randomUUID();
+        Long projectId = TestIds.next();
         when(fixture.events.nextSequence(projectId)).thenReturn(1L, 2L);
         fixture.startBusinessTransaction();
         try {
@@ -129,9 +130,9 @@ class EventServiceTest {
     @Test
     void projectStreamRechecksGroupMembershipForEachLoadedBatch() {
         Fixture fixture = new Fixture();
-        UUID projectId = UUID.randomUUID();
-        UUID groupId = UUID.randomUUID();
-        UUID userId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long groupId = TestIds.next();
+        Long userId = TestIds.next();
         when(fixture.events.maxSequence(projectId)).thenReturn(3L);
         EventEntity groupEvent = new EventEntity();
         groupEvent.setSequenceNo(4L);
@@ -165,8 +166,8 @@ class EventServiceTest {
         when(fixture.notifications.minSequence(any())).thenReturn(2L);
         when(fixture.teams.minSequence(any())).thenReturn(2L);
         EventService service = fixture.service();
-        UUID ownerId = UUID.randomUUID();
-        UUID userId = UUID.randomUUID();
+        Long ownerId = TestIds.next();
+        Long userId = TestIds.next();
         java.util.function.Function<Long, SseEmitter> connect = cursor -> switch (scope) {
             case "project" -> service.stream(ownerId, userId, cursor);
             case "team" -> service.teamStream(ownerId, userId, cursor);
@@ -183,7 +184,7 @@ class EventServiceTest {
     @Test
     void notificationStreamUsesProtocolEventNamesForLegacyKinds() {
         Fixture fixture = new Fixture();
-        UUID userId = UUID.randomUUID();
+        Long userId = TestIds.next();
         when(fixture.notifications.minSequence(userId)).thenReturn(1L);
         NotificationEventEntity legacy = new NotificationEventEntity();
         legacy.setSequenceNo(2L);
@@ -206,9 +207,9 @@ class EventServiceTest {
     @Test
     void notificationAndTeamFramesAreDeliveredAfterTheirTransactionCommits() {
         Fixture fixture = new Fixture();
-        UUID userId = UUID.randomUUID();
-        UUID notificationId = UUID.randomUUID();
-        UUID teamId = UUID.randomUUID();
+        Long userId = TestIds.next();
+        Long notificationId = TestIds.next();
+        Long teamId = TestIds.next();
         when(fixture.notifications.maxSequence(userId)).thenReturn(4L);
         when(fixture.teams.maxSequence(teamId)).thenReturn(7L);
         fixture.startBusinessTransaction();
@@ -245,7 +246,7 @@ class EventServiceTest {
     @Test
     void projectEventDeadlockRetriesTheWholeRequiresNewTransaction() {
         Fixture fixture = new Fixture();
-        UUID projectId = UUID.randomUUID();
+        Long projectId = TestIds.next();
         when(fixture.events.insert(any(EventEntity.class)))
                 .thenThrow(new DeadlockLoserDataAccessException("deadlock", null))
                 .thenThrow(new DeadlockLoserDataAccessException("deadlock", null))

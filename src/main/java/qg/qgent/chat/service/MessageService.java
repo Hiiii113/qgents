@@ -23,7 +23,6 @@ import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.dto.PageInfo;
 import qg.qgent.common.dto.PageSlice;
-import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.project.entity.ProjectEntity;
@@ -86,7 +85,7 @@ public class MessageService {
      * @return 消息视图
      */
     @Transactional
-    public MessageResponse send(UUID actor, UUID projectId, UUID groupId, MessageSendRequest body) {
+    public MessageResponse send(Long actor, Long projectId, Long groupId, MessageSendRequest body) {
         // 默认群对项目成员开放，新建群要求受邀成员身份。
         groupService.requireGroupMember(projectId, groupId, actor);
         ChatGroupEntity group = lockGroup(groupId);
@@ -119,7 +118,7 @@ public class MessageService {
             return;
         }
         try {
-            List<UUID> users = mentions.stream()
+            List<Long> users = mentions.stream()
                     .filter(m -> "USER".equals(m.getType()))
                     .filter(m -> m.getId() != null && !m.getId().equals(event.actor()))
                     .map(Mention::getId)
@@ -132,7 +131,7 @@ public class MessageService {
             String title = "有人在群聊中提到了你";
             String description = senderName + " 在群「" + groupName + "」中提到了你"
                     + (textPreview == null || textPreview.isBlank() ? "" : "：" + textPreview);
-            for (UUID userId : users) {
+            for (Long userId : users) {
                 notificationService.notify(userId, event.projectId(), event.groupId(), "MESSAGE_MENTION",
                         title, description, event.messageId() == null ? null : event.messageId().toString());
             }
@@ -143,7 +142,7 @@ public class MessageService {
     }
 
     /** 发送者显示名（用户）；查询失败回退「成员」。 */
-    private String senderDisplayName(UUID actor) {
+    private String senderDisplayName(Long actor) {
         try {
             UserEntity sender = userMapper.selectById(actor);
             return sender == null || sender.getDisplayName() == null || sender.getDisplayName().isBlank()
@@ -200,7 +199,7 @@ public class MessageService {
     }
 
     /** 回填附件预览类型；短期预览 URL 由客户端打开附件时重新获取。 */
-    private void enrichAttachmentPreview(MessageResponse response, UUID projectId) {
+    private void enrichAttachmentPreview(MessageResponse response, Long projectId) {
         if (response == null || projectId == null) {
             return;
         }
@@ -231,7 +230,7 @@ public class MessageService {
 
     /** Qgent 回复与用户消息共用序号、引用和幂等规则。 */
     @Transactional
-    public MessageResponse sendAsAgent(UUID groupId, MessageSendRequest body) {
+    public MessageResponse sendAsAgent(Long groupId, MessageSendRequest body) {
         ChatGroupEntity group = lockGroup(groupId);
         if (group == null || !Boolean.TRUE.equals(group.getQgentEnabled())) {
             throw new ApiException(HttpStatus.NOT_FOUND, "QGENT_NOT_IN_GROUP", "Qgent 未加入当前群聊");
@@ -241,13 +240,13 @@ public class MessageService {
         return response;
     }
 
-    private ChatGroupEntity lockGroup(UUID groupId) {
+    private ChatGroupEntity lockGroup(Long groupId) {
         return groupMapper.selectOne(Wrappers.<ChatGroupEntity>lambdaQuery()
                 .eq(ChatGroupEntity::getId, groupId)
                 .last("FOR UPDATE"));
     }
 
-    private MessageResponse doSend(UUID projectId, UUID groupId, UUID authorUserId, String senderType,
+    private MessageResponse doSend(Long projectId, Long groupId, Long authorUserId, String senderType,
                                    MessageSendRequest body) {
         String type = normalizeType(body.getType());
         validateContent(type, body.getContent());
@@ -270,7 +269,6 @@ public class MessageService {
         }
 
         MessageEntity message = new MessageEntity();
-        message.setId(UuidV7.next());
         message.setGroupId(groupId);
         message.setSequenceNo(messageMapper.nextSequence(groupId));
         message.setAuthorUserId(authorUserId);
@@ -309,7 +307,7 @@ public class MessageService {
         return toResponse(message);
     }
 
-    private String id(UUID value) {
+    private String id(Long value) {
         return value == null ? null : value.toString();
     }
 
@@ -322,7 +320,7 @@ public class MessageService {
      * @param limit     每页数量（自动收敛到 1..100）
      * @return 消息分页结果
      */
-    public PageSlice<MessageResponse> list(UUID actor, UUID projectId, UUID groupId, String cursor, int limit) {
+    public PageSlice<MessageResponse> list(Long actor, Long projectId, Long groupId, String cursor, int limit) {
         // 默认群对项目成员开放，新建群要求受邀成员身份。
         groupService.requireGroupMember(projectId, groupId, actor);
         Long cursorSequence = decodeCursor(cursor);
@@ -345,7 +343,7 @@ public class MessageService {
      * 拉取指定序号之后的新消息，供实时连接恢复时补齐聊天窗口。
      * 返回结果严格按 sequence 升序；服务端不接受客户端伪造的消息 ID 作为游标。
      */
-    public PageSlice<MessageResponse> listAfterSequence(UUID actor, UUID projectId, UUID groupId,
+    public PageSlice<MessageResponse> listAfterSequence(Long actor, Long projectId, Long groupId,
                                                          long afterSequence, int limit) {
         groupService.requireGroupMember(projectId, groupId, actor);
         if (afterSequence < 0) {
@@ -372,7 +370,7 @@ public class MessageService {
      * @param messageId 目标消息 ID
      * @return 消息视图（含发送者名称）
      */
-    public MessageResponse getMessage(UUID actor, UUID projectId, UUID groupId, UUID messageId) {
+    public MessageResponse getMessage(Long actor, Long projectId, Long groupId, Long messageId) {
         // 默认群对项目成员开放，新建群要求受邀成员身份。
         groupService.requireGroupMember(projectId, groupId, actor);
         MessageEntity message = messageMapper.selectById(messageId);
@@ -384,7 +382,7 @@ public class MessageService {
         return response;
     }
 
-    private MessageEntity findByClientMessageId(UUID groupId, String clientMessageId) {
+    private MessageEntity findByClientMessageId(Long groupId, String clientMessageId) {
         return messageMapper.selectOne(Wrappers.<MessageEntity>lambdaQuery()
                 .eq(MessageEntity::getGroupId, groupId)
                 .eq(MessageEntity::getClientMessageId, clientMessageId));
@@ -427,8 +425,8 @@ public class MessageService {
     }
 
     /** 历史分页与增量补拉共用响应组装，批量查询发送者名称。 */
-    private List<MessageResponse> messageResponses(List<MessageEntity> rows, UUID projectId) {
-        Map<UUID, String> userNames = loadUserNames(rows);
+    private List<MessageResponse> messageResponses(List<MessageEntity> rows, Long projectId) {
+        Map<Long, String> userNames = loadUserNames(rows);
         List<MessageResponse> responses = rows.stream().map(m -> toResponse(m, userNames)).toList();
         responses.forEach(response -> enrichAttachmentPreview(response, projectId));
         return responses;
@@ -442,7 +440,7 @@ public class MessageService {
         return toResponse(m, senderName);
     }
 
-    private MessageResponse toResponse(MessageEntity m, Map<UUID, String> userNames) {
+    private MessageResponse toResponse(MessageEntity m, Map<Long, String> userNames) {
         String senderName = "AGENT".equals(m.getSenderType()) ? QgentIdentity.NAME
                 : m.getAuthorUserId() != null ? userNames.get(m.getAuthorUserId()) : null;
         return toResponse(m, senderName);
@@ -479,8 +477,8 @@ public class MessageService {
     }
 
     /** 批量加载消息页中出现的用户显示名，返回 userId → displayName。 */
-    private Map<UUID, String> loadUserNames(List<MessageEntity> pageRows) {
-        Set<UUID> userIds = pageRows.stream().map(MessageEntity::getAuthorUserId).filter(Objects::nonNull)
+    private Map<Long, String> loadUserNames(List<MessageEntity> pageRows) {
+        Set<Long> userIds = pageRows.stream().map(MessageEntity::getAuthorUserId).filter(Objects::nonNull)
                 .collect(Collectors.toSet());
         if (userIds.isEmpty()) {
             return Map.of();
@@ -491,7 +489,7 @@ public class MessageService {
                                 : u.getDisplayName()));
     }
 
-    private String userName(UUID userId) {
+    private String userName(Long userId) {
         UserEntity user = userMapper.selectById(userId);
         if (user == null || user.getDisplayName() == null || user.getDisplayName().isBlank()) {
             return "已注销用户";

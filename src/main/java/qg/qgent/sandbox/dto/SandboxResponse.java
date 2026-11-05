@@ -13,7 +13,7 @@ import java.util.UUID;
 @AllArgsConstructor
 public class SandboxResponse {
     private UUID id;
-    private UUID agentRunId;
+    private Long agentRunId;
     // Sandbox 使用的持久 Workspace 存储标识。
     private String workspaceStorageKey;
     // Sandbox 使用的 Sandbox 镜像配置名称。

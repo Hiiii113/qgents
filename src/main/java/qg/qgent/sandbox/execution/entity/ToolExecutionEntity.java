@@ -1,5 +1,6 @@
 package qg.qgent.sandbox.execution.entity;
 
+import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
@@ -10,12 +11,12 @@ import java.time.LocalDateTime;
 @Data
 @TableName("tool_executions")
 public class ToolExecutionEntity {
-    @TableId
-    private String id;
+    @TableId(type = IdType.AUTO)
+    private Long id;
     private String ownerInstanceId;
     private String sandboxId;
-    private String agentRunId;
-    private String workspaceId;
+    private Long agentRunId;
+    private Long workspaceId;
     private String toolName;
     private String argumentsJson;
     private String status;

@@ -3,7 +3,6 @@ package qg.qgent.user.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -32,7 +31,7 @@ public class AvatarController {
     @PostMapping("/me/avatar/credential")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<?> createCredential(
-        @AuthenticationPrincipal UUID userId,
+        @AuthenticationPrincipal Long userId,
         @Valid @RequestBody AvatarCredentialRequest body,
         HttpServletRequest request
     ) {
@@ -51,7 +50,7 @@ public class AvatarController {
     )
     @PostMapping("/me/avatar/confirm")
     public ApiResponse<?> confirm(
-        @AuthenticationPrincipal UUID userId,
+        @AuthenticationPrincipal Long userId,
         @Valid @RequestBody AvatarConfirmRequest body,
         HttpServletRequest request
     ) {

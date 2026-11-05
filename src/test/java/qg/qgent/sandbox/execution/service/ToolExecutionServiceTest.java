@@ -1,5 +1,7 @@
 package qg.qgent.sandbox.execution.service;
 
+import qg.qgent.support.TestIds;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -67,7 +69,7 @@ class ToolExecutionServiceTest {
         assertTrue(busy.await(5, TimeUnit.SECONDS));
         ToolExecutionFixture fixture = fixture();
         AtomicReference<Thread> toolThread = new AtomicReference<>();
-        UUID child = UUID.randomUUID(), workspace = UUID.randomUUID();
+        Long child = TestIds.next(), workspace = TestIds.next();
         fixture.request().setAgentRunId(child);
         fixture.request().setWorkspaceId(workspace);
         when(fixture.tools().execute(anyString(), any(), any())).thenAnswer(invocation -> {
@@ -78,8 +80,8 @@ class ToolExecutionServiceTest {
             var result = fixture.service().execute(fixture.sandboxId(), fixture.request());
             assertEquals("SUCCEEDED", result.getStatus());
             assertEquals(Thread.currentThread(), toolThread.get());
-            assertEquals(child.toString(), fixture.rows().get(fixture.executionId().toString()).getAgentRunId());
-            assertEquals(workspace.toString(), fixture.rows().get(fixture.executionId().toString()).getWorkspaceId());
+            assertEquals(child, fixture.rows().get(result.getId()).getAgentRunId());
+            assertEquals(workspace, fixture.rows().get(result.getId()).getWorkspaceId());
         } finally { release.countDown(); }
     }
 
@@ -87,10 +89,10 @@ class ToolExecutionServiceTest {
     void commandWaitUsesCompletionNotificationAndPreservesContext() throws Exception {
         ToolExecutionFixture fixture = fixture();
         fixture.request().setTool("command.run");
-        UUID child = UUID.randomUUID();
+        Long child = TestIds.next();
         fixture.request().setAgentRunId(child);
         CountDownLatch started = new CountDownLatch(1), release = new CountDownLatch(1);
-        AtomicReference<UUID> observedRun = new AtomicReference<>();
+        AtomicReference<Long> observedRun = new AtomicReference<>();
         AtomicReference<String> observedRequest = new AtomicReference<>();
         when(fixture.tools().execute(anyString(), any(), any())).thenAnswer(invocation -> {
             observedRun.set(SandboxExecutionContext.currentAgentRunId());
@@ -100,17 +102,17 @@ class ToolExecutionServiceTest {
             return new ToolResult(7, Map.of("stdout", "done"), List.of(), List.of());
         });
         MDC.put("requestId", "request-for-command");
-        fixture.service().submit(fixture.sandboxId(), fixture.request());
+        Long executionId = fixture.service().submit(fixture.sandboxId(), fixture.request()).getId();
         assertTrue(started.await(5, TimeUnit.SECONDS));
         clearInvocations(fixture.mapper());
         try (var waiter = Executors.newSingleThreadExecutor()) {
-            var result = waiter.submit(() -> fixture.service().await(fixture.executionId(), Duration.ofSeconds(5)));
+            var result = waiter.submit(() -> fixture.service().await(executionId, Duration.ofSeconds(5)));
             release.countDown();
             assertEquals(7, result.get(5, TimeUnit.SECONDS).getExitCode());
         } finally { release.countDown(); }
         assertEquals(child, observedRun.get());
         assertEquals("request-for-command", observedRequest.get());
-        verify(fixture.mapper(), atMost(4)).selectById(fixture.executionId().toString());
+        verify(fixture.mapper(), atMost(4)).selectById(executionId);
     }
 
     @Test
@@ -124,17 +126,17 @@ class ToolExecutionServiceTest {
         assertTrue(busy.await(5, TimeUnit.SECONDS));
         ToolExecutionFixture fixture = fixture();
         fixture.request().setTool("command.run");
-        fixture.service().submit(fixture.sandboxId(), fixture.request());
+        Long executionId = fixture.service().submit(fixture.sandboxId(), fixture.request()).getId();
         try {
-            assertEquals("CANCELLED", fixture.service().cancel(fixture.executionId()).getStatus());
-            assertEquals("CANCELLED", fixture.service().await(fixture.executionId(), Duration.ofSeconds(1)).getStatus());
+            assertEquals("CANCELLED", fixture.service().cancel(executionId).getStatus());
+            assertEquals("CANCELLED", fixture.service().await(executionId, Duration.ofSeconds(1)).getStatus());
         } finally {
             release.countDown();
         }
         // 同一个单线程池的后续任务完成，表示先前排队的命令已经走完收尾。
         pool.submit(() -> { }).get(5, TimeUnit.SECONDS);
         verify(fixture.tools(), org.mockito.Mockito.never()).execute(anyString(), any(), any());
-        assertEquals("CANCELLED", fixture.service().find(fixture.executionId()).getStatus());
+        assertEquals("CANCELLED", fixture.service().find(executionId).getStatus());
     }
 
     @Test
@@ -146,14 +148,14 @@ class ToolExecutionServiceTest {
             started.countDown(); release.await();
             return ToolResult.value(Map.of());
         });
-        fixture.service().submit(fixture.sandboxId(), fixture.request());
+        Long executionId = fixture.service().submit(fixture.sandboxId(), fixture.request()).getId();
         assertTrue(started.await(5, TimeUnit.SECONDS));
-        assertEquals("RUNNING", fixture.service().await(fixture.executionId(), Duration.ofMillis(20)).getStatus());
+        assertEquals("RUNNING", fixture.service().await(executionId, Duration.ofMillis(20)).getStatus());
         try (var waiter = Executors.newSingleThreadExecutor()) {
-            var result = waiter.submit(() -> fixture.service().await(fixture.executionId(), Duration.ofSeconds(5)));
-            assertEquals("CANCELLED", fixture.service().cancel(fixture.executionId()).getStatus());
+            var result = waiter.submit(() -> fixture.service().await(executionId, Duration.ofSeconds(5)));
+            assertEquals("CANCELLED", fixture.service().cancel(executionId).getStatus());
             assertEquals("CANCELLED", result.get(5, TimeUnit.SECONDS).getStatus());
-            assertEquals("CANCELLED", fixture.service().cancel(fixture.executionId()).getStatus());
+            assertEquals("CANCELLED", fixture.service().cancel(executionId).getStatus());
         } finally { release.countDown(); }
     }
 
@@ -172,10 +174,10 @@ class ToolExecutionServiceTest {
             }
             return ToolResult.value(Map.of());
         });
-        fixture.service().submit(fixture.sandboxId(), fixture.request());
+        Long executionId = fixture.service().submit(fixture.sandboxId(), fixture.request()).getId();
         assertTrue(started.await(5, TimeUnit.SECONDS));
         when(fixture.mapper().selectActiveIdsBySandbox(fixture.sandboxId().toString(), "local"))
-                .thenReturn(List.of(fixture.executionId().toString()));
+                .thenReturn(List.of(executionId));
 
         try (ExecutorService waiter = Executors.newSingleThreadExecutor()) {
             CompletableFuture<Void> stopping = CompletableFuture.runAsync(
@@ -192,7 +194,7 @@ class ToolExecutionServiceTest {
     @Test
     void stoppingOneAgentRunCancelsAndWaitsOnlyItsCommandWorker() throws Exception {
         ToolExecutionFixture fixture = fixture();
-        UUID childRunId = UUID.randomUUID();
+        Long childRunId = TestIds.next();
         fixture.request().setTool("command.run");
         fixture.request().setAgentRunId(childRunId);
         CountDownLatch started = new CountDownLatch(1), interrupted = new CountDownLatch(1), release = new CountDownLatch(1);
@@ -205,10 +207,10 @@ class ToolExecutionServiceTest {
             }
             return ToolResult.value(Map.of());
         });
-        fixture.service().submit(fixture.sandboxId(), fixture.request());
+        Long executionId = fixture.service().submit(fixture.sandboxId(), fixture.request()).getId();
         assertTrue(started.await(5, TimeUnit.SECONDS));
-        when(fixture.mapper().selectActiveIdsByAgentRun(childRunId.toString(), "local"))
-                .thenReturn(List.of(fixture.executionId().toString()));
+        when(fixture.mapper().selectActiveIdsByAgentRun(childRunId, "local"))
+                .thenReturn(List.of(executionId));
 
         try (ExecutorService waiter = Executors.newSingleThreadExecutor()) {
             CompletableFuture<Void> stopping = CompletableFuture.runAsync(
@@ -218,13 +220,13 @@ class ToolExecutionServiceTest {
             release.countDown();
             stopping.get(5, TimeUnit.SECONDS);
         } finally { release.countDown(); }
-        verify(fixture.mapper()).selectActiveIdsByAgentRun(childRunId.toString(), "local");
+        verify(fixture.mapper()).selectActiveIdsByAgentRun(childRunId, "local");
     }
 
     @Test
     void workspaceReleaseStillWaitsForAgentRunCommandAlreadyMarkedCancelled() throws Exception {
         ToolExecutionFixture fixture = fixture();
-        UUID agentRunId = UUID.randomUUID();
+        Long agentRunId = TestIds.next();
         fixture.request().setAgentRunId(agentRunId);
         CountDownLatch started = new CountDownLatch(1), interrupted = new CountDownLatch(1), release = new CountDownLatch(1);
         when(fixture.tools().execute(anyString(), any(), any())).thenAnswer(invocation -> {
@@ -254,7 +256,7 @@ class ToolExecutionServiceTest {
 
     @Test
     void submitPersistsQueuedRecordAndCompletesInBackground() throws Exception {
-        Map<String, ToolExecutionEntity> rows = new ConcurrentHashMap<>();
+        Map<Long, ToolExecutionEntity> rows = new ConcurrentHashMap<>();
         ArrayList<ToolExecutionLogEntity> logs = new ArrayList<>();
         ToolExecutionMapper executions = executionMapper(rows);
         ToolExecutionLogMapper logMapper = logMapper(logs);
@@ -263,25 +265,22 @@ class ToolExecutionServiceTest {
         WorkspacePathResolver paths = mock(WorkspacePathResolver.class);
         SandboxProperties properties = new SandboxProperties();
         UUID sandboxId = UUID.randomUUID();
-        UUID executionId = UUID.randomUUID();
         SandboxAllocation sandbox = allocation(sandboxId);
         when(sandboxes.findAllocation(sandboxId)).thenReturn(sandbox);
         when(tools.execute(anyString(), any(), any())).thenReturn(ToolResult.value(Map.of("ok", true)));
         ToolExecutionService service = new ToolExecutionService(sandboxes, paths, tools, executions, logMapper,
                 new ObjectMapper().findAndRegisterModules(), properties, pool, Clock.systemUTC());
         ToolExecutionRequest request = new ToolExecutionRequest();
-        request.setExecutionId(executionId);
         request.setTool("file.read");
         request.setEnvironment(Map.of("GIT_CONFIG_VALUE_0", "temporary-secret"));
 
-        String submitted = service.submit(sandboxId, request).getStatus();
-        assertTrue(java.util.List.of("QUEUED", "RUNNING", "SUCCEEDED").contains(submitted));
-        for (int attempt = 0; attempt < 100 && !"SUCCEEDED".equals(rows.get(executionId.toString()).getStatus()); attempt++) {
+        Long executionId = service.submit(sandboxId, request).getId();
+        for (int attempt = 0; attempt < 100 && !"SUCCEEDED".equals(rows.get(executionId).getStatus()); attempt++) {
             Thread.sleep(10);
         }
 
         assertEquals("SUCCEEDED", service.find(executionId).getStatus());
-        assertFalse(rows.get(executionId.toString()).getArgumentsJson().contains("temporary-secret"));
+        assertFalse(rows.get(executionId).getArgumentsJson().contains("temporary-secret"));
         org.mockito.Mockito.verify(tools).execute(anyString(), org.mockito.ArgumentMatchers.argThat(context ->
                 "temporary-secret".equals(context.getEnvironment().get("GIT_CONFIG_VALUE_0"))), any());
         assertEquals(null, service.find(executionId).getFailureCode());
@@ -296,12 +295,12 @@ class ToolExecutionServiceTest {
                 .thenThrow(new SandboxException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
                         "FILE_PATCH_FAILED", "hunk 声明行数与正文不一致"));
 
-        fixture.service().submit(fixture.sandboxId(), fixture.request());
-        awaitTerminal(fixture.rows(), fixture.executionId());
+        Long executionId = fixture.service().submit(fixture.sandboxId(), fixture.request()).getId();
+        awaitTerminal(fixture.rows(), executionId);
 
-        assertEquals("FAILED", fixture.service().find(fixture.executionId()).getStatus());
-        assertEquals("FILE_PATCH_FAILED", fixture.service().find(fixture.executionId()).getFailureCode());
-        assertEquals("hunk 声明行数与正文不一致", fixture.service().find(fixture.executionId()).getFailureReason());
+        assertEquals("FAILED", fixture.service().find(executionId).getStatus());
+        assertEquals("FILE_PATCH_FAILED", fixture.service().find(executionId).getFailureCode());
+        assertEquals("hunk 声明行数与正文不一致", fixture.service().find(executionId).getFailureReason());
     }
 
     @Test
@@ -313,11 +312,11 @@ class ToolExecutionServiceTest {
                 .thenThrow(new SandboxException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
                         "TOOL_PATH_INVALID", detail));
 
-        fixture.service().submit(fixture.sandboxId(), fixture.request());
-        awaitTerminal(fixture.rows(), fixture.executionId());
+        Long executionId = fixture.service().submit(fixture.sandboxId(), fixture.request()).getId();
+        awaitTerminal(fixture.rows(), executionId);
 
-        String reason = fixture.service().find(fixture.executionId()).getFailureReason();
-        assertEquals("TOOL_PATH_INVALID", fixture.service().find(fixture.executionId()).getFailureCode());
+        String reason = fixture.service().find(executionId).getFailureReason();
+        assertEquals("TOOL_PATH_INVALID", fixture.service().find(executionId).getFailureCode());
         assertFalse(reason.contains("super-secret"));
         assertFalse(reason.contains("token=abc"));
         assertFalse(reason.contains("C:\\Users\\Administrator"));
@@ -333,12 +332,12 @@ class ToolExecutionServiceTest {
         when(fixture.tools().execute(anyString(), any(), any()))
                 .thenReturn(new ToolResult(17, Map.of("command", "mvn"), List.of("secret output"), List.of()));
 
-        fixture.service().submit(fixture.sandboxId(), fixture.request());
-        awaitTerminal(fixture.rows(), fixture.executionId());
+        Long executionId = fixture.service().submit(fixture.sandboxId(), fixture.request()).getId();
+        awaitTerminal(fixture.rows(), executionId);
 
-        assertEquals("PROCESS_EXIT_NONZERO", fixture.service().find(fixture.executionId()).getFailureCode());
-        assertEquals("工具进程以非零退出码结束", fixture.service().find(fixture.executionId()).getFailureReason());
-        assertEquals(17, fixture.service().find(fixture.executionId()).getExitCode());
+        assertEquals("PROCESS_EXIT_NONZERO", fixture.service().find(executionId).getFailureCode());
+        assertEquals("工具进程以非零退出码结束", fixture.service().find(executionId).getFailureReason());
+        assertEquals(17, fixture.service().find(executionId).getExitCode());
     }
 
     @Test
@@ -346,21 +345,21 @@ class ToolExecutionServiceTest {
         ToolExecutionFixture fixture = fixture();
         fixture.request().setTool("command.run");
         when(fixture.tools().execute(anyString(), any(), any())).thenReturn(new ToolResult(7, Map.of("stdout", "diagnostic"), List.of(), List.of()));
-        fixture.service().submit(fixture.sandboxId(), fixture.request());
-        awaitTerminal(fixture.rows(), fixture.executionId());
-        assertEquals("SUCCEEDED", fixture.service().find(fixture.executionId()).getStatus());
-        assertEquals(7, fixture.service().find(fixture.executionId()).getExitCode());
-        assertEquals(null, fixture.service().find(fixture.executionId()).getFailureCode());
+        Long executionId = fixture.service().submit(fixture.sandboxId(), fixture.request()).getId();
+        awaitTerminal(fixture.rows(), executionId);
+        assertEquals("SUCCEEDED", fixture.service().find(executionId).getStatus());
+        assertEquals(7, fixture.service().find(executionId).getExitCode());
+        assertEquals(null, fixture.service().find(executionId).getFailureCode());
     }
 
     @Test
     void invalidArgumentsAreReturnedWithUsefulReason() throws Exception {
         ToolExecutionFixture fixture = fixture();
         when(fixture.tools().execute(anyString(), any(), any())).thenThrow(new IllegalArgumentException("command 必须是非空参数数组"));
-        fixture.service().submit(fixture.sandboxId(), fixture.request());
-        awaitTerminal(fixture.rows(), fixture.executionId());
-        assertEquals("TOOL_ARGUMENT_INVALID", fixture.service().find(fixture.executionId()).getFailureCode());
-        assertEquals("command 必须是非空参数数组", fixture.service().find(fixture.executionId()).getFailureReason());
+        Long executionId = fixture.service().submit(fixture.sandboxId(), fixture.request()).getId();
+        awaitTerminal(fixture.rows(), executionId);
+        assertEquals("TOOL_ARGUMENT_INVALID", fixture.service().find(executionId).getFailureCode());
+        assertEquals("command 必须是非空参数数组", fixture.service().find(executionId).getFailureReason());
     }
 
     @Test
@@ -368,11 +367,11 @@ class ToolExecutionServiceTest {
         ToolExecutionFixture fixture = fixture();
         when(fixture.tools().execute(anyString(), any(), any())).thenThrow(new IllegalStateException("internal detail"));
 
-        fixture.service().submit(fixture.sandboxId(), fixture.request());
-        awaitTerminal(fixture.rows(), fixture.executionId());
+        Long executionId = fixture.service().submit(fixture.sandboxId(), fixture.request()).getId();
+        awaitTerminal(fixture.rows(), executionId);
 
-        assertEquals("TOOL_EXECUTION_FAILED", fixture.service().find(fixture.executionId()).getFailureCode());
-        assertEquals("工具执行失败", fixture.service().find(fixture.executionId()).getFailureReason());
+        assertEquals("TOOL_EXECUTION_FAILED", fixture.service().find(executionId).getFailureCode());
+        assertEquals("工具执行失败", fixture.service().find(executionId).getFailureReason());
     }
 
     @Test
@@ -380,17 +379,17 @@ class ToolExecutionServiceTest {
         ToolExecutionFixture fixture = fixture();
         when(fixture.tools().execute(anyString(), any(), any())).thenThrow(new InterruptedException("timeout"));
 
-        fixture.service().submit(fixture.sandboxId(), fixture.request());
-        awaitTerminal(fixture.rows(), fixture.executionId());
+        Long executionId = fixture.service().submit(fixture.sandboxId(), fixture.request()).getId();
+        awaitTerminal(fixture.rows(), executionId);
 
-        assertEquals("TIMED_OUT", fixture.service().find(fixture.executionId()).getStatus());
-        assertEquals("TOOL_EXECUTION_TIMED_OUT", fixture.service().find(fixture.executionId()).getFailureCode());
-        assertEquals("工具执行超时或被中断", fixture.service().find(fixture.executionId()).getFailureReason());
+        assertEquals("TIMED_OUT", fixture.service().find(executionId).getStatus());
+        assertEquals("TOOL_EXECUTION_TIMED_OUT", fixture.service().find(executionId).getFailureCode());
+        assertEquals("工具执行超时或被中断", fixture.service().find(executionId).getFailureReason());
     }
 
     @Test
     void queuedExecutionCancellationIsIdempotent() {
-        Map<String, ToolExecutionEntity> rows = new ConcurrentHashMap<>();
+        Map<Long, ToolExecutionEntity> rows = new ConcurrentHashMap<>();
         ArrayList<ToolExecutionLogEntity> logs = new ArrayList<>();
         ToolExecutionMapper executions = executionMapper(rows);
         ToolExecutionLogMapper logMapper = logMapper(logs);
@@ -400,15 +399,13 @@ class ToolExecutionServiceTest {
         ExecutorService waitingPool = mock(ExecutorService.class);
         SandboxProperties properties = new SandboxProperties();
         UUID sandboxId = UUID.randomUUID();
-        UUID executionId = UUID.randomUUID();
         when(sandboxes.findAllocation(sandboxId)).thenReturn(allocation(sandboxId));
         ToolExecutionService service = new ToolExecutionService(sandboxes, paths, tools, executions, logMapper,
                 new ObjectMapper().findAndRegisterModules(), properties, waitingPool, Clock.systemUTC());
         ToolExecutionRequest request = new ToolExecutionRequest();
-        request.setExecutionId(executionId);
         request.setTool("file.read");
 
-        service.submit(sandboxId, request);
+        Long executionId = service.submit(sandboxId, request).getId();
 
         assertEquals("CANCELLED", service.cancel(executionId).getStatus());
         assertEquals("EXECUTION_CANCELLED", service.find(executionId).getFailureCode());
@@ -419,19 +416,20 @@ class ToolExecutionServiceTest {
     @Test
     void startupRecoveryPersistsInterruptedCodeAndReason() {
         ToolExecutionFixture fixture = fixture();
-        ToolExecutionEntity queued = queuedEntity(fixture.executionId(), fixture.sandboxId());
+        Long executionId = TestIds.next();
+        ToolExecutionEntity queued = queuedEntity(executionId, fixture.sandboxId());
         fixture.rows().put(queued.getId(), queued);
 
         fixture.service().markInterruptedExecutions();
 
-        assertEquals("INTERRUPTED", fixture.service().find(fixture.executionId()).getStatus());
-        assertEquals("APPLICATION_RESTART_INTERRUPTED", fixture.service().find(fixture.executionId()).getFailureCode());
-        assertEquals("Sandbox 重启，执行状态已中断", fixture.service().find(fixture.executionId()).getFailureReason());
+        assertEquals("INTERRUPTED", fixture.service().find(executionId).getStatus());
+        assertEquals("APPLICATION_RESTART_INTERRUPTED", fixture.service().find(executionId).getFailureCode());
+        assertEquals("Sandbox 重启，执行状态已中断", fixture.service().find(executionId).getFailureReason());
     }
 
     @Test
     void queueRejectionPersistsFailureCodeBeforeReturningServiceError() {
-        Map<String, ToolExecutionEntity> rows = new ConcurrentHashMap<>();
+        Map<Long, ToolExecutionEntity> rows = new ConcurrentHashMap<>();
         ToolExecutionMapper executions = executionMapper(rows);
         ToolExecutionLogMapper logMapper = logMapper(new ArrayList<>());
         SandboxService sandboxes = mock(SandboxService.class);
@@ -440,24 +438,24 @@ class ToolExecutionServiceTest {
         ExecutorService rejectedPool = mock(ExecutorService.class);
         doThrow(new RejectedExecutionException("unavailable")).when(rejectedPool).execute(any());
         UUID sandboxId = UUID.randomUUID();
-        UUID executionId = UUID.randomUUID();
         when(sandboxes.findAllocation(sandboxId)).thenReturn(allocation(sandboxId));
         ToolExecutionService service = new ToolExecutionService(sandboxes, paths, tools, executions, logMapper,
                 new ObjectMapper().findAndRegisterModules(), new SandboxProperties(), rejectedPool, Clock.systemUTC());
-        ToolExecutionRequest request = request(executionId);
+        ToolExecutionRequest request = request();
 
         SandboxException exception = assertThrows(SandboxException.class, () -> service.submit(sandboxId, request));
 
         assertEquals("EXECUTION_QUEUE_UNAVAILABLE", exception.getCode());
-        assertEquals("FAILED", rows.get(executionId.toString()).getStatus());
-        assertEquals("EXECUTION_QUEUE_UNAVAILABLE", rows.get(executionId.toString()).getFailureCode());
-        assertEquals("命令执行队列不可用", rows.get(executionId.toString()).getFailureReason());
+        ToolExecutionEntity rejected = rows.values().iterator().next();
+        assertEquals("FAILED", rejected.getStatus());
+        assertEquals("EXECUTION_QUEUE_UNAVAILABLE", rejected.getFailureCode());
+        assertEquals("命令执行队列不可用", rejected.getFailureReason());
     }
 
-    private ToolExecutionMapper executionMapper(Map<String, ToolExecutionEntity> rows) {
+    private ToolExecutionMapper executionMapper(Map<Long, ToolExecutionEntity> rows) {
         ToolExecutionMapper mapper = mock(ToolExecutionMapper.class);
-        when(mapper.selectById(anyString())).thenAnswer(invocation -> rows.get(invocation.getArgument(0)));
-        when(mapper.selectActiveIdsByAgentRun(anyString(), anyString())).thenAnswer(invocation -> rows.values().stream()
+        when(mapper.selectById(any())).thenAnswer(invocation -> rows.get(invocation.getArgument(0)));
+        when(mapper.selectActiveIdsByAgentRun(any(), anyString())).thenAnswer(invocation -> rows.values().stream()
                 .filter(entity -> invocation.getArgument(0).equals(entity.getAgentRunId()))
                 .filter(entity -> invocation.getArgument(1).equals(entity.getOwnerInstanceId()))
                 .filter(entity -> java.util.List.of("QUEUED", "RUNNING").contains(entity.getStatus()))
@@ -477,17 +475,18 @@ class ToolExecutionServiceTest {
         });
         when(mapper.insert(any(ToolExecutionEntity.class))).thenAnswer(invocation -> {
             ToolExecutionEntity entity = invocation.getArgument(0);
+            if (entity.getId() == null) entity.setId(TestIds.next());
             rows.put(entity.getId(), entity);
             return 1;
         });
-        when(mapper.markRunning(anyString(), anyString(), any())).thenAnswer(invocation -> {
+        when(mapper.markRunning(any(), anyString(), any())).thenAnswer(invocation -> {
             ToolExecutionEntity entity = rows.get(invocation.getArgument(0));
             if (entity == null || !"QUEUED".equals(entity.getStatus())) return 0;
             entity.setStatus("RUNNING");
             entity.setStartedAt(invocation.getArgument(2));
             return 1;
         });
-        when(mapper.finishIfRunning(anyString(), anyString(), anyString(), any(), any(), any(), any(), any()))
+        when(mapper.finishIfRunning(any(), anyString(), anyString(), any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
             ToolExecutionEntity entity = rows.get(invocation.getArgument(0));
             if (entity == null || !"RUNNING".equals(entity.getStatus())) return 0;
@@ -499,7 +498,7 @@ class ToolExecutionServiceTest {
             entity.setFinishedAt(invocation.getArgument(7));
             return 1;
         });
-        when(mapper.markCancelled(anyString(), anyString(), any())).thenAnswer(invocation -> {
+        when(mapper.markCancelled(any(), anyString(), any())).thenAnswer(invocation -> {
             ToolExecutionEntity entity = rows.get(invocation.getArgument(0));
             if (entity == null || !java.util.List.of("QUEUED", "RUNNING").contains(entity.getStatus())) return 0;
             entity.setStatus("CANCELLED");
@@ -508,7 +507,7 @@ class ToolExecutionServiceTest {
             entity.setFinishedAt(invocation.getArgument(2));
             return 1;
         });
-        when(mapper.rejectQueued(anyString(), anyString(), anyString(), anyString(), any())).thenAnswer(invocation -> {
+        when(mapper.rejectQueued(any(), anyString(), anyString(), anyString(), any())).thenAnswer(invocation -> {
             ToolExecutionEntity entity = rows.get(invocation.getArgument(0));
             if (entity == null || !"QUEUED".equals(entity.getStatus())) return 0;
             entity.setStatus("FAILED");
@@ -522,7 +521,7 @@ class ToolExecutionServiceTest {
 
     private ToolExecutionLogMapper logMapper(ArrayList<ToolExecutionLogEntity> logs) {
         ToolExecutionLogMapper mapper = mock(ToolExecutionLogMapper.class);
-        when(mapper.selectMaxSequence(anyString())).thenAnswer(invocation -> (long) logs.size());
+        when(mapper.selectMaxSequence(any())).thenAnswer(invocation -> (long) logs.size());
         when(mapper.insert(any())).thenAnswer(invocation -> {
             logs.add(invocation.getArgument(0));
             return 1;
@@ -532,13 +531,13 @@ class ToolExecutionServiceTest {
 
     private SandboxAllocation allocation(UUID sandboxId) {
         Instant now = Instant.now();
-        return new SandboxAllocation(sandboxId, UUID.randomUUID(), "workspaces/" + UUID.randomUUID(), "dev-tools",
+        return new SandboxAllocation(sandboxId, TestIds.next(), "workspaces/" + UUID.randomUUID(), "dev-tools",
                 "READY", "FAKE", now, now, now.plusSeconds(60), now.plusSeconds(3600),
                 Duration.ofMinutes(15), null);
     }
 
     private ToolExecutionFixture fixture() {
-        Map<String, ToolExecutionEntity> rows = new ConcurrentHashMap<>();
+        Map<Long, ToolExecutionEntity> rows = new ConcurrentHashMap<>();
         ArrayList<ToolExecutionLogEntity> logs = new ArrayList<>();
         ToolExecutionMapper executions = executionMapper(rows);
         ToolExecutionLogMapper logMapper = logMapper(logs);
@@ -547,23 +546,21 @@ class ToolExecutionServiceTest {
         WorkspacePathResolver paths = mock(WorkspacePathResolver.class);
         SandboxProperties properties = new SandboxProperties();
         UUID sandboxId = UUID.randomUUID();
-        UUID executionId = UUID.randomUUID();
         when(sandboxes.findAllocation(sandboxId)).thenReturn(allocation(sandboxId));
         ToolExecutionService service = new ToolExecutionService(sandboxes, paths, tools, executions, logMapper,
                 new ObjectMapper().findAndRegisterModules(), properties, pool, Clock.systemUTC());
-        return new ToolExecutionFixture(service, tools, rows, sandboxId, executionId, request(executionId), executions);
+        return new ToolExecutionFixture(service, tools, rows, sandboxId, request(), executions);
     }
 
-    private ToolExecutionRequest request(UUID executionId) {
+    private ToolExecutionRequest request() {
         ToolExecutionRequest request = new ToolExecutionRequest();
-        request.setExecutionId(executionId);
         request.setTool("file.read");
         return request;
     }
 
-    private ToolExecutionEntity queuedEntity(UUID executionId, UUID sandboxId) {
+    private ToolExecutionEntity queuedEntity(Long executionId, UUID sandboxId) {
         ToolExecutionEntity entity = new ToolExecutionEntity();
-        entity.setId(executionId.toString());
+        entity.setId(executionId);
         entity.setOwnerInstanceId("local");
         entity.setSandboxId(sandboxId.toString());
         entity.setToolName("file.read");
@@ -572,9 +569,9 @@ class ToolExecutionServiceTest {
         return entity;
     }
 
-    private void awaitTerminal(Map<String, ToolExecutionEntity> rows, UUID executionId) throws InterruptedException {
+    private void awaitTerminal(Map<Long, ToolExecutionEntity> rows, Long executionId) throws InterruptedException {
         for (int attempt = 0; attempt < 100; attempt++) {
-            ToolExecutionEntity entity = rows.get(executionId.toString());
+            ToolExecutionEntity entity = rows.get(executionId);
             if (entity != null && java.util.List.of("SUCCEEDED", "FAILED", "TIMED_OUT").contains(entity.getStatus())) {
                 return;
             }
@@ -584,7 +581,7 @@ class ToolExecutionServiceTest {
     }
 
     private record ToolExecutionFixture(ToolExecutionService service, ToolRegistry tools,
-                                        Map<String, ToolExecutionEntity> rows, UUID sandboxId, UUID executionId,
+                                        Map<Long, ToolExecutionEntity> rows, UUID sandboxId,
                                         ToolExecutionRequest request, ToolExecutionMapper mapper) {
     }
 }

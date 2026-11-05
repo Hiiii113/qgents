@@ -1,5 +1,7 @@
 package qg.qgent.workspace.service;
 
+import qg.qgent.support.TestIds;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -25,16 +27,18 @@ class WorkspaceStorageServiceTest {
         var service = new WorkspaceStorageService(properties, new ObjectMapper(), Clock.systemUTC(),
                 new WorkspaceOperationLock(properties), mock(SandboxService.class));
         var request = new WorkspaceProvisionRequest();
-        request.setProjectId(UUID.randomUUID());
-        UUID id = UUID.randomUUID();
-        var workspace = service.provision(id, request);
-        try (var entries = Files.list(root.resolve(id.toString()))) { assertThat(entries).isEmpty(); }
-        Files.writeString(root.resolve(id.toString()).resolve("agent.txt"), "keep");
-        assertThat(service.provision(id, request).getStorageKey()).isEqualTo(workspace.getStorageKey());
-        assertThat(Files.readString(root.resolve(id.toString()).resolve("agent.txt"))).isEqualTo("keep");
-        request.setProjectId(UUID.randomUUID());
-        assertThatThrownBy(() -> service.provision(id, request)).hasMessage("工作区属于其他项目");
-        service.delete(id);
-        assertThat(root.resolve(id.toString())).doesNotExist();
+        request.setProjectId(TestIds.next());
+        Long id = TestIds.next();
+        String storageKey = "workspaces/" + UUID.randomUUID();
+        Path directory = root.resolve(storageKey.substring("workspaces/".length()));
+        var workspace = service.provision(id, storageKey, request);
+        try (var entries = Files.list(directory)) { assertThat(entries).isEmpty(); }
+        Files.writeString(directory.resolve("agent.txt"), "keep");
+        assertThat(service.provision(id, storageKey, request).getStorageKey()).isEqualTo(workspace.getStorageKey());
+        assertThat(Files.readString(directory.resolve("agent.txt"))).isEqualTo("keep");
+        request.setProjectId(TestIds.next());
+        assertThatThrownBy(() -> service.provision(id, storageKey, request)).hasMessage("工作区属于其他项目");
+        service.delete(storageKey);
+        assertThat(directory).doesNotExist();
     }
 }

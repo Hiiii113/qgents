@@ -1,5 +1,7 @@
 package qg.qgent.sandbox.runtime;
 
+import qg.qgent.support.TestIds;
+
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerCmd;
 import com.github.dockerjava.api.command.CreateContainerResponse;
@@ -18,7 +20,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -63,8 +64,8 @@ class DockerContainerRuntimeTest {
     @Test
     void createUsesWritableRootfsAndPreservesUserAndResourceLimits() throws Exception {
         Path localRoot = Files.createDirectory(root.resolve("local"));
-        UUID workspaceId = UUID.randomUUID();
-        Files.createDirectory(localRoot.resolve(workspaceId.toString()));
+        String storageKey = "workspaces/" + java.util.UUID.randomUUID();
+        Files.createDirectory(localRoot.resolve(storageKey.substring("workspaces/".length())));
         SandboxProperties properties = new SandboxProperties();
         properties.setWorkspaceLocalRoot(localRoot.toString());
         properties.setWorkspaceDockerHostRoot(root.resolve("host").toString());
@@ -88,10 +89,10 @@ class DockerContainerRuntimeTest {
                 new WorkspacePathResolver(properties), new SandboxBindFactory(new WorkspacePathResolver(properties)));
 
         CreateSandboxRequest request = new CreateSandboxRequest();
-        request.setSandboxId(UUID.randomUUID());
-        request.setAgentRunId(UUID.randomUUID());
-        request.setAgentRunId(UUID.randomUUID());
-        request.setWorkspaceStorageKey("workspaces/" + workspaceId);
+        request.setSandboxId(java.util.UUID.randomUUID());
+        request.setAgentRunId(TestIds.next());
+        request.setAgentRunId(TestIds.next());
+        request.setWorkspaceStorageKey(storageKey);
         request.setImageProfile("dev-tools");
         SandboxAllocation allocation = new SandboxAllocation(request.getSandboxId(), request.getAgentRunId(),
                 request.getWorkspaceStorageKey(), request.getImageProfile(), "READY", "DOCKER",

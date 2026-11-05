@@ -6,7 +6,6 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 /**
  * 项目群聊有序消息实体，对应表 messages。
@@ -17,18 +16,18 @@ import java.util.UUID;
 @TableName("messages")
 public class MessageEntity {
 
-    // 消息 ID（UUIDv7，BINARY(16)）。
-    @TableId(type = IdType.INPUT)
-    private UUID id;
+    // 消息 ID。
+    @TableId(type = IdType.AUTO)
+    private Long id;
 
-    // 所属项目群聊 ID（UUIDv7，BINARY(16)）。
-    private UUID groupId;
+    // 所属项目群聊 ID。
+    private Long groupId;
 
     // 群内单调递增消息序号（BIGINT），(group_id, sequence_no) 唯一。
     private Long sequenceNo;
 
-    // 发送用户 ID（UUIDv7，BINARY(16)）；Agent/系统消息时为空。
-    private UUID authorUserId;
+    // 发送用户 ID；Agent/系统消息时为空。
+    private Long authorUserId;
 
     // 消息发送方 USER/AGENT/SYSTEM；AGENT 固定表示 Qgent。
     private String senderType;
@@ -45,8 +44,8 @@ public class MessageEntity {
     // 提及对象 JSON 文本（JSON 列），元素含 type(USER/AGENT) 与 id；可为空。
     private String mentions;
 
-    // 回复或引用的原消息 ID（UUIDv7，BINARY(16)）；可为空。
-    private UUID replyToMessageId;
+    // 回复或引用的原消息 ID；可为空。
+    private Long replyToMessageId;
 
     // 发送时间（UTC，数据库默认值）。
     private LocalDateTime createdAt;

@@ -8,7 +8,6 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /** 短等待返回执行句柄；后续按句柄读取或取消，内部 Git 操作仍等待终态。 */
 @Service
@@ -18,24 +17,24 @@ public class SandboxCommands implements WorkspaceCommands {
     public SandboxCommands(SandboxToolService tools) {
         this.tools = tools;
     }
-    public Map<String, Object> run(UUID id, String directory, List<String> command, Map<String, String> environment) {
+    public Map<String, Object> run(Long id, String directory, List<String> command, Map<String, String> environment) {
         var execution = tools.start(id, arguments(directory, command), Duration.ofMinutes(10), environment);
         execution = tools.await(execution.getId(), Duration.ofMinutes(15));
         if (!ToolExecutionService.isTerminal(execution.getStatus())) throw new IllegalStateException("命令等待超时");
         return result(execution);
     }
-    public Map<String, Object> start(UUID id, String directory, List<String> command, int timeoutSeconds, int waitSeconds) {
+    public Map<String, Object> start(Long id, String directory, List<String> command, int timeoutSeconds, int waitSeconds) {
         var execution = tools.start(id, arguments(directory, command), Duration.ofSeconds(timeoutSeconds), Map.of());
         return result(tools.await(execution.getId(), Duration.ofSeconds(waitSeconds)));
     }
-    public Map<String, Object> output(UUID id, UUID executionId, long stdoutOffset, long stderrOffset, int count, int waitSeconds) {
+    public Map<String, Object> output(Long id, Long executionId, long stdoutOffset, long stderrOffset, int count, int waitSeconds) {
         tools.requireCommand(id, executionId);
         var execution = tools.await(executionId, Duration.ofSeconds(waitSeconds));
         Map<String, Object> value = result(execution);
         value.putAll(tools.output(executionId, stdoutOffset, stderrOffset, count));
         return value;
     }
-    public Map<String, Object> cancel(UUID id, UUID executionId) {
+    public Map<String, Object> cancel(Long id, Long executionId) {
         var execution = tools.requireCommand(id, executionId);
         return result(ToolExecutionService.isTerminal(execution.getStatus()) ? execution : tools.cancel(executionId));
     }

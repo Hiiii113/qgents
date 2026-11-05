@@ -22,7 +22,6 @@ import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.chat.mapper.view.GroupLatestMessageRow;
 import qg.qgent.chat.mapper.view.GroupUnreadRow;
-import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.event.ProjectCreatedEvent;
 import qg.qgent.project.mapper.ProjectMapper;
@@ -36,7 +35,6 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -78,7 +76,7 @@ public class GroupService {
     }
 
     @Transactional
-    public GroupResponse ensureProjectGroup(UUID projectId, UUID createdBy, String projectName) {
+    public GroupResponse ensureProjectGroup(Long projectId, Long createdBy, String projectName) {
         ChatGroupEntity existing = groupMapper.selectOne(Wrappers.<ChatGroupEntity>lambdaQuery()
                 .eq(ChatGroupEntity::getProjectId, projectId).eq(ChatGroupEntity::getDefaultGroup, true));
         if (existing != null) {
@@ -87,7 +85,6 @@ public class GroupService {
         String title = projectName == null || projectName.isBlank() ? DEFAULT_GROUP_TITLE
                 : projectName.trim();
         ChatGroupEntity group = new ChatGroupEntity();
-        group.setId(UuidV7.next());
         group.setProjectId(projectId);
         group.setCreatedBy(createdBy);
         group.setName(title);
@@ -100,23 +97,23 @@ public class GroupService {
         return toResponse(group);
     }
 
-    public List<GroupResponse> list(UUID actor, UUID projectId) {
+    public List<GroupResponse> list(Long actor, Long projectId) {
         access.requireProjectMember(projectId, actor);
         return groupResponses(groupMapper.listByProject(projectId), actor);
     }
 
     /** 列表与详情共用消息摘要、未读数和个人置顶状态的组装逻辑。 */
-    private List<GroupResponse> groupResponses(List<ChatGroupEntity> groups, UUID actor) {
+    private List<GroupResponse> groupResponses(List<ChatGroupEntity> groups, Long actor) {
         groups = groups.stream().filter(group -> isDefault(group) || groupUserMapper.selectUserIds(group.getId()).contains(actor)).toList();
         if (groups.isEmpty()) {
             return List.of();
         }
-        List<UUID> visibleGroupIds = groups.stream().map(ChatGroupEntity::getId).toList();
-        Map<UUID, GroupLatestMessageRow> latestByGroup = messageMapper.selectLatestByGroupIds(visibleGroupIds).stream()
+        List<Long> visibleGroupIds = groups.stream().map(ChatGroupEntity::getId).toList();
+        Map<Long, GroupLatestMessageRow> latestByGroup = messageMapper.selectLatestByGroupIds(visibleGroupIds).stream()
                 .collect(Collectors.toMap(GroupLatestMessageRow::getGroupId, Function.identity()));
-        Map<UUID, Long> unreadByGroup = countUnread(visibleGroupIds, actor);
-        Map<UUID, Long> mentionUnreadByGroup = countMentionUnread(visibleGroupIds, actor);
-        Map<UUID, Boolean> pinnedByGroup = countPinned(visibleGroupIds, actor);
+        Map<Long, Long> unreadByGroup = countUnread(visibleGroupIds, actor);
+        Map<Long, Long> mentionUnreadByGroup = countMentionUnread(visibleGroupIds, actor);
+        Map<Long, Boolean> pinnedByGroup = countPinned(visibleGroupIds, actor);
         return groups.stream()
                 .map(group -> {
                     GroupResponse response = toResponse(group, latestByGroup.get(group.getId()),
@@ -128,30 +125,29 @@ public class GroupService {
                 .toList();
     }
 
-    private Map<UUID, Long> countUnread(List<UUID> groupIds, UUID actor) {
+    private Map<Long, Long> countUnread(List<Long> groupIds, Long actor) {
         return messageMapper.countUnreadByGroupIds(groupIds, actor).stream()
                 .collect(Collectors.toMap(GroupUnreadRow::getGroupId, GroupUnreadRow::getUnread));
     }
 
-    private Map<UUID, Long> countMentionUnread(List<UUID> groupIds, UUID actor) {
-        // userIdText：JSON 匹配必须用字符串 UUID（mentions 存的是 Jackson 字符串；UUID 参数
-        // 受全局 UuidBinaryTypeHandler 影响以 BINARY(16) 绑定，直接 CAST 成乱码匹配不上）
+    private Map<Long, Long> countMentionUnread(List<Long> groupIds, Long actor) {
+        // mentions 里的 id 以十进制字符串存储，JSON 匹配需要同形字符串参数。
         return messageMapper.countMentionUnreadByGroupIds(groupIds, actor, actor.toString()).stream()
                 .collect(Collectors.toMap(GroupUnreadRow::getGroupId, GroupUnreadRow::getUnread));
     }
 
-    private Map<UUID, Boolean> countPinned(List<UUID> groupIds, UUID actor) {
+    private Map<Long, Boolean> countPinned(List<Long> groupIds, Long actor) {
         return userGroupPreferenceMapper.selectPinnedGroupIds(actor, groupIds).stream()
                 .collect(Collectors.toMap(Function.identity(), gid -> true));
     }
 
-    public GroupResponse get(UUID actor, UUID projectId, UUID groupId) {
+    public GroupResponse get(Long actor, Long projectId, Long groupId) {
         ChatGroupEntity group = requireGroupMember(projectId, groupId, actor);
         return groupResponses(List.of(group), actor).getFirst();
     }
 
     @Transactional
-    public GroupResponse update(UUID actor, UUID projectId, UUID groupId, GroupUpdateRequest body) {
+    public GroupResponse update(Long actor, Long projectId, Long groupId, GroupUpdateRequest body) {
         ChatGroupEntity group = requireGroupMember(projectId, groupId, actor);
         if (!group.getCreatedBy().equals(actor)) {
             access.requireProjectAdmin(projectId, actor);
@@ -170,7 +166,7 @@ public class GroupService {
         return get(actor, projectId, groupId);
     }
 
-    public List<GroupMemberResponse> members(UUID actor, UUID projectId, UUID groupId) {
+    public List<GroupMemberResponse> members(Long actor, Long projectId, Long groupId) {
         ChatGroupEntity group = requireGroupMember(projectId, groupId, actor);
         List<GroupMemberResponse> members = new ArrayList<>();
         boolean defaultGroup = isDefault(group);
@@ -185,7 +181,7 @@ public class GroupService {
         return members;
     }
 
-    public ChatGroupEntity requireGroupMember(UUID projectId, UUID groupId, UUID actor) {
+    public ChatGroupEntity requireGroupMember(Long projectId, Long groupId, Long actor) {
         access.requireProjectMember(projectId, actor);
         ChatGroupEntity group = requireGroupInProject(projectId, groupId);
         if (!isDefault(group) && !groupUserMapper.selectUserIds(groupId).contains(actor)) {
@@ -194,32 +190,32 @@ public class GroupService {
         return group;
     }
 
-    private String id(UUID value) {
+    private String id(Long value) {
         return value == null ? null : value.toString();
     }
 
     @Transactional
-    public GroupReadResponse markRead(UUID actor, UUID projectId, UUID groupId) {
+    public GroupReadResponse markRead(Long actor, Long projectId, Long groupId) {
         requireGroupMember(projectId, groupId, actor);
-        // HTTP 层的 IdempotencyFilter 已负责请求回放；游标写入仍由 GREATEST 保证并发幂等。
+        // 游标写入由 GREATEST 保证并发幂等。
         long latest = nextReadSequence(groupId);
         groupReadStateMapper.upsertSequence(actor, groupId, latest);
         return new GroupReadResponse(id(groupId), latest, 0L);
     }
 
-    private long nextReadSequence(UUID groupId) {
+    private long nextReadSequence(Long groupId) {
         Long next = messageMapper.nextSequence(groupId);
         return (next == null || next <= 1) ? 0L : next - 1;
     }
 
     @Transactional
-    public GroupPinResponse setPinned(UUID actor, UUID projectId, UUID groupId, boolean pinned) {
+    public GroupPinResponse setPinned(Long actor, Long projectId, Long groupId, boolean pinned) {
         requireGroupMember(projectId, groupId, actor);
         userGroupPreferenceMapper.upsertPin(actor, groupId, pinned);
         return new GroupPinResponse(id(groupId), pinned);
     }
 
-    private ChatGroupEntity requireGroupInProject(UUID projectId, UUID groupId) {
+    private ChatGroupEntity requireGroupInProject(Long projectId, Long groupId) {
         ChatGroupEntity group = groupMapper.selectById(groupId);
         if (group == null || !group.getProjectId().equals(projectId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
@@ -249,10 +245,9 @@ public class GroupService {
 
     /** 项目成员可以建群，创建者自动加入；邀请范围限于当前项目及其团队 Agent。 */
     @Transactional
-    public GroupResponse create(UUID actor, UUID projectId, GroupCreateRequest body) {
+    public GroupResponse create(Long actor, Long projectId, GroupCreateRequest body) {
         access.requireProjectMember(projectId, actor);
         ChatGroupEntity group = new ChatGroupEntity();
-        group.setId(UuidV7.next());
         group.setProjectId(projectId);
         group.setCreatedBy(actor);
         group.setDefaultGroup(false);
@@ -269,7 +264,7 @@ public class GroupService {
     }
 
     @Transactional
-    public List<GroupMemberResponse> invite(UUID actor, UUID projectId, UUID groupId, GroupInviteRequest body) {
+    public List<GroupMemberResponse> invite(Long actor, Long projectId, Long groupId, GroupInviteRequest body) {
         ChatGroupEntity group = requireGroupMember(projectId, groupId, actor);
         validateInvites(actor, projectId, body.getUserIds(), body.getAgentIds());
         // 默认群的用户随项目同步，只需追加 Agent。
@@ -284,17 +279,17 @@ public class GroupService {
         return members(actor, projectId, groupId);
     }
 
-    private void validateInvites(UUID actor, UUID projectId, List<UUID> users, List<UUID> agents) {
+    private void validateInvites(Long actor, Long projectId, List<Long> users, List<Long> agents) {
         if (users == null || agents == null || users.stream().anyMatch(java.util.Objects::isNull) || agents.stream().anyMatch(java.util.Objects::isNull)) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_GROUP_MEMBER", "请选择有效成员");
         }
-        for (UUID userId : users) access.requireProjectMember(projectId, userId);
+        for (Long userId : users) access.requireProjectMember(projectId, userId);
         if (agents.stream().anyMatch(id -> !QgentIdentity.ID.equals(id))) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_GROUP_AGENT", "只能邀请 Qgent");
         }
     }
 
-    private void addMembers(UUID groupId, List<UUID> users) {
+    private void addMembers(Long groupId, List<Long> users) {
         users.stream().distinct().forEach(userId -> groupUserMapper.insertUser(groupId, userId));
     }
 

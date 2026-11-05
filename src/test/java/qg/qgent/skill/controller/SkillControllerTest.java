@@ -1,5 +1,7 @@
 package qg.qgent.skill.controller;
 
+import qg.qgent.support.TestIds;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,7 +21,6 @@ import qg.qgent.user.mapper.UserMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
-import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
@@ -27,7 +28,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class SkillControllerTest {
-    private final UUID actor = UUID.randomUUID(), project = UUID.randomUUID();
+    private final Long actor = TestIds.next(), project = TestIds.next();
     private final SkillMapper mapper = mock(SkillMapper.class);
     private final ProjectAccessService access = mock(ProjectAccessService.class);
     private final SkillService service = new SkillService(mapper, access, mock(UserMapper.class), mock(EventService.class));
@@ -58,7 +59,11 @@ class SkillControllerTest {
         verify(mapper, never()).insert(any(SkillEntity.class));
 
         SkillEntity[] inserted = new SkillEntity[1];
-        when(mapper.insert(any(SkillEntity.class))).thenAnswer(call -> { inserted[0] = call.getArgument(0); return 1; });
+        when(mapper.insert(any(SkillEntity.class))).thenAnswer(call -> {
+            inserted[0] = call.getArgument(0);
+            inserted[0].setId(TestIds.next());
+            return 1;
+        });
         when(mapper.selectById(any())).thenAnswer(call -> inserted[0]);
         mvc.perform(multipart("/api/v1/projects/{project}/skills", project).file(file)
                         .param("visibility", "PRIVATE").param("tags", "[\"java\"]"))

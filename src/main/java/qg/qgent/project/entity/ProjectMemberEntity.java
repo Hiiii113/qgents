@@ -3,12 +3,11 @@ package qg.qgent.project.entity;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
-import java.util.UUID;
 
 @Data
 @TableName("project_members")
 public class ProjectMemberEntity {
-    private UUID projectId;
-    private UUID userId;
+    private Long projectId;
+    private Long userId;
     private String role;
 }

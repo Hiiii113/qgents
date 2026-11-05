@@ -7,7 +7,6 @@ import qg.qgent.chat.service.ChatHistoryService;
 import qg.qgent.chat.service.GroupService;
 import qg.qgent.memory.service.MemoryService;
 import qg.qgent.skill.service.SkillService;
-import java.util.UUID;
 
 /** 将各领域已完成权限过滤的资料组装为 Harness 输入，不实现领域检索或内容管理。 */
 @Service
@@ -18,7 +17,7 @@ public class ContextService {
     private final SkillService skills;
     private final MemoryService memories;
 
-    public GroupContext buildForGroup(UUID actor, UUID projectId, UUID groupId, Integer limit) {
+    public GroupContext buildForGroup(Long actor, Long projectId, Long groupId, Integer limit) {
         var group = groups.requireGroupMember(projectId, groupId, actor);
         var approved = memories.list(actor, projectId, "APPROVED", null).stream()
                 .map(memory -> new ContextMemory(memory.getTitle(), memory.getContent(), memory.getCategory())).toList();

@@ -1,5 +1,7 @@
 package qg.qgent.realtime.transport;
 
+import qg.qgent.support.TestIds;
+
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -16,7 +18,6 @@ import java.util.ArrayDeque;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
-import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -43,7 +44,7 @@ class SseEventTransportTest {
                 new PerformanceMetrics(registry), Clock.systemUTC());
         AtomicReference<Long> requestedCursor = new AtomicReference<>();
 
-        transport.open("project", UUID.randomUUID(), 0, cursor -> {
+        transport.open("project", TestIds.next(), 0, cursor -> {
             requestedCursor.set(cursor);
             return List.of(
                     new SseConnectionTransport.SseEvent(1, "message.created", Map.of(), false),
@@ -73,7 +74,7 @@ class SseEventTransportTest {
         SseConnectionTransport transport = transport(executor, timeout -> emitter,
                 new PerformanceMetrics(registry), new AdvancingClock());
 
-        transport.open("notification", UUID.randomUUID(), 8, cursor -> List.of(), false);
+        transport.open("notification", TestIds.next(), 8, cursor -> List.of(), false);
         executor.runNext();
 
         var sent = org.mockito.ArgumentCaptor.forClass(SseEmitter.SseEventBuilder.class);
@@ -101,12 +102,12 @@ class SseEventTransportTest {
         var eventLoader = (java.util.function.LongFunction<List<SseConnectionTransport.SseEvent>>) cursor -> List.of();
 
         for (int i = 0; i < 128; i++) {
-            transport.open("team", UUID.randomUUID(), 0, eventLoader, false);
+            transport.open("team", TestIds.next(), 0, eventLoader, false);
         }
 
         assertEquals(128.0, registry.get("qgents.sse.connections").gauge().value());
         ApiException error = assertThrows(ApiException.class,
-                () -> transport.open("team", UUID.randomUUID(), 0, eventLoader, false));
+                () -> transport.open("team", TestIds.next(), 0, eventLoader, false));
         assertEquals("SSE_CONNECTION_LIMIT_EXCEEDED", error.code());
 
         completion.get().run();

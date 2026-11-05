@@ -3,26 +3,25 @@ package qg.qgent.workspace.service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.UUID;
 
 /** 单个 Agent 对话的工作区和目录选择；不负责创建或释放执行环境。 */
 public final class WorkspaceSelection {
-    private UUID workspaceId;
+    private Long workspaceId;
     private String directory;
 
-    public WorkspaceSelection(UUID workspaceId, String directory) {
+    public WorkspaceSelection(Long workspaceId, String directory) {
         this.workspaceId = workspaceId;
         this.directory = resolveDirectory(".", directory);
     }
 
-    public synchronized UUID workspaceId() { return workspaceId; }
+    public synchronized Long workspaceId() { return workspaceId; }
     public synchronized String directory() { return directory; }
 
-    public synchronized void bindDefault(UUID workspaceId) {
+    public synchronized void bindDefault(Long workspaceId) {
         if (this.workspaceId == null) this.workspaceId = workspaceId;
     }
 
-    public synchronized void select(UUID workspaceId) {
+    public synchronized void select(Long workspaceId) {
         if (!Objects.equals(this.workspaceId, workspaceId)) directory = ".";
         this.workspaceId = workspaceId;
     }

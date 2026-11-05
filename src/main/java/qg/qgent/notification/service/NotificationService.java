@@ -5,7 +5,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.dto.NotificationResponse;
 import qg.qgent.notification.entity.NotificationEntity;
@@ -16,7 +15,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /** 通知持久化、已读状态和实时推送。 */
 @Service
@@ -28,13 +26,13 @@ public class NotificationService {
     private final PushNotificationService pushNotificationService;
 
     /** 查询当前用户的通知列表，按产生时间倒序，不分页。 */
-    public List<NotificationResponse> list(UUID userId) {
+    public List<NotificationResponse> list(Long userId) {
         return notificationMapper.listByRecipient(userId).stream().map(this::toResponse).toList();
     }
 
     /** 标记单条通知已读；通知不存在或不属于当前用户时返回 404。 */
     @Transactional
-    public void markRead(UUID userId, UUID notificationId) {
+    public void markRead(Long userId, Long notificationId) {
         NotificationEntity entity = notificationMapper.selectById(notificationId);
         if (entity == null || !entity.getRecipientUserId().equals(userId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "NOTIFICATION_NOT_FOUND", "通知不存在或无权访问");
@@ -44,19 +42,18 @@ public class NotificationService {
 
     /** 将当前用户的全部未读通知标记为已读（幂等）。 */
     @Transactional
-    public void markAllRead(UUID userId) {
+    public void markAllRead(Long userId) {
         notificationMapper.markAllRead(userId, LocalDateTime.now(ZoneOffset.UTC));
     }
 
     /** 为指定用户保存通知、发布实时事件，并加入手机推送队列。 */
     @Transactional
-    public void notify(UUID recipientUserId, UUID projectId, UUID groupId, String kind, String title,
+    public void notify(Long recipientUserId, Long projectId, Long groupId, String kind, String title,
                        String description, String resourceId) {
         if (recipientUserId == null) {
             return;
         }
         NotificationEntity entity = new NotificationEntity();
-        entity.setId(UuidV7.next());
         entity.setRecipientUserId(recipientUserId);
         entity.setProjectId(projectId);
         entity.setGroupId(groupId);
@@ -79,7 +76,7 @@ public class NotificationService {
                 n.getResourceId());
     }
 
-    private String id(UUID value) {
+    private String id(Long value) {
         return value == null ? null : value.toString();
     }
 

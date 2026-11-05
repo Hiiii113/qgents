@@ -5,7 +5,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.memory.dto.MemoryCreateRequest;
 import qg.qgent.memory.dto.MemoryResponse;
@@ -48,10 +47,9 @@ public class MemoryService {
 
     /** 手动创建 Memory；管理员直接批准，普通成员保存草稿。 */
     @Transactional
-    public MemoryResponse create(UUID actor, UUID projectId, MemoryCreateRequest request) {
+    public MemoryResponse create(Long actor, Long projectId, MemoryCreateRequest request) {
         access.requireProjectMember(projectId, actor);
         MemoryEntity memory = new MemoryEntity();
-        memory.setId(UuidV7.next());
         memory.setProjectId(projectId);
         memory.setCreatedBy(actor);
         memory.setTitle(request.getTitle().trim());
@@ -75,7 +73,7 @@ public class MemoryService {
     }
 
     /** 查询可见 Memory；未指定状态时返回全部可见状态，支持标签过滤。 */
-    public List<MemoryResponse> list(UUID actor, UUID projectId, String status, String tag) {
+    public List<MemoryResponse> list(Long actor, Long projectId, String status, String tag) {
         String role = access.requireProjectMember(projectId, actor);
         boolean isAdmin = "PROJECT_ADMIN".equals(role);
         return memoryMapper.listMemories(projectId, actor, isAdmin, blankToNull(status), blankToNull(tag))
@@ -83,7 +81,7 @@ public class MemoryService {
     }
 
     /** 获取 Memory；他人非 APPROVED Memory 视为不可见。 */
-    public MemoryResponse get(UUID actor, UUID projectId, UUID memoryId) {
+    public MemoryResponse get(Long actor, Long projectId, Long memoryId) {
         access.requireProjectMember(projectId, actor);
         MemoryEntity memory = requireMemoryInProject(projectId, memoryId);
         if (!"APPROVED".equals(memory.getStatus()) && !memory.getCreatedBy().equals(actor)) {
@@ -94,7 +92,7 @@ public class MemoryService {
 
     /** 编辑草稿或审核中内容；仅创建者或 Project Admin，且状态为 DRAFT/PENDING_REVIEW。 */
     @Transactional
-    public MemoryResponse update(UUID actor, UUID projectId, UUID memoryId, MemoryUpdateRequest request) {
+    public MemoryResponse update(Long actor, Long projectId, Long memoryId, MemoryUpdateRequest request) {
         MemoryEntity memory = requireEditable(actor, projectId, memoryId);
         if (request.getTitle() != null) {
             memory.setTitle(request.getTitle().trim());
@@ -114,7 +112,7 @@ public class MemoryService {
 
     /** 提交审核；仅创建者或 Project Admin，且状态为 DRAFT/REJECTED。 */
     @Transactional
-    public MemoryResponse submitReview(UUID actor, UUID projectId, UUID memoryId) {
+    public MemoryResponse submitReview(Long actor, Long projectId, Long memoryId) {
         MemoryEntity memory = requireOwned(actor, projectId, memoryId);
         if (!SUBMITTABLE.contains(memory.getStatus())) {
             throw stateConflict(memory.getStatus());
@@ -129,7 +127,7 @@ public class MemoryService {
 
     /** 批准并发布 Memory（Project Admin）；仅 PENDING_REVIEW。 */
     @Transactional
-    public MemoryResponse approve(UUID actor, UUID projectId, UUID memoryId) {
+    public MemoryResponse approve(Long actor, Long projectId, Long memoryId) {
         access.requireProjectAdmin(projectId, actor);
         lockProjectMemoryBudget(projectId);
         MemoryEntity memory = requireMemoryInProjectForUpdate(projectId, memoryId);
@@ -147,7 +145,7 @@ public class MemoryService {
 
     /** 拒绝 Memory 并给出原因（Project Admin）；仅 PENDING_REVIEW。 */
     @Transactional
-    public MemoryResponse reject(UUID actor, UUID projectId, UUID memoryId, String reason) {
+    public MemoryResponse reject(Long actor, Long projectId, Long memoryId, String reason) {
         access.requireProjectAdmin(projectId, actor);
         MemoryEntity memory = requireMemoryInProject(projectId, memoryId);
         if (!"PENDING_REVIEW".equals(memory.getStatus())) {
@@ -164,7 +162,7 @@ public class MemoryService {
 
     /** 归档 Memory（Project Admin）；仅 APPROVED。 */
     @Transactional
-    public MemoryResponse archive(UUID actor, UUID projectId, UUID memoryId) {
+    public MemoryResponse archive(Long actor, Long projectId, Long memoryId) {
         access.requireProjectAdmin(projectId, actor);
         lockProjectMemoryBudget(projectId);
         MemoryEntity memory = requireMemoryInProjectForUpdate(projectId, memoryId);
@@ -178,7 +176,7 @@ public class MemoryService {
     }
 
     /** 发布知识状态变化，供客户端刷新对应内容。 */
-    private void publish(String event, UUID projectId, UUID memoryId) {
+    private void publish(String event, Long projectId, Long memoryId) {
         Map<String, Object> payload = Map.of(
                 "projectId", projectId.toString(),
                 "resourceType", "MEMORY",
@@ -188,7 +186,7 @@ public class MemoryService {
         eventService.publish(projectId, null, event, memoryId.toString(), payload);
     }
 
-    private MemoryEntity requireMemoryInProject(UUID projectId, UUID memoryId) {
+    private MemoryEntity requireMemoryInProject(Long projectId, Long memoryId) {
         MemoryEntity memory = memoryMapper.selectById(memoryId);
         if (memory == null || !memory.getProjectId().equals(projectId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "MEMORY_NOT_FOUND", "Memory 不存在或无权访问");
@@ -197,7 +195,7 @@ public class MemoryService {
     }
 
     /** 锁定项目后读取并锁定待批准或归档的 Memory。 */
-    private MemoryEntity requireMemoryInProjectForUpdate(UUID projectId, UUID memoryId) {
+    private MemoryEntity requireMemoryInProjectForUpdate(Long projectId, Long memoryId) {
         MemoryEntity memory = memoryMapper.selectByIdForUpdate(memoryId);
         if (memory == null || !memory.getProjectId().equals(projectId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "MEMORY_NOT_FOUND", "Memory 不存在或无权访问");
@@ -205,7 +203,7 @@ public class MemoryService {
         return memory;
     }
 
-    private MemoryEntity requireOwned(UUID actor, UUID projectId, UUID memoryId) {
+    private MemoryEntity requireOwned(Long actor, Long projectId, Long memoryId) {
         access.requireProjectMember(projectId, actor);
         MemoryEntity memory = requireMemoryInProject(projectId, memoryId);
         if (!memory.getCreatedBy().equals(actor)) {
@@ -214,7 +212,7 @@ public class MemoryService {
         return memory;
     }
 
-    private MemoryEntity requireEditable(UUID actor, UUID projectId, UUID memoryId) {
+    private MemoryEntity requireEditable(Long actor, Long projectId, Long memoryId) {
         MemoryEntity memory = requireOwned(actor, projectId, memoryId);
         if (!EDITABLE.contains(memory.getStatus())) {
             throw stateConflict(memory.getStatus());
@@ -227,7 +225,7 @@ public class MemoryService {
     }
 
     /** 确保批准后的全部项目 Memory 仍可完整注入 Agent 上下文。 */
-    private void requireApprovedContextCapacity(UUID projectId, MemoryEntity candidate) {
+    private void requireApprovedContextCapacity(Long projectId, MemoryEntity candidate) {
         long candidateChars = (long) candidate.getTitle().length() + candidate.getContent().length();
         long usedChars = memoryMapper.selectApprovedForUpdate(projectId).stream()
                 .mapToLong(memory -> (long) memory.getTitle().length() + memory.getContent().length())
@@ -239,7 +237,7 @@ public class MemoryService {
     }
 
     /** 批准和归档前先锁定项目，再计算已批准内容的字符总量。 */
-    private void lockProjectMemoryBudget(UUID projectId) {
+    private void lockProjectMemoryBudget(Long projectId) {
         projectMapper.selectByIdForUpdate(projectId);
     }
 
@@ -254,7 +252,7 @@ public class MemoryService {
                 memory.getReviewedAt(), memory.getCreatedAt());
     }
 
-    private UserSummary userSummary(UUID userId) {
+    private UserSummary userSummary(Long userId) {
         if (userId == null) {
             return null;
         }

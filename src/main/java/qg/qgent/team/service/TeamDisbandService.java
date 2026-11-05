@@ -27,7 +27,6 @@ import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
 
 import java.util.List;
-import java.util.UUID;
 
 /** 按外键依赖顺序，在同一事务中删除团队及其归属数据。 */
 @Service
@@ -47,23 +46,23 @@ public class TeamDisbandService {
 
     /** 先清理各项目的数据，再删除团队记录。 */
     @Transactional
-    public void deleteTeam(UUID teamId) {
-        List<UUID> projectIds = projectMapper.selectList(Wrappers.<ProjectEntity>lambdaQuery()
+    public void deleteTeam(Long teamId) {
+        List<Long> projectIds = projectMapper.selectList(Wrappers.<ProjectEntity>lambdaQuery()
                 .eq(ProjectEntity::getTeamId, teamId)).stream().map(ProjectEntity::getId).toList();
-        for (UUID projectId : projectIds) {
+        for (Long projectId : projectIds) {
             deleteProject(projectId);
         }
         teamMapper.deleteById(teamId);
     }
 
     /** 按外键依赖顺序删除项目及其数据。 */
-    private void deleteProject(UUID projectId) {
+    private void deleteProject(Long projectId) {
         // 引用 chat_groups 且无级联的行须在 chat_groups 删除前清理
         notificationMapper.delete(Wrappers.<NotificationEntity>lambdaQuery()
                 .eq(NotificationEntity::getProjectId, projectId));
         eventMapper.delete(Wrappers.<EventEntity>lambdaQuery().eq(EventEntity::getProjectId, projectId));
 
-        List<UUID> groupIds = chatGroupMapper.selectList(Wrappers.<ChatGroupEntity>lambdaQuery()
+        List<Long> groupIds = chatGroupMapper.selectList(Wrappers.<ChatGroupEntity>lambdaQuery()
                         .eq(ChatGroupEntity::getProjectId, projectId)).stream().map(ChatGroupEntity::getId)
                 .toList();
         memoryMapper.delete(Wrappers.<MemoryEntity>lambdaQuery().eq(MemoryEntity::getProjectId, projectId));

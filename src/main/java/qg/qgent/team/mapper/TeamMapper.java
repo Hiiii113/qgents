@@ -3,26 +3,24 @@ package qg.qgent.team.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.*;
 
-import qg.qgent.common.persistence.typehandler.UuidBinaryTypeHandler;
 import qg.qgent.team.entity.TeamEntity;
 import qg.qgent.team.mapper.view.TeamMembershipView;
 
 import java.util.List;
-import java.util.UUID;
 
 @Mapper
 public interface TeamMapper extends BaseMapper<TeamEntity> {
     @Select("SELECT id, owner_user_id, name, description, avatar_url, status, created_at FROM teams WHERE id = #{teamId} FOR UPDATE")
     @Results({
-            @Result(column = "id", property = "id", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "owner_user_id", property = "ownerUserId", typeHandler = UuidBinaryTypeHandler.class),
+            @Result(column = "id", property = "id"),
+            @Result(column = "owner_user_id", property = "ownerUserId"),
             @Result(column = "name", property = "name"),
             @Result(column = "description", property = "description"),
             @Result(column = "avatar_url", property = "avatarUrl"),
             @Result(column = "status", property = "status"),
             @Result(column = "created_at", property = "createdAt")
     })
-    TeamEntity selectByIdForUpdate(UUID teamId);
+    TeamEntity selectByIdForUpdate(Long teamId);
 
     @Select({"<script>",
             "SELECT t.id, t.owner_user_id, t.name, t.description, t.avatar_url, t.created_at, tm.role,",
@@ -33,8 +31,8 @@ public interface TeamMapper extends BaseMapper<TeamEntity> {
             "ORDER BY t.id LIMIT #{limit}",
             "</script>"})
     @Results(id = "membership", value = {
-            @Result(column = "id", property = "id", typeHandler = UuidBinaryTypeHandler.class),
-            @Result(column = "owner_user_id", property = "ownerUserId", typeHandler = UuidBinaryTypeHandler.class),
+            @Result(column = "id", property = "id"),
+            @Result(column = "owner_user_id", property = "ownerUserId"),
             @Result(column = "name", property = "name"),
             @Result(column = "description", property = "description"),
             @Result(column = "avatar_url", property = "avatarUrl"),
@@ -42,7 +40,7 @@ public interface TeamMapper extends BaseMapper<TeamEntity> {
             @Result(column = "role", property = "role"),
             @Result(column = "member_count", property = "memberCount")
     })
-    List<TeamMembershipView> selectMembershipPage(@Param("userId") UUID userId,
-                                                  @Param("anchor") UUID anchor, @Param("limit") int limit);
+    List<TeamMembershipView> selectMembershipPage(@Param("userId") Long userId,
+                                                  @Param("anchor") Long anchor, @Param("limit") int limit);
 
 }

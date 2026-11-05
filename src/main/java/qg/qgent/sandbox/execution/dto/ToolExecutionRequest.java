@@ -10,17 +10,13 @@ import lombok.Data;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.UUID;
 
 /** Agent 调用沙箱工具时提交的结构化请求。 */
 @Data
 public class ToolExecutionRequest {
-    @NotNull
-    private UUID executionId;
-
     // 实际调用的 AgentRun 和 Workspace；子 Agent 与根运行共用沙箱，但保留自己的执行身份。
-    private UUID agentRunId;
-    private UUID workspaceId;
+    private Long agentRunId;
+    private Long workspaceId;
 
     @lombok.ToString.Exclude
     private Map<String,String> environment = Map.of();

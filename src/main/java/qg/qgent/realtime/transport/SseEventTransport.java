@@ -18,7 +18,6 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -53,7 +52,7 @@ public class SseEventTransport implements SseConnectionTransport {
     }
 
     @Override
-    public SseEmitter open(String scope, UUID ownerId, long cursor,
+    public SseEmitter open(String scope, Long ownerId, long cursor,
                            LongFunction<List<SseEvent>> loadEvents, boolean measurePoll) {
         if (!acquireConnectionSlot()) {
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "SSE_CONNECTION_LIMIT_EXCEEDED",

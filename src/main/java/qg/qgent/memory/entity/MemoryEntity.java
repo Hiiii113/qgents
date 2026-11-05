@@ -9,22 +9,21 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.UUID;
 
 /** 项目确认知识实体，对应表 memories。 */
 @Data
 @TableName(value = "memories", autoResultMap = true)
 public class MemoryEntity {
 
-    // Memory ID（UUIDv7，BINARY(16)）。
-    @TableId(type = IdType.INPUT)
-    private UUID id;
+    // Memory ID。
+    @TableId(type = IdType.AUTO)
+    private Long id;
 
-    // 所属项目 ID（UUIDv7，BINARY(16)）。
-    private UUID projectId;
+    // 所属项目 ID。
+    private Long projectId;
 
-    // 创建用户 ID（UUIDv7，BINARY(16)）。
-    private UUID createdBy;
+    // 创建用户 ID。
+    private Long createdBy;
 
     // 知识标题。
     private String title;
@@ -42,14 +41,14 @@ public class MemoryEntity {
     // 状态枚举：DRAFT / PENDING_REVIEW / APPROVED / REJECTED / ARCHIVED。
     private String status;
 
-    // 最近提交审核用户 ID（UUIDv7，BINARY(16)）；从未提交审核时为空。
-    private UUID submittedBy;
+    // 最近提交审核用户 ID；从未提交审核时为空。
+    private Long submittedBy;
 
     // 最近提交审核时间（UTC）；从未提交审核时为空。
     private LocalDateTime submittedAt;
 
-    // 最近审核用户 ID（UUIDv7，BINARY(16)）；可为空。
-    private UUID reviewerId;
+    // 最近审核用户 ID；可为空。
+    private Long reviewerId;
 
     // 最近驳回原因；可为空。
     private String rejectionReason;

@@ -1,5 +1,7 @@
 package qg.qgent.harness.integration;
 
+import qg.qgent.support.TestIds;
+
 import qg.qgent.chat.event.MessageSentEvent;
 
 import org.junit.jupiter.api.Test;
@@ -11,7 +13,6 @@ import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.service.MessageService;
 
 import java.util.List;
-import java.util.UUID;
 
 import static org.mockito.Mockito.*;
 
@@ -31,7 +32,7 @@ class MessageSentListenerTest {
     void userMentionsDoNotStartAgents() {
         Mention mention = new Mention();
         mention.setType("USER");
-        mention.setId(UUID.randomUUID());
+        mention.setId(TestIds.next());
         listener.onMessageSent(event(List.of(mention)));
         verifyNoInteractions(agents);
     }
@@ -55,7 +56,7 @@ class MessageSentListenerTest {
     void arbitraryAgentIdsCannotTriggerQgent() {
         Mention mention = new Mention();
         mention.setType("AGENT");
-        mention.setId(UUID.randomUUID());
+        mention.setId(TestIds.next());
         MessageSentEvent event = event(List.of(mention));
         MessageEntity message = new MessageEntity();
         message.setContent("{\"text\":\"你好\"}");
@@ -66,6 +67,6 @@ class MessageSentListenerTest {
     }
 
     private MessageSentEvent event(List<Mention> mentions) {
-        return new MessageSentEvent(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), mentions);
+        return new MessageSentEvent(TestIds.next(), TestIds.next(), TestIds.next(), TestIds.next(), mentions);
     }
 }

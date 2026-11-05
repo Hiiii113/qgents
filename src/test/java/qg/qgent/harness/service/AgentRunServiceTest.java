@@ -1,5 +1,7 @@
 package qg.qgent.harness.service;
 
+import qg.qgent.support.TestIds;
+
 import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -17,7 +19,6 @@ import qg.qgent.chat.service.MessageService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.service.ProjectAccessService;
 
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -26,8 +27,8 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class AgentRunServiceTest {
-    private final UUID actor = UUID.randomUUID(), projectId = UUID.randomUUID();
-    private final UUID groupId = UUID.randomUUID(), messageId = UUID.randomUUID();
+    private final Long actor = TestIds.next(), projectId = TestIds.next();
+    private final Long groupId = TestIds.next(), messageId = TestIds.next();
     private final AgentRunMapper runs = mock(AgentRunMapper.class);
     private final MessageService messages = mock(MessageService.class);
     private final ProjectAccessService access = mock(ProjectAccessService.class);
@@ -52,7 +53,7 @@ class AgentRunServiceTest {
 
     @Test
     void cancellingAnotherUsersExecutionRequiresProjectAdmin() {
-        messageFrom(UUID.randomUUID());
+        messageFrom(TestIds.next());
         service.cancel(actor, projectId, groupId, messageId);
         verify(access).requireProjectAdmin(projectId, actor);
         verify(runs).update(isNull(), any());
@@ -60,7 +61,7 @@ class AgentRunServiceTest {
 
     @Test
     void ordinaryMemberCannotCancelAnotherUsersExecution() {
-        messageFrom(UUID.randomUUID());
+        messageFrom(TestIds.next());
         doThrow(new ApiException(HttpStatus.FORBIDDEN, "PROJECT_ADMIN_REQUIRED", "需要项目 Admin 权限"))
                 .when(access).requireProjectAdmin(projectId, actor);
         assertThatThrownBy(() -> service.cancel(actor, projectId, groupId, messageId)).isInstanceOf(ApiException.class);
@@ -192,7 +193,7 @@ class AgentRunServiceTest {
         assertThat(updateCount.get()).isEqualTo(3);
     }
 
-    private void messageFrom(UUID sender) {
+    private void messageFrom(Long sender) {
         MessageResponse message = new MessageResponse();
         message.setSenderId(sender.toString());
         when(messages.getMessage(actor, projectId, groupId, messageId)).thenReturn(message);
@@ -200,7 +201,7 @@ class AgentRunServiceTest {
 
     private AgentRunEntity runningRoot() {
         AgentRunEntity root = new AgentRunEntity();
-        root.setId(UUID.randomUUID());
+        root.setId(TestIds.next());
         root.setProjectId(projectId);
         root.setGroupId(groupId);
         root.setTriggerMessageId(messageId);

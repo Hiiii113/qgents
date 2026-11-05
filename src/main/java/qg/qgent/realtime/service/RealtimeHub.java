@@ -13,7 +13,6 @@ import qg.qgent.realtime.transport.RealtimeConnectionTransport;
 
 import java.io.IOException;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
@@ -23,19 +22,19 @@ public class RealtimeHub implements RealtimeConnectionTransport {
     private static final Logger log = LoggerFactory.getLogger(RealtimeHub.class);
 
     private final ObjectMapper mapper;
-    private final ConcurrentHashMap<UUID, Set<WebSocketSession>> sessionsByUser = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, Set<WebSocketSession>> sessionsByUser = new ConcurrentHashMap<>();
 
     public RealtimeHub(ObjectMapper mapper) {
         this.mapper = mapper;
     }
 
     /** 注册一个用户的新在线连接（多设备/多标签各自独立 session）。 */
-    public void register(UUID userId, WebSocketSession session) {
+    public void register(Long userId, WebSocketSession session) {
         sessionsByUser.computeIfAbsent(userId, k -> ConcurrentHashMap.newKeySet()).add(session);
     }
 
     /** 注销一个连接（连接关闭时由 Handler 调用）。 */
-    public void unregister(UUID userId, WebSocketSession session) {
+    public void unregister(Long userId, WebSocketSession session) {
         Set<WebSocketSession> sessions = sessionsByUser.get(userId);
         if (sessions != null) {
             sessions.remove(session);
@@ -47,7 +46,7 @@ public class RealtimeHub implements RealtimeConnectionTransport {
 
     /** 向一组用户的全部在线连接推送一条实时帧。 逐个 session 发送；发送失败/连接失效的连接被关闭并清理。串行化帧若失败仅记错误， 不向调用方（业务事务）抛出，保证实时推送失败不影响业务写入。 */
     @Override
-    public void broadcastToUsers(Set<UUID> userIds, RealtimeFrame frame) {
+    public void broadcastToUsers(Set<Long> userIds, RealtimeFrame frame) {
         if (userIds == null || userIds.isEmpty()) {
             return;
         }
@@ -59,7 +58,7 @@ public class RealtimeHub implements RealtimeConnectionTransport {
             return;
         }
         TextMessage message = new TextMessage(json);
-        for (UUID userId : userIds) {
+        for (Long userId : userIds) {
             Set<WebSocketSession> sessions = sessionsByUser.get(userId);
             if (sessions == null || sessions.isEmpty()) {
                 continue;

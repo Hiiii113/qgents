@@ -233,7 +233,7 @@ public class DockerContainerRuntime implements ContainerRuntime {
     private SandboxAllocation allocationFrom(Container container) {
         Map<String, String> labels = container.getLabels();
         UUID sandboxId = UUID.fromString(requiredLabel(labels, SANDBOX_LABEL));
-        UUID agentRunId = optionalUuidLabel(labels, AGENT_RUN_LABEL);
+        Long agentRunId = optionalLongLabel(labels, AGENT_RUN_LABEL);
         Instant createdAt = Instant.parse(requiredLabel(labels, CREATED_AT_LABEL));
         Instant maxExpiresAt = Instant.parse(requiredLabel(labels, MAX_EXPIRES_AT_LABEL));
         Instant recoveredAt = Instant.now();
@@ -273,9 +273,9 @@ public class DockerContainerRuntime implements ContainerRuntime {
         return value;
     }
 
-    private UUID optionalUuidLabel(Map<String, String> labels, String name) {
+    private Long optionalLongLabel(Map<String, String> labels, String name) {
         String value = labels == null ? null : labels.get(name);
-        return value == null || value.isBlank() ? null : UUID.fromString(value);
+        return value == null || value.isBlank() ? null : Long.valueOf(value);
     }
 
     private void removeContainerQuietly(String containerId) {

@@ -1,4 +1,6 @@
 package qg.qgent.chat.service;
+
+import qg.qgent.support.TestIds;
 import static org.mockito.Mockito.doThrow;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -21,7 +23,6 @@ import qg.qgent.realtime.service.EventService;
 import qg.qgent.user.mapper.UserGroupPreferenceMapper;
 
 import java.util.List;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -50,10 +51,10 @@ class GroupPinServiceTest {
             projectMapper, mock(qg.qgent.chat.mapper.GroupUserMapper.class),
             messageMapper, groupReadStateMapper, userGroupPreferenceMapper, access, eventService);
 
-    private final UUID projectId = UUID.randomUUID();
-    private final UUID creator = UUID.randomUUID();
-    private final UUID memberA = UUID.randomUUID();
-    private final UUID groupId = UUID.randomUUID();
+    private final Long projectId = TestIds.next();
+    private final Long creator = TestIds.next();
+    private final Long memberA = TestIds.next();
+    private final Long groupId = TestIds.next();
 
     private ChatGroupEntity projectChat() {
         ChatGroupEntity group = new ChatGroupEntity();

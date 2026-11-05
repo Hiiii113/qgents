@@ -8,7 +8,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import qg.qgent.common.dto.PageInfo;
 import qg.qgent.common.dto.PageSlice;
-import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.project.dto.ProjectCreateRequest;
@@ -48,11 +47,10 @@ public class ProjectService {
 
     /** 创建项目并初始化项目成员关系。 */
     @Transactional
-    public ProjectResponse create(UUID actor, UUID teamId, ProjectCreateRequest request) {
+    public ProjectResponse create(Long actor, Long teamId, ProjectCreateRequest request) {
         TeamEntity team = requireTeamForUpdate(teamId);
         requireCanonicalTeamOwner(team, actor);
         ProjectEntity project = new ProjectEntity();
-        project.setId(UuidV7.next());
         project.setTeamId(teamId);
         project.setCreatedBy(actor);
         project.setName(request.getName().trim());
@@ -61,7 +59,7 @@ public class ProjectService {
         projectMapper.insert(project);
 
         insertMember(project.getId(), actor, "PROJECT_ADMIN");
-        for (UUID userId : new LinkedHashSet<>(request.getMemberIds() == null ? List.of() : request.getMemberIds())) {
+        for (Long userId : new LinkedHashSet<>(request.getMemberIds() == null ? List.of() : request.getMemberIds())) {
             if (actor.equals(userId)) {
                 continue;
             }
@@ -71,30 +69,30 @@ public class ProjectService {
         eventPublisher.publishEvent(new ProjectCreatedEvent(project.getId(), project.getName(), actor));
         // 项目创建事务提交后保存事件，供团队最近动态展示。
         eventService.publish(project.getId(), null, "project.created", project.getId().toString(),
-                Map.of("projectId", project.getId(), "name", project.getName(), "createdBy", actor));
+                Map.of("projectId", id(project.getId()), "name", project.getName(), "createdBy", id(actor)));
         return response(project, "PROJECT_ADMIN");
     }
 
-    public PageSlice<ProjectResponse> list(UUID actor, UUID teamId, String cursor, Integer limit) {
+    public PageSlice<ProjectResponse> list(Long actor, Long teamId, String cursor, Integer limit) {
         requireTeam(teamId);
         requireTeamMember(teamId, actor);
         boolean teamOwner = access.isCanonicalTeamOwner(teamId, actor);
         int size = pageSize(limit);
         String scope = "team-projects:" + teamId + ":" + actor;
-        UUID anchor = decodeCursor(cursor, scope);
+        Long anchor = decodeCursor(cursor, scope);
         List<ProjectMembershipView> rows = projectMapper.selectAccessiblePage(teamId, actor, teamOwner, anchor,
                 size + 1);
         return keysetPage(rows, size, scope, ProjectMembershipView::getId,
                 this::response);
     }
 
-    public ProjectResponse get(UUID actor, UUID projectId) {
+    public ProjectResponse get(Long actor, Long projectId) {
         ProjectEntity project = requireActiveProject(projectId);
         return response(project, access.requireAccess(project, actor));
     }
 
     @Transactional
-    public ProjectResponse update(UUID actor, UUID projectId, ProjectUpdateRequest request) {
+    public ProjectResponse update(Long actor, Long projectId, ProjectUpdateRequest request) {
         ProjectEntity project = requireProjectForUpdate(projectId);
         access.requireProjectAdminAnyState(project, actor);
         requireActive(project);
@@ -121,28 +119,28 @@ public class ProjectService {
     }
 
     @Transactional
-    public ProjectResponse archive(UUID actor, UUID projectId) {
+    public ProjectResponse archive(Long actor, Long projectId) {
         return transition(actor, projectId, "ARCHIVED");
     }
 
     @Transactional
-    public ProjectResponse restore(UUID actor, UUID projectId) {
+    public ProjectResponse restore(Long actor, Long projectId) {
         return transition(actor, projectId, "ACTIVE");
     }
 
-    public PageSlice<ProjectMemberResponse> members(UUID actor, UUID projectId, String cursor, Integer limit) {
+    public PageSlice<ProjectMemberResponse> members(Long actor, Long projectId, String cursor, Integer limit) {
         ProjectEntity project = requireActiveProject(projectId);
         access.requireAccess(project, actor);
         int size = pageSize(limit);
         String scope = "project-members:" + projectId;
-        UUID anchor = decodeCursor(cursor, scope);
+        Long anchor = decodeCursor(cursor, scope);
         List<ProjectMemberEntity> rows = memberMapper.selectMemberPage(projectId, anchor, size + 1);
         return keysetPage(rows, size, scope, ProjectMemberEntity::getUserId,
                 member -> new ProjectMemberResponse(member.getUserId().toString(), member.getRole()));
     }
 
     @Transactional
-    public ProjectMemberResponse addMember(UUID actor, UUID projectId, ProjectMemberAddRequest request) {
+    public ProjectMemberResponse addMember(Long actor, Long projectId, ProjectMemberAddRequest request) {
         ProjectEntity project = lockTeamThenProject(projectId);
         access.requireProjectAdminAnyState(project, actor);
         requireActive(project);
@@ -160,12 +158,12 @@ public class ProjectService {
         return new ProjectMemberResponse(request.getUserId().toString(), "PROJECT_MEMBER");
     }
 
-    private String id(UUID value) {
+    private String id(Long value) {
         return value == null ? null : value.toString();
     }
 
     @Transactional
-    public ProjectMemberResponse updateMember(UUID actor, UUID projectId, UUID userId,
+    public ProjectMemberResponse updateMember(Long actor, Long projectId, Long userId,
                                               ProjectMemberUpdateRequest request) {
         ProjectEntity project = lockTeamThenProject(projectId);
         access.requireProjectAdminAnyState(project, actor);
@@ -186,7 +184,7 @@ public class ProjectService {
     }
 
     @Transactional
-    public ProjectMemberResponse removeMember(UUID actor, UUID projectId, UUID userId) {
+    public ProjectMemberResponse removeMember(Long actor, Long projectId, Long userId) {
         ProjectEntity project = lockTeamThenProject(projectId);
         access.requireProjectAdminAnyState(project, actor);
         requireActive(project);
@@ -199,13 +197,13 @@ public class ProjectService {
         return new ProjectMemberResponse(userId.toString(), target.getRole());
     }
 
-    private ProjectResponse transition(UUID actor, UUID projectId, String targetStatus) {
+    private ProjectResponse transition(Long actor, Long projectId, String targetStatus) {
         ProjectEntity project = requireProjectForUpdate(projectId);
         access.requireAdmin(project, actor);
         if (!List.of("ACTIVE", "ARCHIVED").contains(project.getStatus())) {
             throw conflict("INVALID_PROJECT_STATE", "项目状态不允许变更");
         }
-        // 重复归档或恢复返回当前结果；不同幂等键重试也不会制造额外状态变化。
+        // 重复归档或恢复返回当前结果，不制造额外状态变化。
         if (!targetStatus.equals(project.getStatus())) {
             project.setStatus(targetStatus);
             projectMapper.updateById(project);
@@ -213,7 +211,7 @@ public class ProjectService {
         return response(project, "PROJECT_ADMIN");
     }
 
-    private void insertMember(UUID projectId, UUID userId, String role) {
+    private void insertMember(Long projectId, Long userId, String role) {
         ProjectMemberEntity member = new ProjectMemberEntity();
         member.setProjectId(projectId);
         member.setUserId(userId);
@@ -221,14 +219,14 @@ public class ProjectService {
         memberMapper.insert(member);
     }
 
-    private void requireCanonicalTeamOwner(TeamEntity team, UUID actor) {
+    private void requireCanonicalTeamOwner(TeamEntity team, Long actor) {
         TeamMemberEntity member = requireTeamMember(team.getId(), actor);
         if (!actor.equals(team.getOwnerUserId()) || !"TEAM_OWNER".equals(member.getRole())) {
             throw new ApiException(HttpStatus.FORBIDDEN, "TEAM_OWNER_REQUIRED", "需要 Team Owner 权限");
         }
     }
 
-    private TeamMemberEntity requireTeamMember(UUID teamId, UUID userId) {
+    private TeamMemberEntity requireTeamMember(Long teamId, Long userId) {
         TeamMemberEntity member = teamMemberMapper.selectByTeamAndUser(teamId, userId);
         if (member == null) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "TEAM_MEMBER_REQUIRED", "用户必须属于该团队");
@@ -236,7 +234,7 @@ public class ProjectService {
         return member;
     }
 
-    private ProjectMemberEntity requireProjectMember(UUID projectId, UUID userId) {
+    private ProjectMemberEntity requireProjectMember(Long projectId, Long userId) {
         ProjectMemberEntity member = memberMapper.selectByProjectAndUser(projectId, userId);
         if (member == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "PROJECT_MEMBER_NOT_FOUND", "项目成员不存在");
@@ -244,7 +242,7 @@ public class ProjectService {
         return member;
     }
 
-    private TeamEntity requireTeam(UUID teamId) {
+    private TeamEntity requireTeam(Long teamId) {
         TeamEntity team = teamMapper.selectById(teamId);
         if (team == null || !"ACTIVE".equals(team.getStatus())) {
             throw new ApiException(HttpStatus.NOT_FOUND, "TEAM_NOT_FOUND", "团队不存在或不可见");
@@ -252,7 +250,7 @@ public class ProjectService {
         return team;
     }
 
-    private TeamEntity requireTeamForUpdate(UUID teamId) {
+    private TeamEntity requireTeamForUpdate(Long teamId) {
         TeamEntity team = teamMapper.selectByIdForUpdate(teamId);
         if (team == null || !"ACTIVE".equals(team.getStatus())) {
             throw new ApiException(HttpStatus.NOT_FOUND, "TEAM_NOT_FOUND", "团队不存在或不可见");
@@ -260,7 +258,7 @@ public class ProjectService {
         return team;
     }
 
-    private ProjectEntity requireActiveProject(UUID projectId) {
+    private ProjectEntity requireActiveProject(Long projectId) {
         ProjectEntity project = projectMapper.selectById(projectId);
         if (project == null || !"ACTIVE".equals(project.getStatus())) {
             throw new ApiException(HttpStatus.NOT_FOUND, "PROJECT_NOT_FOUND", "项目不存在或不可见");
@@ -268,7 +266,7 @@ public class ProjectService {
         return project;
     }
 
-    private ProjectEntity requireProjectForUpdate(UUID projectId) {
+    private ProjectEntity requireProjectForUpdate(Long projectId) {
         ProjectEntity project = projectMapper.selectByIdForUpdate(projectId);
         if (project == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "PROJECT_NOT_FOUND", "项目不存在或不可见");
@@ -277,7 +275,7 @@ public class ProjectService {
     }
 
     /** 先锁团队再锁项目，与团队成员删除保持相同顺序。 */
-    private ProjectEntity lockTeamThenProject(UUID projectId) {
+    private ProjectEntity lockTeamThenProject(Long projectId) {
         ProjectEntity observed = projectMapper.selectById(projectId);
         if (observed == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "PROJECT_NOT_FOUND", "项目不存在或不可见");
@@ -321,7 +319,7 @@ public class ProjectService {
         return value;
     }
 
-    private UUID decodeCursor(String cursor, String expectedScope) {
+    private Long decodeCursor(String cursor, String expectedScope) {
         if (cursor == null || cursor.isBlank()) {
             return null;
         }
@@ -331,18 +329,18 @@ public class ProjectService {
             if (separator <= 0 || !expectedScope.equals(value.substring(0, separator))) {
                 throw new IllegalArgumentException();
             }
-            return UUID.fromString(value.substring(separator + 1));
+            return Long.valueOf(value.substring(separator + 1));
         } catch (IllegalArgumentException e) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "cursor 无效");
         }
     }
 
-    private String encodeCursor(String scope, UUID anchor) {
+    private String encodeCursor(String scope, Long anchor) {
         return Base64.getUrlEncoder().withoutPadding()
                 .encodeToString((scope + "|" + anchor).getBytes(StandardCharsets.UTF_8));
     }
 
-    private <S, T> PageSlice<T> keysetPage(List<S> rows, int size, String scope, Function<S, UUID> id,
+    private <S, T> PageSlice<T> keysetPage(List<S> rows, int size, String scope, Function<S, Long> id,
                                            Function<S, T> mapper) {
         boolean hasMore = rows.size() > size;
         List<S> visible = hasMore ? rows.subList(0, size) : rows;

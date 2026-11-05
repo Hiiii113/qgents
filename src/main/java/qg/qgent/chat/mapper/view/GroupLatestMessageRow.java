@@ -3,7 +3,6 @@ package qg.qgent.chat.mapper.view;
 import lombok.Data;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 /**
  * 群最新消息批量查询结果行：{@code MessageMapper.selectLatestByGroupIds} 的映射结果。
@@ -15,7 +14,7 @@ import java.util.UUID;
 public class GroupLatestMessageRow {
 
     // 所属项目群聊 ID。
-    private UUID groupId;
+    private Long groupId;
 
     // 最新消息发送者名称（Agent 固定显示 Qgent，用户使用 displayName）；SYSTEM 消息为空。
     private String senderName;

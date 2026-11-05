@@ -1,5 +1,7 @@
 package qg.qgent.realtime.service;
 
+import qg.qgent.support.TestIds;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.socket.TextMessage;
@@ -10,7 +12,6 @@ import qg.qgent.realtime.websocket.RealtimeFrame;
 import java.io.IOException;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -34,14 +35,14 @@ class RealtimeHubTest {
     /** 同一用户多个设备/标签在线时，fan-out 应推送给全部在线连接。 */
     @Test
     void broadcastDeliversToAllSessionsOfSameUser() throws Exception {
-        UUID userId = UUID.randomUUID();
+        Long userId = TestIds.next();
         WebSocketSession s1 = openSession();
         WebSocketSession s2 = openSession();
         hub.register(userId, s1);
         hub.register(userId, s2);
 
         hub.broadcastToUsers(Set.of(userId), RealtimeFrame.of("message.created", "project",
-                UUID.randomUUID().toString(), UUID.randomUUID().toString(), null, null, null, Map.of()));
+                Long.toString(TestIds.next()), Long.toString(TestIds.next()), null, null, null, Map.of()));
 
         verify(s1).sendMessage(org.mockito.ArgumentMatchers.any(TextMessage.class));
         verify(s2).sendMessage(org.mockito.ArgumentMatchers.any(TextMessage.class));
@@ -50,8 +51,8 @@ class RealtimeHubTest {
     /** 目标用户范围外的在线会话不应收到推送。 */
     @Test
     void broadcastOnlyReachesTargetUsers() throws Exception {
-        UUID target = UUID.randomUUID();
-        UUID other = UUID.randomUUID();
+        Long target = TestIds.next();
+        Long other = TestIds.next();
         WebSocketSession targetSession = openSession();
         WebSocketSession otherSession = openSession();
         hub.register(target, targetSession);
@@ -75,7 +76,7 @@ class RealtimeHubTest {
     /** 发送失败（连接已失效）的连接应被关闭并移除，其余连接仍正常推送。 */
     @Test
     void failedSendClosesAndRemovesSession() throws Exception {
-        UUID userId = UUID.randomUUID();
+        Long userId = TestIds.next();
         WebSocketSession healthy = openSession();
         WebSocketSession broken = openSession();
         hub.register(userId, healthy);
@@ -98,7 +99,7 @@ class RealtimeHubTest {
     /** 注销是会话级操作：移除一个不会影响该用户其余连接。 */
     @Test
     void unregisterRemovesOnlyThatSession() throws Exception {
-        UUID userId = UUID.randomUUID();
+        Long userId = TestIds.next();
         WebSocketSession keep = openSession();
         WebSocketSession drop = openSession();
         hub.register(userId, keep);
@@ -122,7 +123,7 @@ class RealtimeHubTest {
     /** 心跳遍历仅访问在线会话。 */
     @Test
     void forEachSessionVisitsOpenSessions() {
-        UUID userId = UUID.randomUUID();
+        Long userId = TestIds.next();
         WebSocketSession online = openSession();
         hub.register(userId, online);
         AtomicInteger visited = new AtomicInteger();

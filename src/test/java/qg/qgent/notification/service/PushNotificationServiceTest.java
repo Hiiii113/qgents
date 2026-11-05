@@ -1,5 +1,7 @@
 package qg.qgent.notification.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -17,7 +19,6 @@ import qg.qgent.notification.mapper.PushDeliveryMapper;
 import qg.qgent.notification.mapper.PushDeviceMapper;
 
 import java.util.List;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -33,7 +34,7 @@ class PushNotificationServiceTest {
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void registrationCreatesOrReactivatesTheSameInstallation(boolean newDevice) {
-        UUID userId = UUID.randomUUID();
+        Long userId = TestIds.next();
         PushDeviceMapper devices = mock(PushDeviceMapper.class);
         PushTokenCipher cipher = mock(PushTokenCipher.class);
         PushProperties properties = mock(PushProperties.class);
@@ -41,7 +42,7 @@ class PushNotificationServiceTest {
         when(cipher.hash("token")).thenReturn("hash");
         when(cipher.encrypt("token")).thenReturn("encrypted");
         PushDeviceEntity existing = new PushDeviceEntity();
-        existing.setId(UUID.randomUUID());
+        existing.setId(TestIds.next());
         existing.setUserId(userId);
         existing.setInstallationId("installation");
         existing.setProvider("FCM");
@@ -49,6 +50,11 @@ class PushNotificationServiceTest {
         if (!newDevice) {
             when(devices.selectInstallation(userId, "installation")).thenReturn(existing);
         }
+        when(devices.insert(any(PushDeviceEntity.class))).thenAnswer(invocation -> {
+            PushDeviceEntity entity = invocation.getArgument(0);
+            entity.setId(TestIds.next());
+            return 1;
+        });
         PushDeviceRegistrationRequest request = new PushDeviceRegistrationRequest();
         request.setInstallationId(" installation ");
         request.setPlatform("ANDROID");
@@ -84,7 +90,7 @@ class PushNotificationServiceTest {
         PushDeliveryMapper deliveries = mock(PushDeliveryMapper.class);
         NotificationEntity notification = notification();
         PushDeviceEntity device = new PushDeviceEntity();
-        device.setId(UUID.randomUUID());
+        device.setId(TestIds.next());
         when(devices.selectActiveByUser(notification.getRecipientUserId())).thenReturn(List.of(device));
         when(deliveries.insert(any(PushDeliveryEntity.class))).thenThrow(new DuplicateKeyException("duplicate"));
         PushNotificationService service = service(devices, deliveries, mock(PushGateway.class));
@@ -114,8 +120,8 @@ class PushNotificationServiceTest {
 
     private NotificationEntity notification() {
         NotificationEntity notification = new NotificationEntity();
-        notification.setId(UUID.randomUUID());
-        notification.setRecipientUserId(UUID.randomUUID());
+        notification.setId(TestIds.next());
+        notification.setRecipientUserId(TestIds.next());
         return notification;
     }
 }

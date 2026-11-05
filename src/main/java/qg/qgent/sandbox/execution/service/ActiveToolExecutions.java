@@ -6,9 +6,9 @@ import qg.qgent.sandbox.dto.SandboxExecutionContext;
 import qg.qgent.sandbox.execution.dto.ToolExecutionResponse;
 
 import java.util.Collection;
+import java.util.UUID;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -20,9 +20,9 @@ import java.util.stream.Collectors;
 /** 进程内执行归属、线程及完成通知；取消通知与工作线程实际退出分别管理。 */
 @Slf4j
 final class ActiveToolExecutions {
-    private final Map<UUID, Execution> executions = new ConcurrentHashMap<>();
+    private final Map<Long, Execution> executions = new ConcurrentHashMap<>();
 
-    ToolExecutionResponse execute(UUID id, UUID sandboxId, UUID agentRunId,
+    ToolExecutionResponse execute(Long id, UUID sandboxId, Long agentRunId,
                                   Supplier<ToolExecutionResponse> body) {
         Execution execution = new Execution(sandboxId, agentRunId);
         execution.worker = Thread.currentThread();
@@ -34,12 +34,12 @@ final class ActiveToolExecutions {
         }
     }
 
-    void submit(UUID id, UUID sandboxId, UUID agentRunId, ExecutorService pool,
+    void submit(Long id, UUID sandboxId, Long agentRunId, ExecutorService pool,
                 Supplier<ToolExecutionResponse> body) {
         Execution execution = new Execution(sandboxId, agentRunId);
         Map<String, String> logContext = MDC.getCopyOfContextMap();
         execution.task = new FutureTask<>(() -> {
-            UUID previousRun = SandboxExecutionContext.currentAgentRunId();
+            Long previousRun = SandboxExecutionContext.currentAgentRunId();
             Map<String, String> previousLog = MDC.getCopyOfContextMap();
             execution.worker = Thread.currentThread();
             SandboxExecutionContext.set(agentRunId);
@@ -67,12 +67,12 @@ final class ActiveToolExecutions {
         }
     }
 
-    CompletableFuture<ToolExecutionResponse> completion(UUID id) {
+    CompletableFuture<ToolExecutionResponse> completion(Long id) {
         Execution execution = executions.get(id);
         return execution == null || execution.task == null ? null : execution.completion;
     }
 
-    void cancel(UUID id, ToolExecutionResponse result) {
+    void cancel(Long id, ToolExecutionResponse result) {
         Execution execution = executions.get(id);
         if (execution == null) return;
         Thread worker = execution.worker;
@@ -81,21 +81,21 @@ final class ActiveToolExecutions {
         // 不能移除活动执行：数据库已取消时，释放仍须等待其线程完成收尾。
     }
 
-    Set<UUID> idsBySandbox(UUID sandboxId) {
+    Set<Long> idsBySandbox(UUID sandboxId) {
         return executions.entrySet().stream()
                 .filter(entry -> sandboxId.equals(entry.getValue().sandboxId))
                 .map(Map.Entry::getKey).collect(Collectors.toSet());
     }
 
-    Set<UUID> idsByAgentRun(UUID agentRunId) {
+    Set<Long> idsByAgentRun(Long agentRunId) {
         return executions.entrySet().stream()
                 .filter(entry -> agentRunId.equals(entry.getValue().agentRunId))
                 .map(Map.Entry::getKey).collect(Collectors.toSet());
     }
 
-    void awaitWorkers(Collection<UUID> ids) {
+    void awaitWorkers(Collection<Long> ids) {
         boolean interrupted = false;
-        for (UUID id : ids) {
+        for (Long id : ids) {
             Execution execution = executions.get(id);
             if (execution == null || execution.task == null) continue;
             while (true) {
@@ -118,12 +118,12 @@ final class ActiveToolExecutions {
 
     private static final class Execution {
         private final UUID sandboxId;
-        private final UUID agentRunId;
+        private final Long agentRunId;
         private final CompletableFuture<ToolExecutionResponse> completion = new CompletableFuture<>();
         private volatile Thread worker;
         private FutureTask<Void> task;
 
-        private Execution(UUID sandboxId, UUID agentRunId) {
+        private Execution(UUID sandboxId, Long agentRunId) {
             this.sandboxId = sandboxId;
             this.agentRunId = agentRunId;
         }

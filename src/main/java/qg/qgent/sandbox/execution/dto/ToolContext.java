@@ -7,7 +7,6 @@ import qg.qgent.sandbox.runtime.SandboxAllocation;
 
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.UUID;
 
 /** 工具执行时使用的受控上下文。 */
 @Data
@@ -17,7 +16,7 @@ public class ToolContext {
     private Path localWorkspace;
     private String containerWorkspace;
     private Duration timeout;
-    private UUID executionId;
+    private Long executionId;
     @lombok.Setter
     private java.util.Map<String, String> environment = java.util.Map.of();
     public ToolContext(SandboxAllocation sandbox, Path localWorkspace, String containerWorkspace, Duration timeout) {

@@ -1,5 +1,7 @@
 package qg.qgent.project.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 
 import qg.qgent.common.web.ApiException;
@@ -11,7 +13,6 @@ import qg.qgent.team.entity.TeamMemberEntity;
 import qg.qgent.team.mapper.TeamMapper;
 import qg.qgent.team.mapper.TeamMemberMapper;
 
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -28,9 +29,9 @@ class ProjectAccessServiceTest {
 
     @Test
     void canonicalTeamOwnerIsAdminWithoutProjectMembership() {
-        UUID projectId = UUID.randomUUID();
-        UUID teamId = UUID.randomUUID();
-        UUID owner = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long teamId = TestIds.next();
+        Long owner = TestIds.next();
         ProjectEntity project = project(projectId, teamId);
         when(projects.selectById(projectId)).thenReturn(project);
         when(teams.selectById(teamId)).thenReturn(team(teamId, owner));
@@ -43,10 +44,10 @@ class ProjectAccessServiceTest {
 
     @Test
     void extraOwnerRoleDoesNotGrantProjectFallback() {
-        UUID projectId = UUID.randomUUID();
-        UUID teamId = UUID.randomUUID();
-        UUID canonicalOwner = UUID.randomUUID();
-        UUID extraOwner = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long teamId = TestIds.next();
+        Long canonicalOwner = TestIds.next();
+        Long extraOwner = TestIds.next();
         when(projects.selectById(projectId)).thenReturn(project(projectId, teamId));
         when(teams.selectById(teamId)).thenReturn(team(teamId, canonicalOwner));
         when(teamMembers.selectByTeamAndUser(teamId, extraOwner))
@@ -58,7 +59,7 @@ class ProjectAccessServiceTest {
         assertEquals("PROJECT_NOT_FOUND", error.code());
     }
 
-    private ProjectEntity project(UUID id, UUID teamId) {
+    private ProjectEntity project(Long id, Long teamId) {
         ProjectEntity value = new ProjectEntity();
         value.setId(id);
         value.setTeamId(teamId);
@@ -66,14 +67,14 @@ class ProjectAccessServiceTest {
         return value;
     }
 
-    private TeamEntity team(UUID id, UUID owner) {
+    private TeamEntity team(Long id, Long owner) {
         TeamEntity value = new TeamEntity();
         value.setId(id);
         value.setOwnerUserId(owner);
         return value;
     }
 
-    private TeamMemberEntity teamMember(UUID teamId, UUID userId, String role) {
+    private TeamMemberEntity teamMember(Long teamId, Long userId, String role) {
         TeamMemberEntity value = new TeamMemberEntity();
         value.setTeamId(teamId);
         value.setUserId(userId);

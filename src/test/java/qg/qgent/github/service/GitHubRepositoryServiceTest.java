@@ -1,5 +1,7 @@
 package qg.qgent.github.service;
 
+import qg.qgent.support.TestIds;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -17,15 +19,14 @@ import qg.qgent.project.service.ProjectAccessService;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.UUID;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class GitHubRepositoryServiceTest {
-    private final UUID actor = UUID.randomUUID();
-    private final UUID team = UUID.randomUUID();
-    private final UUID project = UUID.randomUUID();
+    private final Long actor = TestIds.next();
+    private final Long team = TestIds.next();
+    private final Long project = TestIds.next();
     private final GitHubInstallationMapper installations = mock(GitHubInstallationMapper.class);
     private final GitHubInstallationStateMapper states = mock(GitHubInstallationStateMapper.class);
     private final ProjectRepositoryMapper repositories = mock(ProjectRepositoryMapper.class);
@@ -91,7 +92,7 @@ class GitHubRepositoryServiceTest {
         verifyNoInteractions(app);
         state.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).plusMinutes(10));
         var connected = installation();
-        connected.setTeamId(UUID.randomUUID());
+        connected.setTeamId(TestIds.next());
         when(installations.selectOne(any())).thenReturn(connected);
         assertThatThrownBy(() -> service.callback(12L, "state", null)).hasMessage("此安装已连接其他团队");
         verifyNoInteractions(app);
@@ -115,7 +116,7 @@ class GitHubRepositoryServiceTest {
     @Test
     void importingRejectsCrossTeamAndUnauthorisedRepositories() {
         var installation = installation();
-        installation.setTeamId(UUID.randomUUID());
+        installation.setTeamId(TestIds.next());
         when(installations.selectById(installation.getId())).thenReturn(installation);
         assertThatThrownBy(() -> service.importRepository(actor, project, installation.getId(), 34L))
                 .hasMessageContaining("不属于团队");
@@ -151,11 +152,11 @@ class GitHubRepositoryServiceTest {
         when(app.installation(12L)).thenReturn(new GitHubAppClient.Installation(12L, "owner", "Organization", false));
         when(app.repositories(12L)).thenReturn(List.of(remote()));
         var keep = new ProjectRepositoryEntity();
-        keep.setId(UUID.randomUUID());
+        keep.setId(TestIds.next());
         keep.setProviderRepositoryId(34L);
         keep.setFullName("owner/old-name");
         var revoked = new ProjectRepositoryEntity();
-        revoked.setId(UUID.randomUUID());
+        revoked.setId(TestIds.next());
         revoked.setProviderRepositoryId(35L);
         when(repositories.selectList(any())).thenReturn(List.of(keep, revoked));
         service.sync(actor, team, installation.getId());
@@ -166,7 +167,7 @@ class GitHubRepositoryServiceTest {
 
     private GitHubInstallationEntity installation() {
         var result = new GitHubInstallationEntity();
-        result.setId(UUID.randomUUID());
+        result.setId(TestIds.next());
         result.setTeamId(team);
         result.setProviderInstallationId(12L);
         result.setSuspended(false);
@@ -175,7 +176,7 @@ class GitHubRepositoryServiceTest {
 
     private GitHubInstallationStateEntity state() {
         var state = new GitHubInstallationStateEntity();
-        state.setId(UUID.randomUUID());
+        state.setId(TestIds.next());
         state.setActorId(actor);
         state.setTeamId(team);
         state.setClient("MOBILE");

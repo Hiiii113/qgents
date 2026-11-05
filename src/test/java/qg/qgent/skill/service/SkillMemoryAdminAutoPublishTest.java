@@ -1,5 +1,7 @@
 package qg.qgent.skill.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 
 import qg.qgent.common.web.ApiException;
@@ -19,7 +21,6 @@ import qg.qgent.skill.entity.SkillEntity;
 import qg.qgent.skill.mapper.SkillMapper;
 import qg.qgent.user.mapper.UserMapper;
 
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -46,9 +47,9 @@ class SkillMemoryAdminAutoPublishTest {
     private final SkillService skillService = new SkillService(skillMapper, access, userMapper, eventService);
     private final MemoryService memoryService = new MemoryService(memoryMapper, projectMapper, access, userMapper, eventService, 12000);
 
-    private final UUID projectId = UUID.randomUUID();
-    private final UUID admin = UUID.randomUUID();
-    private final UUID member = UUID.randomUUID();
+    private final Long projectId = TestIds.next();
+    private final Long admin = TestIds.next();
+    private final Long member = TestIds.next();
 
     @Test
     void skillCreatedByAdminIsPublishedImmediately() throws Exception {
@@ -56,6 +57,7 @@ class SkillMemoryAdminAutoPublishTest {
         final SkillEntity[] created = new SkillEntity[1];
         when(skillMapper.insert(any(SkillEntity.class))).thenAnswer(invocation -> {
             created[0] = invocation.getArgument(0);
+            created[0].setId(TestIds.next());
             return 1;
         });
         // selectById 返回 create 内部对象同一引用：create 对状态的上架修改对 response 可见
@@ -87,6 +89,7 @@ class SkillMemoryAdminAutoPublishTest {
         final SkillEntity[] created = new SkillEntity[1];
         when(skillMapper.insert(any(SkillEntity.class))).thenAnswer(invocation -> {
             created[0] = invocation.getArgument(0);
+            created[0].setId(TestIds.next());
             return 1;
         });
         when(skillMapper.selectById(any())).thenAnswer(invocation -> created[0]);
@@ -105,6 +108,7 @@ class SkillMemoryAdminAutoPublishTest {
         final MemoryEntity[] created = new MemoryEntity[1];
         when(memoryMapper.insert(any(MemoryEntity.class))).thenAnswer(invocation -> {
             created[0] = invocation.getArgument(0);
+            created[0].setId(TestIds.next());
             return 1;
         });
         when(memoryMapper.selectById(any())).thenAnswer(invocation -> created[0]);
@@ -157,7 +161,7 @@ class SkillMemoryAdminAutoPublishTest {
 
     private SkillEntity skillEntity() {
         SkillEntity skill = new SkillEntity();
-        skill.setId(UUID.randomUUID());
+        skill.setId(TestIds.next());
         skill.setProjectId(projectId);
         skill.setCreatedBy(admin);
         skill.setName("规范");
@@ -169,7 +173,7 @@ class SkillMemoryAdminAutoPublishTest {
 
     private MemoryEntity memoryEntity() {
         MemoryEntity memory = new MemoryEntity();
-        memory.setId(UUID.randomUUID());
+        memory.setId(TestIds.next());
         memory.setProjectId(projectId);
         memory.setCreatedBy(admin);
         memory.setTitle("登录约定");

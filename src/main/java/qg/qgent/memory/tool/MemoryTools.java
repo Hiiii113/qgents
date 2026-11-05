@@ -13,7 +13,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 
 /** Exposes project Memory operations to one AgentRun through the current user's permissions. */
 public class MemoryTools {
@@ -24,10 +23,10 @@ public class MemoryTools {
     private static final int MAX_READ_CHARS = 8_000;
 
     private final MemoryService memories;
-    private final UUID actor;
-    private final UUID projectId;
+    private final Long actor;
+    private final Long projectId;
 
-    public MemoryTools(MemoryService memories, UUID actor, UUID projectId) {
+    public MemoryTools(MemoryService memories, Long actor, Long projectId) {
         this.memories = memories;
         this.actor = actor;
         this.projectId = projectId;
@@ -64,7 +63,7 @@ public class MemoryTools {
             + "默认读取开头 4000 字符，可用 offsetChars 和 maxChars 继续读取，单次最多 8000 字符。"
             + "读取权限由当前触发用户的项目权限决定。")
     public Map<String, Object> readMemory(
-            @ToolParam(description = "list_memories 返回的 Memory UUID") String memoryId,
+            @ToolParam(description = "list_memories 返回的 Memory ID") String memoryId,
             @ToolParam(description = "正文起始字符位置，默认 0", required = false) Integer offsetChars,
             @ToolParam(description = "读取字符数，默认 4000，上限 8000", required = false) Integer maxChars) {
         int offset = offsetChars == null ? 0 : offsetChars;
@@ -74,7 +73,7 @@ public class MemoryTools {
         }
         int length = Math.min(requestedLength, MAX_READ_CHARS);
         return invoke(() -> {
-            MemoryResponse memory = memories.get(actor, projectId, UUID.fromString(memoryId));
+            MemoryResponse memory = memories.get(actor, projectId, Long.valueOf(memoryId));
             String content = Objects.toString(memory.getContent(), "");
             if (offset > content.length()) {
                 return error("offsetChars 超过 Memory 正文长度");
@@ -128,7 +127,7 @@ public class MemoryTools {
             + "仅创建者或 Project Admin 可编辑 DRAFT/PENDING_REVIEW，已批准、已拒绝和已归档状态的限制由现有规则执行。"
             + "返回实际状态；遇到状态冲突时说明限制，不要尝试绕过。")
     public Map<String, Object> updateMemory(
-            @ToolParam(description = "list_memories 返回的 Memory UUID") String memoryId,
+            @ToolParam(description = "list_memories 返回的 Memory ID") String memoryId,
             @ToolParam(description = "新标题，最多 255 字符", required = false) String title,
             @ToolParam(description = "新正文", required = false) String content,
             @ToolParam(description = "新分类，最多 64 字符", required = false) String category,
@@ -150,7 +149,7 @@ public class MemoryTools {
     @Tool(name = "submit_memory_review", description = "提交当前用户有权操作的 DRAFT 或 REJECTED Memory 供 Project Admin 审核；"
             + "审核中或其他状态不可重复提交。返回实际状态。")
     public Map<String, Object> submitMemoryReview(
-            @ToolParam(description = "list_memories 返回的 Memory UUID") String memoryId) {
+            @ToolParam(description = "list_memories 返回的 Memory ID") String memoryId) {
         return invoke(() -> memoryResult(memories.submitReview(actor, projectId, parseId(memoryId))));
     }
 
@@ -158,7 +157,7 @@ public class MemoryTools {
     @Tool(name = "approve_memory", description = "批准待审核 Memory 并发布。仅 Project Admin 可批准 PENDING_REVIEW；"
             + "现有已批准内容字符预算也会继续检查。返回实际状态或限制原因。")
     public Map<String, Object> approveMemory(
-            @ToolParam(description = "list_memories 返回的 Memory UUID") String memoryId) {
+            @ToolParam(description = "list_memories 返回的 Memory ID") String memoryId) {
         return invoke(() -> memoryResult(memories.approve(actor, projectId, parseId(memoryId))));
     }
 
@@ -166,7 +165,7 @@ public class MemoryTools {
     @Tool(name = "reject_memory", description = "驳回待审核 Memory 并记录原因。仅 Project Admin 可驳回 PENDING_REVIEW；"
             + "返回实际状态或限制原因。")
     public Map<String, Object> rejectMemory(
-            @ToolParam(description = "list_memories 返回的 Memory UUID") String memoryId,
+            @ToolParam(description = "list_memories 返回的 Memory ID") String memoryId,
             @ToolParam(description = "驳回原因，最多 2048 字符") String reason) {
         if (reason == null || reason.isBlank() || reason.length() > 2048) {
             return error("驳回原因不能为空且最多 2048 字符");
@@ -178,7 +177,7 @@ public class MemoryTools {
     @Tool(name = "archive_memory", description = "归档已批准 Memory。仅 Project Admin 可归档 APPROVED；"
             + "归档会释放 Agent 上下文 Memory 字符预算。返回实际状态或限制原因。")
     public Map<String, Object> archiveMemory(
-            @ToolParam(description = "list_memories 返回的 Memory UUID") String memoryId) {
+            @ToolParam(description = "list_memories 返回的 Memory ID") String memoryId) {
         return invoke(() -> memoryResult(memories.archive(actor, projectId, parseId(memoryId))));
     }
 
@@ -187,8 +186,8 @@ public class MemoryTools {
                 memory.getCategory(), memory.getTags(), memory.getStatus(), memory.getRejectionReason()));
     }
 
-    private UUID parseId(String memoryId) {
-        return UUID.fromString(memoryId == null ? "" : memoryId.trim());
+    private Long parseId(String memoryId) {
+        return Long.valueOf(memoryId == null ? "" : memoryId.trim());
     }
 
     private boolean matches(MemoryResponse memory, String query) {

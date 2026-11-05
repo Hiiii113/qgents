@@ -1,5 +1,7 @@
 package qg.qgent.github.tool;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
@@ -11,7 +13,6 @@ import qg.qgent.workspace.service.WorkspaceCommands;
 
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -20,16 +21,16 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.*;
 
 class GitHubToolsTest {
-    private final UUID workspace = UUID.randomUUID();
+    private final Long workspace = TestIds.next();
     private final WorkspaceCommands commands = mock(WorkspaceCommands.class);
 
     @Test
     void appCapabilityUsesImportedRepositoriesAndRenewsTokenForEachRequest() {
         var repositories = mock(qg.qgent.github.service.GitHubRepositoryService.class);
-        var actor = UUID.randomUUID();
-        var project = UUID.randomUUID();
+        var actor = TestIds.next();
+        var project = TestIds.next();
         var projectEntity = new ProjectEntity();
-        projectEntity.setTeamId(UUID.randomUUID());
+        projectEntity.setTeamId(TestIds.next());
         projectEntity.setGithubEnabled(true);
         var imported = new qg.qgent.github.entity.ProjectRepositoryEntity();
         imported.setFullName("owner/repo");
@@ -93,8 +94,8 @@ class GitHubToolsTest {
         var projects = mock(ProjectMapper.class);
         var capability = new GitHubCapability(projects, commands, repositories);
         var projectEntity = new ProjectEntity();
-        var actor = UUID.randomUUID();
-        var project = UUID.randomUUID();
+        var actor = TestIds.next();
+        var project = TestIds.next();
         when(projects.selectById(project)).thenReturn(projectEntity);
         assertThat(capability.tools(actor, project, () -> workspace)).isNotNull();
         projectEntity.setGithubEnabled(true);
@@ -110,11 +111,11 @@ class GitHubToolsTest {
         var repositories = mock(qg.qgent.github.service.GitHubRepositoryService.class);
         var projects = mock(ProjectMapper.class);
         var projectEntity = new ProjectEntity();
-        var projectId = UUID.randomUUID();
+        var projectId = TestIds.next();
         when(projects.selectById(projectId)).thenReturn(projectEntity);
-        java.util.function.Supplier<UUID> environment = mock(java.util.function.Supplier.class);
+        java.util.function.Supplier<Long> environment = mock(java.util.function.Supplier.class);
         var tools = new GitHubCapability(projects, commands, repositories)
-                .tools(UUID.randomUUID(), projectId, environment);
+                .tools(TestIds.next(), projectId, environment);
         projectEntity.setGithubEnabled(false);
 
         assertThatThrownBy(tools::repositories).hasMessageContaining("当前项目已关闭 GitHub 能力");

@@ -6,25 +6,24 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 /** 按用户持久化的通知，包含消息提及、团队邀请及项目成员变更。 */
 @Data
 @TableName("notifications")
 public class NotificationEntity {
 
-    // 通知 ID（UUIDv7，BINARY(16)）。
-    @TableId(type = IdType.INPUT)
-    private UUID id;
+    // 通知 ID。
+    @TableId(type = IdType.AUTO)
+    private Long id;
 
-    // 接收通知的用户 ID（BINARY(16)），外键指向 users(id)。
-    private UUID recipientUserId;
+    // 接收通知的用户 ID，外键指向 users(id)。
+    private Long recipientUserId;
 
-    // 关联项目 ID（BINARY(16)），点击跳转用；系统级通知为空。
-    private UUID projectId;
+    // 关联项目 ID，点击跳转用；系统级通知为空。
+    private Long projectId;
 
-    // 关联项目群聊 ID（BINARY(16)）；非群来源的通知为空。
-    private UUID groupId;
+    // 关联项目群聊 ID；非群来源的通知为空。
+    private Long groupId;
 
     // 通知类型：MESSAGE_MENTION/INVITED/TEAM_JOINED/PROJECT_ADDED。
     private String kind;

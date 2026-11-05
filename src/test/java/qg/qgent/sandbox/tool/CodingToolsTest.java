@@ -1,18 +1,19 @@
 package qg.qgent.sandbox.tool;
 
+import qg.qgent.support.TestIds;
+
 import qg.qgent.harness.tool.ParallelToolCallback;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.support.ToolCallbacks;
 import qg.qgent.sandbox.service.SandboxFiles;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
 
 class CodingToolsTest {
-    private final UUID id = UUID.randomUUID();
+    private final Long id = TestIds.next();
     private final SandboxFiles files = mock(SandboxFiles.class);
     private final CodingTools tools = new CodingTools(() -> id, files);
     private final String hash = "a".repeat(64);
@@ -70,7 +71,7 @@ class CodingToolsTest {
         var selected = new AtomicReference<>(id);
         var tool = new CodingTools(selected::get,files);
         when(files.readFile(id,"x.txt",1,200)).thenReturn(Map.of("ok",true,"sha256",hash));
-        tool.readFile("x.txt",null,null); selected.set(UUID.randomUUID());
+        tool.readFile("x.txt",null,null); selected.set(TestIds.next());
         assertThat(tool.applyPatch("x.txt","patch")).containsEntry("errorCode","FILE_NOT_READ");
         verify(files, never()).patchFile(any(), anyString(), anyString(), anyString());
     }

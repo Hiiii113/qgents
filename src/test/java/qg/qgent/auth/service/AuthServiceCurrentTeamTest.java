@@ -1,5 +1,7 @@
 package qg.qgent.auth.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -17,7 +19,6 @@ import qg.qgent.team.mapper.TeamMemberMapper;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
 import java.util.List;
-import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -26,9 +27,9 @@ class AuthServiceCurrentTeamTest {
     private final UserMapper users = mock(UserMapper.class);
     private final TeamMapper teams = mock(TeamMapper.class);
     private final TeamMemberMapper members = mock(TeamMemberMapper.class);
-    private final UUID userId = UUID.randomUUID();
-    private final UUID firstId = UUID.randomUUID();
-    private final UUID lastId = UUID.randomUUID();
+    private final Long userId = TestIds.next();
+    private final Long firstId = TestIds.next();
+    private final Long lastId = TestIds.next();
     private final UserEntity user = new UserEntity();
     private AuthService service;
 
@@ -89,7 +90,7 @@ class AuthServiceCurrentTeamTest {
         verify(users, never()).updateLastTeam(any(), any());
     }
 
-    private void available(UUID... ids) {
+    private void available(Long... ids) {
         when(members.selectByUserId(userId)).thenReturn(java.util.Arrays.stream(ids).map(id -> {
             TeamMemberEntity member = new TeamMemberEntity();
             member.setTeamId(id);
@@ -100,11 +101,11 @@ class AuthServiceCurrentTeamTest {
         when(teams.selectBatchIds(anyCollection())).thenReturn(java.util.Arrays.stream(ids).map(this::team).toList());
     }
 
-    private TeamEntity team(UUID id) {
+    private TeamEntity team(Long id) {
         TeamEntity team = new TeamEntity();
         team.setId(id);
         team.setName("team");
-        team.setOwnerUserId(UUID.randomUUID());
+        team.setOwnerUserId(TestIds.next());
         team.setStatus("ACTIVE");
         team.setAvatarUrl("https://example.test/avatar.png");
         return team;

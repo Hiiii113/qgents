@@ -7,22 +7,21 @@ import qg.qgent.sandbox.service.SandboxFiles;
 import qg.qgent.workspace.service.WorkspaceSelection;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
-import java.util.UUID;
 import java.util.function.Supplier;
 
 /** 面向模型的文件工具；读取版本留在内部，错误与真实结果回给 loop。 */
 public class CodingTools {
-    private final Supplier<UUID> workspace;
+    private final Supplier<Long> workspace;
     private final Supplier<String> currentDirectory;
     private final SandboxFiles files;
     private final Map<String, String> hashes = new ConcurrentHashMap<>();
-    private UUID selected;
+    private Long selected;
 
-    public CodingTools(Supplier<UUID> workspace, SandboxFiles files) {
+    public CodingTools(Supplier<Long> workspace, SandboxFiles files) {
         this(workspace, () -> ".", files);
     }
 
-    public CodingTools(Supplier<UUID> workspace, Supplier<String> currentDirectory,
+    public CodingTools(Supplier<Long> workspace, Supplier<String> currentDirectory,
                        SandboxFiles files) {
         this.workspace = workspace; this.currentDirectory = currentDirectory; this.files = files;
     }
@@ -62,7 +61,7 @@ public class CodingTools {
             @ToolParam(description = "完整文件内容，允许空文本，最多 256KB") String content) {
         path = resolveFile(path);
         if (content == null) throw new IllegalArgumentException("content 不能为 null");
-        UUID id = workspaceId();
+        Long id = workspaceId();
         String hash = hashes.get(path);
         return outcome(path, hash == null ? files.writeFile(id, path, content) : files.replaceFile(id, path, hash, content));
     }
@@ -73,7 +72,7 @@ public class CodingTools {
             @ToolParam(description = "替换文本，允许空字符串") String newText,
             @ToolParam(description = "是否替换所有匹配，默认 false", required = false) Boolean replaceAll) {
         path = resolveFile(path);
-        UUID id = workspaceId();
+        Long id = workspaceId();
         if (oldText == null || oldText.isEmpty() || newText == null) throw new IllegalArgumentException("oldText 不能为空，newText 不能为 null");
         String hash = hashes.get(path);
         if (hash == null) return error("FILE_NOT_READ", "请先 read_file 再编辑：" + path);
@@ -84,7 +83,7 @@ public class CodingTools {
     public Map<String, Object> applyPatch(@ToolParam(description = "工作区相对文件路径") String path,
             @ToolParam(description = "统一 Diff 文本") String patch) {
         path = resolveFile(path);
-        UUID id = workspaceId();
+        Long id = workspaceId();
         String hash = hashes.get(path);
         if (hash == null) return error("FILE_NOT_READ", "请先 read_file 再应用补丁：" + path);
         if (patch == null || patch.isBlank()) throw new IllegalArgumentException("patch 不能为空");
@@ -96,8 +95,8 @@ public class CodingTools {
         return result;
     }
 
-    private synchronized UUID workspaceId() {
-        UUID id = workspace.get();
+    private synchronized Long workspaceId() {
+        Long id = workspace.get();
         if (!id.equals(selected)) { hashes.clear(); selected = id; }
         return id;
     }

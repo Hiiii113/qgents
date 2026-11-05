@@ -11,7 +11,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 import qg.qgent.auth.service.TokenService;
 
 import java.util.Map;
-import java.util.UUID;
 
 /** 校验握手 URL 中的 access token，并把用户 ID 保存到会话。 */
 @Component
@@ -32,7 +31,7 @@ public class RealtimeAuthInterceptor implements HandshakeInterceptor {
                 .build()
                 .getQueryParams()
                 .getFirst("token");
-        UUID userId = token == null ? null : tokenService.verifyAccess(token);
+        Long userId = token == null ? null : tokenService.verifyAccess(token);
         if (userId == null) {
             response.setStatusCode(HttpStatus.UNAUTHORIZED);
             return false;

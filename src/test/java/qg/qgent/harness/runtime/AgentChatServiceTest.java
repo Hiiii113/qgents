@@ -1,5 +1,7 @@
 package qg.qgent.harness.runtime;
 
+import qg.qgent.support.TestIds;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -35,7 +37,6 @@ import qg.qgent.sandbox.dto.SandboxExecutionContext;
 
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -68,7 +69,7 @@ class AgentChatServiceTest {
 
     @Test
     void startsChildInBackgroundAndFeedsItsCompletionBackBeforeReplying() throws Exception {
-        UUID actor = UUID.randomUUID(), project = UUID.randomUUID(), group = UUID.randomUUID(), message = UUID.randomUUID();
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
         ChatModel model = model();
         AtomicInteger rootCalls = new AtomicInteger();
         AtomicReference<String> childInput = new AtomicReference<>();
@@ -121,10 +122,10 @@ class AgentChatServiceTest {
 
     @Test
     void resumesTheSameChildConversationWithItsEarlierMessages() throws Exception {
-        UUID actor = UUID.randomUUID(), project = UUID.randomUUID(), group = UUID.randomUUID(), message = UUID.randomUUID();
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
         ChatModel model = model();
         AtomicInteger rootCalls = new AtomicInteger(), childCalls = new AtomicInteger();
-        AtomicReference<UUID> childRunId = new AtomicReference<>();
+        AtomicReference<Long> childRunId = new AtomicReference<>();
         AtomicReference<List<Message>> continuedChildHistory = new AtomicReference<>();
         CountDownLatch rootContinued = new CountDownLatch(1);
         when(model.call(any(Prompt.class))).thenAnswer(invocation -> {
@@ -170,10 +171,10 @@ class AgentChatServiceTest {
 
     @Test
     void continuationWaitsUntilChildCompletionAndReservationArePublished() throws Exception {
-        UUID actor = UUID.randomUUID(), project = UUID.randomUUID(), group = UUID.randomUUID(), message = UUID.randomUUID();
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
         ChatModel model = model();
         AtomicInteger rootCalls = new AtomicInteger(), childCalls = new AtomicInteger();
-        AtomicReference<UUID> childRunId = new AtomicReference<>();
+        AtomicReference<Long> childRunId = new AtomicReference<>();
         AtomicReference<String> continuationToolResult = new AtomicReference<>();
         CountDownLatch childFinishStarted = new CountDownLatch(1), releaseChildFinish = new CountDownLatch(1);
         CountDownLatch rootReachedThirdCall = new CountDownLatch(1);
@@ -235,11 +236,11 @@ class AgentChatServiceTest {
 
     @Test
     void rootAndConcurrentChildrenShareOneLazyDefaultWorkspace() throws Exception {
-        UUID actor = UUID.randomUUID(), project = UUID.randomUUID(), group = UUID.randomUUID(), message = UUID.randomUUID();
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
         ChatModel model = model();
         AtomicInteger rootCalls = new AtomicInteger();
-        var callsByRun = new ConcurrentHashMap<UUID, AtomicInteger>();
-        var workspacesByRun = new ConcurrentHashMap<UUID, UUID>();
+        var callsByRun = new ConcurrentHashMap<Long, AtomicInteger>();
+        var workspacesByRun = new ConcurrentHashMap<Long, Long>();
         CountDownLatch codeCalls = new CountDownLatch(3), releaseCodeCalls = new CountDownLatch(1);
         when(model.call(any(Prompt.class))).thenAnswer(invocation -> {
             Prompt prompt = invocation.getArgument(0);
@@ -265,11 +266,11 @@ class AgentChatServiceTest {
         });
         when(fixture.workspaces().require(project, workspace.getId())).thenReturn(workspace);
         when(fixture.sessions().acquire(any(), eq(project), eq(workspace.getId())))
-                .thenAnswer(invocation -> new SandboxSession(invocation.getArgument(0), workspace.getId(), UUID.randomUUID(), workspace.getStorageKey()));
+                .thenAnswer(invocation -> new SandboxSession(invocation.getArgument(0), workspace.getId(), java.util.UUID.randomUUID(), workspace.getStorageKey()));
         when(fixture.codeAccess().listFiles(any(), any(String.class), any(String.class),
                 org.mockito.ArgumentMatchers.anyInt()))
                 .thenAnswer(invocation -> {
-                    UUID runId = SandboxExecutionContext.currentAgentRunId();
+                    Long runId = SandboxExecutionContext.currentAgentRunId();
                     workspacesByRun.put(runId, invocation.getArgument(0));
                     codeCalls.countDown();
                     await(releaseCodeCalls);
@@ -294,11 +295,11 @@ class AgentChatServiceTest {
 
     @Test
     void rootAndChildKeepIndependentWorkspaceAndWorkingDirectorySelections() throws Exception {
-        UUID actor = UUID.randomUUID(), project = UUID.randomUUID(), group = UUID.randomUUID(), message = UUID.randomUUID();
-        UUID rootWorkspaceId = UUID.randomUUID(), childWorkspaceId = UUID.randomUUID();
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
+        Long rootWorkspaceId = TestIds.next(), childWorkspaceId = TestIds.next();
         ChatModel model = model();
         AtomicInteger rootCalls = new AtomicInteger();
-        var locations = new ConcurrentHashMap<UUID, CodeLocation>();
+        var locations = new ConcurrentHashMap<Long, CodeLocation>();
         when(model.call(any(Prompt.class))).thenAnswer(invocation -> {
             Prompt prompt = invocation.getArgument(0);
             if (childPrompt(prompt)) {
@@ -333,11 +334,11 @@ class AgentChatServiceTest {
         when(fixture.workspaces().require(project, childWorkspaceId)).thenReturn(childWorkspace);
         when(fixture.sessions().acquire(any(), eq(project), any()))
                 .thenAnswer(invocation -> new SandboxSession(invocation.getArgument(0), invocation.getArgument(2),
-                        UUID.randomUUID(), "workspaces/" + invocation.getArgument(2)));
+                        java.util.UUID.randomUUID(), "workspaces/" + java.util.UUID.randomUUID()));
         when(fixture.codeAccess().listFiles(any(), any(String.class), any(String.class),
                 org.mockito.ArgumentMatchers.anyInt()))
                 .thenAnswer(invocation -> {
-                    UUID runId = SandboxExecutionContext.currentAgentRunId();
+                    Long runId = SandboxExecutionContext.currentAgentRunId();
                     locations.put(runId, new CodeLocation(invocation.getArgument(0), invocation.getArgument(1)));
                     return Map.of("ok", true, "files", List.of(), "truncated", false);
                 });
@@ -357,7 +358,7 @@ class AgentChatServiceTest {
 
     @Test
     void activeChildLimitRejectsAdditionalChildrenWhileFirstRuns() throws Exception {
-        UUID actor = UUID.randomUUID(), project = UUID.randomUUID(), group = UUID.randomUUID(), message = UUID.randomUUID();
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
         ChatModel model = model();
         CountDownLatch childStarted = new CountDownLatch(1), releaseChild = new CountDownLatch(1);
         AtomicInteger rootCalls = new AtomicInteger();
@@ -392,10 +393,10 @@ class AgentChatServiceTest {
 
     @Test
     void stoppingOneChildReturnsWhileItFinishesAndLeavesSiblingRunning() throws Exception {
-        UUID actor = UUID.randomUUID(), project = UUID.randomUUID(), group = UUID.randomUUID(), message = UUID.randomUUID();
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
         ChatModel model = model();
         AtomicInteger rootCalls = new AtomicInteger();
-        CopyOnWriteArrayList<UUID> childIds = new CopyOnWriteArrayList<>();
+        CopyOnWriteArrayList<Long> childIds = new CopyOnWriteArrayList<>();
         CountDownLatch bothChildrenStarted = new CountDownLatch(2), firstChildStopAwaiting = new CountDownLatch(1);
         CountDownLatch releaseFirstStop = new CountDownLatch(1), releaseSecond = new CountDownLatch(1);
         CountDownLatch rootContinuedAfterStop = new CountDownLatch(1);
@@ -405,7 +406,7 @@ class AgentChatServiceTest {
             if (childPrompt(prompt)) {
                 childToolNames.add(((OpenAiChatOptions) prompt.getOptions()).getToolCallbacks().stream()
                         .map(callback -> callback.getToolDefinition().name()).toList());
-                UUID runId = SandboxExecutionContext.currentAgentRunId();
+                Long runId = SandboxExecutionContext.currentAgentRunId();
                 bothChildrenStarted.countDown();
                 try {
                     (runId.equals(childIds.getFirst()) ? releaseFirstStop : releaseSecond).await(5, TimeUnit.SECONDS);
@@ -438,7 +439,7 @@ class AgentChatServiceTest {
             return child;
         }).when(fixture.runs()).startChild(any(), any(), any());
         org.mockito.Mockito.doAnswer(invocation -> {
-            UUID runId = invocation.getArgument(0);
+            Long runId = invocation.getArgument(0);
             if (runId.equals(childIds.getFirst())) {
                 firstChildStopAwaiting.countDown();
                 awaitUninterruptibly(releaseFirstStop);
@@ -468,11 +469,11 @@ class AgentChatServiceTest {
 
     @Test
     void rootCancellationRequestsChildStopAndReturnsBeforeWorkersFinish() throws Exception {
-        UUID actor = UUID.randomUUID(), project = UUID.randomUUID(), group = UUID.randomUUID(), message = UUID.randomUUID();
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
         ChatModel model = model();
         AtomicInteger rootCalls = new AtomicInteger();
         AtomicReference<Runnable> cancellationSignal = new AtomicReference<>();
-        AtomicReference<UUID> childRunId = new AtomicReference<>();
+        AtomicReference<Long> childRunId = new AtomicReference<>();
         CountDownLatch childStarted = new CountDownLatch(1), commandAwaitStarted = new CountDownLatch(1);
         CountDownLatch releaseCommandAwait = new CountDownLatch(1);
         when(model.call(any(Prompt.class))).thenAnswer(invocation -> {
@@ -532,10 +533,10 @@ class AgentChatServiceTest {
 
     @Test
     void stopDuringSuccessfulChildFinalizationCancelsAndAwaitsItsCommands() throws Exception {
-        UUID actor = UUID.randomUUID(), project = UUID.randomUUID(), group = UUID.randomUUID(), message = UUID.randomUUID();
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
         ChatModel model = model();
         AtomicInteger rootCalls = new AtomicInteger();
-        AtomicReference<UUID> childRunId = new AtomicReference<>();
+        AtomicReference<Long> childRunId = new AtomicReference<>();
         AtomicReference<AgentRunEntity> childEntity = new AtomicReference<>();
         CountDownLatch childFinishStarted = new CountDownLatch(1), releaseChildFinish = new CountDownLatch(1);
         CountDownLatch commandAwaitStarted = new CountDownLatch(1), releaseCommandAwait = new CountDownLatch(1);
@@ -603,11 +604,11 @@ class AgentChatServiceTest {
 
     @Test
     void rootCancellationAlsoCancelsCommandsOwnedByFinishedChildren() throws Exception {
-        UUID actor = UUID.randomUUID(), project = UUID.randomUUID(), group = UUID.randomUUID(), message = UUID.randomUUID();
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
         ChatModel model = model();
         AtomicInteger rootCalls = new AtomicInteger();
         AtomicReference<Runnable> cancellationSignal = new AtomicReference<>();
-        AtomicReference<UUID> childRunId = new AtomicReference<>();
+        AtomicReference<Long> childRunId = new AtomicReference<>();
         CountDownLatch rootModelBlocked = new CountDownLatch(1);
         CountDownLatch releaseRootModel = new CountDownLatch(1);
         when(model.call(any(Prompt.class))).thenAnswer(invocation -> {
@@ -657,12 +658,12 @@ class AgentChatServiceTest {
         verify(fixture.runs(), never()).requestChildCancellation(fixture.root().getId(), childRunId.get());
     }
 
-    private Fixture fixture(ChatModel model, UUID actor, UUID project, UUID group, UUID message,
+    private Fixture fixture(ChatModel model, Long actor, Long project, Long group, Long message,
                             ExecutorService childExecutor) {
         return fixture(model, actor, project, group, message, childExecutor, 4);
     }
 
-    private Fixture fixture(ChatModel model, UUID actor, UUID project, UUID group, UUID message,
+    private Fixture fixture(ChatModel model, Long actor, Long project, Long group, Long message,
                             ExecutorService childExecutor, int maxSubagents) {
         AgentLoop loop = new AgentLoop(model, new ObjectMapper(), 12, 4);
         AgentRunService runs = mock(AgentRunService.class);
@@ -677,12 +678,12 @@ class AgentChatServiceTest {
         GroupContext groupContext = new GroupContext();
         groupContext.setTitle("root-only context");
         groupContext.setConversation(List.of());
-        groupContext.setSkills(List.of(new ContextSkill(UUID.randomUUID(), "published-skill", "适用于测试任务")));
+        groupContext.setSkills(List.of(new ContextSkill(TestIds.next(), "published-skill", "适用于测试任务")));
         when(context.buildForGroup(actor, project, group, 30)).thenReturn(groupContext);
         when(skills.publishedCatalog(actor, project)).thenReturn(groupContext.getSkills());
         when(attachments.load(actor, project, List.of())).thenReturn(new AttachmentMediaLoader.Result(List.of(), ""));
         AgentRunEntity root = new AgentRunEntity();
-        root.setId(UUID.randomUUID());
+        root.setId(TestIds.next());
         root.setProjectId(project);
         root.setGroupId(group);
         root.setTriggerMessageId(message);
@@ -718,7 +719,7 @@ class AgentChatServiceTest {
 
     private AgentRunEntity run(AgentRunEntity parent, String instruction) {
         AgentRunEntity child = new AgentRunEntity();
-        child.setId(UUID.randomUUID());
+        child.setId(TestIds.next());
         child.setProjectId(parent.getProjectId());
         child.setGroupId(parent.getGroupId());
         child.setTriggerMessageId(parent.getTriggerMessageId());
@@ -754,16 +755,16 @@ class AgentChatServiceTest {
                 .toolCalls(List.of(calls)).build())));
     }
 
-    private WorkspaceEntity workspace(UUID projectId) {
+    private WorkspaceEntity workspace(Long projectId) {
         WorkspaceEntity workspace = new WorkspaceEntity();
-        workspace.setId(UUID.randomUUID());
+        workspace.setId(TestIds.next());
         workspace.setProjectId(projectId);
-        workspace.setStorageKey("workspaces/" + workspace.getId());
+        workspace.setStorageKey("workspaces/" + java.util.UUID.randomUUID());
         workspace.setStatus("PROVISIONING");
         return workspace;
     }
 
-    private record CodeLocation(UUID workspaceId, String path) { }
+    private record CodeLocation(Long workspaceId, String path) { }
 
     private void await(CountDownLatch latch) {
         try {

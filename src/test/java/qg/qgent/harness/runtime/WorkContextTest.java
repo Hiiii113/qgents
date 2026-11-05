@@ -1,10 +1,11 @@
 package qg.qgent.harness.runtime;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import qg.qgent.harness.entity.AgentRunEntity;
 import qg.qgent.chat.event.MessageSentEvent;
 
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -13,7 +14,7 @@ class WorkContextTest {
     void bindingTheLazyDefaultWorkspacePreservesTheAgentDirectory() {
         WorkContext.AgentExecution execution = new WorkContext.AgentExecution(
                 new AgentRunEntity(), null, null, ".");
-        UUID workspace = UUID.randomUUID();
+        Long workspace = TestIds.next();
         execution.workspace.setDirectory("src/runtime");
 
         execution.workspace.bindDefault(workspace);
@@ -25,21 +26,21 @@ class WorkContextTest {
     @Test
     void explicitlySelectingAnotherWorkspaceResetsTheAgentDirectory() {
         WorkContext.AgentExecution execution = new WorkContext.AgentExecution(
-                new AgentRunEntity(), null, UUID.randomUUID(), "src/runtime");
+                new AgentRunEntity(), null, TestIds.next(), "src/runtime");
 
-        execution.workspace.select(UUID.randomUUID());
+        execution.workspace.select(TestIds.next());
 
         assertThat(execution.workspace.directory()).isEqualTo(".");
     }
 
     @Test
     void resumingAStoppedChildAllowsItsCommandsToBeCancelledAgain() {
-        UUID runId = UUID.randomUUID();
+        Long runId = TestIds.next();
         AgentRunEntity run = new AgentRunEntity();
         run.setId(runId);
         WorkContext context = new WorkContext(
-                new MessageSentEvent(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), java.util.List.of()),
-                UUID.randomUUID());
+                new MessageSentEvent(TestIds.next(), TestIds.next(), TestIds.next(), TestIds.next(), java.util.List.of()),
+                TestIds.next());
         WorkContext.AgentExecution child = new WorkContext.AgentExecution(run, null, null, ".");
         assertThat(context.reserveChild(child, 1)).isTrue();
         child.schedule();

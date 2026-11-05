@@ -1,5 +1,7 @@
 package qg.qgent.project.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -19,7 +21,6 @@ import qg.qgent.team.entity.TeamEntity;
 import qg.qgent.team.mapper.TeamMapper;
 import qg.qgent.team.mapper.TeamMemberMapper;
 
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -36,13 +37,13 @@ class ProjectServiceTest {
 
     @Test
     void projectListReturnsAvatarAndMemberCountWithoutExtraQueries() {
-        UUID actor = UUID.randomUUID(), teamId = UUID.randomUUID();
+        Long actor = TestIds.next(), teamId = TestIds.next();
         TeamEntity team = new TeamEntity();
         team.setStatus("ACTIVE");
         when(teams.selectById(teamId)).thenReturn(team);
         when(teamMembers.selectByTeamAndUser(teamId, actor)).thenReturn(new TeamMemberEntity());
         ProjectMembershipView row = new ProjectMembershipView();
-        row.setId(UUID.randomUUID());
+        row.setId(TestIds.next());
         row.setTeamId(teamId);
         row.setAvatarUrl("https://assets.example/avatar.png");
         row.setMemberCount(3L);
@@ -58,10 +59,10 @@ class ProjectServiceTest {
     @ParameterizedTest
     @ValueSource(strings = {"unchanged", "clear", "replace", "archive", "restore"})
     void projectChangesPreserveReplaceOrClearAvatar(String operation) {
-        UUID actor = UUID.randomUUID();
+        Long actor = TestIds.next();
         ProjectEntity project = new ProjectEntity();
-        project.setId(UUID.randomUUID());
-        project.setTeamId(UUID.randomUUID());
+        project.setId(TestIds.next());
+        project.setTeamId(TestIds.next());
         project.setName("项目");
         project.setStatus("restore".equals(operation) ? "ARCHIVED" : "ACTIVE");
         project.setAvatarUrl("https://assets.example/original.png");
@@ -92,7 +93,7 @@ class ProjectServiceTest {
 
     @Test
     void creationInitializesProjectAndChatWithoutRepositoryInputsOrExternalCalls() {
-        UUID owner = UUID.randomUUID(), teamId = UUID.randomUUID();
+        Long owner = TestIds.next(), teamId = TestIds.next();
         var teams = mock(TeamMapper.class);
         var team = new TeamEntity();
         team.setId(teamId);
@@ -104,7 +105,13 @@ class ProjectServiceTest {
         var membership = new qg.qgent.team.entity.TeamMemberEntity();
         membership.setRole("TEAM_OWNER");
         when(members.selectByTeamAndUser(teamId, owner)).thenReturn(membership);
-        var service = new ProjectService(mock(ProjectMapper.class), mock(ProjectMemberMapper.class), teams,
+        var projects = mock(ProjectMapper.class);
+        when(projects.insert(any(ProjectEntity.class))).thenAnswer(invocation -> {
+            ProjectEntity entity = invocation.getArgument(0);
+            entity.setId(TestIds.next());
+            return 1;
+        });
+        var service = new ProjectService(projects, mock(ProjectMemberMapper.class), teams,
                 members, mock(ProjectAccessService.class), events,
                 mock(NotificationService.class), mock(EventService.class));
         var request = new ProjectCreateRequest();
@@ -117,9 +124,9 @@ class ProjectServiceTest {
     }
     @Test
     void projectGithubCapabilityCanBeDisabledWithoutChangingProfile() {
-        UUID actor = UUID.randomUUID();
+        Long actor = TestIds.next();
         ProjectEntity project = new ProjectEntity();
-        project.setId(UUID.randomUUID()); project.setTeamId(UUID.randomUUID());
+        project.setId(TestIds.next()); project.setTeamId(TestIds.next());
         project.setName("项目"); project.setStatus("ACTIVE");
         when(projects.selectByIdForUpdate(project.getId())).thenReturn(project);
         ProjectUpdateRequest request = new ProjectUpdateRequest();

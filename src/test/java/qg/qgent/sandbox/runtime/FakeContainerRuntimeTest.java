@@ -1,5 +1,7 @@
 package qg.qgent.sandbox.runtime;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 
 import qg.qgent.sandbox.dto.CreateSandboxRequest;
@@ -7,7 +9,6 @@ import qg.qgent.sandbox.dto.CreateSandboxRequest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -37,8 +38,8 @@ class FakeContainerRuntimeTest {
 
     private CreateSandboxRequest request() {
         CreateSandboxRequest request = new CreateSandboxRequest();
-        request.setSandboxId(UUID.randomUUID());
-        request.setAgentRunId(UUID.randomUUID());
+        request.setSandboxId(java.util.UUID.randomUUID());
+        request.setAgentRunId(TestIds.next());
         request.setWorkspaceStorageKey("workspaces/example");
         request.setImageProfile("dev-tools");
         return request;

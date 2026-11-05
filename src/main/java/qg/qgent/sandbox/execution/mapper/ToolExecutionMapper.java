@@ -27,7 +27,7 @@ public interface ToolExecutionMapper extends BaseMapper<ToolExecutionEntity> {
             SET status = 'RUNNING', started_at = #{startedAt}
             WHERE id = #{id} AND owner_instance_id = #{instanceId} AND status = 'QUEUED'
             """)
-    int markRunning(@Param("id") String id, @Param("instanceId") String instanceId,
+    int markRunning(@Param("id") Long id, @Param("instanceId") String instanceId,
                     @Param("startedAt") LocalDateTime startedAt);
 
     @Update("""
@@ -36,7 +36,7 @@ public interface ToolExecutionMapper extends BaseMapper<ToolExecutionEntity> {
                 failure_reason = '执行已取消', finished_at = #{finishedAt}
             WHERE id = #{id} AND owner_instance_id = #{instanceId} AND status IN ('QUEUED', 'RUNNING')
             """)
-    int markCancelled(@Param("id") String id, @Param("instanceId") String instanceId,
+    int markCancelled(@Param("id") Long id, @Param("instanceId") String instanceId,
                       @Param("finishedAt") LocalDateTime finishedAt);
 
     @Update("""
@@ -45,7 +45,7 @@ public interface ToolExecutionMapper extends BaseMapper<ToolExecutionEntity> {
                 failure_code = #{failureCode}, failure_reason = #{failureReason}, finished_at = #{finishedAt}
             WHERE id = #{id} AND owner_instance_id = #{instanceId} AND status = 'RUNNING'
             """)
-    int finishIfRunning(@Param("id") String id, @Param("instanceId") String instanceId,
+    int finishIfRunning(@Param("id") Long id, @Param("instanceId") String instanceId,
                         @Param("status") String status,
                         @Param("exitCode") Integer exitCode, @Param("resultJson") String resultJson,
                         @Param("failureCode") String failureCode, @Param("failureReason") String failureReason,
@@ -57,7 +57,7 @@ public interface ToolExecutionMapper extends BaseMapper<ToolExecutionEntity> {
                 finished_at = #{finishedAt}
             WHERE id = #{id} AND owner_instance_id = #{instanceId} AND status = 'QUEUED'
             """)
-    int rejectQueued(@Param("id") String id, @Param("instanceId") String instanceId,
+    int rejectQueued(@Param("id") Long id, @Param("instanceId") String instanceId,
                      @Param("failureCode") String failureCode, @Param("failureReason") String failureReason,
                      @Param("finishedAt") LocalDateTime finishedAt);
 
@@ -66,7 +66,7 @@ public interface ToolExecutionMapper extends BaseMapper<ToolExecutionEntity> {
             WHERE sandbox_id = #{sandboxId} AND owner_instance_id = #{instanceId}
               AND status IN ('QUEUED', 'RUNNING')
             """)
-    List<String> selectActiveIdsBySandbox(@Param("sandboxId") String sandboxId,
+    List<Long> selectActiveIdsBySandbox(@Param("sandboxId") String sandboxId,
                                           @Param("instanceId") String instanceId);
 
     @Select("""
@@ -74,6 +74,6 @@ public interface ToolExecutionMapper extends BaseMapper<ToolExecutionEntity> {
             WHERE agent_run_id = #{agentRunId} AND owner_instance_id = #{instanceId}
               AND status IN ('QUEUED', 'RUNNING')
             """)
-    List<String> selectActiveIdsByAgentRun(@Param("agentRunId") String agentRunId,
+    List<Long> selectActiveIdsByAgentRun(@Param("agentRunId") Long agentRunId,
                                            @Param("instanceId") String instanceId);
 }

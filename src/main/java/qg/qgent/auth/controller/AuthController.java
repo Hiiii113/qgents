@@ -19,7 +19,6 @@ import qg.qgent.user.dto.UserUpdateRequest;
 import qg.qgent.user.dto.CurrentTeamRequest;
 
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * 认证与账户接口
@@ -67,7 +66,7 @@ public class AuthController {
 
     /** 注销当前登录态。 */
     @PostMapping("/auth/logout")
-    public ApiResponse<?> logout(@AuthenticationPrincipal UUID userId,
+    public ApiResponse<?> logout(@AuthenticationPrincipal Long userId,
                                  @Valid @RequestBody RefreshTokenRequest body, HttpServletRequest request) {
         authService.logout(userId, body.getRefreshToken());
         return ok(Map.of(), request);
@@ -91,20 +90,20 @@ public class AuthController {
 
     /** 获取当前账户、团队与项目角色摘要。 */
     @GetMapping("/me")
-    public ApiResponse<?> me(@AuthenticationPrincipal UUID userId, HttpServletRequest request) {
+    public ApiResponse<?> me(@AuthenticationPrincipal Long userId, HttpServletRequest request) {
         return ok(authService.me(userId), request);
     }
 
     /** 修改昵称或头像。 */
     @PatchMapping("/me")
-    public ApiResponse<?> updateMe(@AuthenticationPrincipal UUID userId, @Valid @RequestBody UserUpdateRequest body,
+    public ApiResponse<?> updateMe(@AuthenticationPrincipal Long userId, @Valid @RequestBody UserUpdateRequest body,
                                    HttpServletRequest request) {
         return ok(authService.updateMe(userId, body), request);
     }
 
     /** 保存当前团队，供后续登录和其他设备恢复。 */
     @PutMapping("/me/current-team")
-    public ApiResponse<?> selectTeam(@AuthenticationPrincipal UUID userId,
+    public ApiResponse<?> selectTeam(@AuthenticationPrincipal Long userId,
                                     @Valid @RequestBody CurrentTeamRequest body, HttpServletRequest request) {
         authService.selectTeam(userId, body.teamId());
         return ok(Map.of(), request);

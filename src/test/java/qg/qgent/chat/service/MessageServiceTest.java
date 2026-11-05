@@ -1,5 +1,7 @@
 package qg.qgent.chat.service;
 
+import qg.qgent.support.TestIds;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -31,7 +33,6 @@ import qg.qgent.user.mapper.UserMapper;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -60,9 +61,9 @@ class MessageServiceTest {
 
     @Test
     void qgentCannotReplyInGroupItHasNotJoined() {
-        UUID groupId = UUID.randomUUID();
+        Long groupId = TestIds.next();
         ChatGroupEntity group = new ChatGroupEntity();
-        group.setId(groupId); group.setProjectId(UUID.randomUUID());
+        group.setId(groupId); group.setProjectId(TestIds.next());
         MessageMapper messages = mock(MessageMapper.class);
         ChatGroupMapper groups = mock(ChatGroupMapper.class);
         when(groups.selectOne(any())).thenReturn(group);
@@ -76,10 +77,10 @@ class MessageServiceTest {
 
     @Test
     void qgentReplyUsesFixedNameAndStructuredSender() {
-        UUID projectId = UUID.randomUUID();
-        UUID groupId = UUID.randomUUID();
-        UUID agentId = UUID.randomUUID();
-        UUID teamId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long groupId = TestIds.next();
+        Long agentId = TestIds.next();
+        Long teamId = TestIds.next();
         ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setQgentEnabled(true);
@@ -96,6 +97,7 @@ class MessageServiceTest {
         AtomicReference<MessageEntity> inserted = new AtomicReference<>();
         when(messages.insert(any(MessageEntity.class))).thenAnswer(invocation -> {
             inserted.set(invocation.getArgument(0));
+            inserted.get().setId(TestIds.next());
             return 1;
         });
         when(messages.selectById(any())).thenAnswer(invocation -> inserted.get());
@@ -118,9 +120,9 @@ class MessageServiceTest {
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
     void userMessageRetryDoesNotRepeatAgentOrUserMentionEvents(boolean originallyMentioned) {
-        UUID projectId = UUID.randomUUID();
-        UUID groupId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long groupId = TestIds.next();
+        Long actor = TestIds.next();
         ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setQgentEnabled(true);
@@ -133,6 +135,7 @@ class MessageServiceTest {
         when(messages.selectOne(any())).thenAnswer(invocation -> stored.get());
         when(messages.insert(any(MessageEntity.class))).thenAnswer(invocation -> {
             stored.set(invocation.getArgument(0));
+            stored.get().setId(TestIds.next());
             return 1;
         });
         when(messages.selectById(any())).thenAnswer(invocation -> stored.get());
@@ -148,9 +151,9 @@ class MessageServiceTest {
         Mention agent = new Mention();
         Mention user = new Mention();
         user.setType("USER");
-        user.setId(UUID.randomUUID());
+        user.setId(TestIds.next());
         request.setMentions(originallyMentioned ? List.of(agent, user) : List.of());
-        request.setClientMessageId("message-" + UUID.randomUUID());
+        request.setClientMessageId("message-" + TestIds.next());
 
         MessageResponse first = service.send(actor, projectId, groupId, request);
         MessageResponse second = service.send(actor, projectId, groupId, request);
@@ -166,21 +169,21 @@ class MessageServiceTest {
         }
         ArgumentCaptor<MessageSentEvent> event = ArgumentCaptor.forClass(MessageSentEvent.class);
         verify(publisher).publishEvent(event.capture());
-        assertThat(event.getValue().messageId()).isEqualTo(UUID.fromString(first.getId()));
+        assertThat(event.getValue().messageId()).isEqualTo(Long.valueOf(first.getId()));
         assertThat(event.getValue().mentions()).containsExactly(agent, user);
         verifyNoMoreInteractions(publisher);
     }
 
     @Test
     void duplicateInsertReturnsExistingMessageWithoutMentionEvent() {
-        UUID projectId = UUID.randomUUID();
-        UUID groupId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long groupId = TestIds.next();
         ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setQgentEnabled(true);
         group.setProjectId(projectId);
         MessageEntity existing = new MessageEntity();
-        existing.setId(UUID.randomUUID());
+        existing.setId(TestIds.next());
         existing.setGroupId(groupId);
         existing.setSequenceNo(1L);
         existing.setMessageType("TEXT");
@@ -203,7 +206,7 @@ class MessageServiceTest {
         Mention agent = new Mention();
         request.setMentions(List.of(agent));
 
-        MessageResponse response = service.send(UUID.randomUUID(), projectId, groupId, request);
+        MessageResponse response = service.send(TestIds.next(), projectId, groupId, request);
 
         assertThat(response.getId()).isEqualTo(existing.getId().toString());
         verifyNoInteractions(publisher);
@@ -214,12 +217,12 @@ class MessageServiceTest {
         MessageMapper messages = mock(MessageMapper.class);
         ChatGroupMapper groups = mock(ChatGroupMapper.class);
         ChatGroupEntity group = new ChatGroupEntity();
-        UUID groupId = UUID.randomUUID();
-        UUID agentId = UUID.randomUUID();
-        UUID teamId = UUID.randomUUID();
+        Long groupId = TestIds.next();
+        Long agentId = TestIds.next();
+        Long teamId = TestIds.next();
         group.setId(groupId);
         group.setQgentEnabled(true);
-        group.setProjectId(UUID.randomUUID());
+        group.setProjectId(TestIds.next());
         ProjectEntity project = new ProjectEntity();
         project.setId(group.getProjectId());
         project.setTeamId(teamId);
@@ -228,6 +231,7 @@ class MessageServiceTest {
         AtomicReference<MessageEntity> inserted = new AtomicReference<>();
         when(messages.insert(any(MessageEntity.class))).thenAnswer(invocation -> {
             inserted.set(invocation.getArgument(0));
+            inserted.get().setId(TestIds.next());
             return 1;
         });
         when(messages.selectById(any())).thenAnswer(invocation -> inserted.get());
@@ -242,7 +246,7 @@ class MessageServiceTest {
         MessageSendRequest request = new MessageSendRequest();
         request.setType("TEXT");
         request.setContent(Map.of("text", "这里回复正文"));
-        request.setReplyToId(UUID.randomUUID());
+        request.setReplyToId(TestIds.next());
         MessageEntity quoted = new MessageEntity();
         quoted.setGroupId(groupId);
         when(messages.selectById(request.getReplyToId())).thenReturn(quoted);
@@ -264,12 +268,12 @@ class MessageServiceTest {
         MessageMapper messages = mock(MessageMapper.class);
         ChatGroupMapper groups = mock(ChatGroupMapper.class);
         ChatGroupEntity group = new ChatGroupEntity();
-        UUID groupId = UUID.randomUUID();
-        UUID agentId = UUID.randomUUID();
-        UUID teamId = UUID.randomUUID();
+        Long groupId = TestIds.next();
+        Long agentId = TestIds.next();
+        Long teamId = TestIds.next();
         group.setId(groupId);
         group.setQgentEnabled(true);
-        group.setProjectId(UUID.randomUUID());
+        group.setProjectId(TestIds.next());
         ProjectEntity project = new ProjectEntity();
         project.setId(group.getProjectId());
         project.setTeamId(teamId);
@@ -278,6 +282,7 @@ class MessageServiceTest {
         AtomicReference<MessageEntity> inserted = new AtomicReference<>();
         when(messages.insert(any(MessageEntity.class))).thenAnswer(invocation -> {
             inserted.set(invocation.getArgument(0));
+            inserted.get().setId(TestIds.next());
             return 1;
         });
         when(messages.selectById(any())).thenAnswer(invocation -> inserted.get());
@@ -301,9 +306,9 @@ class MessageServiceTest {
 
     @Test
     void incrementalMessagesAreReadAfterCursorInAscendingOrder() {
-        UUID projectId = UUID.randomUUID();
-        UUID groupId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long groupId = TestIds.next();
+        Long actor = TestIds.next();
         MessageMapper messages = mock(MessageMapper.class);
         ChatGroupMapper groups = mock(ChatGroupMapper.class);
         GroupService groupService = mock(GroupService.class);
@@ -332,8 +337,8 @@ class MessageServiceTest {
 
     @Test
     void incrementalMessagesRejectNegativeCursorBeforeQuery() {
-        UUID projectId = UUID.randomUUID();
-        UUID groupId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long groupId = TestIds.next();
         ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setQgentEnabled(true);
@@ -347,15 +352,15 @@ class MessageServiceTest {
                 new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 mock(ApplicationEventPublisher.class));
 
-        assertThatThrownBy(() -> service.listAfterSequence(UUID.randomUUID(), projectId, groupId, -1, 100))
+        assertThatThrownBy(() -> service.listAfterSequence(TestIds.next(), projectId, groupId, -1, 100))
                 .isInstanceOfSatisfying(ApiException.class,
                         error -> assertThat(error.code()).isEqualTo("INVALID_MESSAGE_CURSOR"));
         verify(messages, never()).selectAfterSequence(any(), anyLong(), anyInt());
     }
 
-    private MessageEntity message(UUID groupId, long sequence, String text) {
+    private MessageEntity message(Long groupId, long sequence, String text) {
         MessageEntity entity = new MessageEntity();
-        entity.setId(UUID.randomUUID());
+        entity.setId(TestIds.next());
         entity.setGroupId(groupId);
         entity.setSequenceNo(sequence);
         entity.setMessageType("TEXT");

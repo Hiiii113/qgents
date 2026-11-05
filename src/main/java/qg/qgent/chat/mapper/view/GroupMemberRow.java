@@ -3,7 +3,6 @@ package qg.qgent.chat.mapper.view;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
-import java.util.UUID;
 
 /** 项目或群聊成员与用户资料关联的查询结果，由服务组装为成员响应。 */
 @Data
@@ -11,7 +10,7 @@ public class GroupMemberRow {
 
     // 成员用户 ID。
     @Schema(description = "成员用户 ID")
-    private UUID userId;
+    private Long userId;
 
     // 成员昵称。
     @Schema(description = "成员昵称")

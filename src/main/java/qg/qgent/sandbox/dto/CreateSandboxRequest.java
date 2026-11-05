@@ -22,7 +22,7 @@ public class CreateSandboxRequest {
 
     // Sandbox 所属 AgentRun 编号。
     @NotNull
-    private UUID agentRunId;
+    private Long agentRunId;
 
     // Workspace 的不透明存储键，由 Sandbox 解析为受控根目录下的实际路径。
     @NotBlank

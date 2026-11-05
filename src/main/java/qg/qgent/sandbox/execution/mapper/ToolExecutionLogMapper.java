@@ -18,5 +18,5 @@ public interface ToolExecutionLogMapper {
     int insert(ToolExecutionLogEntity entity);
 
     @Select("SELECT COALESCE(MAX(sequence_no), 0) FROM tool_execution_logs WHERE execution_id = #{executionId}")
-    long selectMaxSequence(String executionId);
+    long selectMaxSequence(Long executionId);
 }

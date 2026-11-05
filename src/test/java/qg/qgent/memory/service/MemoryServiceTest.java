@@ -1,5 +1,7 @@
 package qg.qgent.memory.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 
 import qg.qgent.common.web.ApiException;
@@ -11,7 +13,6 @@ import qg.qgent.realtime.service.EventService;
 import qg.qgent.user.mapper.UserMapper;
 
 import java.util.List;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -31,12 +32,12 @@ class MemoryServiceTest {
 
     @Test
     void approveRejectsMemoryWhenApprovedContextBudgetWouldBeExceeded() {
-        UUID projectId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
-        UUID memoryId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long actor = TestIds.next();
+        Long memoryId = TestIds.next();
         MemoryEntity pending = memory(memoryId, projectId, actor, "标题", "正文", "PENDING_REVIEW");
         when(memories.selectByIdForUpdate(memoryId)).thenReturn(pending);
-        when(memories.selectApprovedForUpdate(projectId)).thenReturn(List.of(memory(UUID.randomUUID(), projectId,
+        when(memories.selectApprovedForUpdate(projectId)).thenReturn(List.of(memory(TestIds.next(), projectId,
                 actor, "已批准", "已有正文", "APPROVED")));
 
         ApiException error = assertThrows(ApiException.class,
@@ -52,13 +53,13 @@ class MemoryServiceTest {
 
     @Test
     void approveAllowsMemoryAfterArchivedMemoryHasFreedBudget() {
-        UUID projectId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
-        UUID memoryId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long actor = TestIds.next();
+        Long memoryId = TestIds.next();
         MemoryEntity pending = memory(memoryId, projectId, actor, "标题", "正文", "PENDING_REVIEW");
         when(memories.selectByIdForUpdate(memoryId)).thenReturn(pending);
         // 已归档 Memory 不在聚合中，剩余已批准内容恰好可容纳本次批准。
-        when(memories.selectApprovedForUpdate(projectId)).thenReturn(List.of(memory(UUID.randomUUID(), projectId,
+        when(memories.selectApprovedForUpdate(projectId)).thenReturn(List.of(memory(TestIds.next(), projectId,
                 actor, "已批准", "内容", "APPROVED")));
         when(memories.selectById(memoryId)).thenReturn(pending);
 
@@ -72,9 +73,9 @@ class MemoryServiceTest {
 
     @Test
     void archiveLocksProjectBeforeReleasingApprovedContextBudget() {
-        UUID projectId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
-        UUID memoryId = UUID.randomUUID();
+        Long projectId = TestIds.next();
+        Long actor = TestIds.next();
+        Long memoryId = TestIds.next();
         MemoryEntity approved = memory(memoryId, projectId, actor, "标题", "正文", "APPROVED");
         when(memories.selectByIdForUpdate(memoryId)).thenReturn(approved);
         when(memories.selectById(memoryId)).thenReturn(approved);
@@ -91,7 +92,7 @@ class MemoryServiceTest {
         return new MemoryService(memories, projects, access, users, mock(EventService.class), maxApprovedMemoryChars);
     }
 
-    private MemoryEntity memory(UUID memoryId, UUID projectId, UUID actor, String title, String content, String status) {
+    private MemoryEntity memory(Long memoryId, Long projectId, Long actor, String title, String content, String status) {
         MemoryEntity value = new MemoryEntity();
         value.setId(memoryId);
         value.setProjectId(projectId);

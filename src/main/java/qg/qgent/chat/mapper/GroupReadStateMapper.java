@@ -4,7 +4,6 @@ import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
-import java.util.UUID;
 
 /** 群成员已读游标数据访问（表 group_read_state）。 */
 @Mapper
@@ -23,6 +22,6 @@ public interface GroupReadStateMapper {
             + "VALUES (#{userId}, #{groupId}, #{seq}) "
             + "ON DUPLICATE KEY UPDATE last_read_sequence_no = "
             + "GREATEST(COALESCE(last_read_sequence_no, 0), VALUES(last_read_sequence_no))")
-    void upsertSequence(@Param("userId") UUID userId, @Param("groupId") UUID groupId, @Param("seq") Long seq);
+    void upsertSequence(@Param("userId") Long userId, @Param("groupId") Long groupId, @Param("seq") Long seq);
 
 }

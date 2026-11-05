@@ -1,5 +1,7 @@
 package qg.qgent.skill.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -13,7 +15,6 @@ import qg.qgent.skill.entity.SkillEntity;
 import qg.qgent.skill.mapper.SkillMapper;
 import qg.qgent.user.mapper.UserMapper;
 
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -24,7 +25,7 @@ class SkillServiceTest {
     private final ProjectAccessService access = mock(ProjectAccessService.class);
     private final EventService events = mock(EventService.class);
     private final SkillService service = new SkillService(mapper, access, mock(UserMapper.class), events);
-    private final UUID projectId = UUID.randomUUID(), owner = UUID.randomUUID(), other = UUID.randomUUID();
+    private final Long projectId = TestIds.next(), owner = TestIds.next(), other = TestIds.next();
 
     @ParameterizedTest
     @ValueSource(strings = {"DRAFT", "PENDING_REVIEW", "REJECTED", "PUBLISHED"})
@@ -146,7 +147,7 @@ class SkillServiceTest {
 
     private SkillEntity skill(String status, String visibility) {
         SkillEntity skill = new SkillEntity();
-        skill.setId(UUID.randomUUID());
+        skill.setId(TestIds.next());
         skill.setProjectId(projectId);
         skill.setCreatedBy(owner);
         skill.setName("规范");

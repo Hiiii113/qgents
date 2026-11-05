@@ -17,7 +17,7 @@ public class SandboxAllocation {
     // 沙箱唯一编号。
     private UUID id;
     // Sandbox 所属 AgentRun 编号；
-    private UUID agentRunId;
+    private Long agentRunId;
     // 控制层提供的不透明 Workspace 存储键。
     private String workspaceStorageKey;
     // 创建容器时选择的镜像配置名称。

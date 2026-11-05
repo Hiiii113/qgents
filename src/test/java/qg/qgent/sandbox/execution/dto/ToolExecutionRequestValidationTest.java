@@ -1,12 +1,13 @@
 package qg.qgent.sandbox.execution.dto;
 
+import qg.qgent.support.TestIds;
+
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -26,7 +27,6 @@ class ToolExecutionRequestValidationTest {
     @Test
     void acceptsRegisteredToolWithUnderscoreInOperationName() {
         ToolExecutionRequest request = new ToolExecutionRequest();
-        request.setExecutionId(UUID.randomUUID());
         request.setTool("file.edit");
 
         assertTrue(validator.validate(request).isEmpty());

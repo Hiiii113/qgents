@@ -9,7 +9,6 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.realtime.service.EventService;
 
-import java.util.UUID;
 
 /** 项目级实时事件流接口 返回 text/event-stream；可用 Last-Event-ID 断线续传，续传点过期返回 409。 */
 @RestController
@@ -23,10 +22,10 @@ public class EventController {
 
     /** 订阅项目实时事件，每 15 秒发送心跳；支持保留期内的游标续传。 */
     @GetMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter stream(@PathVariable UUID projectId,
+    public SseEmitter stream(@PathVariable Long projectId,
                              @RequestHeader(value = "Last-Event-ID", required = false) Long lastEventId,
                              Authentication authentication) {
-        if (authentication == null || !(authentication.getPrincipal() instanceof UUID userId)) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof Long userId)) {
             throw new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "需要登录");
         }
         return eventService.stream(projectId, userId, lastEventId);

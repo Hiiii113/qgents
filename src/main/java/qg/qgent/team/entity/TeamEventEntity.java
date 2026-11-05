@@ -9,19 +9,18 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 import java.util.Map;
-import java.util.UUID;
 
 /** 团队级 SSE 事件实体。 */
 @Data
 @TableName(value = "team_events", autoResultMap = true)
 public class TeamEventEntity {
 
-    // 事件 ID（UUIDv7）。
-    @TableId(type = IdType.INPUT)
-    private UUID id;
+    // 事件 ID。
+    @TableId(type = IdType.AUTO)
+    private Long id;
 
     // 所属团队 ID。
-    private UUID teamId;
+    private Long teamId;
 
     // 团队内单调递增事件序号（SSE 游标）。
     private Long sequenceNo;

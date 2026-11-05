@@ -1,5 +1,7 @@
 package qg.qgent.sandbox.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -13,7 +15,6 @@ import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.UUID;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -51,7 +52,7 @@ class SandboxCleanupServiceTest {
     void cleanupWaitsForExecutionWorkersBeforeDestroyingContainer() throws Exception {
         SandboxService sandboxes = mock(SandboxService.class);
         ToolExecutionService executions = mock(ToolExecutionService.class);
-        UUID sandboxId = UUID.randomUUID();
+        java.util.UUID sandboxId = java.util.UUID.randomUUID();
         when(sandboxes.expiredSandboxIds()).thenReturn(List.of(sandboxId));
         CountDownLatch stopping = new CountDownLatch(1), exited = new CountDownLatch(1);
         doAnswer(invocation -> {
@@ -79,9 +80,9 @@ class SandboxCleanupServiceTest {
 
     private CreateSandboxRequest request() {
         CreateSandboxRequest request = new CreateSandboxRequest();
-        request.setSandboxId(UUID.randomUUID());
-        request.setAgentRunId(UUID.randomUUID());
-        request.setWorkspaceStorageKey("workspaces/" + UUID.randomUUID());
+        request.setSandboxId(java.util.UUID.randomUUID());
+        request.setAgentRunId(TestIds.next());
+        request.setWorkspaceStorageKey("workspaces/" + java.util.UUID.randomUUID());
         request.setImageProfile("dev-tools");
         return request;
     }

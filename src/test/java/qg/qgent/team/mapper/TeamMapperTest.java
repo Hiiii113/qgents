@@ -1,12 +1,12 @@
 package qg.qgent.team.mapper;
 
+import qg.qgent.support.TestIds;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import org.junit.jupiter.api.Test;
-import qg.qgent.common.persistence.typehandler.UuidBinaryTypeHandler;
 import qg.qgent.team.entity.TeamEntity;
 
 import java.util.Map;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -15,7 +15,7 @@ class TeamMapperTest {
     void clearingAvatarIncludesNullInDatabaseUpdate() {
         var configuration = configuration();
         TeamEntity team = new TeamEntity();
-        team.setId(UUID.randomUUID());
+        team.setId(TestIds.next());
         team.setName("团队");
         var sql = configuration.getMappedStatement(TeamMapper.class.getName() + ".updateById")
                 .getBoundSql(Map.of("et", team));
@@ -30,22 +30,19 @@ class TeamMapperTest {
         for (String method : new String[]{"selectMembershipPage"}) {
             var mappings = configuration.getMappedStatement(TeamMapper.class.getName() + "." + method)
                     .getResultMaps().getFirst().getResultMappings();
-            assertThat(mappings).anyMatch(field -> "id".equals(field.getProperty())
-                    && field.getTypeHandler() instanceof UuidBinaryTypeHandler);
+            assertThat(mappings).anyMatch(field -> "id".equals(field.getProperty()));
             assertThat(mappings).anyMatch(field -> "avatarUrl".equals(field.getProperty()));
             assertThat(mappings).anyMatch(field -> "memberCount".equals(field.getProperty()));
         }
         for (String method : new String[]{"selectByTeamAndUser", "selectByTeamId", "selectByUserId"}) {
             var mappings = configuration.getMappedStatement(TeamMemberMapper.class.getName() + "." + method)
                     .getResultMaps().getFirst().getResultMappings();
-            assertThat(mappings).anyMatch(field -> "userId".equals(field.getProperty())
-                    && field.getTypeHandler() instanceof UuidBinaryTypeHandler);
+            assertThat(mappings).anyMatch(field -> "userId".equals(field.getProperty()));
         }
     }
 
     private MybatisConfiguration configuration() {
         var configuration = new MybatisConfiguration();
-        configuration.getTypeHandlerRegistry().register(UUID.class, UuidBinaryTypeHandler.class);
         configuration.addMapper(TeamMapper.class);
         return configuration;
     }

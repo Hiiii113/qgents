@@ -3,12 +3,11 @@ package qg.qgent.team.mapper.view;
 import lombok.Data;
 
 import java.time.LocalDateTime;
-import java.util.UUID;
 
 @Data
 public class TeamMembershipView {
-    private UUID id;
-    private UUID ownerUserId;
+    private Long id;
+    private Long ownerUserId;
     private String name;
     private String role;
     // 团队成员数（列表查询聚合）。

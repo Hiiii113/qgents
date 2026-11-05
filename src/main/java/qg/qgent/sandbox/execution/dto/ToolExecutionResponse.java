@@ -13,7 +13,7 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ToolExecutionResponse {
-    private UUID id;
+    private Long id;
     private String ownerInstanceId;
     private UUID sandboxId;
     private String tool;

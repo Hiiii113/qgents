@@ -1,5 +1,7 @@
 package qg.qgent.user.service;
 
+import qg.qgent.support.TestIds;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -15,7 +17,6 @@ import qg.qgent.user.storage.AvatarStorageService;
 
 import java.time.LocalDateTime;
 import java.util.Map;
-import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -32,7 +33,7 @@ class AvatarServiceTest {
     private final AvatarStorageService storage = mock(AvatarStorageService.class);
     private final AvatarService service = new AvatarService(userMapper, storage);
 
-    private final UUID userId = UUID.randomUUID();
+    private final Long userId = TestIds.next();
 
     @BeforeEach
     void stubUser() {
@@ -59,7 +60,7 @@ class AvatarServiceTest {
     @Test
     void confirmRejectsObjectKeyOutsideOwnPrefix() {
         AvatarConfirmRequest request = new AvatarConfirmRequest();
-        request.setObjectKey("avatars/" + UUID.randomUUID() + "/other.jpg");
+        request.setObjectKey("avatars/" + TestIds.next() + "/other.jpg");
 
         assertThatThrownBy(() -> service.confirm(userId, request))
                 .isInstanceOf(ApiException.class)

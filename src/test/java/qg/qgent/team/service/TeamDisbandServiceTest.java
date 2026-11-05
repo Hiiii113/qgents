@@ -1,5 +1,7 @@
 package qg.qgent.team.service;
 
+import qg.qgent.support.TestIds;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -14,7 +16,6 @@ import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
-import qg.qgent.common.persistence.typehandler.UuidBinaryTypeHandler;
 import qg.qgent.memory.entity.MemoryEntity;
 import qg.qgent.memory.mapper.MemoryMapper;
 import qg.qgent.notification.entity.NotificationEntity;
@@ -30,7 +31,6 @@ import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
 
 import java.util.List;
-import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
@@ -48,8 +48,6 @@ class TeamDisbandServiceTest {
     @BeforeAll
     static void initTableInfo() {
         MybatisConfiguration configuration = new MybatisConfiguration();
-        // 与生产配置 type-handlers-package: qg.qgent.common.persistence.typehandler 对齐，注册 UUID 类型处理器
-        configuration.getTypeHandlerRegistry().register(UuidBinaryTypeHandler.class);
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(configuration, "");
         for (Class<?> entity : List.of(ProjectEntity.class, NotificationEntity.class, EventEntity.class,
                 ChatGroupEntity.class, MessageEntity.class,
@@ -80,9 +78,9 @@ class TeamDisbandServiceTest {
 
     @Test
     void deleteTeamCleansProjectsInDependencyOrder() {
-        UUID teamId = UUID.randomUUID();
-        UUID projectId = UUID.randomUUID();
-        UUID groupId = UUID.randomUUID();
+        Long teamId = TestIds.next();
+        Long projectId = TestIds.next();
+        Long groupId = TestIds.next();
 
         ProjectEntity project = new ProjectEntity();
         project.setId(projectId);

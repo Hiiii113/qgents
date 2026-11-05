@@ -6,7 +6,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import qg.qgent.common.util.UuidV7;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.service.EventService;
@@ -25,7 +24,6 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 
 /** 管理项目 Skill 的内容、审核、发布和下线。 */
 @Service
@@ -40,14 +38,14 @@ public class SkillService {
     private final UserMapper userMapper;
     private final EventService eventService;
 
-    public SkillDocument preview(UUID actor, UUID projectId, MultipartFile file) {
+    public SkillDocument preview(Long actor, Long projectId, MultipartFile file) {
         access.requireProjectMember(projectId, actor);
         return SkillDocument.fromFile(file);
     }
 
     /** 私有 Skill 和管理员创建的共享 Skill 直接发布，其他共享 Skill 先建草稿。 */
     @Transactional
-    public SkillResponse create(UUID actor, UUID projectId, MultipartFile file, String visibility, List<String> tags) {
+    public SkillResponse create(Long actor, Long projectId, MultipartFile file, String visibility, List<String> tags) {
         access.requireProjectMember(projectId, actor);
         SkillDocument document = SkillDocument.fromFile(file);
         visibility = visibility == null || visibility.isBlank() ? "PRIVATE" : visibility.trim();
@@ -56,7 +54,6 @@ public class SkillService {
                     "可见性仅支持 PRIVATE 或 PROJECT_SHARED");
         }
         SkillEntity skill = new SkillEntity();
-        skill.setId(UuidV7.next());
         skill.setProjectId(projectId);
         skill.setCreatedBy(actor);
         skill.setName(document.name());
@@ -76,7 +73,7 @@ public class SkillService {
     }
 
     /** 返回自己的 Skill 和已发布共享内容；管理员还可查询共享草稿及审核记录。 */
-    public List<SkillResponse> list(UUID actor, UUID projectId, String status, String tag) {
+    public List<SkillResponse> list(Long actor, Long projectId, String status, String tag) {
         access.requireProjectMember(projectId, actor);
         return skillMapper.listSkills(projectId, actor, blankToNull(status), blankToNull(tag),
                         access.isProjectAdmin(projectId, actor))
@@ -84,7 +81,7 @@ public class SkillService {
     }
 
     /** 详情可见范围与列表一致。 */
-    public SkillResponse get(UUID actor, UUID projectId, UUID skillId) {
+    public SkillResponse get(Long actor, Long projectId, Long skillId) {
         access.requireProjectMember(projectId, actor);
         SkillEntity skill = requireSkillInProject(projectId, skillId);
         if (!skill.getCreatedBy().equals(actor)
@@ -97,7 +94,7 @@ public class SkillService {
 
     /** 创建者或管理员可编辑草稿、审核中、被拒绝及已发布内容；发布内容修改后立即生效。 */
     @Transactional
-    public SkillResponse update(UUID actor, UUID projectId, UUID skillId, SkillUpdateRequest request) {
+    public SkillResponse update(Long actor, Long projectId, Long skillId, SkillUpdateRequest request) {
         SkillEntity skill = requireEditable(actor, projectId, skillId);
         if (request.getContent() != null) {
             SkillDocument document = SkillDocument.parse(request.getContent());
@@ -115,7 +112,7 @@ public class SkillService {
 
     /** 创建者或项目管理员提交草稿或被拒绝的 Skill 审核。 */
     @Transactional
-    public SkillResponse submitReview(UUID actor, UUID projectId, UUID skillId) {
+    public SkillResponse submitReview(Long actor, Long projectId, Long skillId) {
         SkillEntity skill = requireOwned(actor, projectId, skillId);
         if (!SUBMITTABLE.contains(skill.getStatus())) {
             throw stateConflict(skill.getStatus());
@@ -130,7 +127,7 @@ public class SkillService {
 
     /** 发布 Skill（Project Admin）；仅 PENDING_REVIEW，发布后自动转为 PROJECT_SHARED。 */
     @Transactional
-    public SkillResponse approve(UUID actor, UUID projectId, UUID skillId) {
+    public SkillResponse approve(Long actor, Long projectId, Long skillId) {
         access.requireProjectAdmin(projectId, actor);
         SkillEntity skill = requireSkillInProject(projectId, skillId);
         if (!"PENDING_REVIEW".equals(skill.getStatus())) {
@@ -147,7 +144,7 @@ public class SkillService {
 
     /** 拒绝 Skill 并给出原因（Project Admin）；仅 PENDING_REVIEW。 */
     @Transactional
-    public SkillResponse reject(UUID actor, UUID projectId, UUID skillId, String reason) {
+    public SkillResponse reject(Long actor, Long projectId, Long skillId, String reason) {
         access.requireProjectAdmin(projectId, actor);
         SkillEntity skill = requireSkillInProject(projectId, skillId);
         if (!"PENDING_REVIEW".equals(skill.getStatus())) {
@@ -164,7 +161,7 @@ public class SkillService {
 
     /** 创建者或项目管理员下线已发布 Skill；仅 PUBLISHED。 */
     @Transactional
-    public SkillResponse archive(UUID actor, UUID projectId, UUID skillId) {
+    public SkillResponse archive(Long actor, Long projectId, Long skillId) {
         SkillEntity skill = requireOwned(actor, projectId, skillId);
         if (!"PUBLISHED".equals(skill.getStatus())) {
             throw stateConflict(skill.getStatus());
@@ -176,13 +173,13 @@ public class SkillService {
     }
 
     /** 发布状态变化，通知在线客户端刷新 Skill。 */
-    private void publish(String event, UUID projectId, UUID skillId) {
+    private void publish(String event, Long projectId, Long skillId) {
         eventService.publish(projectId, null, event, skillId.toString(), Map.of(
                 "projectId", projectId.toString(), "resourceType", "SKILL", "resourceId", skillId.toString(),
                 "eventVersion", 1, "updatedAt", LocalDateTime.now(ZoneOffset.UTC).toInstant(ZoneOffset.UTC).toString()));
     }
 
-    private SkillEntity requireSkillInProject(UUID projectId, UUID skillId) {
+    private SkillEntity requireSkillInProject(Long projectId, Long skillId) {
         SkillEntity skill = skillMapper.selectById(skillId);
         if (skill == null || !skill.getProjectId().equals(projectId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "SKILL_NOT_FOUND", "Skill 不存在或无权访问");
@@ -190,7 +187,7 @@ public class SkillService {
         return skill;
     }
 
-    private SkillEntity requireOwned(UUID actor, UUID projectId, UUID skillId) {
+    private SkillEntity requireOwned(Long actor, Long projectId, Long skillId) {
         access.requireProjectMember(projectId, actor);
         SkillEntity skill = requireSkillInProject(projectId, skillId);
         if (!skill.getCreatedBy().equals(actor)) {
@@ -199,7 +196,7 @@ public class SkillService {
         return skill;
     }
 
-    private SkillEntity requireEditable(UUID actor, UUID projectId, UUID skillId) {
+    private SkillEntity requireEditable(Long actor, Long projectId, Long skillId) {
         SkillEntity skill = requireOwned(actor, projectId, skillId);
         if (!EDITABLE.contains(skill.getStatus())) {
             throw stateConflict(skill.getStatus());
@@ -222,7 +219,7 @@ public class SkillService {
                 skill.getReviewedAt(), skill.getCreatedAt(), skill.getUpdatedAt());
     }
 
-    private UserSummary userSummary(UUID userId) {
+    private UserSummary userSummary(Long userId) {
         if (userId == null) {
             return null;
         }
@@ -231,12 +228,12 @@ public class SkillService {
                 : new UserSummary(user.getId().toString(), user.getDisplayName(), user.getAvatarUrl());
     }
     /** 目录只包含可见且已发布 Skill 的标识和名称，正文显式激活时再读取。 */
-    public List<ContextSkill> publishedCatalog(UUID actor, UUID projectId) {
+    public List<ContextSkill> publishedCatalog(Long actor, Long projectId) {
         access.requireProjectMember(projectId, actor);
         return skillMapper.listPublishedCatalog(projectId, actor);
     }
 
-    public SkillEntity activateSkill(UUID actor, UUID projectId, UUID skillId) {
+    public SkillEntity activateSkill(Long actor, Long projectId, Long skillId) {
         access.requireProjectMember(projectId, actor);
         SkillEntity skill = skillMapper.findVisiblePublishedById(projectId, actor, skillId);
         if (skill == null) {

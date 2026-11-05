@@ -8,7 +8,6 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import qg.qgent.common.dto.PageSlice;
-import qg.qgent.common.service.IdempotencyService;
 import qg.qgent.common.web.ApiResponse;
 import qg.qgent.common.web.PagedApiResponse;
 import qg.qgent.common.web.RequestIdFilter;
@@ -26,8 +25,6 @@ import qg.qgent.user.dto.AvatarConfirmResponse;
 import qg.qgent.user.dto.AvatarCredentialRequest;
 import qg.qgent.user.dto.AvatarCredentialResponse;
 
-import java.util.Map;
-import java.util.UUID;
 
 /** 项目与项目成员接口 项目资料的创建、查询、修改、归档/恢复与项目成员管理。 */
 @RestController
@@ -35,25 +32,20 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ProjectController {
     private final ProjectService projects;
-    private final IdempotencyService idempotency;
     private final ProjectAccessService access;
     private final ProjectAvatarStorageService avatarStorage;
 
     /** 创建项目，创建者自动成为 PROJECT_ADMIN。 */
     @PostMapping("/teams/{teamId}/projects")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<ProjectResponse> create(@AuthenticationPrincipal UUID actor, @PathVariable UUID teamId,
-                                               @RequestHeader(value = "Idempotency-Key", required = false) String key,
+    public ApiResponse<ProjectResponse> create(@AuthenticationPrincipal Long actor, @PathVariable Long teamId,
                                                @Valid @RequestBody ProjectCreateRequest body, HttpServletRequest request) {
-        ProjectResponse value = idempotency.execute(actor, "POST:/teams/{teamId}/projects", key,
-                Map.of("teamId", teamId, "body", body), 201, ProjectResponse.class,
-                () -> projects.create(actor, teamId, body));
-        return ok(value, request);
+        return ok(projects.create(actor, teamId, body), request);
     }
 
     /** 分页获取当前用户可见的项目。 */
     @GetMapping("/teams/{teamId}/projects")
-    public PagedApiResponse<ProjectResponse> list(@AuthenticationPrincipal UUID actor, @PathVariable UUID teamId,
+    public PagedApiResponse<ProjectResponse> list(@AuthenticationPrincipal Long actor, @PathVariable Long teamId,
                                                   @RequestParam(required = false) String cursor, @RequestParam(required = false) Integer limit,
                                                   HttpServletRequest request) {
         return page(projects.list(actor, teamId, cursor, limit), request);
@@ -61,27 +53,23 @@ public class ProjectController {
 
     /** 获取项目资料。 */
     @GetMapping("/projects/{projectId}")
-    public ApiResponse<ProjectResponse> get(@AuthenticationPrincipal UUID actor, @PathVariable UUID projectId,
+    public ApiResponse<ProjectResponse> get(@AuthenticationPrincipal Long actor, @PathVariable Long projectId,
                                             HttpServletRequest request) {
         return ok(projects.get(actor, projectId), request);
     }
 
     /** 修改项目资料（Project Admin 或 Team Owner）。 */
     @PatchMapping("/projects/{projectId}")
-    public ApiResponse<ProjectResponse> update(@AuthenticationPrincipal UUID actor, @PathVariable UUID projectId,
-                                               @RequestHeader(value = "Idempotency-Key", required = false) String key,
+    public ApiResponse<ProjectResponse> update(@AuthenticationPrincipal Long actor, @PathVariable Long projectId,
                                                @Valid @RequestBody ProjectUpdateRequest body, HttpServletRequest request) {
-        ProjectResponse value = idempotency.execute(actor, "PATCH:/projects/{projectId}", key,
-                Map.of("projectId", projectId, "body", body), 200, ProjectResponse.class,
-                () -> projects.update(actor, projectId, body));
-        return ok(value, request);
+        return ok(projects.update(actor, projectId, body), request);
     }
 
     /** 签发项目头像直传凭证（项目成员；对象键 projects/{projectId}/{uuid}.{ext}）。 */
     @PostMapping("/projects/{projectId}/avatar/credential")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<AvatarCredentialResponse> avatarCredential(@PathVariable UUID projectId,
-                                                                  @AuthenticationPrincipal UUID actor,
+    public ApiResponse<AvatarCredentialResponse> avatarCredential(@PathVariable Long projectId,
+                                                                  @AuthenticationPrincipal Long actor,
                                                                   @Valid @RequestBody AvatarCredentialRequest body,
                                                                   HttpServletRequest request) {
         access.requireProjectMember(projectId, actor);
@@ -94,8 +82,8 @@ public class ProjectController {
 
     /** 确认上传并返回头像 URL；客户端再通过修改项目接口保存 avatarUrl。 */
     @PostMapping("/projects/{projectId}/avatar/confirm")
-    public ApiResponse<AvatarConfirmResponse> avatarConfirm(@PathVariable UUID projectId,
-                                                            @AuthenticationPrincipal UUID actor,
+    public ApiResponse<AvatarConfirmResponse> avatarConfirm(@PathVariable Long projectId,
+                                                            @AuthenticationPrincipal Long actor,
                                                             @Valid @RequestBody AvatarConfirmRequest body,
                                                             HttpServletRequest request) {
         access.requireProjectMember(projectId, actor);
@@ -105,28 +93,22 @@ public class ProjectController {
 
     /** 归档项目。 */
     @PostMapping("/projects/{projectId}/archive")
-    public ApiResponse<ProjectResponse> archive(@AuthenticationPrincipal UUID actor, @PathVariable UUID projectId,
-                                                @RequestHeader(value = "Idempotency-Key", required = false) String key, HttpServletRequest request) {
-        ProjectResponse value = idempotency.execute(actor, "POST:/projects/{projectId}/archive", key,
-                Map.of("projectId", projectId), 200, ProjectResponse.class,
-                () -> projects.archive(actor, projectId));
-        return ok(value, request);
+    public ApiResponse<ProjectResponse> archive(@AuthenticationPrincipal Long actor, @PathVariable Long projectId,
+                                                HttpServletRequest request) {
+        return ok(projects.archive(actor, projectId), request);
     }
 
     /** 恢复已归档项目。 */
     @PostMapping("/projects/{projectId}/restore")
-    public ApiResponse<ProjectResponse> restore(@AuthenticationPrincipal UUID actor, @PathVariable UUID projectId,
-                                                @RequestHeader(value = "Idempotency-Key", required = false) String key, HttpServletRequest request) {
-        ProjectResponse value = idempotency.execute(actor, "POST:/projects/{projectId}/restore", key,
-                Map.of("projectId", projectId), 200, ProjectResponse.class,
-                () -> projects.restore(actor, projectId));
-        return ok(value, request);
+    public ApiResponse<ProjectResponse> restore(@AuthenticationPrincipal Long actor, @PathVariable Long projectId,
+                                                HttpServletRequest request) {
+        return ok(projects.restore(actor, projectId), request);
     }
 
     /** 分页获取项目成员与角色。 */
     @GetMapping("/projects/{projectId}/members")
-    public PagedApiResponse<ProjectMemberResponse> members(@AuthenticationPrincipal UUID actor,
-                                                           @PathVariable UUID projectId, @RequestParam(required = false) String cursor,
+    public PagedApiResponse<ProjectMemberResponse> members(@AuthenticationPrincipal Long actor,
+                                                           @PathVariable Long projectId, @RequestParam(required = false) String cursor,
                                                            @RequestParam(required = false) Integer limit, HttpServletRequest request) {
         return page(projects.members(actor, projectId, cursor, limit), request);
     }
@@ -134,38 +116,26 @@ public class ProjectController {
     /** 将团队现有成员加入项目（初始 PROJECT_MEMBER）。 */
     @PostMapping("/projects/{projectId}/members")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<ProjectMemberResponse> addMember(@AuthenticationPrincipal UUID actor,
-                                                        @PathVariable UUID projectId, @RequestHeader(value = "Idempotency-Key", required = false) String key,
+    public ApiResponse<ProjectMemberResponse> addMember(@AuthenticationPrincipal Long actor,
+                                                        @PathVariable Long projectId,
                                                         @Valid @RequestBody ProjectMemberAddRequest body, HttpServletRequest request) {
-        ProjectMemberResponse value = idempotency.execute(actor, "POST:/projects/{projectId}/members", key,
-                Map.of("projectId", projectId, "body", body), 201, ProjectMemberResponse.class,
-                () -> projects.addMember(actor, projectId, body));
-        return ok(value, request);
+        return ok(projects.addMember(actor, projectId, body), request);
     }
 
     /** 调整项目成员角色（管理员设置后不可降级）。 */
     @PatchMapping("/projects/{projectId}/members/{userId}")
-    public ApiResponse<ProjectMemberResponse> updateMember(@AuthenticationPrincipal UUID actor,
-                                                           @PathVariable UUID projectId, @PathVariable UUID userId,
-                                                           @RequestHeader(value = "Idempotency-Key", required = false) String key,
+    public ApiResponse<ProjectMemberResponse> updateMember(@AuthenticationPrincipal Long actor,
+                                                           @PathVariable Long projectId, @PathVariable Long userId,
                                                            @Valid @RequestBody ProjectMemberUpdateRequest body, HttpServletRequest request) {
-        ProjectMemberResponse value = idempotency.execute(actor,
-                "PATCH:/projects/{projectId}/members/{userId}", key,
-                Map.of("projectId", projectId, "userId", userId, "body", body), 200,
-                ProjectMemberResponse.class, () -> projects.updateMember(actor, projectId, userId, body));
-        return ok(value, request);
+        return ok(projects.updateMember(actor, projectId, userId, body), request);
     }
 
     /** 移除项目成员。 */
     @DeleteMapping("/projects/{projectId}/members/{userId}")
-    public ApiResponse<ProjectMemberResponse> removeMember(@AuthenticationPrincipal UUID actor,
-                                                           @PathVariable UUID projectId, @PathVariable UUID userId,
-                                                           @RequestHeader(value = "Idempotency-Key", required = false) String key, HttpServletRequest request) {
-        ProjectMemberResponse value = idempotency.execute(actor,
-                "DELETE:/projects/{projectId}/members/{userId}", key,
-                Map.of("projectId", projectId, "userId", userId), 200, ProjectMemberResponse.class,
-                () -> projects.removeMember(actor, projectId, userId));
-        return ok(value, request);
+    public ApiResponse<ProjectMemberResponse> removeMember(@AuthenticationPrincipal Long actor,
+                                                           @PathVariable Long projectId, @PathVariable Long userId,
+                                                           HttpServletRequest request) {
+        return ok(projects.removeMember(actor, projectId, userId), request);
     }
 
     private <T> ApiResponse<T> ok(T value, HttpServletRequest request) {

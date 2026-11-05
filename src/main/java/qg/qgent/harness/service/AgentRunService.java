@@ -5,7 +5,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import qg.qgent.harness.entity.AgentRunEntity;
 import qg.qgent.harness.mapper.AgentRunMapper;
-import qg.qgent.common.util.UuidV7;
 import qg.qgent.chat.service.MessageService;
 import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.project.service.ProjectAccessService;
@@ -15,7 +14,6 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.UUID;
 
 /** 按触发消息停止执行，执行状态保留在内部运行记录中。 */
 @Service
@@ -24,11 +22,10 @@ public class AgentRunService {
     private final AgentRunMapper runs;
     private final MessageService messages;
     private final ProjectAccessService access;
-    private final Map<UUID, Runnable> cancellationSignals = new ConcurrentHashMap<>();
+    private final Map<Long, Runnable> cancellationSignals = new ConcurrentHashMap<>();
 
     public AgentRunEntity startRoot(MessageSentEvent event, String instruction) {
         AgentRunEntity run = new AgentRunEntity();
-        run.setId(UuidV7.next());
         run.setProjectId(event.projectId());
         run.setGroupId(event.groupId());
         run.setTriggerMessageId(event.messageId());
@@ -41,9 +38,8 @@ public class AgentRunService {
         return run;
     }
 
-    public AgentRunEntity startChild(AgentRunEntity root, String instruction, UUID workspaceId) {
+    public AgentRunEntity startChild(AgentRunEntity root, String instruction, Long workspaceId) {
         AgentRunEntity run = new AgentRunEntity();
-        run.setId(UuidV7.next());
         run.setProjectId(root.getProjectId());
         run.setGroupId(root.getGroupId());
         run.setTriggerMessageId(root.getTriggerMessageId());
@@ -123,21 +119,21 @@ public class AgentRunService {
         save(run);
     }
 
-    public void registerCancellationSignal(UUID rootRunId, Runnable signal) {
+    public void registerCancellationSignal(Long rootRunId, Runnable signal) {
         cancellationSignals.put(rootRunId, signal);
         if (isCancelled(rootRunId)) signal.run();
     }
 
-    public void unregisterCancellationSignal(UUID rootRunId) {
+    public void unregisterCancellationSignal(Long rootRunId) {
         cancellationSignals.remove(rootRunId);
     }
 
-    public boolean isCancelled(UUID rootRunId) {
+    public boolean isCancelled(Long rootRunId) {
         AgentRunEntity root = runs.selectById(rootRunId);
         return root != null && ("CANCELLING".equals(root.getStatus()) || "CANCELLED".equals(root.getStatus()));
     }
 
-    public boolean requestChildCancellation(UUID rootRunId, UUID childRunId) {
+    public boolean requestChildCancellation(Long rootRunId, Long childRunId) {
         return runs.update(null, Wrappers.<AgentRunEntity>lambdaUpdate()
                 .set(AgentRunEntity::getStatus, "CANCELLING")
                 .eq(AgentRunEntity::getId, childRunId)
@@ -145,7 +141,7 @@ public class AgentRunService {
                 .eq(AgentRunEntity::getStatus, "RUNNING")) > 0;
     }
 
-    public int cancel(UUID actor, UUID projectId, UUID groupId, UUID messageId) {
+    public int cancel(Long actor, Long projectId, Long groupId, Long messageId) {
         var message = messages.getMessage(actor, projectId, groupId, messageId);
         if (!actor.toString().equals(message.getSenderId())) access.requireProjectAdmin(projectId, actor);
         List<AgentRunEntity> activeRoots = runs.selectList(Wrappers.<AgentRunEntity>lambdaQuery()

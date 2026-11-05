@@ -10,23 +10,22 @@ import qg.qgent.workspace.service.WorkspaceService;
 
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 /** 工作区选择与命令工具；Harness 提供当前对话的状态和按需环境获取。 */
 public final class WorkspaceTools {
-    private final UUID projectId;
+    private final Long projectId;
     private final WorkspaceService workspaces;
     private final WorkspaceCommands workspaceCommands;
     private final WorkspaceSelection selection;
-    private final Supplier<UUID> environment;
-    private final Supplier<UUID> initializedEnvironment;
-    private final Consumer<UUID> selectionChanged;
+    private final Supplier<Long> environment;
+    private final Supplier<Long> initializedEnvironment;
+    private final Consumer<Long> selectionChanged;
 
-    public WorkspaceTools(UUID projectId, WorkspaceService workspaces, WorkspaceCommands commands,
-                          WorkspaceSelection selection, Supplier<UUID> environment,
-                          Supplier<UUID> initializedEnvironment, Consumer<UUID> selectionChanged) {
+    public WorkspaceTools(Long projectId, WorkspaceService workspaces, WorkspaceCommands commands,
+                          WorkspaceSelection selection, Supplier<Long> environment,
+                          Supplier<Long> initializedEnvironment, Consumer<Long> selectionChanged) {
         this.projectId = projectId;
         this.workspaces = workspaces;
         this.workspaceCommands = commands;
@@ -53,8 +52,8 @@ public final class WorkspaceTools {
     }
 
     @Tool(name = "use_workspace", description = "选择当前项目已有 Workspace，后续代码工具使用该工作区；不会启动沙箱。")
-    public Map<String, Object> useWorkspace(@ToolParam(description = "Workspace UUID") String workspaceId) {
-        UUID id = workspaces.require(projectId, requiredResourceId(workspaceId)).getId();
+    public Map<String, Object> useWorkspace(@ToolParam(description = "Workspace ID") String workspaceId) {
+        Long id = workspaces.require(projectId, requiredResourceId(workspaceId)).getId();
         selection.select(id);
         selectionChanged.accept(id);
         return Map.of("ok", true, "workspaceId", id.toString());
@@ -81,7 +80,7 @@ public final class WorkspaceTools {
 
     @ParallelTool
     @Tool(name = "command_output", description = "读取命令的有界输出，可短暂等待；running=true 时使用返回的游标继续读取。")
-    public Object commandOutput(@ToolParam(description = "run_command 返回的执行 UUID") String executionId,
+    public Object commandOutput(@ToolParam(description = "run_command 返回的执行 ID") String executionId,
             @ToolParam(description = "stdout 字节游标，默认 0") Long stdoutOffset,
             @ToolParam(description = "stderr 字节游标，默认 0") Long stderrOffset,
             @ToolParam(description = "每个流最多读取字节，4～64000，默认 16000") Integer maxBytes,
@@ -92,13 +91,13 @@ public final class WorkspaceTools {
     }
 
     @Tool(name = "cancel_command", description = "停止当前 Workspace 中正在运行的命令。")
-    public Object cancelCommand(@ToolParam(description = "命令执行 UUID") String executionId) {
+    public Object cancelCommand(@ToolParam(description = "命令执行 ID") String executionId) {
         return workspaceCommands.cancel(initializedEnvironment.get(), requiredResourceId(executionId));
     }
 
-    private UUID requiredResourceId(String value) {
-        try { return UUID.fromString(value == null ? "" : value); }
-        catch (IllegalArgumentException exception) { throw new IllegalArgumentException("资源 UUID 无效"); }
+    private Long requiredResourceId(String value) {
+        try { return Long.valueOf(value == null ? "" : value); }
+        catch (IllegalArgumentException exception) { throw new IllegalArgumentException("资源 ID 无效"); }
     }
 
     private int bounded(Integer value, int fallback, int min, int max) {

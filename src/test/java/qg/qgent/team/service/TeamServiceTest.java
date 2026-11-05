@@ -1,9 +1,12 @@
 package qg.qgent.team.service;
 
+import qg.qgent.support.TestIds;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import qg.qgent.auth.service.TokenService;
@@ -33,7 +36,6 @@ import qg.qgent.user.mapper.UserMapper;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -50,6 +52,14 @@ class TeamServiceTest {
      * 纯单元测试未启动 MyBatis/Spring，lambda 包装器依赖实体 TableInfo；显式注册
      * 涉及到的实体，避免裸 JVM 下懒初始化列缓存的行为差异导致测试偶发失败。
      */
+    @BeforeEach
+    void assignGeneratedIds() {
+        when(invitationMapper.insert(any(TeamInvitationEntity.class))).thenAnswer(invocation -> {
+            invocation.getArgument(0, TeamInvitationEntity.class).setId(TestIds.next());
+            return 1;
+        });
+    }
+
     @BeforeAll
     static void initTableInfo() {
         MybatisConfiguration configuration = new MybatisConfiguration();
@@ -74,7 +84,7 @@ class TeamServiceTest {
 
     @Test
     void createAddsCreatorAsOwner() {
-        UUID actor = UUID.randomUUID();
+        Long actor = TestIds.next();
         TeamCreateRequest request = new TeamCreateRequest();
         request.setName(" 研发团队 ");
 
@@ -83,9 +93,10 @@ class TeamServiceTest {
                 new java.util.concurrent.atomic.AtomicReference<>();
         org.mockito.Mockito.doAnswer(inv -> {
             inserted.set(inv.getArgument(0));
+            inserted.get().setId(TestIds.next());
             return 1;
         }).when(teamMapper).insert(any(TeamEntity.class));
-        when(teamMapper.selectById(any(UUID.class))).thenAnswer(inv -> inserted.get());
+        when(teamMapper.selectById(any(Long.class))).thenAnswer(inv -> inserted.get());
 
         TeamResponse response = service.create(actor, request);
 
@@ -98,8 +109,8 @@ class TeamServiceTest {
 
     @Test
     void ordinaryMemberCannotUpdateTeamRole() {
-        UUID teamId = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
+        Long teamId = TestIds.next();
+        Long actor = TestIds.next();
         TeamMemberEntity actorMember = member(teamId, actor, "TEAM_MEMBER");
         when(teamMapper.selectByIdForUpdate(teamId)).thenReturn(team(teamId, actor));
         when(memberMapper.selectByTeamAndUser(teamId, actor)).thenReturn(actorMember);
@@ -107,15 +118,15 @@ class TeamServiceTest {
         request.setRole("TEAM_OWNER");
 
         ApiException error = assertThrows(ApiException.class,
-                () -> service.updateMember(actor, teamId, UUID.randomUUID(), request));
+                () -> service.updateMember(actor, teamId, TestIds.next(), request));
 
         assertEquals("TEAM_OWNER_REQUIRED", error.code());
     }
 
     @Test
     void primaryOwnerCannotBeRemoved() {
-        UUID teamId = UUID.randomUUID();
-        UUID owner = UUID.randomUUID();
+        Long teamId = TestIds.next();
+        Long owner = TestIds.next();
         TeamMemberEntity ownerMember = member(teamId, owner, "TEAM_OWNER");
         when(memberMapper.selectByTeamAndUser(teamId, owner)).thenReturn(ownerMember);
         TeamEntity team = new TeamEntity();
@@ -129,8 +140,8 @@ class TeamServiceTest {
 
     @Test
     void primaryOwnerCannotBeDowngraded() {
-        UUID teamId = UUID.randomUUID();
-        UUID owner = UUID.randomUUID();
+        Long teamId = TestIds.next();
+        Long owner = TestIds.next();
         when(teamMapper.selectByIdForUpdate(teamId)).thenReturn(team(teamId, owner));
         when(memberMapper.selectByTeamAndUser(teamId, owner)).thenReturn(member(teamId, owner, "TEAM_OWNER"));
         TeamMemberUpdateRequest request = new TeamMemberUpdateRequest();
@@ -144,9 +155,9 @@ class TeamServiceTest {
 
     @Test
     void extraOwnerRoleDoesNotGrantOwnerPermission() {
-        UUID teamId = UUID.randomUUID();
-        UUID primary = UUID.randomUUID();
-        UUID otherOwner = UUID.randomUUID();
+        Long teamId = TestIds.next();
+        Long primary = TestIds.next();
+        Long otherOwner = TestIds.next();
         TeamEntity team = team(teamId, primary);
         TeamMemberEntity primaryMember = member(teamId, primary, "TEAM_OWNER");
         TeamMemberEntity otherMember = member(teamId, otherOwner, "TEAM_OWNER");
@@ -162,9 +173,9 @@ class TeamServiceTest {
 
     @Test
     void memberRoleEndpointCannotCreateAnotherOwner() {
-        UUID teamId = UUID.randomUUID();
-        UUID owner = UUID.randomUUID();
-        UUID memberId = UUID.randomUUID();
+        Long teamId = TestIds.next();
+        Long owner = TestIds.next();
+        Long memberId = TestIds.next();
         when(teamMapper.selectByIdForUpdate(teamId)).thenReturn(team(teamId, owner));
         when(memberMapper.selectByTeamAndUser(teamId, owner)).thenReturn(member(teamId, owner, "TEAM_OWNER"));
         TeamMemberUpdateRequest request = new TeamMemberUpdateRequest();
@@ -178,10 +189,10 @@ class TeamServiceTest {
 
     @Test
     void removingTeamMemberCannotOrphanProjectAdminRole() {
-        UUID teamId = UUID.randomUUID();
-        UUID owner = UUID.randomUUID();
-        UUID admin = UUID.randomUUID();
-        UUID projectId = UUID.randomUUID();
+        Long teamId = TestIds.next();
+        Long owner = TestIds.next();
+        Long admin = TestIds.next();
+        Long projectId = TestIds.next();
         when(teamMapper.selectByIdForUpdate(teamId)).thenReturn(team(teamId, owner));
         when(memberMapper.selectByTeamAndUser(teamId, owner)).thenReturn(member(teamId, owner, "TEAM_OWNER"));
         when(memberMapper.selectByTeamAndUser(teamId, admin)).thenReturn(member(teamId, admin, "TEAM_MEMBER"));
@@ -211,11 +222,11 @@ class TeamServiceTest {
 
     @Test
     void removingTeamMemberClearsRequirementGroupMembershipsInEachProject() {
-        UUID teamId = UUID.randomUUID();
-        UUID owner = UUID.randomUUID();
-        UUID targetUser = UUID.randomUUID();
-        UUID firstProjectId = UUID.randomUUID();
-        UUID secondProjectId = UUID.randomUUID();
+        Long teamId = TestIds.next();
+        Long owner = TestIds.next();
+        Long targetUser = TestIds.next();
+        Long firstProjectId = TestIds.next();
+        Long secondProjectId = TestIds.next();
         when(teamMapper.selectByIdForUpdate(teamId)).thenReturn(team(teamId, owner));
         when(memberMapper.selectByTeamAndUser(teamId, owner)).thenReturn(member(teamId, owner, "TEAM_OWNER"));
         when(memberMapper.selectByTeamAndUser(teamId, targetUser))
@@ -235,9 +246,9 @@ class TeamServiceTest {
 
     @Test
     void canonicalOwnerCanNormalizeExtraOwnerRole() {
-        UUID teamId = UUID.randomUUID();
-        UUID owner = UUID.randomUUID();
-        UUID extraOwner = UUID.randomUUID();
+        Long teamId = TestIds.next();
+        Long owner = TestIds.next();
+        Long extraOwner = TestIds.next();
         when(teamMapper.selectByIdForUpdate(teamId)).thenReturn(team(teamId, owner));
         when(memberMapper.selectByTeamAndUser(teamId, owner)).thenReturn(member(teamId, owner, "TEAM_OWNER"));
         when(memberMapper.selectByTeamAndUser(teamId, extraOwner))
@@ -253,9 +264,9 @@ class TeamServiceTest {
 
     @Test
     void teamDetailsNormalizeExtraOwnerRole() {
-        UUID teamId = UUID.randomUUID();
-        UUID canonicalOwner = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
+        Long teamId = TestIds.next();
+        Long canonicalOwner = TestIds.next();
+        Long actor = TestIds.next();
         when(memberMapper.selectByTeamAndUser(teamId, actor)).thenReturn(member(teamId, actor, "TEAM_OWNER"));
         when(teamMapper.selectById(teamId)).thenReturn(team(teamId, canonicalOwner));
 
@@ -266,10 +277,10 @@ class TeamServiceTest {
 
     @Test
     void memberListNormalizesExtraOwnerRole() {
-        UUID teamId = UUID.randomUUID();
-        UUID canonicalOwner = UUID.randomUUID();
-        UUID actor = UUID.randomUUID();
-        UUID extraOwner = UUID.randomUUID();
+        Long teamId = TestIds.next();
+        Long canonicalOwner = TestIds.next();
+        Long actor = TestIds.next();
+        Long extraOwner = TestIds.next();
         when(memberMapper.selectByTeamAndUser(teamId, actor)).thenReturn(member(teamId, actor, "TEAM_MEMBER"));
         when(teamMapper.selectById(teamId)).thenReturn(team(teamId, canonicalOwner));
         TeamMemberView memberView = new TeamMemberView();
@@ -285,8 +296,8 @@ class TeamServiceTest {
 
     @Test
     void acceptExpiredInvitationPersistsExpiredBeforeReturningError() {
-        UUID actor = UUID.randomUUID();
-        UUID invitationId = UUID.randomUUID();
+        Long actor = TestIds.next();
+        Long invitationId = TestIds.next();
         UserEntity user = new UserEntity();
         user.setId(actor);
         user.setEmail("member@example.com");
@@ -313,9 +324,9 @@ class TeamServiceTest {
 
     @Test
     void revokeExpiredInvitationPersistsExpiredInsteadOfRevoked() {
-        UUID teamId = UUID.randomUUID();
-        UUID owner = UUID.randomUUID();
-        UUID invitationId = UUID.randomUUID();
+        Long teamId = TestIds.next();
+        Long owner = TestIds.next();
+        Long invitationId = TestIds.next();
         when(teamMapper.selectByIdForUpdate(teamId)).thenReturn(team(teamId, owner));
         when(memberMapper.selectByTeamAndUser(teamId, owner)).thenReturn(member(teamId, owner, "TEAM_OWNER"));
         TeamInvitationEntity invitation = new TeamInvitationEntity();
@@ -335,8 +346,8 @@ class TeamServiceTest {
 
     @Test
     void inviteLocksTeamBeforeCheckingForPendingInvitation() {
-        UUID teamId = UUID.randomUUID();
-        UUID owner = UUID.randomUUID();
+        Long teamId = TestIds.next();
+        Long owner = TestIds.next();
         TeamMemberEntity ownerMember = member(teamId, owner, "TEAM_OWNER");
         when(teamMapper.selectByIdForUpdate(teamId)).thenReturn(team(teamId, owner));
         when(memberMapper.selectByTeamAndUser(teamId, owner)).thenReturn(ownerMember);
@@ -366,19 +377,19 @@ class TeamServiceTest {
 
     @Test
     void listUsesDefaultThirtyAndReturnsCursor() {
-        UUID actor = UUID.randomUUID();
+        Long actor = TestIds.next();
         java.util.List<TeamMembershipView> firstRows = new java.util.ArrayList<>();
         for (int i = 0; i < 31; i++) {
-            UUID teamId = new UUID(0, i + 1L);
+            Long teamId = i + 1L;
             TeamMembershipView row = new TeamMembershipView();
             row.setId(teamId);
-            row.setOwnerUserId(UUID.randomUUID());
+            row.setOwnerUserId(TestIds.next());
             row.setName("team-" + i);
             row.setRole(i == 0 ? "TEAM_OWNER" : "TEAM_MEMBER");
             firstRows.add(row);
         }
         when(teamMapper.selectMembershipPage(actor, null, 31)).thenReturn(firstRows);
-        when(teamMapper.selectMembershipPage(actor, new UUID(0, 30L), 31))
+        when(teamMapper.selectMembershipPage(actor, 30L, 31))
                 .thenReturn(java.util.List.of(firstRows.get(30)));
 
         var page = service.list(actor, null, null);
@@ -394,22 +405,22 @@ class TeamServiceTest {
 
     @Test
     void cursorCannotBeReusedAcrossListScopes() {
-        UUID actor = UUID.randomUUID();
-        UUID teamId = UUID.randomUUID();
+        Long actor = TestIds.next();
+        Long teamId = TestIds.next();
         TeamMembershipView first = new TeamMembershipView();
-        first.setId(new UUID(0, 1));
-        first.setOwnerUserId(UUID.randomUUID());
+        first.setId(1L);
+        first.setOwnerUserId(TestIds.next());
         first.setName("one");
         first.setRole("TEAM_MEMBER");
         TeamMembershipView second = new TeamMembershipView();
-        second.setId(new UUID(0, 2));
-        second.setOwnerUserId(UUID.randomUUID());
+        second.setId(2L);
+        second.setOwnerUserId(TestIds.next());
         second.setName("two");
         second.setRole("TEAM_MEMBER");
         when(teamMapper.selectMembershipPage(actor, null, 2)).thenReturn(java.util.List.of(first, second));
         String teamListCursor = service.list(actor, null, 1).getPage().getNextCursor();
         when(memberMapper.selectByTeamAndUser(teamId, actor)).thenReturn(member(teamId, actor, "TEAM_MEMBER"));
-        when(teamMapper.selectById(teamId)).thenReturn(team(teamId, UUID.randomUUID()));
+        when(teamMapper.selectById(teamId)).thenReturn(team(teamId, TestIds.next()));
 
         ApiException error = assertThrows(ApiException.class,
                 () -> service.members(actor, teamId, teamListCursor, 1));
@@ -419,9 +430,9 @@ class TeamServiceTest {
 
     @Test
     void onlyOwnerCanDisbandTeam() {
-        UUID teamId = UUID.randomUUID();
-        UUID owner = UUID.randomUUID();
-        UUID memberId = UUID.randomUUID();
+        Long teamId = TestIds.next();
+        Long owner = TestIds.next();
+        Long memberId = TestIds.next();
         when(teamMapper.selectByIdForUpdate(teamId)).thenReturn(team(teamId, owner));
         when(memberMapper.selectByTeamAndUser(teamId, memberId)).thenReturn(member(teamId, memberId, "TEAM_MEMBER"));
 
@@ -433,8 +444,8 @@ class TeamServiceTest {
 
     @Test
     void ownerDisbandDelegatesToDisbandService() {
-        UUID teamId = UUID.randomUUID();
-        UUID owner = UUID.randomUUID();
+        Long teamId = TestIds.next();
+        Long owner = TestIds.next();
         when(teamMapper.selectByIdForUpdate(teamId)).thenReturn(team(teamId, owner));
         when(memberMapper.selectByTeamAndUser(teamId, owner)).thenReturn(member(teamId, owner, "TEAM_OWNER"));
 
@@ -447,16 +458,16 @@ class TeamServiceTest {
 
     @Test
     void disbandUnknownTeamReturnsNotFound() {
-        UUID actor = UUID.randomUUID();
+        Long actor = TestIds.next();
         when(teamMapper.selectByIdForUpdate(any())).thenReturn(null);
 
-        ApiException error = assertThrows(ApiException.class, () -> service.disband(actor, UUID.randomUUID()));
+        ApiException error = assertThrows(ApiException.class, () -> service.disband(actor, TestIds.next()));
 
         assertEquals("TEAM_RESOURCE_NOT_FOUND", error.code());
         verify(teamDisbandService, org.mockito.Mockito.never()).deleteTeam(any());
     }
 
-    private TeamMemberEntity member(UUID teamId, UUID userId, String role) {
+    private TeamMemberEntity member(Long teamId, Long userId, String role) {
         TeamMemberEntity member = new TeamMemberEntity();
         member.setTeamId(teamId);
         member.setUserId(userId);
@@ -464,7 +475,7 @@ class TeamServiceTest {
         return member;
     }
 
-    private TeamEntity team(UUID teamId, UUID ownerId) {
+    private TeamEntity team(Long teamId, Long ownerId) {
         TeamEntity team = new TeamEntity();
         team.setId(teamId);
         team.setOwnerUserId(ownerId);
