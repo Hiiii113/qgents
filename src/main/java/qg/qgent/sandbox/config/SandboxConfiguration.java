@@ -3,6 +3,7 @@ package qg.qgent.sandbox.config;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 
 import java.time.Clock;
 import java.util.concurrent.ExecutorService;
@@ -12,8 +13,9 @@ import java.util.concurrent.Executors;
 @Configuration
 @EnableConfigurationProperties(SandboxProperties.class)
 public class SandboxConfiguration {
-    /** 提供统一 UTC 时钟，便于测试替换和时间语义一致。 */
+    /** 提供统一 UTC 时钟；SSE 传输的时钟按名称单独注入。 */
     @Bean
+    @Primary
     Clock sandboxClock() {
         return Clock.systemUTC();
     }
