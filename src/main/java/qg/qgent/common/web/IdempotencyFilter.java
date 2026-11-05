@@ -6,6 +6,8 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.Part;
+import org.apache.tomcat.util.http.fileupload.impl.SizeException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -18,11 +20,16 @@ import org.springframework.web.util.ContentCachingResponseWrapper;
 import qg.qgent.common.entity.IdempotencyRecordEntity;
 import qg.qgent.common.service.IdempotencyService;
 
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.security.DigestOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -59,6 +66,11 @@ public class IdempotencyFilter extends OncePerRequestFilter {
         }
         String path = request.getRequestURI();
 
+        // 上传预览只解析文件、不写业务数据；缓存它的响应会把未确认导入的正文留在 idempotency_records。
+        if (path.matches("^/api/v1/projects/[^/]+/skills/preview$")) {
+            return true;
+        }
+
         // 项目下的所有写接口都可能被移动端、SSE 刷新后的前端重试或网络层重放。
         boolean isProjectWriteApi = path.matches("^/api/v1/projects/[^/]+(?:/.*)?$");
 
@@ -87,9 +99,24 @@ public class IdempotencyFilter extends OncePerRequestFilter {
 
         // 尝试查询该用户在相同接口路径和相同幂等键下的缓存记录
         IdempotencyRecordEntity existing = idempotency.find(fingerprint, scope, key);
+        byte[] multipartHash = null;
+        if (isMultipart(request)) {
+            Collection<Part> parts;
+            try {
+                parts = request.getParts();
+            } catch (IllegalStateException e) {
+                // 超限上传在容器解析阶段就被丢弃，异常早于 MVC 的异常处理，只能在这里转成客户端错误
+                if (!isSizeExceeded(e)) {
+                    throw e;
+                }
+                writeError(request, response, 413, "UPLOAD_TOO_LARGE", "上传文件超过大小限制");
+                return;
+            }
+            multipartHash = hashParts(parts);
+        }
         if (existing != null) {
             // 如果存在缓存，需验证请求体哈希，防范同一幂等键被用于不同请求体的恶意/错误行为
-            byte[] requestHash = hash(readBody(request));
+            byte[] requestHash = multipartHash != null ? multipartHash : hash(readBody(request));
             if (!MessageDigest.isEqual(existing.getRequestHash(), requestHash)) {
                 writeError(request, response, 409, "IDEMPOTENCY_KEY_REUSED", "Idempotency-Key 已被使用且请求体不同");
                 return;
@@ -107,7 +134,7 @@ public class IdempotencyFilter extends OncePerRequestFilter {
             chain.doFilter(cachedRequest, cachedResponse);
         } finally {
             // 业务执行完毕（无论是成功还是抛错），记录请求体的哈希
-            byte[] requestHash = hash(cachedRequest.getContentAsByteArray());
+            byte[] requestHash = multipartHash != null ? multipartHash : hash(cachedRequest.getContentAsByteArray());
             int status = cachedResponse.getStatus();
             byte[] body = cachedResponse.getContentAsByteArray();
 
@@ -130,6 +157,41 @@ public class IdempotencyFilter extends OncePerRequestFilter {
             // 必须将缓存中的真实响应拷贝写回到原始响应流中
             cachedResponse.copyBodyToResponse();
         }
+    }
+
+    private static boolean isMultipart(HttpServletRequest request) {
+        String contentType = request.getContentType();
+        return contentType != null
+                && MediaType.MULTIPART_FORM_DATA.isCompatibleWith(MediaType.parseMediaType(contentType));
+    }
+
+    private static boolean isSizeExceeded(Throwable error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SizeException) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private byte[] hashParts(Collection<Part> parts) throws IOException {
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
+        DataOutputStream out = new DataOutputStream(new DigestOutputStream(OutputStream.nullOutputStream(), digest));
+        for (Part part : parts) {
+            byte[] metadata = mapper.writeValueAsBytes(Arrays.asList(
+                    part.getName(), part.getSubmittedFileName(), part.getContentType(), part.getSize()));
+            out.writeInt(metadata.length);
+            out.write(metadata);
+            try (InputStream in = part.getInputStream()) {
+                in.transferTo(out);
+            }
+        }
+        return digest.digest();
     }
 
     private byte[] readBody(HttpServletRequest request) throws IOException {
