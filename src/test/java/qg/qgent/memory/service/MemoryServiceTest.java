@@ -88,6 +88,62 @@ class MemoryServiceTest {
         verify(memories).updateById(approved);
     }
 
+    @Test
+    void getShowsAdminEveryStatusOfOtherMembersMemory() {
+        Long projectId = TestIds.next();
+        Long actor = TestIds.next();
+        when(access.requireProjectMember(projectId, actor)).thenReturn("PROJECT_ADMIN");
+
+        for (String status : List.of("DRAFT", "PENDING_REVIEW", "REJECTED", "ARCHIVED")) {
+            Long memoryId = TestIds.next();
+            when(memories.selectById(memoryId))
+                    .thenReturn(memory(memoryId, projectId, TestIds.next(), "标题", "正文", status));
+
+            assertEquals(status, service(10).get(actor, projectId, memoryId).getStatus());
+        }
+    }
+
+    @Test
+    void getHidesOtherMembersUnapprovedMemoryFromMember() {
+        Long projectId = TestIds.next();
+        Long actor = TestIds.next();
+        Long memoryId = TestIds.next();
+        when(access.requireProjectMember(projectId, actor)).thenReturn("PROJECT_MEMBER");
+        when(memories.selectById(memoryId))
+                .thenReturn(memory(memoryId, projectId, TestIds.next(), "标题", "正文", "PENDING_REVIEW"));
+
+        ApiException error = assertThrows(ApiException.class, () -> service(10).get(actor, projectId, memoryId));
+
+        assertEquals(org.springframework.http.HttpStatus.NOT_FOUND, error.status());
+        assertEquals("MEMORY_NOT_FOUND", error.code());
+    }
+
+    @Test
+    void getShowsMemberOwnUnapprovedMemory() {
+        Long projectId = TestIds.next();
+        Long actor = TestIds.next();
+        Long memoryId = TestIds.next();
+        when(access.requireProjectMember(projectId, actor)).thenReturn("PROJECT_MEMBER");
+        when(memories.selectById(memoryId))
+                .thenReturn(memory(memoryId, projectId, actor, "标题", "正文", "DRAFT"));
+
+        assertEquals("DRAFT", service(10).get(actor, projectId, memoryId).getStatus());
+    }
+
+    @Test
+    void getRejectsMemoryFromAnotherProject() {
+        Long projectId = TestIds.next();
+        Long actor = TestIds.next();
+        Long memoryId = TestIds.next();
+        when(access.requireProjectMember(projectId, actor)).thenReturn("PROJECT_ADMIN");
+        when(memories.selectById(memoryId))
+                .thenReturn(memory(memoryId, TestIds.next(), actor, "标题", "正文", "APPROVED"));
+
+        ApiException error = assertThrows(ApiException.class, () -> service(10).get(actor, projectId, memoryId));
+
+        assertEquals("MEMORY_NOT_FOUND", error.code());
+    }
+
     private MemoryService service(int maxApprovedMemoryChars) {
         return new MemoryService(memories, projects, access, users, mock(EventService.class), maxApprovedMemoryChars);
     }

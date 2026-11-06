@@ -80,11 +80,14 @@ public class MemoryService {
                 .stream().map(this::toResponse).toList();
     }
 
-    /** 获取 Memory；他人非 APPROVED Memory 视为不可见。 */
+    /** 获取 Memory；可见性与列表一致：管理员看全部，成员看已批准内容或自己的内容。 */
     public MemoryResponse get(Long actor, Long projectId, Long memoryId) {
-        access.requireProjectMember(projectId, actor);
+        String role = access.requireProjectMember(projectId, actor);
         MemoryEntity memory = requireMemoryInProject(projectId, memoryId);
-        if (!"APPROVED".equals(memory.getStatus()) && !memory.getCreatedBy().equals(actor)) {
+        boolean visible = "APPROVED".equals(memory.getStatus())
+                || memory.getCreatedBy().equals(actor)
+                || "PROJECT_ADMIN".equals(role);
+        if (!visible) {
             throw new ApiException(HttpStatus.NOT_FOUND, "MEMORY_NOT_FOUND", "Memory 不存在或无权访问");
         }
         return toResponse(memory);
