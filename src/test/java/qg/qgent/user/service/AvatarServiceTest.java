@@ -4,22 +4,19 @@ import qg.qgent.support.TestIds;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpStatus;
 
 import qg.qgent.attachment.dto.UploadCredential;
-import qg.qgent.common.web.ApiException;
 import qg.qgent.user.dto.AvatarConfirmRequest;
 import qg.qgent.user.dto.AvatarConfirmResponse;
 import qg.qgent.user.dto.AvatarCredentialResponse;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
-import qg.qgent.user.storage.AvatarStorageService;
+import qg.qgent.common.storage.AvatarStorageService;
 
 import java.time.LocalDateTime;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -47,7 +44,7 @@ class AvatarServiceTest {
     @Test
     void credentialPassesThroughStorageResult() {
         String objectKey = "avatars/" + userId + "/abc.png";
-        when(storage.createCredential(eq(userId), eq("image/png"), eq(1024L)))
+        when(storage.createCredential(eq("avatars"), eq(userId), eq("image/png"), eq(1024L)))
                 .thenReturn(new AvatarStorageService.AvatarCredential(objectKey,
                         new UploadCredential("https://put-url", "PUT", Map.of(), LocalDateTime.now())));
 
@@ -58,24 +55,9 @@ class AvatarServiceTest {
     }
 
     @Test
-    void confirmRejectsObjectKeyOutsideOwnPrefix() {
-        AvatarConfirmRequest request = new AvatarConfirmRequest();
-        request.setObjectKey("avatars/" + TestIds.next() + "/other.jpg");
-
-        assertThatThrownBy(() -> service.confirm(userId, request))
-                .isInstanceOf(ApiException.class)
-                .satisfies(e -> {
-                    ApiException ex = (ApiException) e;
-                    assertThat(ex.status()).isEqualTo(HttpStatus.FORBIDDEN);
-                    assertThat(ex.code()).isEqualTo("AVATAR_OBJECT_KEY_FORBIDDEN");
-                });
-        org.mockito.Mockito.verifyNoInteractions(storage);
-    }
-
-    @Test
     void confirmSetsAvatarUrlAndObjectKeyAndDeletesOld() {
         String newKey = "avatars/" + userId + "/new.jpg";
-        when(storage.confirmAvatar(newKey)).thenReturn("https://public/" + newKey);
+        when(storage.confirm("avatars", userId, newKey)).thenReturn("https://public/" + newKey);
         AvatarConfirmRequest request = new AvatarConfirmRequest();
         request.setObjectKey(newKey);
 
@@ -89,7 +71,7 @@ class AvatarServiceTest {
 
     @Test
     void confirmDoesNotDeleteOldWhenSameAsNewOrNoPrevious() {
-        when(storage.confirmAvatar("avatars/" + userId + "/old.jpg")).thenReturn("https://public/x");
+        when(storage.confirm("avatars", userId, "avatars/" + userId + "/old.jpg")).thenReturn("https://public/x");
         AvatarConfirmRequest request = new AvatarConfirmRequest();
         request.setObjectKey("avatars/" + userId + "/old.jpg");
 

@@ -21,7 +21,7 @@ import qg.qgent.team.dto.TeamMemberUpdateRequest;
 import qg.qgent.team.dto.TeamResponse;
 import qg.qgent.team.dto.TeamUpdateRequest;
 import qg.qgent.team.service.TeamService;
-import qg.qgent.team.storage.TeamAvatarStorageService;
+import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.user.dto.AvatarConfirmRequest;
 import qg.qgent.user.dto.AvatarConfirmResponse;
 import qg.qgent.user.dto.AvatarCredentialRequest;
@@ -34,7 +34,7 @@ import qg.qgent.user.dto.AvatarCredentialResponse;
 public class TeamController {
     private final TeamService teams;
     private final EventService eventService;
-    private final TeamAvatarStorageService avatarStorage;
+    private final AvatarStorageService avatarStorage;
 
     /** 团队级实时事件流（需团队成员）。 */
     @GetMapping("/{teamId}/events")
@@ -136,8 +136,8 @@ public class TeamController {
                                                                   @Valid @RequestBody AvatarCredentialRequest body,
                                                                   HttpServletRequest request) {
         teams.requireMember(teamId, actor);
-        TeamAvatarStorageService.TeamAvatarCredential credential =
-                avatarStorage.createCredential(teamId, body.getMediaType(), body.getSizeBytes());
+        AvatarStorageService.AvatarCredential credential =
+                avatarStorage.createCredential("teams", teamId, body.getMediaType(), body.getSizeBytes());
         return ok(new AvatarCredentialResponse(credential.objectKey(),
                 credential.credential().getUploadUrl(), credential.credential().getMethod(),
                 credential.credential().getHeaders(), credential.credential().getExpiresAt()), request);
@@ -150,7 +150,7 @@ public class TeamController {
                                                             @Valid @RequestBody AvatarConfirmRequest body,
                                                             HttpServletRequest request) {
         teams.requireMember(teamId, actor);
-        String avatarUrl = avatarStorage.confirmAvatar(teamId, body.getObjectKey());
+        String avatarUrl = avatarStorage.confirm("teams", teamId, body.getObjectKey());
         return ok(new AvatarConfirmResponse(avatarUrl), request);
     }
 

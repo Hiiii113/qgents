@@ -19,7 +19,7 @@ import qg.qgent.project.dto.ProjectResponse;
 import qg.qgent.project.dto.ProjectUpdateRequest;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.project.service.ProjectService;
-import qg.qgent.project.storage.ProjectAvatarStorageService;
+import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.user.dto.AvatarConfirmRequest;
 import qg.qgent.user.dto.AvatarConfirmResponse;
 import qg.qgent.user.dto.AvatarCredentialRequest;
@@ -33,7 +33,7 @@ import qg.qgent.user.dto.AvatarCredentialResponse;
 public class ProjectController {
     private final ProjectService projects;
     private final ProjectAccessService access;
-    private final ProjectAvatarStorageService avatarStorage;
+    private final AvatarStorageService avatarStorage;
 
     /** 创建项目，创建者自动成为 PROJECT_ADMIN。 */
     @PostMapping("/teams/{teamId}/projects")
@@ -73,8 +73,8 @@ public class ProjectController {
                                                                   @Valid @RequestBody AvatarCredentialRequest body,
                                                                   HttpServletRequest request) {
         access.requireProjectMember(projectId, actor);
-        ProjectAvatarStorageService.ProjectAvatarCredential credential =
-                avatarStorage.createCredential(projectId, body.getMediaType(), body.getSizeBytes());
+        AvatarStorageService.AvatarCredential credential =
+                avatarStorage.createCredential("projects", projectId, body.getMediaType(), body.getSizeBytes());
         return ok(new AvatarCredentialResponse(credential.objectKey(),
                 credential.credential().getUploadUrl(), credential.credential().getMethod(),
                 credential.credential().getHeaders(), credential.credential().getExpiresAt()), request);
@@ -87,7 +87,7 @@ public class ProjectController {
                                                             @Valid @RequestBody AvatarConfirmRequest body,
                                                             HttpServletRequest request) {
         access.requireProjectMember(projectId, actor);
-        String avatarUrl = avatarStorage.confirmAvatar(projectId, body.getObjectKey());
+        String avatarUrl = avatarStorage.confirm("projects", projectId, body.getObjectKey());
         return ok(new AvatarConfirmResponse(avatarUrl), request);
     }
 

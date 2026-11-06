@@ -11,7 +11,7 @@ import qg.qgent.user.dto.AvatarConfirmResponse;
 import qg.qgent.user.dto.AvatarCredentialResponse;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
-import qg.qgent.user.storage.AvatarStorageService;
+import qg.qgent.common.storage.AvatarStorageService;
 
 
 /** 确认上传后保存用户头像 URL 和对象键，并尝试删除旧头像。 */
@@ -24,7 +24,8 @@ public class AvatarService {
 
     /** 为当前用户签发头像直传凭证。 */
     public AvatarCredentialResponse credential(Long userId, String mediaType, Long sizeBytes) {
-        AvatarStorageService.AvatarCredential credential = storage.createCredential(userId, mediaType, sizeBytes);
+        AvatarStorageService.AvatarCredential credential =
+                storage.createCredential("avatars", userId, mediaType, sizeBytes);
         return new AvatarCredentialResponse(credential.objectKey(), credential.credential().getUploadUrl(),
                 credential.credential().getMethod(), credential.credential().getHeaders(),
                 credential.credential().getExpiresAt());
@@ -34,13 +35,12 @@ public class AvatarService {
     @Transactional
     public AvatarConfirmResponse confirm(Long userId, AvatarConfirmRequest body) {
         String objectKey = body.getObjectKey();
-        requireOwnObject(userId, objectKey);
         UserEntity user = userMapper.selectById(userId);
         if (user == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "用户不存在");
         }
         String previousObjectKey = user.getAvatarObjectKey();
-        String publicUrl = storage.confirmAvatar(objectKey);
+        String publicUrl = storage.confirm("avatars", userId, objectKey);
         user.setAvatarUrl(publicUrl);
         user.setAvatarObjectKey(objectKey);
         userMapper.updateById(user);
@@ -49,14 +49,5 @@ public class AvatarService {
             storage.deleteObject(previousObjectKey);
         }
         return new AvatarConfirmResponse(publicUrl);
-    }
-
-    /** 校验对象键必须属于当前用户自己的头像前缀，防止客户端用他人对象键覆盖他人头像。 */
-    private void requireOwnObject(Long userId, String objectKey) {
-        String ownedPrefix = "avatars/" + userId + "/";
-        if (objectKey == null || !objectKey.startsWith(ownedPrefix)) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "AVATAR_OBJECT_KEY_FORBIDDEN",
-                    "头像对象键不属于当前用户");
-        }
     }
 }
