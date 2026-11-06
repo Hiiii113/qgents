@@ -26,7 +26,6 @@ import qg.qgent.common.dto.PageSlice;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.project.entity.ProjectEntity;
-import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
@@ -47,7 +46,6 @@ public class MessageService {
     private final MessageMapper messageMapper;
     private final ChatGroupMapper groupMapper;
     private final UserMapper userMapper;
-    private final ProjectMapper projectMapper;
     private final GroupService groupService;
     private final ObjectMapper mapper;
     private final EventService eventService;
@@ -57,14 +55,13 @@ public class MessageService {
 
     public MessageService(MessageMapper messageMapper, ChatGroupMapper groupMapper,
                           UserMapper userMapper,
-                          ProjectMapper projectMapper, GroupService groupService,
+                          GroupService groupService,
                           ObjectMapper mapper,
                           EventService eventService, NotificationService notificationService,
                           AttachmentService attachmentService, ApplicationEventPublisher eventPublisher) {
         this.messageMapper = messageMapper;
         this.groupMapper = groupMapper;
         this.userMapper = userMapper;
-        this.projectMapper = projectMapper;
         this.groupService = groupService;
         this.mapper = mapper;
         this.eventService = eventService;

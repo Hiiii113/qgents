@@ -24,7 +24,6 @@ import qg.qgent.chat.mapper.view.GroupLatestMessageRow;
 import qg.qgent.chat.mapper.view.GroupUnreadRow;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.event.ProjectCreatedEvent;
-import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.mapper.ProjectMemberMapper;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.service.EventService;
@@ -44,7 +43,6 @@ public class GroupService {
 
     private final ChatGroupMapper groupMapper;
     private final ProjectMemberMapper projectMemberMapper;
-    private final ProjectMapper projectMapper;
     private final GroupUserMapper groupUserMapper;
     private final MessageMapper messageMapper;
     private final GroupReadStateMapper groupReadStateMapper;
@@ -54,13 +52,12 @@ public class GroupService {
 
     public GroupService(ChatGroupMapper groupMapper,
                         ProjectMemberMapper projectMemberMapper,
-                        ProjectMapper projectMapper, GroupUserMapper groupUserMapper,
+                        GroupUserMapper groupUserMapper,
                         MessageMapper messageMapper, GroupReadStateMapper groupReadStateMapper,
                         UserGroupPreferenceMapper userGroupPreferenceMapper,
                         ProjectAccessService access, EventService eventService) {
         this.groupMapper = groupMapper;
         this.projectMemberMapper = projectMemberMapper;
-        this.projectMapper = projectMapper;
         this.groupUserMapper = groupUserMapper;
         this.messageMapper = messageMapper;
         this.groupReadStateMapper = groupReadStateMapper;

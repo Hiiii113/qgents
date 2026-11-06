@@ -13,14 +13,6 @@ public interface ProjectMemberMapper extends BaseMapper<ProjectMemberEntity> {
     @Delete("DELETE pm FROM project_members pm INNER JOIN projects p ON p.id = pm.project_id WHERE p.team_id = #{teamId} AND pm.user_id = #{userId}")
     int deleteByTeamAndUser(@Param("teamId") Long teamId, @Param("userId") Long userId);
 
-    @Select("SELECT project_id, user_id, role FROM project_members WHERE user_id = #{userId}")
-    @Results({
-            @Result(column = "project_id", property = "projectId"),
-            @Result(column = "user_id", property = "userId"),
-            @Result(column = "role", property = "role")
-    })
-    List<ProjectMemberEntity> selectByUserId(Long userId);
-
     @Select("SELECT project_id, user_id, role FROM project_members WHERE project_id = #{projectId} AND user_id = #{userId}")
     @Results({
             @Result(column = "project_id", property = "projectId"),

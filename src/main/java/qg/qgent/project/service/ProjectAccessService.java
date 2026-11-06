@@ -25,17 +25,12 @@ public class ProjectAccessService {
     private final TeamMemberMapper teamMemberMapper;
 
     public String requireProjectMember(Long projectId, Long userId) {
-        ProjectEntity project = requireProject(projectId, false);
+        ProjectEntity project = requireProject(projectId);
         return requireAccess(project, userId);
     }
 
     public void requireProjectAdmin(Long projectId, Long userId) {
-        requireAdmin(requireProject(projectId, false), userId);
-    }
-
-    /** 归档项目必须仍可授权恢复，因此该入口允许读取 ARCHIVED 项目。 */
-    public void requireProjectAdminAnyState(Long projectId, Long userId) {
-        requireAdmin(requireProject(projectId, true), userId);
+        requireAdmin(requireProject(projectId), userId);
     }
 
     /** 对已加锁项目执行不限状态的 Admin 校验，供状态错误前的防泄漏授权使用。 */
@@ -96,9 +91,9 @@ public class ProjectAccessService {
         }
     }
 
-    private ProjectEntity requireProject(Long projectId, boolean allowArchived) {
+    private ProjectEntity requireProject(Long projectId) {
         ProjectEntity project = projectMapper.selectById(projectId);
-        if (project == null || (!allowArchived && !"ACTIVE".equals(project.getStatus()))) {
+        if (project == null || !"ACTIVE".equals(project.getStatus())) {
             throw notFound();
         }
         return project;

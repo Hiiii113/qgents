@@ -25,8 +25,6 @@ import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
-import qg.qgent.project.entity.ProjectEntity;
-import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.user.mapper.UserMapper;
 
@@ -67,7 +65,7 @@ class MessageServiceTest {
         MessageMapper messages = mock(MessageMapper.class);
         ChatGroupMapper groups = mock(ChatGroupMapper.class);
         when(groups.selectOne(any())).thenReturn(group);
-        MessageService service = new MessageService(messages, groups, mock(UserMapper.class), mock(ProjectMapper.class),
+        MessageService service = new MessageService(messages, groups, mock(UserMapper.class),
                 mock(GroupService.class), new ObjectMapper(), mock(EventService.class), mock(NotificationService.class),
                 mock(AttachmentService.class), mock(ApplicationEventPublisher.class));
         assertThatThrownBy(() -> service.sendAsAgent(groupId, new MessageSendRequest()))
@@ -80,19 +78,13 @@ class MessageServiceTest {
         Long projectId = TestIds.next();
         Long groupId = TestIds.next();
         Long agentId = TestIds.next();
-        Long teamId = TestIds.next();
         ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setQgentEnabled(true);
         group.setProjectId(projectId);
-        ProjectEntity project = new ProjectEntity();
-        project.setId(projectId);
-        project.setTeamId(teamId);
         MessageMapper messages = mock(MessageMapper.class);
         ChatGroupMapper groups = mock(ChatGroupMapper.class);
-        ProjectMapper projects = mock(ProjectMapper.class);
         when(groups.selectOne(any())).thenReturn(group);
-        when(projects.selectById(projectId)).thenReturn(project);
         when(messages.nextSequence(groupId)).thenReturn(1L);
         AtomicReference<MessageEntity> inserted = new AtomicReference<>();
         when(messages.insert(any(MessageEntity.class))).thenAnswer(invocation -> {
@@ -102,7 +94,7 @@ class MessageServiceTest {
         });
         when(messages.selectById(any())).thenAnswer(invocation -> inserted.get());
         MessageService service = new MessageService(messages, groups, mock(UserMapper.class),
-                projects, mock(GroupService.class),
+                mock(GroupService.class),
                 new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 mock(ApplicationEventPublisher.class));
         MessageSendRequest request = new MessageSendRequest();
@@ -141,7 +133,7 @@ class MessageServiceTest {
         when(messages.selectById(any())).thenAnswer(invocation -> stored.get());
         ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
         MessageService service = new MessageService(messages, groups,
-                mock(UserMapper.class), mock(ProjectMapper.class),
+                mock(UserMapper.class),
                 mock(GroupService.class), new ObjectMapper(),
                 mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 publisher);
@@ -196,7 +188,7 @@ class MessageServiceTest {
         when(messages.nextSequence(groupId)).thenReturn(2L);
         when(messages.insert(any(MessageEntity.class))).thenThrow(new DuplicateKeyException("duplicate"));
         MessageService service = new MessageService(messages, groups,
-                mock(UserMapper.class), mock(ProjectMapper.class),
+                mock(UserMapper.class),
                 mock(GroupService.class), new ObjectMapper(),
                 mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class), publisher);
         MessageSendRequest request = new MessageSendRequest();
@@ -219,13 +211,9 @@ class MessageServiceTest {
         ChatGroupEntity group = new ChatGroupEntity();
         Long groupId = TestIds.next();
         Long agentId = TestIds.next();
-        Long teamId = TestIds.next();
         group.setId(groupId);
         group.setQgentEnabled(true);
         group.setProjectId(TestIds.next());
-        ProjectEntity project = new ProjectEntity();
-        project.setId(group.getProjectId());
-        project.setTeamId(teamId);
         when(groups.selectOne(any())).thenReturn(group);
         when(messages.nextSequence(groupId)).thenReturn(1L);
         AtomicReference<MessageEntity> inserted = new AtomicReference<>();
@@ -235,10 +223,8 @@ class MessageServiceTest {
             return 1;
         });
         when(messages.selectById(any())).thenAnswer(invocation -> inserted.get());
-        ProjectMapper projects = mock(ProjectMapper.class);
-        when(projects.selectById(group.getProjectId())).thenReturn(project);
         MessageService service = new MessageService(messages, groups,
-                mock(UserMapper.class), projects,
+                mock(UserMapper.class),
                 mock(GroupService.class),
                 new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 mock(ApplicationEventPublisher.class));
@@ -270,13 +256,9 @@ class MessageServiceTest {
         ChatGroupEntity group = new ChatGroupEntity();
         Long groupId = TestIds.next();
         Long agentId = TestIds.next();
-        Long teamId = TestIds.next();
         group.setId(groupId);
         group.setQgentEnabled(true);
         group.setProjectId(TestIds.next());
-        ProjectEntity project = new ProjectEntity();
-        project.setId(group.getProjectId());
-        project.setTeamId(teamId);
         when(groups.selectOne(any())).thenReturn(group);
         when(messages.nextSequence(groupId)).thenReturn(1L);
         AtomicReference<MessageEntity> inserted = new AtomicReference<>();
@@ -286,10 +268,8 @@ class MessageServiceTest {
             return 1;
         });
         when(messages.selectById(any())).thenAnswer(invocation -> inserted.get());
-        ProjectMapper projects = mock(ProjectMapper.class);
-        when(projects.selectById(group.getProjectId())).thenReturn(project);
         MessageService service = new MessageService(messages, groups,
-                mock(UserMapper.class), projects,
+                mock(UserMapper.class),
                 mock(GroupService.class),
                 new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 mock(ApplicationEventPublisher.class));
@@ -322,7 +302,7 @@ class MessageServiceTest {
         when(messages.selectAfterSequence(groupId, 10L, 3)).thenReturn(List.of(first, second));
 
         MessageService service = new MessageService(messages, groups,
-                mock(UserMapper.class), mock(ProjectMapper.class),
+                mock(UserMapper.class),
                 groupService,
                 new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 mock(ApplicationEventPublisher.class));
@@ -347,7 +327,7 @@ class MessageServiceTest {
         ChatGroupMapper groups = mock(ChatGroupMapper.class);
         when(groups.selectById(groupId)).thenReturn(group);
         MessageService service = new MessageService(messages, groups,
-                mock(UserMapper.class), mock(ProjectMapper.class),
+                mock(UserMapper.class),
                 mock(GroupService.class),
                 new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
                 mock(ApplicationEventPublisher.class));

@@ -16,7 +16,6 @@ import qg.qgent.chat.mapper.GroupReadStateMapper;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.web.ApiException;
-import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.mapper.ProjectMemberMapper;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.service.EventService;
@@ -40,7 +39,6 @@ class GroupPinServiceTest {
 
     private final ChatGroupMapper groupMapper = mock(ChatGroupMapper.class);
     private final ProjectMemberMapper projectMemberMapper = mock(ProjectMemberMapper.class);
-    private final ProjectMapper projectMapper = mock(ProjectMapper.class);
     private final MessageMapper messageMapper = mock(MessageMapper.class);
     private final GroupReadStateMapper groupReadStateMapper = mock(GroupReadStateMapper.class);
     private final UserGroupPreferenceMapper userGroupPreferenceMapper = mock(UserGroupPreferenceMapper.class);
@@ -48,7 +46,7 @@ class GroupPinServiceTest {
     private final EventService eventService = mock(EventService.class);
 
     private final GroupService service = new GroupService(groupMapper, projectMemberMapper,
-            projectMapper, mock(qg.qgent.chat.mapper.GroupUserMapper.class),
+            mock(qg.qgent.chat.mapper.GroupUserMapper.class),
             messageMapper, groupReadStateMapper, userGroupPreferenceMapper, access, eventService);
 
     private final Long projectId = TestIds.next();

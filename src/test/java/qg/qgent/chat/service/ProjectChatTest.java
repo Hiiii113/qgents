@@ -4,7 +4,6 @@ import qg.qgent.support.TestIds;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.chat.dto.GroupCreateRequest;
 import qg.qgent.chat.dto.GroupInviteRequest;
 import qg.qgent.common.web.ApiException;
@@ -26,9 +25,8 @@ class ProjectChatTest {
     private final ChatGroupMapper groups = mock(ChatGroupMapper.class);
     private final ProjectAccessService access = mock(ProjectAccessService.class);
     private final GroupUserMapper users = mock(GroupUserMapper.class);
-    private final ProjectMapper projects = mock(ProjectMapper.class);
     private final GroupService service = new GroupService(groups, mock(ProjectMemberMapper.class),
-            projects, users,
+            users,
             mock(MessageMapper.class), mock(GroupReadStateMapper.class), mock(UserGroupPreferenceMapper.class),
             access, mock(EventService.class));
 
@@ -72,9 +70,7 @@ class ProjectChatTest {
     @Test
     void newGroupIncludesCreatorAndSelectedUsersAndAgents() {
         Long projectId = TestIds.next(), actor = TestIds.next(), teammate = TestIds.next();
-        Long teamId = TestIds.next(), agentId = qg.qgent.chat.QgentIdentity.ID;
-        ProjectEntity project = new ProjectEntity(); project.setTeamId(teamId);
-        when(projects.selectById(projectId)).thenReturn(project);
+        Long agentId = qg.qgent.chat.QgentIdentity.ID;
         GroupCreateRequest body = new GroupCreateRequest(); body.setTitle("  方案讨论  ");
         body.setUserIds(List.of(teammate)); body.setAgentIds(List.of(agentId));
         var response = service.create(actor, projectId, body);
@@ -108,7 +104,6 @@ class ProjectChatTest {
         ChatGroupEntity group = new ChatGroupEntity(); group.setId(groupId); group.setProjectId(projectId); group.setDefaultGroup(false);
         when(groups.selectById(groupId)).thenReturn(group);
         when(users.selectUserIds(groupId)).thenReturn(List.of(actor));
-        when(projects.selectById(projectId)).thenReturn(new ProjectEntity());
         GroupInviteRequest body = new GroupInviteRequest(); body.setUserIds(List.of(teammate));
         service.invite(actor, projectId, groupId, body);
         verify(users).insertUser(groupId, teammate);
@@ -118,8 +113,6 @@ class ProjectChatTest {
     @Test
     void rejectsArbitraryAssistantBeforeSavingGroup() {
         Long projectId = TestIds.next(), actor = TestIds.next(), agentId = TestIds.next();
-        ProjectEntity project = new ProjectEntity(); project.setTeamId(TestIds.next());
-        when(projects.selectById(projectId)).thenReturn(project);
         GroupCreateRequest body = new GroupCreateRequest(); body.setTitle("讨论"); body.setAgentIds(List.of(agentId));
         assertThatThrownBy(() -> service.create(actor, projectId, body)).isInstanceOf(ApiException.class);
         verify(groups, never()).insert(any(ChatGroupEntity.class));
