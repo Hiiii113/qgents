@@ -1,5 +1,6 @@
 package qg.qgent.chat.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -33,6 +34,7 @@ public class MessageController {
      * 发送消息；回复通过 replyToId 指向原消息，clientMessageId 用于重复发送去重。
      * 新消息持久化并提交事务后处理提及；只有提及 Agent 才启动执行，普通消息仅用于聊天。
      */
+    @Operation(summary = "发送群消息", description = "新消息持久化并提交事务后处理提及；clientMessageId 相同的重试返回原消息。")
     @PostMapping("/projects/{projectId}/groups/{groupId}/messages")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<?> send(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
