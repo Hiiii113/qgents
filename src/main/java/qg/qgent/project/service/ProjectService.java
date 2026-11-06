@@ -6,7 +6,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import qg.qgent.common.dto.PageInfo;
+import qg.qgent.common.dto.KeysetPagination;
 import qg.qgent.common.dto.PageSlice;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
@@ -28,10 +28,8 @@ import qg.qgent.team.entity.TeamMemberEntity;
 import qg.qgent.team.mapper.TeamMapper;
 import qg.qgent.team.mapper.TeamMemberMapper;
 
-import java.nio.charset.StandardCharsets;
 import java.time.ZoneOffset;
 import java.util.*;
-import java.util.function.Function;
 
 @Service
 @RequiredArgsConstructor
@@ -77,12 +75,12 @@ public class ProjectService {
         requireTeam(teamId);
         requireTeamMember(teamId, actor);
         boolean teamOwner = access.isCanonicalTeamOwner(teamId, actor);
-        int size = pageSize(limit);
+        int size = KeysetPagination.pageSize(limit);
         String scope = "team-projects:" + teamId + ":" + actor;
-        Long anchor = decodeCursor(cursor, scope);
+        Long anchor = KeysetPagination.decodeCursor(cursor, scope);
         List<ProjectMembershipView> rows = projectMapper.selectAccessiblePage(teamId, actor, teamOwner, anchor,
                 size + 1);
-        return keysetPage(rows, size, scope, ProjectMembershipView::getId,
+        return KeysetPagination.keysetPage(rows, size, scope, ProjectMembershipView::getId,
                 this::response);
     }
 
@@ -131,11 +129,11 @@ public class ProjectService {
     public PageSlice<ProjectMemberResponse> members(Long actor, Long projectId, String cursor, Integer limit) {
         ProjectEntity project = requireActiveProject(projectId);
         access.requireAccess(project, actor);
-        int size = pageSize(limit);
+        int size = KeysetPagination.pageSize(limit);
         String scope = "project-members:" + projectId;
-        Long anchor = decodeCursor(cursor, scope);
+        Long anchor = KeysetPagination.decodeCursor(cursor, scope);
         List<ProjectMemberEntity> rows = memberMapper.selectMemberPage(projectId, anchor, size + 1);
-        return keysetPage(rows, size, scope, ProjectMemberEntity::getUserId,
+        return KeysetPagination.keysetPage(rows, size, scope, ProjectMemberEntity::getUserId,
                 member -> new ProjectMemberResponse(member.getUserId().toString(), member.getRole()));
     }
 
@@ -309,45 +307,6 @@ public class ProjectService {
         r.setAvatarUrl(row.getAvatarUrl());
         r.setGithubEnabled(row.getGithubEnabled());
         return r;
-    }
-
-    private int pageSize(Integer requested) {
-        int value = requested == null ? 30 : requested;
-        if (value < 1 || value > 100) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PAGE_LIMIT", "limit 必须在 1 到 100 之间");
-        }
-        return value;
-    }
-
-    private Long decodeCursor(String cursor, String expectedScope) {
-        if (cursor == null || cursor.isBlank()) {
-            return null;
-        }
-        try {
-            String value = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
-            int separator = value.lastIndexOf('|');
-            if (separator <= 0 || !expectedScope.equals(value.substring(0, separator))) {
-                throw new IllegalArgumentException();
-            }
-            return Long.valueOf(value.substring(separator + 1));
-        } catch (IllegalArgumentException e) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "cursor 无效");
-        }
-    }
-
-    private String encodeCursor(String scope, Long anchor) {
-        return Base64.getUrlEncoder().withoutPadding()
-                .encodeToString((scope + "|" + anchor).getBytes(StandardCharsets.UTF_8));
-    }
-
-    private <S, T> PageSlice<T> keysetPage(List<S> rows, int size, String scope, Function<S, Long> id,
-                                           Function<S, T> mapper) {
-        boolean hasMore = rows.size() > size;
-        List<S> visible = hasMore ? rows.subList(0, size) : rows;
-        List<T> data = new ArrayList<>(visible.size());
-        visible.forEach(row -> data.add(mapper.apply(row)));
-        String next = hasMore ? encodeCursor(scope, id.apply(visible.get(visible.size() - 1))) : null;
-        return new PageSlice<>(data, new PageInfo(next, hasMore));
     }
 
     private ApiException invalid(String message) {

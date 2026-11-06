@@ -9,7 +9,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import qg.qgent.auth.service.TokenService;
-import qg.qgent.common.dto.PageInfo;
+import qg.qgent.common.dto.KeysetPagination;
 import qg.qgent.common.dto.PageSlice;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.common.web.PersistedApiException;
@@ -39,17 +39,13 @@ import qg.qgent.team.mapper.view.TeamMembershipView;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
 
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /** 管理团队资料、成员和邀请。 */
@@ -90,13 +86,13 @@ public class TeamService {
 
     /** 获取团队列表 */
     public PageSlice<TeamResponse> list(Long actor, String cursor, Integer limit) {
-        int pageSize = pageSize(limit);
+        int pageSize = KeysetPagination.pageSize(limit);
         String scope = "teams";
-        Long anchor = decodeCursor(cursor, scope);
+        Long anchor = KeysetPagination.decodeCursor(cursor, scope);
 
         List<TeamMembershipView> rows = teamMapper.selectMembershipPage(actor, anchor, pageSize + 1);
         // 转成指定的分页响应，memberCount/description/createdAt 来自列表聚合查询
-        return keysetPage(rows, pageSize, scope, TeamMembershipView::getId,
+        return KeysetPagination.keysetPage(rows, pageSize, scope, TeamMembershipView::getId,
                 row -> membershipResponse(row, actor));
     }
 
@@ -132,11 +128,11 @@ public class TeamService {
     public PageSlice<TeamMemberResponse> members(Long actor, Long teamId, String cursor, Integer limit) {
         requireMember(teamId, actor);
         TeamEntity team = requireTeam(teamId);
-        int pageSize = pageSize(limit);
+        int pageSize = KeysetPagination.pageSize(limit);
         String scope = "team-members:" + teamId;
-        Long anchor = decodeCursor(cursor, scope);
+        Long anchor = KeysetPagination.decodeCursor(cursor, scope);
         List<TeamMemberView> rows = memberMapper.selectMemberPage(teamId, anchor, pageSize + 1);
-        return keysetPage(rows, pageSize, scope, TeamMemberView::getUserId,
+        return KeysetPagination.keysetPage(rows, pageSize, scope, TeamMemberView::getUserId,
                 member -> {
                     TeamMemberResponse response = new TeamMemberResponse(member.getUserId().toString(),
                             effectiveRole(team.getOwnerUserId(), member.getUserId(), member.getRole()));
@@ -205,11 +201,11 @@ public class TeamService {
     /** 获取团队邀请列表 */
     public PageSlice<TeamInvitationResponse> invitations(Long actor, Long teamId, String cursor, Integer limit) {
         requireOwner(requireTeam(teamId), actor);
-        int pageSize = pageSize(limit);
+        int pageSize = KeysetPagination.pageSize(limit);
         String scope = "team-invitations:" + teamId;
-        Long anchor = decodeCursor(cursor, scope);
+        Long anchor = KeysetPagination.decodeCursor(cursor, scope);
         List<TeamInvitationEntity> rows = invitationMapper.selectInvitationPage(teamId, anchor, pageSize + 1);
-        return keysetPage(rows, pageSize, scope, TeamInvitationEntity::getId, this::effectiveInvitation);
+        return KeysetPagination.keysetPage(rows, pageSize, scope, TeamInvitationEntity::getId, this::effectiveInvitation);
     }
 
     /** 当前用户收到的待处理团队邀请（收件人视角）。 */
@@ -218,14 +214,14 @@ public class TeamService {
         if (user == null || user.getEmail() == null || user.getEmail().isBlank()) {
             throw notFound();
         }
-        int pageSize = pageSize(limit);
+        int pageSize = KeysetPagination.pageSize(limit);
         String scope = "my-team-invitations";
-        Long anchor = decodeCursor(cursor, scope);
+        Long anchor = KeysetPagination.decodeCursor(cursor, scope);
         List<TeamInvitationEntity> rows = invitationMapper.selectPendingByEmail(normalize(user.getEmail()), anchor,
                 pageSize + 1);
         Map<Long, String> teamNames = loadTeamNames(rows);
         Map<Long, String> inviterNames = loadUserDisplayNames(rows);
-        return keysetPage(rows, pageSize, scope, TeamInvitationEntity::getId,
+        return KeysetPagination.keysetPage(rows, pageSize, scope, TeamInvitationEntity::getId,
                 invitation -> receivedInvitation(invitation, teamNames, inviterNames));
     }
 
@@ -422,48 +418,6 @@ public class TeamService {
             throw notFound();
         }
         return team;
-    }
-
-    private int pageSize(Integer requestedLimit) {
-        int limit = requestedLimit == null ? 30 : requestedLimit;
-        if (limit < 1 || limit > 100) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_PAGE_LIMIT", "limit 必须在1到100之间");
-        }
-        return limit;
-    }
-
-    private Long decodeCursor(String cursor, String expectedScope) {
-        if (cursor == null || cursor.isBlank()) {
-            return null;
-        }
-        try {
-            if (cursor.length() > 512) {
-                throw new IllegalArgumentException();
-            }
-            String decoded = new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
-            int separator = decoded.lastIndexOf('|');
-            if (separator <= 0 || !expectedScope.equals(decoded.substring(0, separator))) {
-                throw new IllegalArgumentException();
-            }
-            return Long.valueOf(decoded.substring(separator + 1));
-        } catch (IllegalArgumentException e) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "cursor 无效");
-        }
-    }
-
-    private String encodeCursor(String scope, Long anchor) {
-        return Base64.getUrlEncoder().withoutPadding()
-                .encodeToString((scope + "|" + anchor).getBytes(StandardCharsets.UTF_8));
-    }
-
-    private <R, T> PageSlice<T> keysetPage(List<R> rows, int pageSize, String scope,
-                                           Function<R, Long> id, Function<R, T> convert) {
-        boolean hasMore = rows.size() > pageSize;
-        List<R> visible = hasMore ? rows.subList(0, pageSize) : rows;
-        String nextCursor = hasMore && !visible.isEmpty()
-                ? encodeCursor(scope, id.apply(visible.get(visible.size() - 1)))
-                : null;
-        return new PageSlice<>(visible.stream().map(convert).toList(), new PageInfo(nextCursor, hasMore));
     }
 
     private TeamResponse membershipResponse(TeamMembershipView row, Long actor) {
