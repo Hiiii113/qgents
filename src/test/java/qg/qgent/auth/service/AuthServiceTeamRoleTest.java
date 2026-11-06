@@ -5,7 +5,6 @@ import qg.qgent.support.TestIds;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
-import qg.qgent.auth.mail.PasswordResetMailer;
 import qg.qgent.auth.mail.VerificationCodeMailer;
 import qg.qgent.auth.mapper.EmailVerificationCodeMapper;
 import qg.qgent.auth.mapper.PasswordResetTokenMapper;
@@ -41,7 +40,7 @@ class AuthServiceTeamRoleTest {
                 mock(PasswordResetTokenMapper.class), mock(EmailVerificationCodeMapper.class),
                 teamMapper, memberMapper, mock(ProjectMapper.class),
                 mock(RsaPasswordDecryptor.class), passwords, mock(TokenService.class),
-                mock(PasswordResetMailer.class), mock(VerificationCodeMailer.class), mock(RateLimiter.class));
+                mock(VerificationCodeMailer.class), mock(RateLimiter.class));
         UserEntity user = new UserEntity();
         user.setId(userId);
         TeamMemberEntity membership = new TeamMemberEntity();
@@ -77,7 +76,7 @@ class AuthServiceTeamRoleTest {
                 mock(PasswordResetTokenMapper.class), mock(EmailVerificationCodeMapper.class),
                 teamMapper, memberMapper, projectMapper,
                 mock(RsaPasswordDecryptor.class), passwords, mock(TokenService.class),
-                mock(PasswordResetMailer.class), mock(VerificationCodeMailer.class), mock(RateLimiter.class));
+                mock(VerificationCodeMailer.class), mock(RateLimiter.class));
         UserEntity user = new UserEntity();
         user.setId(userId);
         ProjectMembershipView project = new ProjectMembershipView();

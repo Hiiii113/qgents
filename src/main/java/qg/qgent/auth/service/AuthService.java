@@ -14,7 +14,6 @@ import qg.qgent.auth.dto.ResetPasswordRequest;
 import qg.qgent.auth.entity.EmailVerificationCodeEntity;
 import qg.qgent.auth.entity.PasswordResetTokenEntity;
 import qg.qgent.auth.entity.RefreshTokenEntity;
-import qg.qgent.auth.mail.PasswordResetMailer;
 import qg.qgent.auth.mail.VerificationCodeMailer;
 import qg.qgent.auth.mapper.EmailVerificationCodeMapper;
 import qg.qgent.auth.mapper.PasswordResetTokenMapper;
@@ -59,8 +58,7 @@ public class AuthService {
     private final RsaPasswordDecryptor rsa;
     private final PasswordEncoder passwords;
     private final TokenService tokens;
-    private final PasswordResetMailer mailer;
-    private final VerificationCodeMailer verificationMailer;
+    private final VerificationCodeMailer mailer;
     private final RateLimiter limiter;
     private final String dummyPasswordHash;
 
@@ -68,8 +66,8 @@ public class AuthService {
                        PasswordResetTokenMapper resetTokenMapper, EmailVerificationCodeMapper verificationCodeMapper,
                        TeamMapper teamMapper, TeamMemberMapper teamMemberMapper,
                        ProjectMapper projectMapper, RsaPasswordDecryptor rsa,
-                       PasswordEncoder passwords, TokenService tokens, PasswordResetMailer mailer,
-                       VerificationCodeMailer verificationMailer, RateLimiter limiter) {
+                       PasswordEncoder passwords, TokenService tokens, VerificationCodeMailer mailer,
+                       RateLimiter limiter) {
         this.userMapper = userMapper;
         this.refreshTokenMapper = refreshTokenMapper;
         this.resetTokenMapper = resetTokenMapper;
@@ -81,7 +79,6 @@ public class AuthService {
         this.passwords = passwords;
         this.tokens = tokens;
         this.mailer = mailer;
-        this.verificationMailer = verificationMailer;
         this.limiter = limiter;
         this.dummyPasswordHash = passwords.encode("qgents-dummy-password-not-used");
     }
@@ -130,7 +127,7 @@ public class AuthService {
         record.setCodeHash(tokens.hash(code));
         record.setExpiresAt(utc(Instant.now().plus(VERIFICATION_TTL)));
         verificationCodeMapper.insert(record);
-        verificationMailer.send(email, code);
+        mailer.sendRegistration(email, code);
     }
 
     /**
@@ -229,7 +226,7 @@ public class AuthService {
         reset.setTokenHash(tokens.hash(code));
         reset.setExpiresAt(utc(tokens.resetExpiry()));
         resetTokenMapper.insert(reset);
-        mailer.send(user.getEmail(), code);
+        mailer.sendPasswordReset(user.getEmail(), code);
     }
 
     @Transactional
