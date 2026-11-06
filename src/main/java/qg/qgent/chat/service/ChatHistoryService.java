@@ -63,7 +63,7 @@ public class ChatHistoryService {
 
     /** 提取文本或代码正文；附件仅保留 ID、名称和媒体类型供多模态输入读取。 */
     private ContextMessage toContextMessage(MessageEntity m) {
-        Map<?, ?> content = parseContent(m.getContent());
+        Map<?, ?> content = parseContent(m);
         String type = m.getMessageType();
         String text = "IMAGE".equals(type) || "FILE".equals(type)
                 ? ""
@@ -77,15 +77,16 @@ public class ChatHistoryService {
         return message;
     }
 
-    /** 解析 content JSON 为字段映射；空/非法时返回空映射，不抛异常。 */
-    private Map<?, ?> parseContent(String contentJson) {
+    /** 解析 content JSON；正文损坏时带上消息 ID 抛出，避免把空内容当作正常消息。 */
+    private Map<?, ?> parseContent(MessageEntity message) {
+        String contentJson = message.getContent();
         if (contentJson == null || contentJson.isBlank()) {
             return Map.of();
         }
         try {
             return mapper.readValue(contentJson, Map.class);
         } catch (Exception e) {
-            return Map.of();
+            throw new IllegalStateException("消息内容解析失败, messageId=" + message.getId(), e);
         }
     }
 

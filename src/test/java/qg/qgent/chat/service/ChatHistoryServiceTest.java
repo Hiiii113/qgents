@@ -57,6 +57,22 @@ class ChatHistoryServiceTest {
     }
 
     @Test
+    void corruptedContentFailsWithMessageId() {
+        Long id = TestIds.next();
+        MessageEntity message = new MessageEntity();
+        message.setId(id);
+        message.setGroupId(TestIds.next());
+        message.setMessageType("TEXT");
+        message.setContent("{not json");
+        when(messages.selectById(id)).thenReturn(message);
+
+        assertThatThrownBy(() -> service.readChatMessage(TestIds.next(), TestIds.next(), message.getGroupId(), id))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining(id.toString())
+                .hasCauseInstanceOf(Exception.class);
+    }
+
+    @Test
     void messageFromAnotherGroupIsNotReturned() {
         Long id = TestIds.next();
         MessageEntity message = new MessageEntity();
