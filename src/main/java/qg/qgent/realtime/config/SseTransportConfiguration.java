@@ -11,22 +11,18 @@ import java.time.Clock;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.atomic.AtomicInteger;
 
-/** 配置 SSE 连接泵的有界线程池、emitter 工厂和时钟。 */
+/** 配置 SSE 连接泵的执行器、emitter 工厂和时钟。 */
 @Configuration(proxyBeanMethods = false)
 public class SseTransportConfiguration {
 
+    /** 每条连接长期占用一个线程，用虚拟线程让 128 条连接不必排队等待线程。 */
     @Bean(name = "sseEventPumpExecutor", destroyMethod = "shutdown")
     public ExecutorService sseEventPumpExecutor() {
         MdcTaskDecorator mdcDecorator = new MdcTaskDecorator();
-        AtomicInteger sequence = new AtomicInteger(1);
-        ThreadFactory factory = runnable -> {
-            Thread thread = new Thread(mdcDecorator.decorate(runnable), "sse-event-pump-" + sequence.getAndIncrement());
-            thread.setDaemon(true);
-            return thread;
-        };
-        return Executors.newFixedThreadPool(8, factory);
+        ThreadFactory factory = runnable ->
+                Thread.ofVirtual().name("sse-event-pump-", 1).unstarted(mdcDecorator.decorate(runnable));
+        return Executors.newThreadPerTaskExecutor(factory);
     }
 
     @Bean
