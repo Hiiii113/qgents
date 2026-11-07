@@ -85,6 +85,16 @@ class FileToolsTest {
         var result=new FileSearchTool(executor,new ObjectMapper(),new RepositoryFileResolver()).execute(context(),Map.of("query","hello")).getResult();
         assertThat((List<Map<String,Object>>)result.get("matches")).containsExactly(Map.of("path","src/name:part.java","lineNumber",13,"text","hello","truncated",false));
     }
+    @Test void truncatedOutputKeepsCompleteMatchesAndReportsTruncation() throws Exception {
+        var executor=mock(CommandExecutor.class);var mapper=new ObjectMapper();
+        String complete=mapper.writeValueAsString(Map.of("type","match","data",Map.of("path",Map.of("text","a.txt"),"line_number",1,"lines",Map.of("text","hello\n"))));
+        // 输出按字节截断会把最后一条 JSON 切成半条，截断标记单独成行
+        when(executor.execute(any(),anyString(),anyList(),any())).thenReturn(new CommandExecutionResult(0,
+                List.of(complete, complete.substring(0, complete.length()/2), "[输出超过限制，已截断]"), List.of()));
+        var result=new FileSearchTool(executor,mapper,new RepositoryFileResolver()).execute(context(),Map.of("query","hello")).getResult();
+        assertThat((List<Map<String,Object>>)result.get("matches")).containsExactly(Map.of("path","a.txt","lineNumber",1,"text","hello","truncated",false));
+        assertThat(result.get("truncated")).isEqualTo(true);
+    }
     @Test void noMatchesIsSuccessAndBadRegexIsFailure() throws Exception {
         var executor=mock(CommandExecutor.class);var tool=new FileSearchTool(executor,new ObjectMapper(),new RepositoryFileResolver());
         when(executor.execute(any(),anyString(),anyList(),any())).thenReturn(new CommandExecutionResult(1,List.of(),List.of()));

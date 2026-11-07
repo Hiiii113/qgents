@@ -1,5 +1,7 @@
 package qg.qgent.sandbox.execution.handler;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -30,22 +32,31 @@ public class FileSearchTool implements SandboxTool {
         var result = executor.execute(context.getSandbox(), context.getContainerWorkspace(), command, context.getTimeout());
         if (result.getExitCode() > 1) return new ToolResult(result.getExitCode(),
                 Map.of("error", String.join("\n", result.getStandardError())), List.of(), List.of());
-        List<Map<String, Object>> matches = new ArrayList<>();
+        List<String> lines = new ArrayList<>(result.getStandardOutput());
         boolean truncated = false;
-        try {
-            for (String line : result.getStandardOutput()) {
-                if (line.startsWith("[输出超过限制")) { truncated = true; continue; }
-                var event = json.readTree(line);
-                if (!"match".equals(event.path("type").asText())) continue;
-                var data = event.path("data");
-                if (matches.size() >= limit) { truncated = true; continue; }
-                String text = data.path("lines").path("text").asText().replaceFirst("[\r\n]+$", "");
-                boolean clipped = text.length() > 2000;
-                matches.add(Map.of("path", data.path("path").path("text").asText(),
-                        "lineNumber", data.path("line_number").asInt(), "text", clipped ? text.substring(0, 2000) : text,
-                        "truncated", clipped));
+        if (!lines.isEmpty() && lines.get(lines.size() - 1).startsWith("[输出超过限制")) {
+            truncated = true;
+            lines.remove(lines.size() - 1);
+        }
+        List<Map<String, Object>> matches = new ArrayList<>();
+        for (int index = 0; index < lines.size(); index++) {
+            JsonNode event;
+            try {
+                event = json.readTree(lines.get(index));
+            } catch (JsonProcessingException exception) {
+                // 输出按字节截断时最后一条记录可能不完整：丢弃它，保留前面已解析的匹配
+                if (truncated && index == lines.size() - 1) break;
+                throw new IllegalStateException("无法解析搜索结果，请缩小搜索范围", exception);
             }
-            return ToolResult.value(Map.of("matches", matches, "truncated", truncated));
-        } catch (Exception exception) { throw new IllegalStateException("无法解析搜索结果，请缩小搜索范围", exception); }
+            if (!"match".equals(event.path("type").asText())) continue;
+            var data = event.path("data");
+            if (matches.size() >= limit) { truncated = true; continue; }
+            String text = data.path("lines").path("text").asText().replaceFirst("[\r\n]+$", "");
+            boolean clipped = text.length() > 2000;
+            matches.add(Map.of("path", data.path("path").path("text").asText(),
+                    "lineNumber", data.path("line_number").asInt(), "text", clipped ? text.substring(0, 2000) : text,
+                    "truncated", clipped));
+        }
+        return ToolResult.value(Map.of("matches", matches, "truncated", truncated));
     }
 }
