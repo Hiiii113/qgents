@@ -100,7 +100,9 @@ final class ToolCallExecutor {
         else {
             try { result = callback.call(call.arguments()); }
             catch (RuntimeException exception) {
-                result = error("TOOL_FAILED", exception.getMessage() == null ? "工具执行失败" : exception.getMessage());
+                // 已知业务错误保留稳定错误码，便于模型按代码而不是文案判断处置方式
+                String code = exception instanceof qg.qgent.common.web.ApiException api ? api.code() : "TOOL_FAILED";
+                result = error(code, exception.getMessage() == null ? "工具执行失败" : exception.getMessage());
             }
         }
         return new ToolResponse(call.id(), call.name(), result);

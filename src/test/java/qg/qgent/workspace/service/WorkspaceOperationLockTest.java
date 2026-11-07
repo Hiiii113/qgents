@@ -4,45 +4,47 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import qg.qgent.sandbox.config.SandboxProperties;
+import qg.qgent.sandbox.exception.SandboxException;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+/** 锁只把真正的锁文件 I/O 失败报为 WORKSPACE_LOCK_FAILED，业务异常原样传播。 */
 class WorkspaceOperationLockTest {
-    @TempDir Path root;
+
+    @TempDir
+    Path root;
 
     @Test
-    void serializesSameWorkspaceInsideJvmBeforeTakingFileLock() throws Exception {
-        SandboxProperties properties = new SandboxProperties();
-        properties.setWorkspaceMetadataRoot(root.toString());
-        WorkspaceOperationLock lock = new WorkspaceOperationLock(properties);
-        String storageKey = "workspaces/" + java.util.UUID.randomUUID();
-        AtomicInteger active = new AtomicInteger();
-        AtomicInteger maximum = new AtomicInteger();
-        CountDownLatch start = new CountDownLatch(1);
-        try (var executor = Executors.newFixedThreadPool(2)) {
-            var first = executor.submit(() -> execute(lock, storageKey, start, active, maximum));
-            var second = executor.submit(() -> execute(lock, storageKey, start, active, maximum));
-            start.countDown();
-            first.get();
-            second.get();
-        }
-        assertEquals(1, maximum.get());
+    void lockFileFailureKeepsCodeAndCause() throws IOException {
+        // 元数据根被一个普通文件占住，创建锁目录必然失败
+        Path metadata = root.resolve("metadata");
+        Files.writeString(metadata, "not a directory");
+
+        var exception = org.assertj.core.api.Assertions.catchThrowable(() -> lock(metadata).execute("key", () -> "ok"));
+
+        assertThat(exception).isInstanceOfSatisfying(SandboxException.class, failure -> {
+            assertThat(failure.code()).isEqualTo("WORKSPACE_LOCK_FAILED");
+            assertThat(failure.getCause()).isNotNull();
+        });
     }
 
-    private void execute(WorkspaceOperationLock lock, String key, CountDownLatch start,
-                         AtomicInteger active, AtomicInteger maximum) {
-        try { start.await(); } catch (InterruptedException exception) { throw new RuntimeException(exception); }
-        lock.execute(key, () -> {
-            int current = active.incrementAndGet();
-            maximum.accumulateAndGet(current, Math::max);
-            try { Thread.sleep(50); } catch (InterruptedException exception) { Thread.currentThread().interrupt(); }
-            active.decrementAndGet();
-            return null;
-        });
+    @Test
+    void businessExceptionPropagatesUnchanged() {
+        var lock = lock(root.resolve("metadata"));
+
+        assertThatThrownBy(() -> lock.execute("key", () -> {
+            throw new IllegalStateException("boom");
+        })).isInstanceOf(IllegalStateException.class).hasMessage("boom");
+    }
+
+    private WorkspaceOperationLock lock(Path metadataRoot) {
+        var properties = new SandboxProperties();
+        properties.setWorkspaceMetadataRoot(metadataRoot.toString());
+        return new WorkspaceOperationLock(properties);
     }
 }

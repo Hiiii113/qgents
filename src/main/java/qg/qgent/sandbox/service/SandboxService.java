@@ -46,28 +46,24 @@ public class SandboxService {
                     "IMAGE_PROFILE_NOT_ALLOWED", "镜像配置不在 Sandbox 允许列表中");
         }
 
-        try {
-            return workspaceLock.execute(request.getWorkspaceStorageKey(), () -> {
-                SandboxAllocation existing = runtime.find(request.getSandboxId()).orElse(null);
-                if (existing != null) {
-                    SandboxAllocation requested = allocation(request);
-                    if (sameSandboxSpec(existing, requested)) {
-                        log.info("sandbox idempotent return sandboxId={} agentRunId={} workspace={}",
-                                existing.getId(), existing.getAgentRunId(), existing.getWorkspaceStorageKey());
-                        return response(existing);
-                    }
-                    throw new SandboxException(HttpStatus.CONFLICT, "SANDBOX_ID_CONFLICT", "同名沙箱规格不一致");
+        return workspaceLock.execute(request.getWorkspaceStorageKey(), () -> {
+            SandboxAllocation existing = runtime.find(request.getSandboxId()).orElse(null);
+            if (existing != null) {
+                SandboxAllocation requested = allocation(request);
+                if (sameSandboxSpec(existing, requested)) {
+                    log.info("sandbox idempotent return sandboxId={} agentRunId={} workspace={}",
+                            existing.getId(), existing.getAgentRunId(), existing.getWorkspaceStorageKey());
+                    return response(existing);
                 }
-                SandboxAllocation allocation = allocation(request);
-                SandboxAllocation created = runtime.create(request, allocation);
-                log.info("sandbox created sandboxId={} agentRunId={} workspace={} image={} container={}",
-                        created.getId(), created.getAgentRunId(), created.getWorkspaceStorageKey(),
-                        created.getImageProfile(), created.getRuntimeHandle());
-                return response(created);
-            });
-        } catch (IllegalStateException exception) {
-            throw new SandboxException(HttpStatus.CONFLICT, "SANDBOX_ID_CONFLICT", exception.getMessage());
-        }
+                throw new SandboxException(HttpStatus.CONFLICT, "SANDBOX_ID_CONFLICT", "同名沙箱规格不一致");
+            }
+            SandboxAllocation allocation = allocation(request);
+            SandboxAllocation created = runtime.create(request, allocation);
+            log.info("sandbox created sandboxId={} agentRunId={} workspace={} image={} container={}",
+                    created.getId(), created.getAgentRunId(), created.getWorkspaceStorageKey(),
+                    created.getImageProfile(), created.getRuntimeHandle());
+            return response(created);
+        });
     }
 
     private SandboxAllocation allocation(CreateSandboxRequest request) {
