@@ -70,8 +70,11 @@ app:
     # 每个根运行同时活跃的子 Agent 数量上限。
     max-subagents: ${APP_AGENT_MAX_SUBAGENTS:8}
     context:
-      # 全量注入 Agent 上下文的已批准 Memory 标题与正文总字符上限；超过时禁止批准。
-      max-approved-memory-chars: ${APP_AGENT_CONTEXT_MAX_APPROVED_MEMORY_CHARS:12000}
+      # 项目 memory.md 注入 Agent 上下文的字符上限；超过时拒绝保存。
+      max-memory-chars: ${APP_AGENT_CONTEXT_MAX_MEMORY_CHARS:12000}
+  # 项目持久目录根；每个项目一个子目录，存放 memory.md 及后续共享资料。
+  project:
+    root: ${PROJECT_DATA_ROOT:./data/projects}
   # 邮件中的页面入口；web/mobile 地址还用于 GitHub App 授权后的跳转。
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
   frontend-url-web: ${FRONTEND_URL_WEB:${FRONTEND_URL:http://localhost:5173}}

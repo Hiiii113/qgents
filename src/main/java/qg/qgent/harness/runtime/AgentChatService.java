@@ -24,7 +24,7 @@ import qg.qgent.github.tool.GitHubTools;
 import qg.qgent.harness.context.ContextService;
 import qg.qgent.harness.context.GroupContext;
 import qg.qgent.harness.tool.ParallelToolCallback;
-import qg.qgent.memory.service.MemoryService;
+import qg.qgent.memory.service.ProjectMemoryService;
 import qg.qgent.memory.tool.MemoryTools;
 import qg.qgent.sandbox.dto.SandboxExecutionContext;
 import qg.qgent.sandbox.service.SandboxSessionManager;
@@ -63,7 +63,7 @@ public class AgentChatService {
     private final SandboxSessionManager sessions;
     private final SandboxFiles files;
     private final AttachmentMediaLoader attachments;
-    private final MemoryService memories;
+    private final ProjectMemoryService memories;
     private final ObjectMapper json;
     private final Executor childExecutor;
     private final int maxSubagents;
@@ -72,7 +72,7 @@ public class AgentChatService {
             AgentLoop loop, ContextService context, SkillService skills, ChatHistoryService history,
             MessageService messages, AgentRunService runService,
             SandboxSessionManager sessions, SandboxFiles files,
-            AttachmentMediaLoader attachments, MemoryService memories, ObjectMapper json,
+            AttachmentMediaLoader attachments, ProjectMemoryService memories, ObjectMapper json,
             @Qualifier("agentSubagentExecutor") Executor childExecutor,
             @Value("${app.agent.max-subagents:8}") int maxSubagents) {
         if (maxSubagents < 1) throw new IllegalArgumentException("max-subagents 必须大于 0");
@@ -157,7 +157,9 @@ public class AgentChatService {
         String identity = child ? "你是 Qgent 委派的一名临时子 Agent。" : "你是 Qgent，项目群聊中的固定助手。";
         return identity + "按当前任务决定直接回答或调用工具；有效的普通文本回复即结束本轮 loop。"
                 + "根据 Skill 目录中的名称和描述判断是否需要，调用 activate_skill 读取完整内容。"
-                + "问答、聊天检索、Skill、Memory 和无需代码目录的远端操作不需要沙箱。首次调用代码工具时才准备工作区与 Docker 沙箱。"
+                + "问答、聊天检索、Skill、项目记忆和无需代码目录的远端操作不需要沙箱。首次调用代码工具时才准备工作区与 Docker 沙箱。"
+                + "项目长期记忆是项目目录下的 memory.md，上下文已包含其内容。要修改时先用普通文字说明拟增删改的内容并询问用户，"
+                + "收到针对该修改的明确同意后再调用 write_project_memory，不要未经确认就改写，也不要声称修改已生效。"
                 + "主 Agent 可按需派发一层独立子任务；子 Agent 不能继续委派。完成、失败或需要补充信息时如实交付。"
                 + "只通过当前聊天组织成果，准确说明进展、需要的信息、实际修改和验证结果。GitHub 能力可选，按目标决定 clone、分支、commit、push 和 PR。"
                 + "独立只读操作可以并行调用，存在依赖的操作按顺序分轮执行。run_command 返回 running=true 时用 command_output 继续等待，勿重复启动同一命令。"

@@ -236,32 +236,6 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT fk_skill_submitter FOREIGN KEY (submitted_by) REFERENCES users (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目Skill，MVP标签内嵌JSON';
 
-CREATE TABLE IF NOT EXISTS
-    memories (
-        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT 'Memory ID',
-        project_id BIGINT NOT NULL COMMENT '所属项目ID',
-        created_by BIGINT NOT NULL COMMENT '创建用户ID',
-        title VARCHAR(255) NOT NULL COMMENT '知识标题',
-        content MEDIUMTEXT NOT NULL COMMENT '经确认的项目事实正文',
-        category VARCHAR(64) NOT NULL COMMENT '知识分类标识',
-        tags JSON NULL COMMENT '标签JSON字符串数组',
-        status VARCHAR(32) NOT NULL DEFAULT 'DRAFT' COMMENT '状态枚举：DRAFT/PENDING_REVIEW/APPROVED/REJECTED/ARCHIVED',
-        submitted_by BIGINT NULL COMMENT '最近提交审核用户ID',
-        submitted_at DATETIME (6) NULL COMMENT '最近提交审核时间（UTC）',
-        reviewer_id BIGINT NULL COMMENT '最近审核用户ID',
-        rejection_reason TEXT NULL COMMENT '最近驳回原因',
-        reviewed_at DATETIME (6) NULL COMMENT '最近审核时间（UTC）',
-        created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
-        updated_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',
-        KEY idx_memory_project (project_id, status, category, updated_at),
-        KEY idx_memory_creator (created_by),
-        KEY idx_memory_reviewer (reviewer_id),
-        CONSTRAINT fk_memory_project FOREIGN KEY (project_id) REFERENCES projects (id),
-        CONSTRAINT fk_memory_creator FOREIGN KEY (created_by) REFERENCES users (id),
-        CONSTRAINT fk_memory_reviewer FOREIGN KEY (reviewer_id) REFERENCES users (id),
-        CONSTRAINT fk_memory_submitter FOREIGN KEY (submitted_by) REFERENCES users (id)
-    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目确认知识，MVP标签内嵌JSON';
-
 -- 聊天 Agent 执行记录；关联触发消息与工作区，子 Agent 关联父运行。
 CREATE TABLE IF NOT EXISTS agent_runs (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -281,7 +255,6 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     KEY idx_agent_run_parent (parent_run_id),
     KEY idx_agent_run_message (trigger_message_id, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent loop 根运行及 subagent 运行';
-
 
 CREATE TABLE IF NOT EXISTS workspaces (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, project_id BIGINT NOT NULL,
@@ -313,7 +286,6 @@ CREATE TABLE IF NOT EXISTS
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目级实时事件存储，至少保留24小时';
 
 -- Agent 表创建后补充消息发送者外键。
-
 
 CREATE TABLE IF NOT EXISTS
     notifications (
@@ -397,7 +369,6 @@ CREATE TABLE IF NOT EXISTS team_events (
     UNIQUE KEY uk_te_team_seq (team_id, sequence_no),
     CONSTRAINT fk_te_team FOREIGN KEY (team_id) REFERENCES teams(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='团队级 SSE 事件（团队维度游标）';
-
 
 CREATE TABLE IF NOT EXISTS
     group_read_state (

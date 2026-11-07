@@ -12,8 +12,6 @@ import qg.qgent.attachment.mapper.AttachmentMapper;
 import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
-import qg.qgent.memory.entity.MemoryEntity;
-import qg.qgent.memory.mapper.MemoryMapper;
 import qg.qgent.notification.entity.NotificationEntity;
 import qg.qgent.notification.mapper.NotificationMapper;
 import qg.qgent.project.entity.ProjectEntity;
@@ -37,7 +35,6 @@ public class TeamDisbandService {
     private final EventMapper eventMapper;
     private final ChatGroupMapper chatGroupMapper;
     private final MessageMapper messageMapper;
-    private final MemoryMapper memoryMapper;
     private final AgentRunMapper agentRuns;
     private final WorkspaceMapper workspaceMapper;
     private final SkillMapper skillMapper;
@@ -65,7 +62,6 @@ public class TeamDisbandService {
         List<Long> groupIds = chatGroupMapper.selectList(Wrappers.<ChatGroupEntity>lambdaQuery()
                         .eq(ChatGroupEntity::getProjectId, projectId)).stream().map(ChatGroupEntity::getId)
                 .toList();
-        memoryMapper.delete(Wrappers.<MemoryEntity>lambdaQuery().eq(MemoryEntity::getProjectId, projectId));
 
         agentRuns.delete(Wrappers.<AgentRunEntity>lambdaQuery().eq(AgentRunEntity::getProjectId, projectId));
         int deleted;

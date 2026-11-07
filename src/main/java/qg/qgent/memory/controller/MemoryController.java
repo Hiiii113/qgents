@@ -1,89 +1,44 @@
 package qg.qgent.memory.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import qg.qgent.common.dto.RejectRequest;
 import qg.qgent.common.web.ApiResponse;
 import qg.qgent.common.web.RequestIdFilter;
-import qg.qgent.memory.dto.MemoryCreateRequest;
-import qg.qgent.memory.dto.MemoryUpdateRequest;
-import qg.qgent.memory.service.MemoryService;
+import qg.qgent.memory.dto.ProjectMemoryResponse;
+import qg.qgent.memory.dto.ProjectMemoryUpdateRequest;
+import qg.qgent.memory.service.ProjectMemoryService;
 
-
-/** 共享 Memory 接口 */
+/** 项目长期记忆接口，正文存放在项目目录的 memory.md。 */
 @RestController
 @RequestMapping("/api/v1")
 public class MemoryController {
 
-    private final MemoryService memoryService;
+    private final ProjectMemoryService memories;
 
-    public MemoryController(MemoryService memoryService) {
-        this.memoryService = memoryService;
+    public MemoryController(ProjectMemoryService memories) {
+        this.memories = memories;
     }
 
-    /** 查询可见 Memory，支持状态、标签过滤。 */
-    @GetMapping("/projects/{projectId}/memories")
-    public ApiResponse<?> list(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
-                               @RequestParam(value = "status", required = false) String status,
-                               @RequestParam(value = "tag", required = false) String tag, HttpServletRequest request) {
-        return ok(memoryService.list(userId, projectId, status, tag), request);
+    @Operation(summary = "读取项目长期记忆", description = "返回 memory.md 全文、内容版本和最后修改时间；项目成员均可读取。")
+    @GetMapping("/projects/{projectId}/memory")
+    public ApiResponse<ProjectMemoryResponse> get(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
+                                                  HttpServletRequest request) {
+        return ok(memories.get(userId, projectId), request);
     }
 
-    /** 手动创建 Memory；管理员直接发布，普通成员保存草稿。 */
-    @PostMapping("/projects/{projectId}/memories")
-    @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<?> create(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
-                                 @Valid @RequestBody MemoryCreateRequest body, HttpServletRequest request) {
-        return ok(memoryService.create(userId, projectId, body), request);
+    @Operation(summary = "保存项目长期记忆", description = "整篇替换 memory.md；version 与当前内容不一致时返回 409，避免静默覆盖。")
+    @PutMapping("/projects/{projectId}/memory")
+    public ApiResponse<ProjectMemoryResponse> save(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
+                                                   @Valid @RequestBody ProjectMemoryUpdateRequest body,
+                                                   HttpServletRequest request) {
+        return ok(memories.save(userId, projectId, body.getContent(), body.getVersion()), request);
     }
 
-    /** 获取 Memory 详情。 */
-    @GetMapping("/projects/{projectId}/memories/{memoryId}")
-    public ApiResponse<?> get(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
-                              @PathVariable Long memoryId, HttpServletRequest request) {
-        return ok(memoryService.get(userId, projectId, memoryId), request);
-    }
-
-    /** 编辑草稿或审核中内容。 */
-    @PatchMapping("/projects/{projectId}/memories/{memoryId}")
-    public ApiResponse<?> update(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
-                                 @PathVariable Long memoryId, @Valid @RequestBody MemoryUpdateRequest body, HttpServletRequest request) {
-        return ok(memoryService.update(userId, projectId, memoryId, body), request);
-    }
-
-    /** 提交 Memory 审核。 */
-    @PostMapping("/projects/{projectId}/memories/{memoryId}/submit-review")
-    public ApiResponse<?> submitReview(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
-                                       @PathVariable Long memoryId, HttpServletRequest request) {
-        return ok(memoryService.submitReview(userId, projectId, memoryId), request);
-    }
-
-    /** 批准并发布 Memory（Project Admin）。 */
-    @PostMapping("/projects/{projectId}/memories/{memoryId}/approve")
-    public ApiResponse<?> approve(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
-                                  @PathVariable Long memoryId, HttpServletRequest request) {
-        return ok(memoryService.approve(userId, projectId, memoryId), request);
-    }
-
-    /** 拒绝 Memory 并给出原因（Project Admin）。 */
-    @PostMapping("/projects/{projectId}/memories/{memoryId}/reject")
-    public ApiResponse<?> reject(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
-                                 @PathVariable Long memoryId, @Valid @RequestBody RejectRequest body, HttpServletRequest request) {
-        return ok(memoryService.reject(userId, projectId, memoryId, body.getReason()), request);
-    }
-
-    /** 归档 Memory（Project Admin）。 */
-    @PostMapping("/projects/{projectId}/memories/{memoryId}/archive")
-    public ApiResponse<?> archive(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
-                                  @PathVariable Long memoryId, HttpServletRequest request) {
-        return ok(memoryService.archive(userId, projectId, memoryId), request);
-    }
-
-    private ApiResponse<?> ok(Object data, HttpServletRequest request) {
+    private <T> ApiResponse<T> ok(T data, HttpServletRequest request) {
         return ApiResponse.ok(data, (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
     }
 }

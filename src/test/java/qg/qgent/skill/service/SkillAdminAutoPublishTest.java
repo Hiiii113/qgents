@@ -4,13 +4,6 @@ import qg.qgent.support.TestIds;
 
 import org.junit.jupiter.api.Test;
 
-import qg.qgent.common.web.ApiException;
-import qg.qgent.memory.dto.MemoryCreateRequest;
-import qg.qgent.memory.dto.MemoryResponse;
-import qg.qgent.memory.entity.MemoryEntity;
-import qg.qgent.memory.mapper.MemoryMapper;
-import qg.qgent.memory.service.MemoryService;
-import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.service.EventService;
 import org.springframework.mock.web.MockMultipartFile;
@@ -32,20 +25,17 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Project Admin 自建共享 Skill/Memory 免审批：
- * Admin 创建即 PUBLISHED/APPROVED 并发布事件；普通成员创建保持 DRAFT 且无上架事件。
+ * Project Admin 自建共享 Skill 免审批：
+ * Admin 创建即 PUBLISHED 并发布事件；普通成员创建保持 DRAFT 且无上架事件。
  */
-class SkillMemoryAdminAutoPublishTest {
+class SkillAdminAutoPublishTest {
 
     private final SkillMapper skillMapper = mock(SkillMapper.class);
-    private final MemoryMapper memoryMapper = mock(MemoryMapper.class);
-    private final ProjectMapper projectMapper = mock(ProjectMapper.class);
     private final ProjectAccessService access = mock(ProjectAccessService.class);
     private final UserMapper userMapper = mock(UserMapper.class);
     private final EventService eventService = mock(EventService.class);
 
     private final SkillService skillService = new SkillService(skillMapper, access, userMapper, eventService);
-    private final MemoryService memoryService = new MemoryService(memoryMapper, projectMapper, access, userMapper, eventService, 12000);
 
     private final Long projectId = TestIds.next();
     private final Long admin = TestIds.next();
@@ -102,61 +92,9 @@ class SkillMemoryAdminAutoPublishTest {
         verify(eventService).publish(eq(projectId), isNull(), eq("skill.published"), any(), any());
     }
 
-    @Test
-    void memoryCreatedByAdminIsApprovedImmediately() {
-        when(access.isProjectAdmin(projectId, admin)).thenReturn(true);
-        final MemoryEntity[] created = new MemoryEntity[1];
-        when(memoryMapper.insert(any(MemoryEntity.class))).thenAnswer(invocation -> {
-            created[0] = invocation.getArgument(0);
-            created[0].setId(TestIds.next());
-            return 1;
-        });
-        when(memoryMapper.selectById(any())).thenAnswer(invocation -> created[0]);
-
-        MemoryResponse response = memoryService.create(admin, projectId, memoryRequest("登录约定"));
-
-        assertEquals("APPROVED", response.getStatus());
-        verify(memoryMapper, never()).updateById(any(MemoryEntity.class));
-        verify(eventService).publish(eq(projectId), isNull(), eq("memory.approved"), any(), any());
-    }
-
-    @Test
-    void memoryCreatedByMemberStaysDraft() {
-        when(access.isProjectAdmin(projectId, member)).thenReturn(false);
-        MemoryEntity entity = memoryEntity();
-        when(memoryMapper.selectById(any())).thenReturn(entity);
-
-        MemoryResponse response = memoryService.create(member, projectId, memoryRequest("登录约定"));
-
-        assertEquals("DRAFT", response.getStatus());
-        verify(eventService, never()).publish(any(), any(), eq("memory.approved"), any(), any());
-    }
-
-    @Test
-    void memoryCreatedByAdminRejectsWhenApprovedContextBudgetWouldBeExceeded() {
-        when(access.isProjectAdmin(projectId, admin)).thenReturn(true);
-        when(memoryMapper.selectApprovedForUpdate(projectId)).thenReturn(java.util.List.of(memoryEntityWithSize(11_999)));
-        MemoryService constrainedService = new MemoryService(memoryMapper, projectMapper, access, userMapper, eventService, 12_000);
-
-        ApiException error = org.junit.jupiter.api.Assertions.assertThrows(ApiException.class,
-                () -> constrainedService.create(admin, projectId, memoryRequest("登录约定")));
-
-        assertEquals("MEMORY_APPROVED_CONTEXT_LIMIT_EXCEEDED", error.code());
-        verify(memoryMapper, never()).insert(any(MemoryEntity.class));
-        verify(eventService, never()).publish(any(), any(), eq("memory.approved"), any(), any());
-    }
-
     private MockMultipartFile skillFile(String name) {
         String content = "---\nname: " + name + "\ndescription: 测试用途\n---\n内容";
         return new MockMultipartFile("file", "SKILL.md", "text/markdown", content.getBytes(StandardCharsets.UTF_8));
-    }
-
-    private MemoryCreateRequest memoryRequest(String title) {
-        MemoryCreateRequest request = new MemoryCreateRequest();
-        request.setTitle(title);
-        request.setContent("内容");
-        request.setCategory("ENGINEERING_DECISION");
-        return request;
     }
 
     private SkillEntity skillEntity() {
@@ -169,24 +107,5 @@ class SkillMemoryAdminAutoPublishTest {
         skill.setStatus("DRAFT");
         skill.setVisibility("PROJECT_SHARED");
         return skill;
-    }
-
-    private MemoryEntity memoryEntity() {
-        MemoryEntity memory = new MemoryEntity();
-        memory.setId(TestIds.next());
-        memory.setProjectId(projectId);
-        memory.setCreatedBy(admin);
-        memory.setTitle("登录约定");
-        memory.setContent("内容");
-        memory.setStatus("DRAFT");
-        return memory;
-    }
-
-    private MemoryEntity memoryEntityWithSize(int size) {
-        MemoryEntity memory = memoryEntity();
-        memory.setTitle("x");
-        memory.setContent("x".repeat(size - 1));
-        memory.setStatus("APPROVED");
-        return memory;
     }
 }

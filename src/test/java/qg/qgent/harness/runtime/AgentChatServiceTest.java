@@ -23,7 +23,7 @@ import qg.qgent.github.tool.GitHubCapability;
 import qg.qgent.github.service.GitHubRepositoryService;
 import qg.qgent.harness.context.ContextService;
 import qg.qgent.harness.context.GroupContext;
-import qg.qgent.memory.service.MemoryService;
+import qg.qgent.memory.service.ProjectMemoryService;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.sandbox.service.SandboxSessionManager;
 import qg.qgent.sandbox.service.SandboxSession;
@@ -711,7 +711,7 @@ class AgentChatServiceTest {
         var github = new GitHubCapability(projects, mock(WorkspaceCommands.class), mock(GitHubRepositoryService.class));
         var service = new AgentChatService(github, mock(WorkspaceCommands.class), workspaces, loop, context,
                 skills, history, messages, runs, sessions, codeAccess,
-                attachments, mock(MemoryService.class), new ObjectMapper(),
+                attachments, mock(ProjectMemoryService.class), new ObjectMapper(),
                 childExecutor, maxSubagents);
         MessageSentEvent event = new MessageSentEvent(actor, project, group, message, List.of());
         return new Fixture(service, event, messages, runs, root, workspaces, codeAccess, sessions);
