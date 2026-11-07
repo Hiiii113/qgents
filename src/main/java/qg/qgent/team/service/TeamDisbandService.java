@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import qg.qgent.harness.entity.AgentRunEntity;
 import qg.qgent.harness.mapper.AgentRunMapper;
@@ -16,6 +18,7 @@ import qg.qgent.notification.entity.NotificationEntity;
 import qg.qgent.notification.mapper.NotificationMapper;
 import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.mapper.ProjectMapper;
+import qg.qgent.project.storage.ProjectDirectoryService;
 import qg.qgent.realtime.entity.EventEntity;
 import qg.qgent.realtime.mapper.EventMapper;
 import qg.qgent.skill.entity.SkillEntity;
@@ -40,6 +43,7 @@ public class TeamDisbandService {
     private final SkillMapper skillMapper;
     private final AttachmentMapper attachmentMapper;
     private final TeamMapper teamMapper;
+    private final ProjectDirectoryService projectDirectories;
 
     /** 先清理各项目的数据，再删除团队记录。 */
     @Transactional
@@ -50,6 +54,13 @@ public class TeamDisbandService {
             deleteProject(projectId);
         }
         teamMapper.deleteById(teamId);
+        // 项目目录不在事务内：数据库回滚时不能已经删掉磁盘上的记忆文件
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                projectIds.forEach(projectDirectories::delete);
+            }
+        });
     }
 
     /** 按外键依赖顺序删除项目及其数据。 */

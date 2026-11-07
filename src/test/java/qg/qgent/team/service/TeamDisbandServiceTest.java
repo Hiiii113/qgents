@@ -6,7 +6,9 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import qg.qgent.harness.entity.AgentRunEntity;
 import qg.qgent.harness.mapper.AgentRunMapper;
@@ -20,6 +22,7 @@ import qg.qgent.notification.entity.NotificationEntity;
 import qg.qgent.notification.mapper.NotificationMapper;
 import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.mapper.ProjectMapper;
+import qg.qgent.project.storage.ProjectDirectoryService;
 import qg.qgent.realtime.entity.EventEntity;
 import qg.qgent.realtime.mapper.EventMapper;
 import qg.qgent.skill.entity.SkillEntity;
@@ -28,8 +31,15 @@ import qg.qgent.team.mapper.TeamMapper;
 import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
 
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -67,14 +77,23 @@ class TeamDisbandServiceTest {
     private final SkillMapper skillMapper = mock(SkillMapper.class);
     private final AttachmentMapper attachmentMapper = mock(AttachmentMapper.class);
     private final TeamMapper teamMapper = mock(TeamMapper.class);
-    private final TeamDisbandService service = new TeamDisbandService(projectMapper, notificationMapper,
-            eventMapper, chatGroupMapper, messageMapper,
-            agentRuns,
-            workspaceMapper, skillMapper, attachmentMapper,
-            teamMapper);
+
+    @TempDir
+    Path projectDataRoot;
+
+    private TeamDisbandService service;
+
+    @BeforeEach
+    void setUp() {
+        service = new TeamDisbandService(projectMapper, notificationMapper,
+                eventMapper, chatGroupMapper, messageMapper,
+                agentRuns,
+                workspaceMapper, skillMapper, attachmentMapper,
+                teamMapper, new ProjectDirectoryService(projectDataRoot.toString()));
+    }
 
     @Test
-    void deleteTeamCleansProjectsInDependencyOrder() {
+    void deleteTeamCleansProjectsInDependencyOrder() throws IOException {
         Long teamId = TestIds.next();
         Long projectId = TestIds.next();
         Long groupId = TestIds.next();
@@ -89,7 +108,21 @@ class TeamDisbandServiceTest {
         group.setProjectId(projectId);
         when(chatGroupMapper.selectList(any())).thenReturn(List.of(group));
 
-        service.deleteTeam(teamId);
+        Path projectDirectory = projectDataRoot.resolve(projectId.toString());
+        Files.createDirectories(projectDirectory);
+        Files.writeString(projectDirectory.resolve("memory.md"), "# 项目约定");
+
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.deleteTeam(teamId);
+            // 磁盘清理排在事务提交之后，回滚时不会丢文件
+            assertThat(projectDirectory).exists();
+            TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(TransactionSynchronization::afterCommit);
+        } finally {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+        assertThat(projectDirectory).doesNotExist();
 
         // 关键依赖顺序：子表先于父表，引用行先于被引用行；agents 在项目级引用清理后最后删除。
         var order = inOrder(notificationMapper, eventMapper, messageMapper,
