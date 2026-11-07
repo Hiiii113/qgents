@@ -19,6 +19,8 @@ import qg.qgent.notification.mapper.NotificationMapper;
 import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.storage.ProjectDirectoryService;
+import qg.qgent.sandbox.service.SandboxService;
+import qg.qgent.workspace.service.WorkspaceService;
 import qg.qgent.realtime.entity.EventEntity;
 import qg.qgent.realtime.mapper.EventMapper;
 import qg.qgent.skill.entity.SkillEntity;
@@ -44,12 +46,23 @@ public class TeamDisbandService {
     private final AttachmentMapper attachmentMapper;
     private final TeamMapper teamMapper;
     private final ProjectDirectoryService projectDirectories;
+    private final SandboxService sandboxes;
 
     /** 先清理各项目的数据，再删除团队记录。 */
     @Transactional
     public void deleteTeam(Long teamId) {
         List<Long> projectIds = projectMapper.selectList(Wrappers.<ProjectEntity>lambdaQuery()
                 .eq(ProjectEntity::getTeamId, teamId)).stream().map(ProjectEntity::getId).toList();
+        // 仍有活动沙箱时明确失败，不能一边删目录一边让命令继续写
+        for (Long projectId : projectIds) {
+            for (WorkspaceEntity workspace : workspaceMapper.selectList(Wrappers.<WorkspaceEntity>lambdaQuery()
+                    .eq(WorkspaceEntity::getProjectId, projectId))) {
+                if (sandboxes.isWorkspaceInUse(WorkspaceService.storageKey(workspace))) {
+                    throw new qg.qgent.common.web.ApiException(org.springframework.http.HttpStatus.CONFLICT,
+                            "WORKSPACE_IN_USE", "项目仍有运行中的沙箱，请先停止后重试");
+                }
+            }
+        }
         for (Long projectId : projectIds) {
             deleteProject(projectId);
         }

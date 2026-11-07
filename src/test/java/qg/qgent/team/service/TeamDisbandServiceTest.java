@@ -23,6 +23,7 @@ import qg.qgent.notification.mapper.NotificationMapper;
 import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.storage.ProjectDirectoryService;
+import qg.qgent.sandbox.service.SandboxService;
 import qg.qgent.realtime.entity.EventEntity;
 import qg.qgent.realtime.mapper.EventMapper;
 import qg.qgent.skill.entity.SkillEntity;
@@ -40,9 +41,11 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -77,6 +80,7 @@ class TeamDisbandServiceTest {
     private final SkillMapper skillMapper = mock(SkillMapper.class);
     private final AttachmentMapper attachmentMapper = mock(AttachmentMapper.class);
     private final TeamMapper teamMapper = mock(TeamMapper.class);
+    private final SandboxService sandboxes = mock(SandboxService.class);
 
     @TempDir
     Path projectDataRoot;
@@ -89,7 +93,28 @@ class TeamDisbandServiceTest {
                 eventMapper, chatGroupMapper, messageMapper,
                 agentRuns,
                 workspaceMapper, skillMapper, attachmentMapper,
-                teamMapper, new ProjectDirectoryService(projectDataRoot.toString()));
+                teamMapper, new ProjectDirectoryService(projectDataRoot.toString(), projectDataRoot.toString()),
+                sandboxes);
+    }
+
+    @Test
+    void deleteTeamRefusesWhileSandboxIsStillRunning() {
+        Long teamId = TestIds.next();
+        Long projectId = TestIds.next();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        when(projectMapper.selectList(any())).thenReturn(List.of(project));
+        WorkspaceEntity workspace = new WorkspaceEntity();
+        workspace.setId(TestIds.next());
+        workspace.setProjectId(projectId);
+        workspace.setIsDefault(true);
+        when(workspaceMapper.selectList(any())).thenReturn(List.of(workspace));
+        when(sandboxes.isWorkspaceInUse(projectId + "/workspaces/default")).thenReturn(true);
+
+        assertThatThrownBy(() -> service.deleteTeam(teamId))
+                .isInstanceOf(qg.qgent.common.web.ApiException.class)
+                .hasMessageContaining("沙箱");
+        verify(teamMapper, never()).deleteById(teamId);
     }
 
     @Test
@@ -107,6 +132,7 @@ class TeamDisbandServiceTest {
         group.setId(groupId);
         group.setProjectId(projectId);
         when(chatGroupMapper.selectList(any())).thenReturn(List.of(group));
+        when(workspaceMapper.selectList(any())).thenReturn(List.of());
 
         Path projectDirectory = projectDataRoot.resolve(projectId.toString());
         Files.createDirectories(projectDirectory);

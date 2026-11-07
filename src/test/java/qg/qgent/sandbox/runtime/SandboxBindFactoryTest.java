@@ -1,24 +1,32 @@
 package qg.qgent.sandbox.runtime;
 
 import com.github.dockerjava.api.model.AccessMode;
+import com.github.dockerjava.api.model.Bind;
 import org.junit.jupiter.api.Test;
 import qg.qgent.sandbox.filesystem.service.WorkspacePathResolver;
 
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class SandboxBindFactoryTest {
     @Test
-    void mountsEntireWorkspaceAsOneWritableDirectory() {
+    void mountsSharedGitCurrentWorkspaceAndLegacyAliasOnly() {
         var paths = mock(WorkspacePathResolver.class);
         var allocation = mock(SandboxAllocation.class);
-        when(allocation.getWorkspaceStorageKey()).thenReturn("workspaces/id");
-        when(paths.resolveDockerHost("workspaces/id")).thenReturn(Path.of("/data/id"));
-        var binds = new SandboxBindFactory(paths).create(allocation);
-        assertThat(binds).hasSize(1);
-        assertThat(binds.getFirst().getVolume().getPath()).isEqualTo("/workspace");
-        assertThat(binds.getFirst().getAccessMode()).isEqualTo(AccessMode.rw);
+        when(allocation.getWorkspaceStorageKey()).thenReturn("7/workspaces/default");
+        when(paths.resolveDockerHostGit("7/workspaces/default")).thenReturn(Path.of("/data/7/.git"));
+        when(paths.resolveDockerHost("7/workspaces/default")).thenReturn(Path.of("/data/7/workspaces/default"));
+        when(paths.relativeDirectory("7/workspaces/default")).thenReturn("workspaces/default");
+
+        List<Bind> binds = new SandboxBindFactory(paths).create(allocation);
+
+        assertThat(binds).extracting(bind -> bind.getVolume().getPath())
+                .containsExactly("/qgents/project/.git", "/qgents/project/workspaces/default", "/workspace");
+        assertThat(binds).extracting(bind -> Path.of(bind.getPath())).containsExactly(
+                Path.of("/data/7/.git"), Path.of("/data/7/workspaces/default"), Path.of("/data/7/workspaces/default"));
+        assertThat(binds).allSatisfy(bind -> assertThat(bind.getAccessMode()).isEqualTo(AccessMode.rw));
     }
 }

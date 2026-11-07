@@ -1,19 +1,13 @@
 package qg.qgent.sandbox.filesystem.service;
 
-import qg.qgent.support.TestIds;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import qg.qgent.project.storage.ProjectDirectoryService;
 import qg.qgent.sandbox.exception.SandboxException;
-import qg.qgent.sandbox.config.SandboxProperties;
-import qg.qgent.sandbox.runtime.SandboxAllocation;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -23,31 +17,28 @@ class WorkspacePathResolverTest {
     Path temporaryDirectory;
 
     @Test
-    void resolvesControlledLocalAndDockerHostPaths() throws Exception {
-        Path localRoot = Files.createDirectory(temporaryDirectory.resolve("local"));
-        String workspaceId = java.util.UUID.randomUUID().toString();
-        Path workspace = Files.createDirectory(localRoot.resolve(workspaceId));
-        Path hostRoot = temporaryDirectory.resolve("host");
-        WorkspacePathResolver resolver = resolver(localRoot, hostRoot);
+    void resolvesWorkspaceAndSharedGitDirectories() throws Exception {
+        Path local = Files.createDirectory(temporaryDirectory.resolve("local"));
+        Path host = Files.createDirectory(temporaryDirectory.resolve("host"));
+        WorkspacePathResolver resolver = new WorkspacePathResolver(
+                new ProjectDirectoryService(local.toString(), host.toString()));
 
-        assertEquals(workspace.toRealPath(), resolver.resolveLocal("workspaces/" + workspaceId));
-        assertEquals(hostRoot.resolve(workspaceId).toAbsolutePath().normalize(),
-                resolver.resolveDockerHost("workspaces/" + workspaceId));
+        assertEquals(local.resolve("7/workspaces/default"),
+                resolver.resolveLocal("7/workspaces/default"));
+        assertEquals(local.resolve("7/.git"), resolver.resolveLocalGit("7/workspaces/default"));
+        assertEquals(host.resolve("7/workspaces/12"), resolver.resolveDockerHost("7/workspaces/12"));
+        assertEquals(host.resolve("7/.git"), resolver.resolveDockerHostGit("7/workspaces/12"));
+        assertEquals("workspaces/12", resolver.relativeDirectory("7/workspaces/12"));
     }
 
     @Test
-    void rejectsTraversalAndMissingWorkspace() throws Exception {
-        Path localRoot = Files.createDirectory(temporaryDirectory.resolve("local"));
-        WorkspacePathResolver resolver = resolver(localRoot, temporaryDirectory.resolve("host"));
+    void rejectsMalformedStorageKeys() {
+        WorkspacePathResolver resolver = new WorkspacePathResolver(
+                new ProjectDirectoryService(temporaryDirectory.toString(), temporaryDirectory.toString()));
 
-        assertThrows(SandboxException.class, () -> resolver.resolveLocal("workspaces/../outside"));
-        assertThrows(SandboxException.class, () -> resolver.resolveLocal("workspaces/missing"));
-    }
-
-    private WorkspacePathResolver resolver(Path localRoot, Path hostRoot) {
-        SandboxProperties properties = new SandboxProperties();
-        properties.setWorkspaceLocalRoot(localRoot.toString());
-        properties.setWorkspaceDockerHostRoot(hostRoot.toString());
-        return new WorkspacePathResolver(properties);
+        assertThrows(SandboxException.class, () -> resolver.resolveLocal("7/../outside"));
+        assertThrows(SandboxException.class, () -> resolver.resolveLocal("workspaces/default"));
+        assertThrows(SandboxException.class, () -> resolver.resolveLocal("7/workspaces/../12"));
+        assertThrows(SandboxException.class, () -> resolver.resolveLocal(null));
     }
 }

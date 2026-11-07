@@ -3,12 +3,12 @@ package qg.qgent.sandbox.service;
 import qg.qgent.support.TestIds;
 
 import org.junit.jupiter.api.Test;
-import qg.qgent.workspace.service.WorkspaceStorageService;
+import qg.qgent.project.storage.ProjectDirectoryService;
+import qg.qgent.workspace.service.WorkspaceService;
 import qg.qgent.sandbox.execution.service.ToolExecutionService;
 import qg.qgent.sandbox.config.SandboxProperties;
 import qg.qgent.sandbox.dto.CreateSandboxRequest;
 import qg.qgent.sandbox.dto.SandboxResponse;
-import qg.qgent.workspace.dto.WorkspaceResponse;
 import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
 import qg.qgent.workspace.service.WorkspaceWriteLease;
@@ -25,12 +25,12 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 class SandboxSessionManagerTest {
-    private final WorkspaceStorageService storage = mock(WorkspaceStorageService.class);
+    private final ProjectDirectoryService directories = mock(ProjectDirectoryService.class);
     private final SandboxService sandboxes = mock(SandboxService.class);
     private final ToolExecutionService executions = mock(ToolExecutionService.class);
     private final WorkspaceMapper workspaces = mock(WorkspaceMapper.class);
     private final WorkspaceWriteLeaseService leases = mock(WorkspaceWriteLeaseService.class);
-    private final SandboxSessionManager sessions = new SandboxSessionManager(sandboxes, storage, executions,
+    private final SandboxSessionManager sessions = new SandboxSessionManager(sandboxes, directories, executions,
             new SandboxProperties(), workspaces, leases);
     private final Long projectId = TestIds.next();
     private final Long workspaceId = TestIds.next();
@@ -40,14 +40,12 @@ class SandboxSessionManagerTest {
     @Test
     void preparesAndReusesSandboxResponseWithDefaultConfiguration() {
         WorkspaceEntity workspace = new WorkspaceEntity();
+        workspace.setId(workspaceId);
         workspace.setProjectId(projectId);
+        workspace.setIsDefault(true);
         workspace.setStatus("PROVISIONING");
-        workspace.setStorageKey("workspaces/" + java.util.UUID.randomUUID());
         when(workspaces.selectById(workspaceId)).thenReturn(workspace);
         when(leases.acquire(projectId, workspaceId, runId)).thenReturn(lease);
-        WorkspaceResponse ready = new WorkspaceResponse();
-        ready.setStorageKey("workspaces/" + java.util.UUID.randomUUID());
-        when(storage.provision(eq(workspaceId), eq(workspace.getStorageKey()), any())).thenReturn(ready);
         SandboxResponse sandbox = new SandboxResponse();
         sandbox.setId(java.util.UUID.randomUUID());
         when(sandboxes.create(any())).thenReturn(sandbox);
@@ -58,23 +56,25 @@ class SandboxSessionManagerTest {
         assertThat(sessions.acquire(runId, projectId, workspaceId)).isSameAs(session);
         assertThat(workspace.getStatus()).isEqualTo("READY");
         verify(sandboxes).create(argThat((CreateSandboxRequest request) ->
-                runId.equals(request.getAgentRunId()) && ready.getStorageKey().equals(request.getWorkspaceStorageKey())));
+                runId.equals(request.getAgentRunId())
+                        && WorkspaceService.storageKey(workspace).equals(request.getWorkspaceStorageKey())));
         verify(workspaces).updateById(workspace);
     }
 
     @Test
     void sandboxFailurePropagatesAndReleasesWriteLease() {
         WorkspaceEntity workspace = new WorkspaceEntity();
+        workspace.setId(workspaceId);
         workspace.setProjectId(projectId);
+        workspace.setIsDefault(true);
         when(workspaces.selectById(workspaceId)).thenReturn(workspace);
         when(leases.acquire(projectId, workspaceId, runId)).thenReturn(lease);
         IllegalStateException failure = new IllegalStateException("Sandbox unavailable");
-        when(storage.provision(eq(workspaceId), any(), any())).thenThrow(failure);
+        when(sandboxes.create(any())).thenThrow(failure);
 
         assertThatThrownBy(() -> sessions.acquire(runId, projectId, workspaceId)).isSameAs(failure);
 
         verify(leases).release(lease);
-        verify(sandboxes, never()).create(any());
         verify(workspaces, never()).updateById(any(WorkspaceEntity.class));
         assertThatThrownBy(() -> sessions.require(workspaceId)).isInstanceOf(IllegalStateException.class);
     }
@@ -82,14 +82,13 @@ class SandboxSessionManagerTest {
     @Test
     void releasesWorkspaceOnlyAfterCommandWorkersExit() throws Exception {
         WorkspaceEntity workspace = new WorkspaceEntity();
+        workspace.setId(workspaceId);
         workspace.setProjectId(projectId);
+        workspace.setIsDefault(true);
         workspace.setStatus("PROVISIONING");
         when(lease.getAgentRunId()).thenReturn(runId);
         when(workspaces.selectById(workspaceId)).thenReturn(workspace);
         when(leases.acquire(projectId, workspaceId, runId)).thenReturn(lease);
-        WorkspaceResponse ready = new WorkspaceResponse();
-        ready.setStorageKey("workspaces/" + java.util.UUID.randomUUID());
-        when(storage.provision(eq(workspaceId), eq(workspace.getStorageKey()), any())).thenReturn(ready);
         SandboxResponse sandbox = new SandboxResponse();
         sandbox.setId(java.util.UUID.randomUUID());
         when(sandboxes.create(any())).thenReturn(sandbox);

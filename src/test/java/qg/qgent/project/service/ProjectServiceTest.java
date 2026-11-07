@@ -32,8 +32,11 @@ class ProjectServiceTest {
     private final TeamMapper teams = mock(TeamMapper.class);
     private final TeamMemberMapper teamMembers = mock(TeamMemberMapper.class);
     private final ProjectAccessService access = mock(ProjectAccessService.class);
+    private final qg.qgent.workspace.service.WorkspaceService workspaces =
+            mock(qg.qgent.workspace.service.WorkspaceService.class);
     private final ProjectService service = new ProjectService(projects, projectMembers, teams, teamMembers,
-            access, mock(ApplicationEventPublisher.class), mock(NotificationService.class), mock(EventService.class));
+            access, mock(ApplicationEventPublisher.class), mock(NotificationService.class), mock(EventService.class),
+            workspaces);
 
     @Test
     void projectListReturnsAvatarAndMemberCountWithoutExtraQueries() {
@@ -113,27 +116,25 @@ class ProjectServiceTest {
         });
         var service = new ProjectService(projects, mock(ProjectMemberMapper.class), teams,
                 members, mock(ProjectAccessService.class), events,
-                mock(NotificationService.class), mock(EventService.class));
+                mock(NotificationService.class), mock(EventService.class),
+                mock(qg.qgent.workspace.service.WorkspaceService.class));
         var request = new ProjectCreateRequest();
         request.setName("项目");
         var created = service.create(owner, teamId, request);
         assertThat(created.getName()).isEqualTo("项目");
-        assertThat(created.getGithubEnabled()).isTrue();
         verify(events).publishEvent(argThat((Object event) -> event instanceof ProjectCreatedEvent project
                 && project.projectId().toString().equals(created.getId()) && project.creatorUserId().equals(owner)));
     }
     @Test
-    void projectGithubCapabilityCanBeDisabledWithoutChangingProfile() {
+    void emptyPatchIsRejected() {
         Long actor = TestIds.next();
         ProjectEntity project = new ProjectEntity();
         project.setId(TestIds.next()); project.setTeamId(TestIds.next());
         project.setName("项目"); project.setStatus("ACTIVE");
         when(projects.selectByIdForUpdate(project.getId())).thenReturn(project);
-        ProjectUpdateRequest request = new ProjectUpdateRequest();
-        request.setGithubEnabled(false);
-        var result = service.update(actor, project.getId(), request);
-        assertThat(result.getGithubEnabled()).isFalse();
-        assertThat(result.getName()).isEqualTo("项目");
+
+        assertThatThrownBy(() -> service.update(actor, project.getId(), new ProjectUpdateRequest()))
+                .hasMessageContaining("至少需要提供");
     }
 
 }

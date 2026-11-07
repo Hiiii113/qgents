@@ -44,12 +44,6 @@ public class SandboxProperties {
     // 当前应用实例的稳定编号，用于容器恢复和执行归属。
     private String instanceId = "local";
 
-    // 应用进程可见的工作区根目录。
-    private String workspaceLocalRoot = "/var/lib/qgents/workspaces";
-
-    // Docker daemon 所在宿主机的 Workspace 根目录，用于创建 bind mount。
-    private String workspaceDockerHostRoot = "/srv/qgents/workspaces";
-
     // 工作区元数据目录，不挂载到沙箱。
     private String workspaceMetadataRoot = "/var/lib/qgents/workspace-metadata";
 

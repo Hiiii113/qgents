@@ -151,6 +151,18 @@ public class GitHubRepositoryService {
                 .eq(ProjectRepositoryEntity::getProjectId, projectId).eq(ProjectRepositoryEntity::getId, repositoryId));
     }
 
+    /** 按 GitHub 仓库数字 ID 取得凭证；未导入、安装暂停或授权撤销时失败。 */
+    public String repositoryTokenByProviderId(Long actor, Long projectId, Long providerRepositoryId) {
+        access.requireProjectMember(projectId, actor);
+        var repository = repositories.selectOne(Wrappers.<ProjectRepositoryEntity>lambdaQuery()
+                .eq(ProjectRepositoryEntity::getProjectId, projectId)
+                .eq(ProjectRepositoryEntity::getProviderRepositoryId, providerRepositoryId));
+        if (repository == null) throw invalid("请先将目标仓库导入当前项目");
+        var installation = requireInstallation(projects.selectById(projectId).getTeamId(), repository.getInstallationId());
+        if (Boolean.TRUE.equals(installation.getSuspended())) throw invalid("GitHub App 安装已暂停");
+        return app.installationToken(installation.getProviderInstallationId(), providerRepositoryId);
+    }
+
     /** Agent 每次操作都检查当前项目访问权和导入关系，再取得仅授权目标仓库的凭证。 */
     public String repositoryToken(Long actor, Long projectId, Long teamId, String fullName) {
         access.requireProjectMember(projectId, actor);

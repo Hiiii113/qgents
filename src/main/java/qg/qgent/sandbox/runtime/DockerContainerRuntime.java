@@ -74,8 +74,8 @@ public class DockerContainerRuntime implements ContainerRuntime {
             throw new SandboxException(CONFLICT, "SANDBOX_ID_CONFLICT", "沙箱编号已经存在");
         }
 
-        paths.resolveLocal(request.getWorkspaceStorageKey());
-        grantSandboxOwnership(allocation.getId(), paths.resolveLocal(allocation.getWorkspaceStorageKey()));
+        grantSandboxOwnership(allocation.getId(), paths.resolveLocal(request.getWorkspaceStorageKey()));
+        grantSandboxOwnership(allocation.getId(), paths.resolveLocalGit(request.getWorkspaceStorageKey()));
         String image = Optional.ofNullable(properties.getImages().get(request.getImageProfile()))
                 .orElseThrow(() -> new SandboxException(CONFLICT, "IMAGE_PROFILE_NOT_CONFIGURED", "镜像配置尚未映射到镜像"));
         HostConfig hostConfig = HostConfig.newHostConfig()
@@ -118,6 +118,7 @@ public class DockerContainerRuntime implements ContainerRuntime {
      * 在宿主机原生文件系统（Linux 服务器）上 chown 真实生效；Docker Desktop 的 Windows 挂载不支持 chown，静默跳过。
      */
     private void grantSandboxOwnership(UUID sandboxId, Path repository) {
+        if (!Files.exists(repository, LinkOption.NOFOLLOW_LINKS)) return;
         try (var stream = Files.walk(repository)) {
             int failed = 0;
             for (Path path : stream.filter(p -> Files.exists(p, LinkOption.NOFOLLOW_LINKS)).toList()) {

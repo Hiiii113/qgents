@@ -16,7 +16,7 @@ import qg.qgent.sandbox.service.SandboxSessionManager;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
 import qg.qgent.workspace.service.WorkspaceWriteLeaseService;
 import qg.qgent.workspace.service.WorkspaceOperationLock;
-import qg.qgent.workspace.service.WorkspaceStorageService;
+import qg.qgent.project.storage.ProjectDirectoryService;
 
 import java.nio.file.Path;
 
@@ -30,15 +30,15 @@ class SandboxConfigurationTest {
     void sandboxModuleUsesApplicationMapperAndDirectServices() {
         try (var context = new AnnotationConfigApplicationContext()) {
             TestPropertySourceUtils.addInlinedPropertiesToEnvironment(context,
-                    "sandbox.runtime=fake", "sandbox.workspace-local-root=" + directory,
-                    "sandbox.workspace-docker-host-root=" + directory);
+                    "sandbox.runtime=fake", "app.project.root=" + directory,
+                    "app.project.docker-host-root=" + directory);
             ObjectMapper mapper = new ObjectMapper().findAndRegisterModules();
             context.registerBean(ObjectMapper.class, () -> mapper);
             context.registerBean(ToolExecutionMapper.class, () -> mock(ToolExecutionMapper.class));
             context.registerBean(ToolExecutionLogMapper.class, () -> mock(ToolExecutionLogMapper.class));
             context.registerBean(WorkspaceMapper.class, () -> mock(WorkspaceMapper.class));
             context.registerBean(WorkspaceWriteLeaseService.class, () -> mock(WorkspaceWriteLeaseService.class));
-            context.register(WorkspaceOperationLock.class, WorkspaceStorageService.class);
+            context.register(WorkspaceOperationLock.class, ProjectDirectoryService.class);
             context.scan("qg.qgent.sandbox");
             context.refresh();
 

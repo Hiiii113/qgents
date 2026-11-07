@@ -64,11 +64,12 @@ class DockerContainerRuntimeTest {
     @Test
     void createUsesWritableRootfsAndPreservesUserAndResourceLimits() throws Exception {
         Path localRoot = Files.createDirectory(root.resolve("local"));
-        String storageKey = "workspaces/" + java.util.UUID.randomUUID();
-        Files.createDirectory(localRoot.resolve(storageKey.substring("workspaces/".length())));
+        Long projectId = TestIds.next();
+        String storageKey = projectId + "/workspaces/default";
+        Files.createDirectories(localRoot.resolve(projectId + "/workspaces/default"));
         SandboxProperties properties = new SandboxProperties();
-        properties.setWorkspaceLocalRoot(localRoot.toString());
-        properties.setWorkspaceDockerHostRoot(root.resolve("host").toString());
+        var directories = new qg.qgent.project.storage.ProjectDirectoryService(
+                localRoot.toString(), root.resolve("host").toString());
 
         DockerClient docker = mock(DockerClient.class);
         CreateContainerCmd createCmd = mock(CreateContainerCmd.class);
@@ -86,7 +87,7 @@ class DockerContainerRuntimeTest {
         when(docker.startContainerCmd(anyString())).thenReturn(startCmd);
 
         DockerContainerRuntime runtime = new DockerContainerRuntime(docker, properties,
-                new WorkspacePathResolver(properties), new SandboxBindFactory(new WorkspacePathResolver(properties)));
+                new WorkspacePathResolver(directories), new SandboxBindFactory(new WorkspacePathResolver(directories)));
 
         CreateSandboxRequest request = new CreateSandboxRequest();
         request.setSandboxId(java.util.UUID.randomUUID());
@@ -121,7 +122,8 @@ class DockerContainerRuntimeTest {
     }
 
     private DockerContainerRuntime runtime(SandboxProperties properties) {
-        return new DockerContainerRuntime(mock(DockerClient.class), properties,
-                new WorkspacePathResolver(properties), new SandboxBindFactory(new WorkspacePathResolver(properties)));
+        WorkspacePathResolver paths = new WorkspacePathResolver(
+                new qg.qgent.project.storage.ProjectDirectoryService(root.toString(), root.toString()));
+        return new DockerContainerRuntime(mock(DockerClient.class), properties, paths, new SandboxBindFactory(paths));
     }
 }

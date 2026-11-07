@@ -70,8 +70,9 @@ services:
       RSA_PRIVATE_KEY_PATH: file:/run/qgents/rsa/private_key.pem
       GITHUB_APP_PRIVATE_KEY_PATH: /run/qgents/github/private-key.pem
       ATTACHMENT_LOCAL_ROOT: /app/data/attachments
-      # 项目持久目录（memory.md 等）与工作区目录同源，随数据卷持久化。
+      # 项目持久目录（memory.md、共享 Git 数据、各 Workspace 工作树）随数据卷持久化。
       PROJECT_DATA_ROOT: /var/lib/qgents/projects
+      PROJECT_DATA_DOCKER_HOST_ROOT: ${QGENTS_DATA_ROOT:-/srv/qgents}/projects
       LOG_FILE: /app/logs/qgents.log
       # 运维端口允许容器网络访问，但未通过 ports 发布到宿主机。
       MANAGEMENT_SERVER_ADDRESS: 0.0.0.0
@@ -79,9 +80,6 @@ services:
       SANDBOX_RUNTIME: docker
       SANDBOX_DOCKER_HOST: unix:///var/run/docker.sock
       SANDBOX_DEV_TOOLS_IMAGE: ${SANDBOX_DEV_TOOLS_IMAGE:-qgents/sandbox-dev-tools:0.2.0}
-      # 两个根目录对应同一份文件：一个供 API 读写，一个供宿主机 Docker 挂载。
-      SANDBOX_WORKSPACE_LOCAL_ROOT: /var/lib/qgents/workspaces
-      SANDBOX_WORKSPACE_DOCKER_HOST_ROOT: ${QGENTS_DATA_ROOT:-/srv/qgents}/workspaces
       SANDBOX_WORKSPACE_METADATA_ROOT: /var/lib/qgents/workspace-metadata
       SANDBOX_INSTANCE_ID: ${SANDBOX_INSTANCE_ID:-production-1}
     volumes:
@@ -92,7 +90,6 @@ services:
         # 私钥必须是已有文件；路径写错时直接失败，不自动创建同名目录。
         bind: {create_host_path: false}
       - ${QGENTS_DATA_ROOT:-/srv/qgents}/github-app:/run/qgents/github:ro
-      - ${QGENTS_DATA_ROOT:-/srv/qgents}/workspaces:/var/lib/qgents/workspaces
       - ${QGENTS_DATA_ROOT:-/srv/qgents}/workspace-metadata:/var/lib/qgents/workspace-metadata
       - ${QGENTS_DATA_ROOT:-/srv/qgents}/projects:/var/lib/qgents/projects
       # 进程内 Sandbox 通过宿主机 Docker 引擎管理用户命令容器。

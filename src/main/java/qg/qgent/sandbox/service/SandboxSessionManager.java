@@ -6,13 +6,12 @@ import org.springframework.stereotype.Service;
 import java.util.UUID;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.sandbox.execution.service.ToolExecutionService;
-import qg.qgent.workspace.service.WorkspaceStorageService;
 import qg.qgent.sandbox.config.SandboxProperties;
 import qg.qgent.sandbox.dto.CreateSandboxRequest;
 import qg.qgent.sandbox.dto.SandboxResponse;
-import qg.qgent.workspace.dto.WorkspaceResponse;
-import qg.qgent.workspace.dto.WorkspaceProvisionRequest;
+import qg.qgent.project.storage.ProjectDirectoryService;
 import qg.qgent.workspace.entity.WorkspaceEntity;
+import qg.qgent.workspace.service.WorkspaceService;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
 import qg.qgent.workspace.service.WorkspaceWriteLease;
 import qg.qgent.workspace.service.WorkspaceWriteLeaseService;
@@ -27,7 +26,7 @@ public class SandboxSessionManager {
 
 
     private final SandboxService sandboxes;
-    private final WorkspaceStorageService storage;
+    private final ProjectDirectoryService projectDirectories;
     private final ToolExecutionService executions;
     private final SandboxProperties properties;
     private final WorkspaceMapper workspaceMapper;
@@ -36,11 +35,11 @@ public class SandboxSessionManager {
     private final Map<Long, ReentrantLock> acquireLocks = new ConcurrentHashMap<>();
     private final Map<Long, WorkspaceWriteLease> workspaceLeases = new ConcurrentHashMap<>();
 
-    public SandboxSessionManager(SandboxService sandboxes, WorkspaceStorageService storage,
+    public SandboxSessionManager(SandboxService sandboxes, ProjectDirectoryService projectDirectories,
                                  ToolExecutionService executions, SandboxProperties properties,
                                  WorkspaceMapper workspaceMapper, WorkspaceWriteLeaseService writeLeases) {
         this.sandboxes = sandboxes;
-        this.storage = storage;
+        this.projectDirectories = projectDirectories;
         this.executions = executions;
         this.properties = properties;
         this.workspaceMapper = workspaceMapper;
@@ -178,17 +177,17 @@ public class SandboxSessionManager {
         WorkspaceEntity workspace = workspaceMapper.selectById(workspaceId);
         if (workspace == null || !projectId.equals(workspace.getProjectId()))
             throw new IllegalArgumentException("工作区不存在");
-        WorkspaceProvisionRequest provision = new WorkspaceProvisionRequest();
-        provision.setProjectId(projectId);
-        WorkspaceResponse ready = storage.provision(workspaceId, workspace.getStorageKey(), provision);
+        // 目录按需建立；同一项目同一仓库的 Git 数据在首次准备 worktree 时创建。
+        projectDirectories.workspace(projectId, WorkspaceService.directoryName(workspace));
+        String storageKey = WorkspaceService.storageKey(workspace);
         CreateSandboxRequest request = new CreateSandboxRequest();
         request.setSandboxId(UUID.randomUUID());
         request.setAgentRunId(agentRunId);
-        request.setWorkspaceStorageKey(ready.getStorageKey());
+        request.setWorkspaceStorageKey(storageKey);
         request.setImageProfile(properties.getImageProfile());
         SandboxResponse sandbox = sandboxes.create(request);
         workspace.setStatus("READY");
         workspaceMapper.updateById(workspace);
-        return new SandboxSession(agentRunId,workspaceId,sandbox.getId(),ready.getStorageKey());
+        return new SandboxSession(agentRunId, workspaceId, sandbox.getId(), storageKey);
     }
 }

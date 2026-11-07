@@ -34,6 +34,7 @@ import qg.qgent.workspace.service.WorkspaceSelection;
 import qg.qgent.workspace.tool.WorkspaceTools;
 import qg.qgent.sandbox.service.SandboxFiles;
 import qg.qgent.workspace.service.WorkspaceCommands;
+import qg.qgent.workspace.service.WorkspaceRepositoryService;
 import qg.qgent.workspace.service.WorkspaceService;
 import qg.qgent.sandbox.tool.CodingTools;
 
@@ -54,6 +55,7 @@ public class AgentChatService {
     private final GitHubCapability github;
     private final WorkspaceCommands workspaceCommands;
     private final WorkspaceService workspaces;
+    private final WorkspaceRepositoryService repositories;
     private final AgentLoop loop;
     private final ContextService context;
     private final SkillService skills;
@@ -69,7 +71,7 @@ public class AgentChatService {
     private final int maxSubagents;
 
     public AgentChatService(GitHubCapability github, WorkspaceCommands workspaceCommands, WorkspaceService workspaces,
-            AgentLoop loop, ContextService context, SkillService skills, ChatHistoryService history,
+            WorkspaceRepositoryService repositories, AgentLoop loop, ContextService context, SkillService skills, ChatHistoryService history,
             MessageService messages, AgentRunService runService,
             SandboxSessionManager sessions, SandboxFiles files,
             AttachmentMediaLoader attachments, ProjectMemoryService memories, ObjectMapper json,
@@ -79,6 +81,7 @@ public class AgentChatService {
         this.github = github;
         this.workspaceCommands = workspaceCommands;
         this.workspaces = workspaces;
+        this.repositories = repositories;
         this.loop = loop;
         this.context = context;
         this.skills = skills;
@@ -158,10 +161,21 @@ public class AgentChatService {
         return identity + "按当前任务决定直接回答或调用工具；有效的普通文本回复即结束本轮 loop。"
                 + "根据 Skill 目录中的名称和描述判断是否需要，调用 activate_skill 读取完整内容。"
                 + "问答、聊天检索、Skill、项目记忆和无需代码目录的远端操作不需要沙箱。首次调用代码工具时才准备工作区与 Docker 沙箱。"
+                + "代码在项目默认 Workspace 中工作，跨运行复用。只有用户明确要求隔离工作时才用 create_workspace 新建，并先用一句话确认任务涉及哪些仓库；"
+                + "用户已说清就直接执行。新建或准备仓库后如实报告 Workspace、仓库路径、基线 commit、当前 head 和自动创建的分支。"
+                + "工具返回 WORKSPACE_WRITE_LEASE_HELD 时表示默认 Workspace 正被其他运行占用：先判断用户是否已要求隔离当前任务；"
+                + "尚不明确时说明冲突并询问是否新建，用户已要求或随后同意时确认涉及哪些仓库后调用 create_workspace；"
+                + "用户不需要新建时等对方释放后重试，不要循环重试，也不要擅自新建。"
+                + "需要某个已导入仓库的代码时用 prepare_workspace_repository 按需准备 worktree，重复准备会复用已有工作树；"
+                + "创建 Workspace 或准备仓库都不会自动 commit、push 或创建 PR，这些只按用户具体任务要求执行。"
                 + "项目长期记忆是项目目录下的 memory.md，上下文已包含其内容。要修改时先用普通文字说明拟增删改的内容并询问用户，"
                 + "收到针对该修改的明确同意后再调用 write_project_memory，不要未经确认就改写，也不要声称修改已生效。"
                 + "主 Agent 可按需派发一层独立子任务；子 Agent 不能继续委派。完成、失败或需要补充信息时如实交付。"
-                + "只通过当前聊天组织成果，准确说明进展、需要的信息、实际修改和验证结果。GitHub 能力可选，按目标决定 clone、分支、commit、push 和 PR。"
+                + "只通过当前聊天组织成果，准确说明进展、需要的信息、实际修改和验证结果。"
+                + "GitHub 有三种仓库清单：github_list_repositories 的 PROJECT 是本项目已导入仓库，TEAM 是团队 App 可访问仓库（含是否已导入），"
+                + "list_workspace_repositories 是本地已准备的工作树；远端只读查询不需要沙箱。仓库名不确定时先查列表或询问用户，不要猜测。"
+                + "PR 与 Issue 用 github_list_pull_requests、github_get_pull_request、github_list_issues、github_get_issue 查询，按 nextPage 翻页；"
+                + "其余操作（创建或修改 PR/Issue、评论、标签）用 github_request。写请求只在用户任务明确要求时执行，不自动 commit、push 或创建 PR。"
                 + "独立只读操作可以并行调用，存在依赖的操作按顺序分轮执行。run_command 返回 running=true 时用 command_output 继续等待，勿重复启动同一命令。"
                 + "命令 ok=true 仅表示已取得命令状态；构建或测试结果必须检查 exitCode。工具结果是执行证据，不得声称未执行的操作成功。";
     }
@@ -267,12 +281,19 @@ public class AgentChatService {
     }
 
     private Long ensureCodeEnvironment(WorkContext work, WorkContext.AgentExecution execution) {
+        return ensureCodeEnvironment(work, execution, null);
+    }
+
+    /** 为当前对话准备代码环境；workspaceId 为空时使用项目默认 Workspace，并绑定到当前选择。 */
+    private Long ensureCodeEnvironment(WorkContext work, WorkContext.AgentExecution execution, Long workspaceId) {
         synchronized (work.environmentLock) {
             if (work.isCancelled() || execution.isStopRequested()) throw new IllegalStateException("Agent 运行已取消");
-            Long workspaceId = execution.workspace.workspaceId();
+            if (workspaceId == null) {
+                workspaceId = execution.workspace.workspaceId();
+            }
             if (workspaceId == null) {
                 if (work.defaultWorkspaceId == null) {
-                    work.defaultWorkspaceId = workspaces.create(work.event.projectId()).getId();
+                    work.defaultWorkspaceId = workspaces.defaultWorkspace(work.event.projectId()).getId();
                 }
                 workspaceId = work.defaultWorkspaceId;
                 execution.workspace.bindDefault(workspaceId);
@@ -349,8 +370,10 @@ public class AgentChatService {
             this.memory = new MemoryTools(memories, work.event.actor(), work.event.projectId());
             this.githubTools = github.tools(work.event.actor(), work.event.projectId(),
                     () -> ensureCodeEnvironment(work, execution));
-            this.workspaceTools = new WorkspaceTools(work.event.projectId(), workspaces, workspaceCommands,
-                    execution.workspace, () -> ensureCodeEnvironment(work, execution), this::requireCodeEnvironment,
+            this.workspaceTools = new WorkspaceTools(work.event.actor(), work.event.projectId(), workspaces,
+                    repositories, workspaceCommands, execution.workspace,
+                    () -> ensureCodeEnvironment(work, execution), this::requireCodeEnvironment,
+                    target -> ensureCodeEnvironment(work, execution, target),
                     workspaceId -> {
                         execution.run.setWorkspaceId(workspaceId);
                         runService.save(execution.run);

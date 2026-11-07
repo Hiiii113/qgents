@@ -9,6 +9,11 @@ public class SandboxException extends ApiException {
         super(status, code, message);
     }
 
+    public SandboxException(HttpStatus status, String code, String message, Throwable cause) {
+        super(status, code, message);
+        initCause(cause);
+    }
+
     public String getCode() { return code(); }
     public HttpStatus getStatus() { return status(); }
 }

@@ -39,7 +39,7 @@ class ProjectMemoryServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ProjectMemoryService(access, new ProjectDirectoryService(root.toString()), events, MAX_CHARS);
+        service = new ProjectMemoryService(access, new ProjectDirectoryService(root.toString(), root.toString()), events, MAX_CHARS);
     }
 
     @Test

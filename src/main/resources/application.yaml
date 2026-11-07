@@ -72,9 +72,11 @@ app:
     context:
       # 项目 memory.md 注入 Agent 上下文的字符上限；超过时拒绝保存。
       max-memory-chars: ${APP_AGENT_CONTEXT_MAX_MEMORY_CHARS:12000}
-  # 项目持久目录根；每个项目一个子目录，存放 memory.md 及后续共享资料。
+  # 项目持久目录根；每个项目一个子目录，存放 memory.md、共享 Git 数据和各 Workspace 工作树。
+  # docker-host-root 指向同一份数据的宿主机路径，用于创建沙箱 bind mount。
   project:
     root: ${PROJECT_DATA_ROOT:./data/projects}
+    docker-host-root: ${PROJECT_DATA_DOCKER_HOST_ROOT:${PROJECT_DATA_ROOT:./data/projects}}
   # 邮件中的页面入口；web/mobile 地址还用于 GitHub App 授权后的跳转。
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
   frontend-url-web: ${FRONTEND_URL_WEB:${FRONTEND_URL:http://localhost:5173}}
@@ -182,9 +184,7 @@ sandbox:
   # 标识管理沙箱的后端实例，用于容器归属。
   instance-id: ${SANDBOX_INSTANCE_ID:local}
   # 后端进程可见的工作区路径。
-  workspace-local-root: ${SANDBOX_WORKSPACE_LOCAL_ROOT:/var/lib/qgents/workspaces}
   # Docker 宿主机可见的同一工作区，用于 bind mount；容器部署时与上面的路径不同。
-  workspace-docker-host-root: ${SANDBOX_WORKSPACE_DOCKER_HOST_ROOT:/srv/qgents/workspaces}
   # 后端保存的工作区元数据，不挂载给用户命令容器。
   workspace-metadata-root: ${SANDBOX_WORKSPACE_METADATA_ROOT:/var/lib/qgents/workspace-metadata}
   images:

@@ -26,6 +26,7 @@ import qg.qgent.realtime.service.EventService;
 import qg.qgent.team.entity.TeamEntity;
 import qg.qgent.team.entity.TeamMemberEntity;
 import qg.qgent.team.mapper.TeamMapper;
+import qg.qgent.workspace.service.WorkspaceService;
 import qg.qgent.team.mapper.TeamMemberMapper;
 
 import java.time.ZoneOffset;
@@ -42,6 +43,7 @@ public class ProjectService {
     private final ApplicationEventPublisher eventPublisher;
     private final NotificationService notificationService;
     private final EventService eventService;
+    private final WorkspaceService workspaceService;
 
     /** 创建项目并初始化项目成员关系。 */
     @Transactional
@@ -55,6 +57,8 @@ public class ProjectService {
         project.setDescription(request.getDescription());
         project.setStatus("ACTIVE");
         projectMapper.insert(project);
+        // 默认 Workspace 与项目同一事务登记；物理目录和沙箱仍按需建立。
+        workspaceService.defaultWorkspace(project.getId());
 
         insertMember(project.getId(), actor, "PROJECT_ADMIN");
         for (Long userId : new LinkedHashSet<>(request.getMemberIds() == null ? List.of() : request.getMemberIds())) {

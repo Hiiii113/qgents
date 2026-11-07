@@ -7,7 +7,7 @@ import lombok.Data;
 
 import java.time.LocalDateTime;
 
-/** 项目中的持久化工作目录，目录内的文件和仓库由 Agent 管理。 */
+/** 项目中的持久化工作目录；目录名由项目 ID 与是否默认决定，见 WorkspacePaths。 */
 @Data
 @TableName("workspaces")
 public class WorkspaceEntity {
@@ -16,8 +16,8 @@ public class WorkspaceEntity {
     private Long id;
     // 所属项目。
     private Long projectId;
-    // 工作区存储相对路径。
-    private String storageKey;
+    // 是否为项目默认 Workspace；每个项目恰好一个。
+    private Boolean isDefault;
     // 准备状态：创建时为 PROVISIONING，Sandbox 准备完成后为 READY。
     private String status;
     // 当前持有写入租约的根 AgentRun，不代表工作区的归属。

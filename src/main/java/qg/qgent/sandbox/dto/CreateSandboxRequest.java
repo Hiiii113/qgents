@@ -27,7 +27,6 @@ public class CreateSandboxRequest {
     // Workspace 的不透明存储键，由 Sandbox 解析为受控根目录下的实际路径。
     @NotBlank
     @Size(max = 512)
-    @Pattern(regexp = "workspaces/[0-9a-fA-F-]{36}")
     private String workspaceStorageKey;
 
     // Sandbox 白名单中的镜像配置名称，例如 dev-tools。

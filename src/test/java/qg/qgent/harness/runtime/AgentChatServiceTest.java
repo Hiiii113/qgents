@@ -262,13 +262,14 @@ class AgentChatServiceTest {
         var fixture = fixture(model, actor, project, group, message, childExecutor);
         WorkspaceEntity workspace = workspace(project);
         AtomicInteger createCount = new AtomicInteger();
-        when(fixture.workspaces().create(project)).thenAnswer(ignored -> {
+        when(fixture.workspaces().defaultWorkspace(project)).thenAnswer(ignored -> {
             createCount.incrementAndGet();
             return workspace;
         });
         when(fixture.workspaces().require(project, workspace.getId())).thenReturn(workspace);
         when(fixture.sessions().acquire(any(), eq(project), eq(workspace.getId())))
-                .thenAnswer(invocation -> new SandboxSession(invocation.getArgument(0), workspace.getId(), java.util.UUID.randomUUID(), workspace.getStorageKey()));
+                .thenAnswer(invocation -> new SandboxSession(invocation.getArgument(0), workspace.getId(),
+                        java.util.UUID.randomUUID(), WorkspaceService.storageKey(workspace)));
         when(fixture.codeAccess().listFiles(any(), any(String.class), any(String.class),
                 org.mockito.ArgumentMatchers.anyInt()))
                 .thenAnswer(invocation -> {
@@ -714,7 +715,8 @@ class AgentChatServiceTest {
         var memories = mock(ProjectMemoryService.class);
         when(memories.get(any(), any())).thenReturn(new ProjectMemoryResponse("1", "# 项目约定", "v1",
                 java.time.LocalDateTime.now()));
-        var service = new AgentChatService(github, mock(WorkspaceCommands.class), workspaces, loop, context,
+        var service = new AgentChatService(github, mock(WorkspaceCommands.class), workspaces,
+                mock(qg.qgent.workspace.service.WorkspaceRepositoryService.class), loop, context,
                 skills, history, messages, runs, sessions, codeAccess,
                 attachments, memories, new ObjectMapper(),
                 childExecutor, maxSubagents);
@@ -764,7 +766,7 @@ class AgentChatServiceTest {
         WorkspaceEntity workspace = new WorkspaceEntity();
         workspace.setId(TestIds.next());
         workspace.setProjectId(projectId);
-        workspace.setStorageKey("workspaces/" + java.util.UUID.randomUUID());
+        workspace.setIsDefault(true);
         workspace.setStatus("PROVISIONING");
         return workspace;
     }

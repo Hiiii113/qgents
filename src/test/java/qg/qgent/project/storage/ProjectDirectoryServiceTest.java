@@ -16,7 +16,7 @@ class ProjectDirectoryServiceTest {
 
     @Test
     void deleteRemovesProjectDirectoryAndFiles() throws IOException {
-        ProjectDirectoryService directories = new ProjectDirectoryService(root.toString());
+        ProjectDirectoryService directories = new ProjectDirectoryService(root.toString(), root.toString());
         Path directory = directories.projectRoot(7L);
         Files.writeString(directory.resolve("memory.md"), "# 约定");
         Files.createDirectories(directory.resolve("workspace/repo"));
@@ -29,7 +29,7 @@ class ProjectDirectoryServiceTest {
 
     @Test
     void deleteIgnoresProjectWithoutDirectory() {
-        ProjectDirectoryService directories = new ProjectDirectoryService(root.toString());
+        ProjectDirectoryService directories = new ProjectDirectoryService(root.toString(), root.toString());
 
         directories.delete(8L);
 
