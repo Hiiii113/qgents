@@ -5,7 +5,6 @@ import lombok.Data;
 
 @Data
 public class ProjectMembershipView {
-    private Boolean githubEnabled;
     private Long id;
     private Long teamId;
     private String name;

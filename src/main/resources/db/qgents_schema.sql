@@ -108,7 +108,6 @@ CREATE TABLE IF NOT EXISTS
         name VARCHAR(255) NOT NULL COMMENT '项目名称',
         description TEXT NULL COMMENT '项目说明',
         avatar_url TEXT NULL COMMENT '项目头像URL（OSS 公共读长期地址，可为空）',
-        github_enabled TINYINT(1) NOT NULL DEFAULT 1 COMMENT '项目 GitHub 能力开关',
         status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE' COMMENT '项目状态枚举：ACTIVE/ARCHIVED',
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
         updated_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',

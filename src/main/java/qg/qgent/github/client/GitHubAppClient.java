@@ -83,7 +83,9 @@ public class GitHubAppClient {
             JsonNode response = json.readTree(request.retrieve().body(String.class));
             if (response == null || response.path("token").asText().isBlank()) throw unavailable();
             return response.path("token").asText();
-        } catch (RestClientException | java.io.IOException | IllegalArgumentException e) {
+        } catch (RestClientException e) {
+            throw GitHubApiException.from(e);
+        } catch (java.io.IOException | IllegalArgumentException e) {
             throw unavailable();
         }
     }
@@ -94,7 +96,9 @@ public class GitHubAppClient {
                     .retrieve().body(String.class));
             if (response == null) throw unavailable();
             return response;
-        } catch (RestClientException | java.io.IOException | IllegalArgumentException e) {
+        } catch (RestClientException e) {
+            throw GitHubApiException.from(e);
+        } catch (java.io.IOException | IllegalArgumentException e) {
             throw unavailable();
         }
     }

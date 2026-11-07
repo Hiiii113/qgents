@@ -137,10 +137,12 @@ class GitHubRepositoryServiceTest {
         when(repositories.selectOne(any())).thenReturn(imported);
         when(installations.selectById(installation.getId())).thenReturn(installation);
         when(app.installationToken(12L, 34L)).thenReturn("first", "renewed");
-        assertThat(service.repositoryToken(actor, project, team, "owner/repo")).isEqualTo("first");
-        assertThat(service.repositoryToken(actor, project, team, "owner/repo")).isEqualTo("renewed");
+        var first = service.repositoryToken(actor, project, "owner/repo");
+        assertThat(first.token()).isEqualTo("first");
+        assertThat(first.providerRepositoryId()).isEqualTo(34L);
+        assertThat(service.repositoryToken(actor, project, "owner/repo").token()).isEqualTo("renewed");
         when(repositories.selectOne(any())).thenReturn(null);
-        assertThatThrownBy(() -> service.repositoryToken(actor, project, team, "owner/other"))
+        assertThatThrownBy(() -> service.repositoryToken(actor, project, "owner/other"))
                 .hasMessageContaining("先将目标仓库导入");
         verify(app, times(2)).installationToken(12L, 34L);
     }
@@ -163,6 +165,121 @@ class GitHubRepositoryServiceTest {
         assertThat(keep.getFullName()).isEqualTo("owner/repo");
         verify(repositories).updateById(keep);
         verify(repositories).deleteById(revoked.getId());
+    }
+
+    @Test
+    void projectCatalogListsImportsByProviderIdAndKeepsConnectionStatus() {
+        var installation = installation();
+        when(installations.selectList(any())).thenReturn(List.of(installation));
+        var second = new ProjectRepositoryEntity();
+        second.setProviderRepositoryId(35L);
+        second.setFullName("owner/second");
+        var first = new ProjectRepositoryEntity();
+        first.setProviderRepositoryId(34L);
+        first.setFullName("owner/first");
+        first.setDefaultBranch("main");
+        first.setPrivateRepository(true);
+        when(repositories.selectList(any())).thenReturn(List.of(second, first));
+
+        var catalog = service.catalog(actor, project, false);
+
+        assertThat(catalog.connectionStatus()).isEqualTo("ACTIVE");
+        assertThat(catalog.items()).extracting(GitHubRepositoryService.CatalogRepository::providerRepositoryId)
+                .containsExactly(34L, 35L);
+        assertThat(catalog.items()).allMatch(GitHubRepositoryService.CatalogRepository::imported);
+        verify(access).requireProjectMember(project, actor);
+        verify(access, never()).requireTeamMember(any(), any());
+        verifyNoInteractions(app);
+    }
+
+    @Test
+    void teamCatalogMergesInstallationsDeduplicatesAndMarksImports() {
+        var active = installation();
+        var second = installation();
+        second.setId(TestIds.next());
+        second.setProviderInstallationId(13L);
+        when(installations.selectList(any())).thenReturn(List.of(active, second));
+        when(app.repositories(12L)).thenReturn(List.of(
+                new GitHubAppClient.Repository(35L, "owner/shared", "main", "https://github.com/owner/shared", false),
+                remote()));
+        when(app.repositories(13L)).thenReturn(List.of(
+                new GitHubAppClient.Repository(35L, "owner/shared", "main", "https://github.com/owner/shared", false),
+                new GitHubAppClient.Repository(36L, "owner/only-second", "dev", "https://github.com/owner/only-second", true)));
+        var imported = new ProjectRepositoryEntity();
+        imported.setProviderRepositoryId(34L);
+        when(repositories.selectList(any())).thenReturn(List.of(imported));
+
+        var catalog = service.catalog(actor, project, true);
+
+        assertThat(catalog.connectionStatus()).isEqualTo("ACTIVE");
+        assertThat(catalog.items()).extracting(GitHubRepositoryService.CatalogRepository::providerRepositoryId)
+                .containsExactly(34L, 35L, 36L);
+        assertThat(catalog.items()).filteredOn(item -> item.providerRepositoryId() == 34L)
+                .singleElement().satisfies(item -> assertThat(item.imported()).isTrue());
+        assertThat(catalog.items()).filteredOn(item -> item.providerRepositoryId() == 35L)
+                .singleElement().satisfies(item -> assertThat(item.imported()).isFalse());
+        verify(access).requireTeamMember(team, actor);
+    }
+
+    @Test
+    void teamCatalogSkipsSuspendedInstallationsAndReportsStatus() {
+        var suspended = installation();
+        suspended.setSuspended(true);
+        when(installations.selectList(any())).thenReturn(List.of(suspended));
+        when(repositories.selectList(any())).thenReturn(List.of());
+
+        var catalog = service.catalog(actor, project, true);
+
+        assertThat(catalog.connectionStatus()).isEqualTo("ALL_SUSPENDED");
+        assertThat(catalog.items()).isEmpty();
+        verifyNoInteractions(app);
+    }
+
+    @Test
+    void teamCatalogDistinguishesPartiallySuspendedAndDisconnected() {
+        var active = installation();
+        var suspended = installation();
+        suspended.setId(TestIds.next());
+        suspended.setSuspended(true);
+        when(installations.selectList(any())).thenReturn(List.of(active, suspended));
+        when(app.repositories(12L)).thenReturn(List.of(remote()));
+        when(repositories.selectList(any())).thenReturn(List.of());
+        assertThat(service.catalog(actor, project, true).connectionStatus()).isEqualTo("PARTIALLY_SUSPENDED");
+
+        when(installations.selectList(any())).thenReturn(List.of());
+        assertThat(service.catalog(actor, project, true).connectionStatus()).isEqualTo("NOT_CONNECTED");
+    }
+
+    @Test
+    void teamCatalogFailsWholeListWhenOneInstallationFails() {
+        var active = installation();
+        var second = installation();
+        second.setId(TestIds.next());
+        second.setProviderInstallationId(13L);
+        when(installations.selectList(any())).thenReturn(List.of(active, second));
+        when(app.repositories(12L)).thenReturn(List.of(remote()));
+        when(app.repositories(13L)).thenThrow(new qg.qgent.github.client.GitHubApiException(502, null, false));
+
+        assertThatThrownBy(() -> service.catalog(actor, project, true))
+                .isInstanceOf(qg.qgent.github.client.GitHubApiException.class);
+    }
+
+    @Test
+    void tokenErrorsUseStableCodes() {
+        when(repositories.selectOne(any())).thenReturn(null);
+        assertThatThrownBy(() -> service.repositoryToken(actor, project, "owner/repo"))
+                .isInstanceOfSatisfying(qg.qgent.common.web.ApiException.class,
+                        error -> assertThat(error.code()).isEqualTo("REPOSITORY_NOT_IMPORTED"));
+        var installation = installation();
+        installation.setSuspended(true);
+        var imported = new ProjectRepositoryEntity();
+        imported.setInstallationId(installation.getId());
+        when(repositories.selectOne(any())).thenReturn(imported);
+        when(installations.selectById(installation.getId())).thenReturn(installation);
+        assertThatThrownBy(() -> service.repositoryToken(actor, project, "owner/repo"))
+                .isInstanceOfSatisfying(qg.qgent.common.web.ApiException.class,
+                        error -> assertThat(error.code()).isEqualTo("INSTALLATION_SUSPENDED"));
+        verify(app, never()).installationToken(any(Long.class), any());
     }
 
     private GitHubInstallationEntity installation() {

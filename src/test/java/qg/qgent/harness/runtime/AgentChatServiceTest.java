@@ -711,7 +711,7 @@ class AgentChatServiceTest {
         }).when(runs).finishRoot(any(AgentRunEntity.class), any(String.class), any(String.class),
                 org.mockito.ArgumentMatchers.anyInt());
         var projects = mock(ProjectMapper.class);
-        var github = new GitHubCapability(projects, mock(WorkspaceCommands.class), mock(GitHubRepositoryService.class));
+        var github = new GitHubCapability(mock(WorkspaceCommands.class), mock(GitHubRepositoryService.class));
         var memories = mock(ProjectMemoryService.class);
         when(memories.get(any(), any())).thenReturn(new ProjectMemoryResponse("1", "# 项目约定", "v1",
                 java.time.LocalDateTime.now()));

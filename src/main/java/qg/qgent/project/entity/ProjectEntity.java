@@ -11,7 +11,6 @@ import lombok.Data;
 @Data
 @TableName(value = "projects", autoResultMap = true)
 public class ProjectEntity {
-    private Boolean githubEnabled = true;
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long teamId;

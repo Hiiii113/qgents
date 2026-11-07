@@ -8,7 +8,6 @@ import lombok.NoArgsConstructor;
 @Data
 @NoArgsConstructor
 public class ProjectResponse {
-    private Boolean githubEnabled;
     private String id;
     private String teamId;
     private String name;

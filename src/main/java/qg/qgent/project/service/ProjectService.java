@@ -99,8 +99,8 @@ public class ProjectService {
         access.requireProjectAdminAnyState(project, actor);
         requireActive(project);
         // PATCH 语义：name/description/avatarUrl 均可单独更新；全 null 时拒绝空更新
-        if (request.getName() == null && request.getDescription() == null && request.getAvatarUrl() == null && request.getGithubEnabled() == null) {
-            throw invalid("至少需要提供 name、description、avatarUrl 或 githubEnabled");
+        if (request.getName() == null && request.getDescription() == null && request.getAvatarUrl() == null) {
+            throw invalid("至少需要提供 name、description 或 avatarUrl");
         }
         if (request.getName() != null) {
             if (request.getName().isBlank()) {
@@ -115,7 +115,6 @@ public class ProjectService {
         if (request.getAvatarUrl() != null) {
             project.setAvatarUrl(blankToNull(request.getAvatarUrl()));
         }
-        if (request.getGithubEnabled() != null) project.setGithubEnabled(request.getGithubEnabled());
         projectMapper.updateById(project);
         return response(project, "PROJECT_ADMIN");
     }
@@ -301,7 +300,6 @@ public class ProjectService {
                 project.getName(), project.getDescription(), role, project.getStatus(),
                 memberMapper.countMembers(project.getId()));
         r.setAvatarUrl(project.getAvatarUrl());
-        r.setGithubEnabled(project.getGithubEnabled());
         return r;
     }
 
@@ -309,7 +307,6 @@ public class ProjectService {
         ProjectResponse r = new ProjectResponse(row.getId().toString(), row.getTeamId().toString(), row.getName(),
                 row.getDescription(), row.getRole(), row.getStatus(), row.getMemberCount());
         r.setAvatarUrl(row.getAvatarUrl());
-        r.setGithubEnabled(row.getGithubEnabled());
         return r;
     }
 
