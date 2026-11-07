@@ -301,7 +301,9 @@ public class AgentChatService {
 
     private String childInstruction(WorkContext work, String instruction) {
         try {
-            return instruction + "\n\n当前项目可激活的 Skill 目录（包含 ID、名称和用途描述；需要时调用 activate_skill 读取正文）：\n"
+            return instruction + "\n\n当前项目记忆（memory.md 全文）：\n"
+                    + memories.get(work.event.actor(), work.event.projectId()).getContent()
+                    + "\n\n当前项目可激活的 Skill 目录（包含 ID、名称和用途描述；需要时调用 activate_skill 读取正文）：\n"
                     + json.writeValueAsString(skills.publishedCatalog(work.event.actor(), work.event.projectId()));
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("无法序列化 Skill 目录", exception);

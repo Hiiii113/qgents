@@ -23,6 +23,7 @@ import qg.qgent.github.tool.GitHubCapability;
 import qg.qgent.github.service.GitHubRepositoryService;
 import qg.qgent.harness.context.ContextService;
 import qg.qgent.harness.context.GroupContext;
+import qg.qgent.memory.dto.ProjectMemoryResponse;
 import qg.qgent.memory.service.ProjectMemoryService;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.sandbox.service.SandboxSessionManager;
@@ -113,7 +114,8 @@ class AgentChatServiceTest {
         future.get(5, TimeUnit.SECONDS);
 
         assertThat(rootCalls.get()).isEqualTo(3);
-        assertThat(childInput.get()).contains("published-skill", "适用于测试任务", "activate_skill").doesNotContain("root-only context");
+        assertThat(childInput.get()).contains("published-skill", "适用于测试任务", "activate_skill", "# 项目约定")
+                .doesNotContain("root-only context");
         assertThat(childToolNames.get()).doesNotContain("start_subagent", "wait_subagent", "get_subagent_result",
                 "message_subagent", "continue_subagent", "stop_subagent", "cancel_agent");
         verify(fixture.messages()).sendAsAgent(eq(group), argThat(request ->
@@ -709,9 +711,12 @@ class AgentChatServiceTest {
                 org.mockito.ArgumentMatchers.anyInt());
         var projects = mock(ProjectMapper.class);
         var github = new GitHubCapability(projects, mock(WorkspaceCommands.class), mock(GitHubRepositoryService.class));
+        var memories = mock(ProjectMemoryService.class);
+        when(memories.get(any(), any())).thenReturn(new ProjectMemoryResponse("1", "# 项目约定", "v1",
+                java.time.LocalDateTime.now()));
         var service = new AgentChatService(github, mock(WorkspaceCommands.class), workspaces, loop, context,
                 skills, history, messages, runs, sessions, codeAccess,
-                attachments, mock(ProjectMemoryService.class), new ObjectMapper(),
+                attachments, memories, new ObjectMapper(),
                 childExecutor, maxSubagents);
         MessageSentEvent event = new MessageSentEvent(actor, project, group, message, List.of());
         return new Fixture(service, event, messages, runs, root, workspaces, codeAccess, sessions);
