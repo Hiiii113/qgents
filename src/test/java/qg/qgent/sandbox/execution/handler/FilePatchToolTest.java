@@ -71,11 +71,12 @@ class FilePatchToolTest {
     }
 
     @Test
-    void insertsAndDeletesLinesPrecisely() throws Exception {
+    void insertsAfterLineNamedInZeroCountHunk() throws Exception {
         Path file = repository.resolve("edit.txt");
         Files.writeString(file, "x\ny\nz\n", StandardCharsets.UTF_8);
+        // 旧侧行数为 0 时，行号是插入点之前的那一行：@@ -1,0 @@ 表示插在第 1 行之后。
         String insertPatch = """
-                @@ -2,0 +2,1 @@
+                @@ -1,0 +2,1 @@
                 +inserted
                 """;
         tool().execute(context(), Map.of("path", "edit.txt",
@@ -83,12 +84,98 @@ class FilePatchToolTest {
         assertEquals("x\ninserted\ny\nz\n", Files.readString(file));
 
         String deletePatch = """
-                @@ -3,1 +3,0 @@
-                -y
+                @@ -2,1 +2,0 @@
+                -inserted
                 """;
         tool().execute(context(), Map.of("path", "edit.txt",
                 "expectedHash", FileReadTool.sha256(Files.readAllBytes(file)), "patch", deletePatch));
-        assertEquals("x\ninserted\nz\n", Files.readString(file));
+        assertEquals("x\ny\nz\n", Files.readString(file));
+    }
+
+    @Test
+    void insertsAtStartAndAfterLastLine() throws Exception {
+        Path file = repository.resolve("edges.txt");
+        Files.writeString(file, "b\n", StandardCharsets.UTF_8);
+        String atStart = """
+                @@ -0,0 +1,1 @@
+                +a
+                """;
+        tool().execute(context(), Map.of("path", "edges.txt",
+                "expectedHash", FileReadTool.sha256(Files.readAllBytes(file)), "patch", atStart));
+        assertEquals("a\nb\n", Files.readString(file));
+
+        String atEnd = """
+                @@ -2,0 +3,1 @@
+                +c
+                """;
+        tool().execute(context(), Map.of("path", "edges.txt",
+                "expectedHash", FileReadTool.sha256(Files.readAllBytes(file)), "patch", atEnd));
+        assertEquals("a\nb\nc\n", Files.readString(file));
+    }
+
+    @Test
+    void appliesStandardDiffOutputWithContextAndAdditions() throws Exception {
+        // 标准 `diff -u` 输出：上下文行、插入行与替换行混在同一个 hunk 里。
+        Path file = repository.resolve("sample.txt");
+        Files.writeString(file, "one\ntwo\nthree\nfour\nfive\nsix\nseven\n", StandardCharsets.UTF_8);
+        String patch = """
+                --- a/sample.txt
+                +++ b/sample.txt
+                @@ -1,7 +1,8 @@
+                 one
+                 two
+                +inserted
+                 three
+                 four
+                -five
+                +FIVE
+                 six
+                 seven
+                """;
+
+        tool().execute(context(), Map.of("path", "sample.txt",
+                "expectedHash", FileReadTool.sha256(Files.readAllBytes(file)), "patch", patch));
+
+        assertEquals("one\ntwo\ninserted\nthree\nfour\nFIVE\nsix\nseven\n",
+                Files.readString(file));
+    }
+
+    @Test
+    void keepsMissingTrailingNewlineWhenPatchingMiddle() throws Exception {
+        Path file = repository.resolve("no-eol.txt");
+        Files.writeString(file, "a\nb\nc", StandardCharsets.UTF_8);
+        String patch = """
+                @@ -1,1 +1,1 @@
+                -a
+                +A
+                """;
+
+        tool().execute(context(), Map.of("path", "no-eol.txt",
+                "expectedHash", FileReadTool.sha256(Files.readAllBytes(file)), "patch", patch));
+
+        assertEquals("A\nb\nc", Files.readString(file));
+    }
+
+    @Test
+    void keepsMissingTrailingNewlineWhenPatchReachesEndOfFile() throws Exception {
+        // 真实 `diff -u` 对无尾换行文件的输出：标记跟在上下文行后，表示两侧最后一行都无换行。
+        Path file = repository.resolve("eol.txt");
+        Files.writeString(file, "a\nb\nc", StandardCharsets.UTF_8);
+        String patch = """
+                --- a/eol.txt
+                +++ b/eol.txt
+                @@ -1,3 +1,3 @@
+                -a
+                +A
+                 b
+                 c
+                \\ No newline at end of file
+                """;
+
+        tool().execute(context(), Map.of("path", "eol.txt",
+                "expectedHash", FileReadTool.sha256(Files.readAllBytes(file)), "patch", patch));
+
+        assertEquals("A\nb\nc", Files.readString(file));
     }
 
     @Test

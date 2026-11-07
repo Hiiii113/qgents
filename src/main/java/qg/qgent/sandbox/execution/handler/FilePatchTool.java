@@ -149,9 +149,11 @@ public class FilePatchTool implements SandboxTool {
                         continue;
                     }
                     if (bodyLine.equals("\\ No newline at end of file")) {
-                        if (lastMark == '-') {
+                        // 标记只针对它前面那一行：跟在上下文行后表示两侧都无换行，'-' 只影响旧侧，'+' 只影响新侧
+                        if (lastMark != '+') {
                             oldEndsWithNewline = false;
-                        } else if (lastMark == '+') {
+                        }
+                        if (lastMark != '-') {
                             newEndsWithNewline = false;
                         }
                         continue;
@@ -219,8 +221,10 @@ public class FilePatchTool implements SandboxTool {
             List<Hunk> ordered = new ArrayList<>(hunks);
             ordered.sort(Comparator.comparingInt((Hunk hunk) -> hunk.oldStart()).reversed());
             boolean endsWithNewline = content.endsWith("\n");
+            int lineCount = lines.size();
             for (Hunk hunk : ordered) {
-                int from = Math.max(0, hunk.oldStart() - 1);
+                // 旧侧行数为 0 时，hunk 头里的行号是插入点之前的行（从 1 开始），不需要回退一行。
+                int from = hunk.oldLines().isEmpty() ? hunk.oldStart() : Math.max(0, hunk.oldStart() - 1);
                 int to = from + hunk.oldLines().size();
                 if (from > lines.size() || to > lines.size()
                         || !lines.subList(from, to).equals(hunk.oldLines())) {
@@ -228,13 +232,9 @@ public class FilePatchTool implements SandboxTool {
                 }
                 lines.subList(from, to).clear();
                 lines.addAll(from, hunk.newLines());
-            }
-            // 底部 hunk（oldStart 最大、位于文件末尾）显式声明新文件末尾是否换行；无则保留现状。
-            int bottomOldStart = ordered.stream().mapToInt(h -> h.oldStart()).max().orElse(-1);
-            for (Hunk hunk : ordered) {
-                if (hunk.oldStart() == bottomOldStart) {
+                // 只有触及文件末尾的 hunk 才声明新文件末尾是否换行；改中间时保持原状。
+                if (to == lineCount) {
                     endsWithNewline = hunk.newEndsWithNewline();
-                    break;
                 }
             }
             StringBuilder result = new StringBuilder();
