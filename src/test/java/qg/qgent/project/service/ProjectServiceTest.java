@@ -146,6 +146,133 @@ class ProjectServiceTest {
                 && project.projectId().toString().equals(created.getId()) && project.creatorUserId().equals(owner)));
     }
     @Test
+    void teamAdminCanCreateProjectAndBecomesProjectAdmin() {
+        Long admin = TestIds.next(), owner = TestIds.next(), teamId = TestIds.next();
+        TeamEntity team = new TeamEntity();
+        team.setId(teamId);
+        team.setOwnerUserId(owner);
+        team.setStatus("ACTIVE");
+        when(teams.selectByIdForUpdate(teamId)).thenReturn(team);
+        TeamMemberEntity membership = new TeamMemberEntity();
+        membership.setRole("TEAM_ADMIN");
+        when(teamMembers.selectByTeamAndUser(teamId, admin)).thenReturn(membership);
+        when(projects.insert(any(ProjectEntity.class))).thenAnswer(invocation -> {
+            ProjectEntity entity = invocation.getArgument(0);
+            entity.setId(TestIds.next());
+            return 1;
+        });
+        ProjectCreateRequest request = new ProjectCreateRequest();
+        request.setName("管理员项目");
+
+        var created = service.create(admin, teamId, request);
+
+        assertThat(created.getRole()).isEqualTo("PROJECT_ADMIN");
+        verify(projectMembers).insert(argThat((qg.qgent.project.entity.ProjectMemberEntity member) ->
+                admin.equals(member.getUserId()) && "PROJECT_ADMIN".equals(member.getRole())));
+    }
+
+    @Test
+    void ordinaryMemberCannotCreateProject() {
+        Long member = TestIds.next(), owner = TestIds.next(), teamId = TestIds.next();
+        TeamEntity team = new TeamEntity();
+        team.setId(teamId);
+        team.setOwnerUserId(owner);
+        team.setStatus("ACTIVE");
+        when(teams.selectByIdForUpdate(teamId)).thenReturn(team);
+        TeamMemberEntity membership = new TeamMemberEntity();
+        membership.setRole("TEAM_MEMBER");
+        when(teamMembers.selectByTeamAndUser(teamId, member)).thenReturn(membership);
+        ProjectCreateRequest request = new ProjectCreateRequest();
+        request.setName("普通成员项目");
+
+        assertThatThrownBy(() -> service.create(member, teamId, request))
+                .isInstanceOf(qg.qgent.common.web.ApiException.class)
+                .satisfies(error -> assertThat(((qg.qgent.common.web.ApiException) error).code())
+                        .isEqualTo("TEAM_ADMIN_REQUIRED"));
+        verify(projects, never()).insert(any(ProjectEntity.class));
+    }
+
+    @Test
+    void projectAdminCanDemoteAndRemoveAnotherAdmin() {
+        Long actor = TestIds.next(), teamId = TestIds.next(), projectId = TestIds.next();
+        Long target = TestIds.next();
+        lockProject(projectId, teamId);
+        qg.qgent.project.entity.ProjectMemberEntity admin = new qg.qgent.project.entity.ProjectMemberEntity();
+        admin.setProjectId(projectId);
+        admin.setUserId(target);
+        admin.setRole("PROJECT_ADMIN");
+        when(projectMembers.selectByProjectAndUser(projectId, target)).thenReturn(admin);
+
+        var demoted = service.updateMember(actor, projectId, target, updateRole("PROJECT_MEMBER"));
+        var removed = service.removeMember(actor, projectId, target);
+
+        assertThat(demoted.getRole()).isEqualTo("PROJECT_MEMBER");
+        assertThat(removed.getRole()).isEqualTo("PROJECT_ADMIN");
+        verify(projectMembers).updateRole(projectId, target, "PROJECT_MEMBER");
+        verify(projectMembers).deleteByProjectAndUser(projectId, target);
+    }
+
+    @Test
+    void projectAdminCanDemoteOwnRole() {
+        Long actor = TestIds.next(), teamId = TestIds.next(), projectId = TestIds.next();
+        lockProject(projectId, teamId);
+        qg.qgent.project.entity.ProjectMemberEntity admin = new qg.qgent.project.entity.ProjectMemberEntity();
+        admin.setProjectId(projectId);
+        admin.setUserId(actor);
+        admin.setRole("PROJECT_ADMIN");
+        when(projectMembers.selectByProjectAndUser(projectId, actor)).thenReturn(admin);
+
+        var demoted = service.updateMember(actor, projectId, actor, updateRole("PROJECT_MEMBER"));
+
+        assertThat(demoted.getRole()).isEqualTo("PROJECT_MEMBER");
+        verify(projectMembers).updateRole(projectId, actor, "PROJECT_MEMBER");
+    }
+
+    @Test
+    void teamOwnerInheritedProjectRoleCannotBeChangedOrRemoved() {
+        Long actor = TestIds.next(), teamId = TestIds.next(), projectId = TestIds.next();
+        Long owner = TestIds.next();
+        lockProject(projectId, teamId);
+        qg.qgent.project.entity.ProjectMemberEntity membership = new qg.qgent.project.entity.ProjectMemberEntity();
+        membership.setProjectId(projectId);
+        membership.setUserId(owner);
+        membership.setRole("PROJECT_ADMIN");
+        when(projectMembers.selectByProjectAndUser(projectId, owner)).thenReturn(membership);
+        when(access.isCanonicalTeamOwner(teamId, owner)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.updateMember(actor, projectId, owner, updateRole("PROJECT_MEMBER")))
+                .isInstanceOf(qg.qgent.common.web.ApiException.class)
+                .satisfies(error -> assertThat(((qg.qgent.common.web.ApiException) error).code())
+                        .isEqualTo("TEAM_OWNER_PROJECT_ROLE_INHERITED"));
+        assertThatThrownBy(() -> service.removeMember(actor, projectId, owner))
+                .isInstanceOf(qg.qgent.common.web.ApiException.class)
+                .satisfies(error -> assertThat(((qg.qgent.common.web.ApiException) error).code())
+                        .isEqualTo("TEAM_OWNER_PROJECT_ROLE_INHERITED"));
+        verify(projectMembers, never()).updateRole(any(), any(), any());
+        verify(projectMembers, never()).deleteByProjectAndUser(any(), any());
+    }
+
+    private void lockProject(Long projectId, Long teamId) {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setTeamId(teamId);
+        project.setStatus("ACTIVE");
+        TeamEntity team = new TeamEntity();
+        team.setId(teamId);
+        team.setStatus("ACTIVE");
+        when(projects.selectById(projectId)).thenReturn(project);
+        when(teams.selectByIdForUpdate(teamId)).thenReturn(team);
+        when(projects.selectByIdForUpdate(projectId)).thenReturn(project);
+    }
+
+    private qg.qgent.project.dto.ProjectMemberUpdateRequest updateRole(String role) {
+        qg.qgent.project.dto.ProjectMemberUpdateRequest request =
+                new qg.qgent.project.dto.ProjectMemberUpdateRequest();
+        request.setRole(role);
+        return request;
+    }
+
+    @Test
     void emptyPatchIsRejected() {
         Long actor = TestIds.next();
         ProjectEntity project = new ProjectEntity();

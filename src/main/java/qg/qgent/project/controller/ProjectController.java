@@ -34,7 +34,7 @@ public class ProjectController {
     private final ProjectService projects;
     private final ProjectAccessService access;
 
-    /** 创建项目，创建者自动成为 PROJECT_ADMIN。 */
+    /** 创建项目，团队所有者或管理员可创建，创建者自动成为 PROJECT_ADMIN。 */
     @PostMapping("/teams/{teamId}/projects")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<ProjectResponse> create(@AuthenticationPrincipal Long actor, @PathVariable Long teamId,
@@ -118,7 +118,7 @@ public class ProjectController {
         return ok(projects.addMember(actor, projectId, body), request);
     }
 
-    /** 调整项目成员角色（管理员设置后不可降级）。 */
+    /** 调整项目成员角色；团队所有者的继承权限不可通过此接口调整。 */
     @PatchMapping("/projects/{projectId}/members/{userId}")
     public ApiResponse<ProjectMemberResponse> updateMember(@AuthenticationPrincipal Long actor,
                                                            @PathVariable Long projectId, @PathVariable Long userId,
@@ -126,7 +126,7 @@ public class ProjectController {
         return ok(projects.updateMember(actor, projectId, userId, body), request);
     }
 
-    /** 移除项目成员。 */
+    /** 移除项目成员；团队所有者的继承权限不可通过此接口移除。 */
     @DeleteMapping("/projects/{projectId}/members/{userId}")
     public ApiResponse<ProjectMemberResponse> removeMember(@AuthenticationPrincipal Long actor,
                                                            @PathVariable Long projectId, @PathVariable Long userId,

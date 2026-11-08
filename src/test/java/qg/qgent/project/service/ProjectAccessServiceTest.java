@@ -59,6 +59,60 @@ class ProjectAccessServiceTest {
         assertEquals("PROJECT_NOT_FOUND", error.code());
     }
 
+    @Test
+    void teamAdminWithoutProjectMembershipDoesNotGetProjectFallback() {
+        Long projectId = TestIds.next();
+        Long teamId = TestIds.next();
+        Long admin = TestIds.next();
+        when(projects.selectById(projectId)).thenReturn(project(projectId, teamId));
+        when(teams.selectById(teamId)).thenReturn(team(teamId, TestIds.next()));
+        when(teamMembers.selectByTeamAndUser(teamId, admin)).thenReturn(teamMember(teamId, admin, "TEAM_ADMIN"));
+
+        ApiException error = assertThrows(ApiException.class,
+                () -> access.requireProjectAdmin(projectId, admin));
+
+        assertEquals("PROJECT_NOT_FOUND", error.code());
+    }
+
+    @Test
+    void teamAdminWithProjectMembershipUsesStoredProjectRole() {
+        Long projectId = TestIds.next();
+        Long teamId = TestIds.next();
+        Long admin = TestIds.next();
+        when(projects.selectById(projectId)).thenReturn(project(projectId, teamId));
+        when(teams.selectById(teamId)).thenReturn(team(teamId, TestIds.next()));
+        when(teamMembers.selectByTeamAndUser(teamId, admin)).thenReturn(teamMember(teamId, admin, "TEAM_ADMIN"));
+        qg.qgent.project.entity.ProjectMemberEntity membership = new qg.qgent.project.entity.ProjectMemberEntity();
+        membership.setProjectId(projectId);
+        membership.setUserId(admin);
+        membership.setRole("PROJECT_ADMIN");
+        when(projectMembers.selectByProjectAndUser(projectId, admin)).thenReturn(membership);
+
+        access.requireProjectAdmin(projectId, admin);
+
+        assertEquals("PROJECT_ADMIN", access.requireProjectMember(projectId, admin));
+    }
+
+    @Test
+    void projectMemberCannotAdministerProject() {
+        Long projectId = TestIds.next();
+        Long teamId = TestIds.next();
+        Long member = TestIds.next();
+        when(projects.selectById(projectId)).thenReturn(project(projectId, teamId));
+        when(teams.selectById(teamId)).thenReturn(team(teamId, TestIds.next()));
+        when(teamMembers.selectByTeamAndUser(teamId, member)).thenReturn(teamMember(teamId, member, "TEAM_MEMBER"));
+        qg.qgent.project.entity.ProjectMemberEntity membership = new qg.qgent.project.entity.ProjectMemberEntity();
+        membership.setProjectId(projectId);
+        membership.setUserId(member);
+        membership.setRole("PROJECT_MEMBER");
+        when(projectMembers.selectByProjectAndUser(projectId, member)).thenReturn(membership);
+
+        ApiException error = assertThrows(ApiException.class,
+                () -> access.requireProjectAdmin(projectId, member));
+
+        assertEquals("PROJECT_ADMIN_REQUIRED", error.code());
+    }
+
     private ProjectEntity project(Long id, Long teamId) {
         ProjectEntity value = new ProjectEntity();
         value.setId(id);

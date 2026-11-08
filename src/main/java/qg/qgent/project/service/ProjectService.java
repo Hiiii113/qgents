@@ -48,11 +48,11 @@ public class ProjectService {
     private final WorkspaceService workspaceService;
     private final AvatarStorageService avatarStorage;
 
-    /** 创建项目并初始化项目成员关系。 */
+    /** 创建项目并初始化项目成员关系；团队所有者和管理员均可创建。 */
     @Transactional
     public ProjectResponse create(Long actor, Long teamId, ProjectCreateRequest request) {
         TeamEntity team = requireTeamForUpdate(teamId);
-        requireCanonicalTeamOwner(team, actor);
+        requireTeamManager(team, actor);
         ProjectEntity project = new ProjectEntity();
         project.setTeamId(teamId);
         project.setCreatedBy(actor);
@@ -205,13 +205,10 @@ public class ProjectService {
         if (!List.of("PROJECT_ADMIN", "PROJECT_MEMBER").contains(request.getRole())) {
             throw invalid("项目角色仅支持 PROJECT_ADMIN 或 PROJECT_MEMBER");
         }
-        ProjectMemberEntity target = requireProjectMember(projectId, userId);
-        // 管理员设置后不可撤销：降级一律拒绝；已生效的相同角色请求幂等返回，不重复写库。
-        if ("PROJECT_ADMIN".equals(target.getRole()) && !"PROJECT_ADMIN".equals(request.getRole())) {
-            throw new ApiException(HttpStatus.CONFLICT, "PROJECT_ADMIN_IMMUTABLE", "项目管理员不可降级（设置后不可撤销）");
-        }
-        if ("PROJECT_ADMIN".equals(target.getRole())) {
-            return new ProjectMemberResponse(userId.toString(), target.getRole());
+        requireProjectMember(projectId, userId);
+        if (access.isCanonicalTeamOwner(project.getTeamId(), userId)) {
+            throw new ApiException(HttpStatus.CONFLICT, "TEAM_OWNER_PROJECT_ROLE_INHERITED",
+                    "团队所有者通过团队身份拥有项目管理员权限，不能通过项目成员接口调整");
         }
         memberMapper.updateRole(projectId, userId, request.getRole());
         return new ProjectMemberResponse(userId.toString(), request.getRole());
@@ -223,9 +220,9 @@ public class ProjectService {
         access.requireProjectAdminAnyState(project, actor);
         requireActive(project);
         ProjectMemberEntity target = requireProjectMember(projectId, userId);
-        // 管理员不可被其他管理员移除（含移除自己）。
-        if ("PROJECT_ADMIN".equals(target.getRole())) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "PROJECT_ADMIN_CANNOT_REMOVE_MANAGER", "项目管理员不可被移除");
+        if (access.isCanonicalTeamOwner(project.getTeamId(), userId)) {
+            throw new ApiException(HttpStatus.CONFLICT, "TEAM_OWNER_PROJECT_ROLE_INHERITED",
+                    "团队所有者通过团队身份拥有项目管理员权限，不能通过项目成员接口移除");
         }
         memberMapper.deleteByProjectAndUser(projectId, userId);
         return new ProjectMemberResponse(userId.toString(), target.getRole());
@@ -253,11 +250,15 @@ public class ProjectService {
         memberMapper.insert(member);
     }
 
-    private void requireCanonicalTeamOwner(TeamEntity team, Long actor) {
+    private void requireTeamManager(TeamEntity team, Long actor) {
         TeamMemberEntity member = requireTeamMember(team.getId(), actor);
-        if (!actor.equals(team.getOwnerUserId()) || !"TEAM_OWNER".equals(member.getRole())) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "TEAM_OWNER_REQUIRED", "需要 Team Owner 权限");
+        if (actor.equals(team.getOwnerUserId()) && "TEAM_OWNER".equals(member.getRole())) {
+            return;
         }
+        if ("TEAM_ADMIN".equals(member.getRole())) {
+            return;
+        }
+        throw new ApiException(HttpStatus.FORBIDDEN, "TEAM_ADMIN_REQUIRED", "需要团队所有者或管理员权限");
     }
 
     private TeamMemberEntity requireTeamMember(Long teamId, Long userId) {
