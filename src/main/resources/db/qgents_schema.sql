@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS
     team_members (
         team_id BIGINT NOT NULL COMMENT '团队ID',
         user_id BIGINT NOT NULL COMMENT '成员用户ID',
-        role VARCHAR(32) NOT NULL COMMENT '团队角色枚举：TEAM_OWNER/TEAM_MEMBER',
+        role VARCHAR(32) NOT NULL COMMENT '团队角色枚举：TEAM_OWNER/TEAM_ADMIN/TEAM_MEMBER',
         joined_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '加入时间（UTC）',
         PRIMARY KEY (team_id, user_id),
         KEY idx_tm_user (user_id),

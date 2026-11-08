@@ -65,7 +65,7 @@ public class TeamController {
         return ok(teams.get(actor, teamId), request);
     }
 
-    /** Team Owner 修改团队名称（description 传 null 保留原值，传空串清空）。 */
+    /** 团队所有者或管理员修改团队名称（description 传 null 保留原值，传空串清空）。 */
     @PatchMapping("/{teamId}")
     public ApiResponse<TeamResponse> update(@AuthenticationPrincipal Long actor, @PathVariable Long teamId,
                                             @Valid @RequestBody TeamUpdateRequest body, HttpServletRequest request) {
@@ -87,7 +87,7 @@ public class TeamController {
         return page(teams.members(actor, teamId, cursor, limit), request);
     }
 
-    /** Team Owner 按邮箱创建团队邀请。 */
+    /** 团队所有者或管理员按邮箱创建团队邀请。 */
     @PostMapping("/{teamId}/invitations")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<TeamInvitationResponse> invite(@AuthenticationPrincipal Long actor, @PathVariable Long teamId,
@@ -95,7 +95,7 @@ public class TeamController {
         return ok(teams.invite(actor, teamId, body), request);
     }
 
-    /** 分页查询团队邀请状态（Team Owner）。 */
+    /** 分页查询团队邀请状态（团队所有者或管理员）。 */
     @GetMapping("/{teamId}/invitations")
     public PagedApiResponse<TeamInvitationResponse> invitations(@AuthenticationPrincipal Long actor,
                                                                 @PathVariable Long teamId, @RequestParam(required = false) String cursor,
@@ -111,7 +111,7 @@ public class TeamController {
         return ok(teams.revoke(actor, teamId, invitationId), request);
     }
 
-    /** 修改普通成员角色；不能修改团队所有者。 */
+    /** 修改团队成员角色；仅团队所有者可设置 TEAM_ADMIN/TEAM_MEMBER，不能修改团队所有者。 */
     @PatchMapping("/{teamId}/members/{userId}")
     public ApiResponse<TeamMemberResponse> updateMember(@AuthenticationPrincipal Long actor,
                                                         @PathVariable Long teamId, @PathVariable Long userId,
@@ -119,7 +119,7 @@ public class TeamController {
         return ok(teams.updateMember(actor, teamId, userId, body), request);
     }
 
-    /** 移除团队成员。 */
+    /** 移除团队成员；所有者可移除管理员，管理员只能移除普通成员。 */
     @DeleteMapping("/{teamId}/members/{userId}")
     public ApiResponse<TeamMemberResponse> removeMember(@AuthenticationPrincipal Long actor,
                                                         @PathVariable Long teamId, @PathVariable Long userId,
@@ -127,7 +127,7 @@ public class TeamController {
         return ok(teams.removeMember(actor, teamId, userId), request);
     }
 
-    /** 签发团队头像直传凭证（Team Owner；对象键 teams/{teamId}/{uuid}.{ext}）。 */
+    /** 签发团队头像直传凭证（所有者或管理员；对象键 teams/{teamId}/{uuid}.{ext}）。 */
     @PostMapping("/{teamId}/avatar/credential")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<AvatarCredentialResponse> avatarCredential(@PathVariable Long teamId,

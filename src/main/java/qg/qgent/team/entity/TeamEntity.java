@@ -16,7 +16,7 @@ public class TeamEntity {
     private Long id;
     private Long ownerUserId;
     private String name;
-    // 团队简介，可为空；由 Team Owner 在创建/修改团队时设置。
+    // 团队简介，可为空；由团队所有者或管理员在创建/修改团队时设置。
     private String description;
     // 团队头像 URL，由创建或修改团队接口保存。
     @TableField(updateStrategy = FieldStrategy.ALWAYS)

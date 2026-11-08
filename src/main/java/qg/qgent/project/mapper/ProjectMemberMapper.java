@@ -40,9 +40,6 @@ public interface ProjectMemberMapper extends BaseMapper<ProjectMemberEntity> {
     @Delete("DELETE FROM project_members WHERE project_id = #{projectId} AND user_id = #{userId}")
     int deleteByProjectAndUser(@Param("projectId") Long projectId, @Param("userId") Long userId);
 
-    @Select("SELECT COUNT(*) FROM project_members WHERE project_id = #{projectId} AND role = 'PROJECT_ADMIN'")
-    int countAdmins(@Param("projectId") Long projectId);
-
     /** 查询项目成员列表（含昵称、头像、邮箱），按加入时间排序（默认群聊成员来自项目成员）。 */
     @Select("SELECT u.id AS user_id, u.display_name, u.avatar_url, u.email FROM project_members pm"
             + " JOIN users u ON u.id = pm.user_id WHERE pm.project_id = #{projectId} ORDER BY pm.joined_at")

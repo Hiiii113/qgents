@@ -25,6 +25,41 @@ import static org.mockito.Mockito.when;
 
 class AuthServiceTeamRoleTest {
     @Test
+    void meReturnsTeamAdminRole() {
+        Long userId = TestIds.next();
+        Long teamId = TestIds.next();
+        UserMapper userMapper = mock(UserMapper.class);
+        TeamMapper teamMapper = mock(TeamMapper.class);
+        TeamMemberMapper memberMapper = mock(TeamMemberMapper.class);
+        PasswordEncoder passwords = mock(PasswordEncoder.class);
+        when(passwords.encode("qgents-dummy-password-not-used")).thenReturn("dummy");
+        AuthService service = new AuthService(userMapper, mock(RefreshTokenStore.class),
+                mock(VerificationCodeStore.class),
+                teamMapper, memberMapper, mock(ProjectMapper.class),
+                mock(RsaPasswordDecryptor.class), passwords, mock(TokenService.class),
+                mock(VerificationCodeMailer.class), mock(RateLimiter.class),
+                mock(AvatarStorageService.class));
+        UserEntity user = new UserEntity();
+        user.setId(userId);
+        TeamMemberEntity membership = new TeamMemberEntity();
+        membership.setTeamId(teamId);
+        membership.setUserId(userId);
+        membership.setRole("TEAM_ADMIN");
+        TeamEntity team = new TeamEntity();
+        team.setId(teamId);
+        team.setOwnerUserId(TestIds.next());
+        team.setName("team");
+        team.setStatus("ACTIVE");
+        when(userMapper.selectById(userId)).thenReturn(user);
+        when(memberMapper.selectByUserId(userId)).thenReturn(List.of(membership));
+        when(teamMapper.selectBatchIds(anyCollection())).thenReturn(List.of(team));
+
+        var response = service.me(userId);
+
+        assertEquals("TEAM_ADMIN", response.getTeams().get(0).getRole());
+    }
+
+    @Test
     void meDoesNotExposeExtraOwnerRoleAsCanonicalOwner() {
         Long userId = TestIds.next();
         Long canonicalOwner = TestIds.next();

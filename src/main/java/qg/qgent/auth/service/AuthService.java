@@ -294,7 +294,7 @@ public class AuthService {
                     TeamEntity team = teams.get(member.getTeamId());
                     String role = team.getOwnerUserId().equals(userId) && "TEAM_OWNER".equals(member.getRole())
                             ? "TEAM_OWNER"
-                            : "TEAM_MEMBER";
+                            : "TEAM_ADMIN".equals(member.getRole()) ? "TEAM_ADMIN" : "TEAM_MEMBER";
                     TeamResponse response = new TeamResponse(team.getId().toString(), team.getName(), role);
                     response.setDescription(team.getDescription());
                     response.setAvatarUrl(team.getAvatarUrl());

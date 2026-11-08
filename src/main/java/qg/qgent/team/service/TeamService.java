@@ -14,9 +14,6 @@ import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.common.dto.PageSlice;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
-import qg.qgent.project.entity.ProjectEntity;
-import qg.qgent.project.entity.ProjectMemberEntity;
-import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.mapper.ProjectMemberMapper;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.team.dto.ReceivedInvitationResponse;
@@ -57,7 +54,6 @@ public class TeamService {
     private final TeamMemberMapper memberMapper;
     private final TeamInvitationMapper invitationMapper;
     private final ProjectMemberMapper projectMemberMapper;
-    private final ProjectMapper projectMapper;
     private final UserMapper userMapper;
     private final TokenService tokens;
     private final AvatarStorageService avatarStorage;
@@ -104,12 +100,12 @@ public class TeamService {
         return team(team, effectiveRole(team.getOwnerUserId(), actor, member.getRole()));
     }
 
-    /** 更新团队信息 */
+    /** 更新团队信息；团队所有者和管理员均可修改。 */
     @Transactional
     public TeamResponse update(Long actor, Long teamId, TeamUpdateRequest request) {
         TeamEntity team = requireTeamForUpdate(teamId);
 
-        requireOwner(team, actor);
+        String actorRole = requireManager(team, actor);
 
         if (request.getName() != null) {
             team.setName(request.getName().trim());
@@ -129,13 +125,13 @@ public class TeamService {
         } else {
             teamMapper.updateById(team);
         }
-        return team(team, "TEAM_OWNER");
+        return team(team, actorRole);
     }
 
-    /** 签发团队头像直传凭证；权限与修改团队资料一致（Team Owner）。 */
+    /** 签发团队头像直传凭证；权限与修改团队资料一致（所有者或管理员）。 */
     public AvatarStorageService.AvatarCredential avatarCredential(Long actor, Long teamId, String mediaType,
                                                                   Long sizeBytes) {
-        requireOwner(requireTeam(teamId), actor);
+        requireManager(requireTeam(teamId), actor);
         return avatarStorage.createCredential("teams", teamId, mediaType, sizeBytes);
     }
 
@@ -143,7 +139,7 @@ public class TeamService {
     @Transactional
     public AvatarConfirmResponse updateAvatar(Long actor, Long teamId, String objectKey) {
         TeamEntity team = requireTeamForUpdate(teamId);
-        requireOwner(team, actor);
+        requireManager(team, actor);
         String publicUrl = avatarStorage.confirm("teams", teamId, objectKey);
         String previousAvatar = team.getAvatarUrl();
         team.setAvatarUrl(publicUrl);
@@ -171,12 +167,12 @@ public class TeamService {
                 });
     }
 
-    /** 邀请成员加入团队 */
+    /** 邀请成员加入团队；所有者和管理员均可邀请普通成员。 */
     @Transactional
     public TeamInvitationResponse invite(Long actor, Long teamId, TeamMemberInviteRequest request) {
         TeamEntity team = requireTeamForUpdate(teamId);
 
-        requireOwner(team, actor);
+        requireManager(team, actor);
         if (!"TEAM_MEMBER".equals(request.getRole())) {
             throw invalid("邀请角色目前仅支持 TEAM_MEMBER");
         }
@@ -226,9 +222,9 @@ public class TeamService {
         return invitation(invitation);
     }
 
-    /** 获取团队邀请列表 */
+    /** 获取团队邀请列表；所有者和管理员均可查看。 */
     public PageSlice<TeamInvitationResponse> invitations(Long actor, Long teamId, String cursor, Integer limit) {
-        requireOwner(requireTeam(teamId), actor);
+        requireManager(requireTeam(teamId), actor);
         int pageSize = KeysetPagination.pageSize(limit);
         String scope = "team-invitations:" + teamId;
         Long anchor = KeysetPagination.decodeCursor(cursor, scope);
@@ -323,12 +319,12 @@ public class TeamService {
         }
     }
 
-    /** 撤销团队邀请。过期状态由 expires_at 动态判定，不写入数据库。 */
+    /** 撤销团队邀请；所有者和管理员均可撤销。 */
     @Transactional
     public TeamInvitationResponse revoke(Long actor, Long teamId, Long invitationId) {
         TeamEntity team = requireTeamForUpdate(teamId);
 
-        requireOwner(team, actor);
+        requireManager(team, actor);
         TeamInvitationEntity invitation = invitationMapper.selectOne(Wrappers.<TeamInvitationEntity>lambdaQuery()
                 .eq(TeamInvitationEntity::getId, invitationId).eq(TeamInvitationEntity::getTeamId, teamId)
                 .last("FOR UPDATE"));
@@ -346,14 +342,14 @@ public class TeamService {
         return invitation(invitation);
     }
 
-    /** 更新团队成员角色 */
+    /** 更新团队成员角色；仅团队所有者可任命、降级或移除团队管理员。 */
     @Transactional
     public TeamMemberResponse updateMember(Long actor, Long teamId, Long userId, TeamMemberUpdateRequest request) {
         TeamEntity team = requireTeamForUpdate(teamId);
 
         requireOwner(team, actor);
-        if (!"TEAM_MEMBER".equals(request.getRole())) {
-            throw invalid("成员角色仅支持 TEAM_MEMBER，不能通过成员接口设置 TEAM_OWNER");
+        if (!"TEAM_ADMIN".equals(request.getRole()) && !"TEAM_MEMBER".equals(request.getRole())) {
+            throw invalid("成员角色仅支持 TEAM_ADMIN 或 TEAM_MEMBER，不能通过成员接口设置 TEAM_OWNER");
         }
         TeamMemberEntity target = requireMember(teamId, userId);
         if (team.getOwnerUserId().equals(userId)) {
@@ -365,25 +361,21 @@ public class TeamService {
         return memberResponse(userId, team, target.getRole(), userMapper.selectById(userId));
     }
 
-    /** 移除团队成员 */
+    /** 移除团队成员；所有者可移除管理员，管理员只能移除普通成员。 */
     @Transactional
     public TeamMemberResponse removeMember(Long actor, Long teamId, Long userId) {
         TeamEntity team = requireTeamForUpdate(teamId);
 
-        requireOwner(team, actor);
+        String actorRole = requireManager(team, actor);
         TeamMemberEntity target = requireMember(teamId, userId);
-        if (team.getOwnerUserId().equals(userId)) {
+        String targetRole = effectiveRole(team.getOwnerUserId(), userId, target.getRole());
+        if ("TEAM_OWNER".equals(targetRole)) {
             throw conflict("TEAM_OWNER_IMMUTABLE", "Team Owner 不能被移除");
         }
-        // 团队行锁后按项目ID锁定受影响项目，避免并发删除/降级造成项目失去最后一名 Admin。
-        for (ProjectEntity project : projectMapper.selectByTeamForUpdate(teamId)) {
-            ProjectMemberEntity projectMember = projectMemberMapper
-                    .selectByProjectAndUser(project.getId(), userId);
-            if (projectMember != null && "PROJECT_ADMIN".equals(projectMember.getRole())
-                    && projectMemberMapper.countAdmins(project.getId()) <= 1) {
-                throw conflict("LAST_PROJECT_ADMIN_REQUIRED", "该成员是项目最后一名 Project Admin");
-            }
+        if ("TEAM_ADMIN".equals(targetRole) && !"TEAM_OWNER".equals(actorRole)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "TEAM_OWNER_REQUIRED", "只有团队所有者可以移除团队管理员");
         }
+        // 团队所有者始终是团队下项目的生效管理员，移除显式项目管理员不会让项目失去管理员。
         projectMemberMapper.deleteByTeamAndUser(teamId, userId);
         memberMapper.deleteByTeamAndUser(teamId, userId);
         // 团队级 SSE：成员移出团队
@@ -420,10 +412,21 @@ public class TeamService {
         }
     }
 
+    /** 校验当前用户为团队所有者或管理员，返回生效角色。 */
+    private String requireManager(TeamEntity team, Long userId) {
+        TeamMemberEntity member = requireMember(team.getId(), userId);
+        String role = effectiveRole(team.getOwnerUserId(), userId, member.getRole());
+        if ("TEAM_OWNER".equals(role) || "TEAM_ADMIN".equals(role)) {
+            return role;
+        }
+        throw new ApiException(HttpStatus.FORBIDDEN, "TEAM_ADMIN_REQUIRED", "需要团队所有者或管理员权限");
+    }
+
     private String effectiveRole(Long ownerUserId, Long userId, String storedRole) {
-        return ownerUserId != null && ownerUserId.equals(userId) && "TEAM_OWNER".equals(storedRole)
-                ? "TEAM_OWNER"
-                : "TEAM_MEMBER";
+        if (ownerUserId != null && ownerUserId.equals(userId) && "TEAM_OWNER".equals(storedRole)) {
+            return "TEAM_OWNER";
+        }
+        return "TEAM_ADMIN".equals(storedRole) ? "TEAM_ADMIN" : "TEAM_MEMBER";
     }
 
     // 读取团队；不存在时返回 404。

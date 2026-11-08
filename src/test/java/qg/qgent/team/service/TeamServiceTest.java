@@ -13,15 +13,13 @@ import org.junit.jupiter.api.Test;
 import qg.qgent.auth.service.TokenService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
-import qg.qgent.project.entity.ProjectEntity;
-import qg.qgent.project.entity.ProjectMemberEntity;
-import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.mapper.ProjectMemberMapper;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.team.dto.TeamCreateRequest;
 import qg.qgent.team.dto.TeamMemberInviteRequest;
 import qg.qgent.team.dto.TeamMemberUpdateRequest;
 import qg.qgent.team.dto.TeamResponse;
+import qg.qgent.team.dto.TeamUpdateRequest;
 import qg.qgent.team.entity.TeamEntity;
 import qg.qgent.team.entity.TeamInvitationEntity;
 import qg.qgent.team.entity.TeamMemberEntity;
@@ -75,12 +73,11 @@ class TeamServiceTest {
     private final TeamMemberMapper memberMapper = mock(TeamMemberMapper.class);
     private final TeamInvitationMapper invitationMapper = mock(TeamInvitationMapper.class);
     private final ProjectMemberMapper projectMemberMapper = mock(ProjectMemberMapper.class);
-    private final ProjectMapper projectMapper = mock(ProjectMapper.class);
     private final UserMapper userMapper = mock(UserMapper.class);
     private final TeamDisbandService teamDisbandService = mock(TeamDisbandService.class);
     private final NotificationService notificationService = mock(NotificationService.class);
     private final TeamService service = new TeamService(teamMapper, memberMapper, invitationMapper,
-            projectMemberMapper, projectMapper, userMapper, mock(TokenService.class),
+            projectMemberMapper, userMapper, mock(TokenService.class),
             mock(AvatarStorageService.class), mock(TeamInvitationMailer.class), teamDisbandService,
             notificationService, mock(EventService.class));
 
@@ -156,7 +153,7 @@ class TeamServiceTest {
     }
 
     @Test
-    void extraOwnerRoleDoesNotGrantOwnerPermission() {
+    void extraOwnerRoleCannotRemoveCanonicalOwner() {
         Long teamId = TestIds.next();
         Long primary = TestIds.next();
         Long otherOwner = TestIds.next();
@@ -170,7 +167,7 @@ class TeamServiceTest {
         ApiException error = assertThrows(ApiException.class,
                 () -> service.removeMember(otherOwner, teamId, primary));
 
-        assertEquals("TEAM_OWNER_REQUIRED", error.code());
+        assertEquals("TEAM_ADMIN_REQUIRED", error.code());
     }
 
     @Test
@@ -190,60 +187,35 @@ class TeamServiceTest {
     }
 
     @Test
-    void removingTeamMemberCannotOrphanProjectAdminRole() {
+    void removingLastExplicitProjectAdminIsAllowedBecauseTeamOwnerInheritsAdmin() {
         Long teamId = TestIds.next();
         Long owner = TestIds.next();
         Long admin = TestIds.next();
-        Long projectId = TestIds.next();
         when(teamMapper.selectByIdForUpdate(teamId)).thenReturn(team(teamId, owner));
         when(memberMapper.selectByTeamAndUser(teamId, owner)).thenReturn(member(teamId, owner, "TEAM_OWNER"));
         when(memberMapper.selectByTeamAndUser(teamId, admin)).thenReturn(member(teamId, admin, "TEAM_MEMBER"));
-        ProjectEntity project = new ProjectEntity();
-        project.setId(projectId);
-        project.setTeamId(teamId);
-        when(projectMapper.selectByTeamForUpdate(teamId)).thenReturn(java.util.List.of(project));
-        qg.qgent.project.entity.ProjectMemberEntity projectMember = new qg.qgent.project.entity.ProjectMemberEntity();
-        projectMember.setProjectId(projectId);
-        projectMember.setUserId(admin);
-        projectMember.setRole("PROJECT_ADMIN");
-        when(projectMemberMapper.selectByProjectAndUser(projectId, admin)).thenReturn(projectMember);
-        when(projectMemberMapper.countAdmins(projectId)).thenReturn(1);
 
-        ApiException error = assertThrows(ApiException.class,
-                () -> service.removeMember(owner, teamId, admin));
+        var response = service.removeMember(owner, teamId, admin);
 
-        assertEquals("LAST_PROJECT_ADMIN_REQUIRED", error.code());
-        org.mockito.Mockito.verify(projectMemberMapper, org.mockito.Mockito.never())
-                .deleteByTeamAndUser(teamId, admin);
-        var order = inOrder(teamMapper, projectMapper, projectMemberMapper);
-        order.verify(teamMapper).selectByIdForUpdate(teamId);
-        order.verify(projectMapper).selectByTeamForUpdate(teamId);
-        order.verify(projectMemberMapper).selectByProjectAndUser(projectId, admin);
-        order.verify(projectMemberMapper).countAdmins(projectId);
+        assertEquals("TEAM_MEMBER", response.getRole());
+        verify(projectMemberMapper).deleteByTeamAndUser(teamId, admin);
+        verify(memberMapper).deleteByTeamAndUser(teamId, admin);
     }
 
     @Test
-    void removingTeamMemberClearsRequirementGroupMembershipsInEachProject() {
+    void removingTeamMemberClearsProjectMemberships() {
         Long teamId = TestIds.next();
         Long owner = TestIds.next();
         Long targetUser = TestIds.next();
-        Long firstProjectId = TestIds.next();
-        Long secondProjectId = TestIds.next();
         when(teamMapper.selectByIdForUpdate(teamId)).thenReturn(team(teamId, owner));
         when(memberMapper.selectByTeamAndUser(teamId, owner)).thenReturn(member(teamId, owner, "TEAM_OWNER"));
         when(memberMapper.selectByTeamAndUser(teamId, targetUser))
                 .thenReturn(member(teamId, targetUser, "TEAM_MEMBER"));
-        ProjectEntity first = new ProjectEntity();
-        first.setId(firstProjectId);
-        first.setTeamId(teamId);
-        ProjectEntity second = new ProjectEntity();
-        second.setId(secondProjectId);
-        second.setTeamId(teamId);
-        when(projectMapper.selectByTeamForUpdate(teamId)).thenReturn(java.util.List.of(first, second));
 
         service.removeMember(owner, teamId, targetUser);
 
         verify(projectMemberMapper).deleteByTeamAndUser(teamId, targetUser);
+        verify(memberMapper).deleteByTeamAndUser(teamId, targetUser);
     }
 
     @Test
@@ -310,7 +282,7 @@ class TeamServiceTest {
         invitation.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).minusMinutes(1));
         TokenService tokens = mock(TokenService.class);
         TeamService localService = new TeamService(teamMapper, memberMapper, invitationMapper, projectMemberMapper,
-                projectMapper, userMapper, tokens, mock(AvatarStorageService.class),
+                userMapper, tokens, mock(AvatarStorageService.class),
                 mock(TeamInvitationMailer.class), mock(TeamDisbandService.class),
                 mock(NotificationService.class), mock(EventService.class));
         when(userMapper.selectById(actor)).thenReturn(user);
@@ -357,7 +329,7 @@ class TeamServiceTest {
         when(tokens.opaque()).thenReturn("raw-token");
         when(tokens.hash("raw-token")).thenReturn(new byte[] { 1 });
         TeamService localService = new TeamService(teamMapper, memberMapper, invitationMapper, projectMemberMapper,
-                projectMapper, userMapper, tokens, mock(AvatarStorageService.class),
+                userMapper, tokens, mock(AvatarStorageService.class),
                 mock(TeamInvitationMailer.class), mock(TeamDisbandService.class),
                 mock(NotificationService.class), mock(EventService.class));
         TeamMemberInviteRequest request = new TeamMemberInviteRequest();
@@ -468,6 +440,135 @@ class TeamServiceTest {
 
         assertEquals("TEAM_RESOURCE_NOT_FOUND", error.code());
         verify(teamDisbandService, org.mockito.Mockito.never()).deleteTeam(any(), any());
+    }
+
+    @Test
+    void teamAdminCanUpdateTeamAndRemoveOrdinaryMember() {
+        Long teamId = TestIds.next();
+        Long owner = TestIds.next();
+        Long admin = TestIds.next();
+        Long member = TestIds.next();
+        when(teamMapper.selectByIdForUpdate(teamId)).thenReturn(team(teamId, owner));
+        when(memberMapper.selectByTeamAndUser(teamId, admin)).thenReturn(member(teamId, admin, "TEAM_ADMIN"));
+        when(memberMapper.selectByTeamAndUser(teamId, member)).thenReturn(member(teamId, member, "TEAM_MEMBER"));
+
+        TeamUpdateRequest update = new TeamUpdateRequest();
+        update.setName("新名称");
+        var updated = service.update(admin, teamId, update);
+        var removed = service.removeMember(admin, teamId, member);
+
+        assertEquals("TEAM_ADMIN", updated.getRole());
+        assertEquals("TEAM_MEMBER", removed.getRole());
+        verify(projectMemberMapper).deleteByTeamAndUser(teamId, member);
+        verify(memberMapper).deleteByTeamAndUser(teamId, member);
+    }
+
+    @Test
+    void teamAdminCannotRemoveAnotherTeamAdmin() {
+        Long teamId = TestIds.next();
+        Long owner = TestIds.next();
+        Long admin = TestIds.next();
+        Long otherAdmin = TestIds.next();
+        when(teamMapper.selectByIdForUpdate(teamId)).thenReturn(team(teamId, owner));
+        when(memberMapper.selectByTeamAndUser(teamId, admin)).thenReturn(member(teamId, admin, "TEAM_ADMIN"));
+        when(memberMapper.selectByTeamAndUser(teamId, otherAdmin))
+                .thenReturn(member(teamId, otherAdmin, "TEAM_ADMIN"));
+
+        ApiException error = assertThrows(ApiException.class,
+                () -> service.removeMember(admin, teamId, otherAdmin));
+
+        assertEquals("TEAM_OWNER_REQUIRED", error.code());
+        verify(projectMemberMapper, never()).deleteByTeamAndUser(teamId, otherAdmin);
+    }
+
+    @Test
+    void teamAdminCannotChangeMemberRoles() {
+        Long teamId = TestIds.next();
+        Long owner = TestIds.next();
+        Long admin = TestIds.next();
+        Long member = TestIds.next();
+        when(teamMapper.selectByIdForUpdate(teamId)).thenReturn(team(teamId, owner));
+        when(memberMapper.selectByTeamAndUser(teamId, admin)).thenReturn(member(teamId, admin, "TEAM_ADMIN"));
+        TeamMemberUpdateRequest request = new TeamMemberUpdateRequest();
+        request.setRole("TEAM_MEMBER");
+
+        ApiException error = assertThrows(ApiException.class,
+                () -> service.updateMember(admin, teamId, member, request));
+
+        assertEquals("TEAM_OWNER_REQUIRED", error.code());
+        verify(memberMapper, never()).updateRole(teamId, member, "TEAM_MEMBER");
+    }
+
+    @Test
+    void ownerCanPromoteMemberAndDemoteTeamAdmin() {
+        Long teamId = TestIds.next();
+        Long owner = TestIds.next();
+        Long member = TestIds.next();
+        Long admin = TestIds.next();
+        when(teamMapper.selectByIdForUpdate(teamId)).thenReturn(team(teamId, owner));
+        when(memberMapper.selectByTeamAndUser(teamId, owner)).thenReturn(member(teamId, owner, "TEAM_OWNER"));
+        when(memberMapper.selectByTeamAndUser(teamId, member)).thenReturn(member(teamId, member, "TEAM_MEMBER"));
+        when(memberMapper.selectByTeamAndUser(teamId, admin)).thenReturn(member(teamId, admin, "TEAM_ADMIN"));
+
+        TeamMemberUpdateRequest promote = new TeamMemberUpdateRequest();
+        promote.setRole("TEAM_ADMIN");
+        TeamMemberUpdateRequest demote = new TeamMemberUpdateRequest();
+        demote.setRole("TEAM_MEMBER");
+
+        assertEquals("TEAM_ADMIN", service.updateMember(owner, teamId, member, promote).getRole());
+        assertEquals("TEAM_MEMBER", service.updateMember(owner, teamId, admin, demote).getRole());
+        verify(memberMapper).updateRole(teamId, member, "TEAM_ADMIN");
+        verify(memberMapper).updateRole(teamId, admin, "TEAM_MEMBER");
+    }
+
+    @Test
+    void teamDetailsAndMemberListReturnTeamAdminRole() {
+        Long teamId = TestIds.next();
+        Long owner = TestIds.next();
+        Long actor = TestIds.next();
+        Long admin = TestIds.next();
+        when(memberMapper.selectByTeamAndUser(teamId, actor)).thenReturn(member(teamId, actor, "TEAM_ADMIN"));
+        when(teamMapper.selectById(teamId)).thenReturn(team(teamId, owner));
+        assertEquals("TEAM_ADMIN", service.get(actor, teamId).getRole());
+
+        TeamMemberView view = new TeamMemberView();
+        view.setTeamId(teamId);
+        view.setUserId(admin);
+        view.setRole("TEAM_ADMIN");
+        when(memberMapper.selectMemberPage(teamId, null, 31)).thenReturn(java.util.List.of(view));
+        var page = service.members(actor, teamId, null, null);
+        assertEquals("TEAM_ADMIN", page.getData().getFirst().getRole());
+    }
+
+    @Test
+    void extraOwnerRoleDoesNotGrantManagerPermission() {
+        Long teamId = TestIds.next();
+        Long canonicalOwner = TestIds.next();
+        Long extraOwner = TestIds.next();
+        when(teamMapper.selectByIdForUpdate(teamId)).thenReturn(team(teamId, canonicalOwner));
+        when(memberMapper.selectByTeamAndUser(teamId, extraOwner))
+                .thenReturn(member(teamId, extraOwner, "TEAM_OWNER"));
+        TeamUpdateRequest request = new TeamUpdateRequest();
+        request.setName("新名称");
+
+        ApiException error = assertThrows(ApiException.class,
+                () -> service.update(extraOwner, teamId, request));
+
+        assertEquals("TEAM_ADMIN_REQUIRED", error.code());
+    }
+
+    @Test
+    void teamAdminCanListInvitations() {
+        Long teamId = TestIds.next();
+        Long owner = TestIds.next();
+        Long admin = TestIds.next();
+        when(teamMapper.selectById(teamId)).thenReturn(team(teamId, owner));
+        when(memberMapper.selectByTeamAndUser(teamId, admin)).thenReturn(member(teamId, admin, "TEAM_ADMIN"));
+        when(invitationMapper.selectInvitationPage(teamId, null, 31)).thenReturn(java.util.List.of());
+
+        var page = service.invitations(admin, teamId, null, null);
+
+        assertEquals(0, page.getData().size());
     }
 
     private TeamMemberEntity member(Long teamId, Long userId, String role) {
