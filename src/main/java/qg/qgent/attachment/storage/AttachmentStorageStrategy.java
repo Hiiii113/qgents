@@ -21,9 +21,4 @@ public interface AttachmentStorageStrategy {
 
     /** 打开闭区间 [start, end] 的内容流，调用方负责关闭。 */
     InputStream loadRange(String objectKey, long start, long end);
-
-    /** 本地磁盘不提供独立下载 URL，使用后端内容接口。 */
-    default String createDownloadUrl(String objectKey, long expiresSeconds) {
-        throw new UnsupportedOperationException("本地附件请通过内容接口下载");
-    }
 }

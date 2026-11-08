@@ -6,14 +6,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import qg.qgent.attachment.dto.AttachmentCreateRequest;
-import qg.qgent.attachment.dto.AttachmentDownloadUrlResponse;
-import qg.qgent.attachment.dto.AttachmentPreviewUrlResponse;
+import qg.qgent.attachment.dto.AttachmentInfoResponse;
 import qg.qgent.attachment.dto.AttachmentStatusResponse;
 import qg.qgent.attachment.dto.AttachmentUploadCredentialResponse;
 import qg.qgent.attachment.dto.UploadCredential;
 import qg.qgent.attachment.entity.AttachmentEntity;
 import qg.qgent.attachment.mapper.AttachmentMapper;
-import qg.qgent.attachment.storage.AttachmentContent;
 import qg.qgent.attachment.storage.AttachmentResource;
 import qg.qgent.attachment.storage.AttachmentStorageStrategy;
 import qg.qgent.auth.service.TokenService;
@@ -36,18 +34,15 @@ public class AttachmentService {
     private final ProjectAccessService access;
     private final TokenService tokens;
     private final long maxSizeBytes;
-    private final long downloadExpirySeconds;
 
     public AttachmentService(AttachmentMapper attachmentMapper, AttachmentStorageStrategy storage,
             ProjectAccessService access, TokenService tokens,
-            @Value("${app.attachment-max-size-bytes:52428800}") long maxSizeBytes,
-            @Value("${app.attachment-download-expiry-seconds:900}") long downloadExpirySeconds) {
+            @Value("${app.attachment-max-size-bytes:52428800}") long maxSizeBytes) {
         this.attachmentMapper = attachmentMapper;
         this.storage = storage;
         this.access = access;
         this.tokens = tokens;
         this.maxSizeBytes = maxSizeBytes;
-        this.downloadExpirySeconds = downloadExpirySeconds;
     }
 
     /** 先保存 PENDING 记录，再按存储配置返回 OSS 直传或本地上传地址。 */
@@ -78,20 +73,6 @@ public class AttachmentService {
         UploadCredential credential = storage.createCredential(attachment.getObjectKey(), attachment.getMediaType());
         return new AttachmentUploadCredentialResponse(attachment.getId().toString(), credential.getUploadUrl(),
                 credential.getMethod(), credential.getExpiresAt(), credential.getHeaders());
-    }
-
-    public AttachmentDownloadUrlResponse downloadUrl(Long actor, Long projectId, Long attachmentId) {
-        access.requireProjectMember(projectId, actor);
-        AttachmentEntity attachment = requireAttachment(projectId, attachmentId);
-        LocalDateTime expiresAt = LocalDateTime.now(ZoneOffset.UTC).plusSeconds(downloadExpirySeconds);
-        String url;
-        try {
-            url = storage.createDownloadUrl(attachment.getObjectKey(), downloadExpirySeconds);
-        } catch (UnsupportedOperationException e) {
-            throw new ApiException(HttpStatus.NOT_IMPLEMENTED, "ATTACHMENT_DOWNLOAD_UNSUPPORTED",
-                    "当前存储策略暂不支持下载（请启用阿里云 OSS 或接入对象存储）");
-        }
-        return new AttachmentDownloadUrlResponse(attachment.getId().toString(), url, expiresAt);
     }
 
     @Transactional
@@ -129,27 +110,16 @@ public class AttachmentService {
         storage.storeBytes(attachment.getObjectKey(), bytes, attachment.getSizeBytes(), maxSizeBytes);
     }
 
-    public AttachmentContent downloadContent(Long actor, Long projectId, Long attachmentId) {
-        AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
-        return storage.loadContent(attachment.getObjectKey(), attachment.getFileName(), attachment.getMediaType());
-    }
-
-    public AttachmentPreviewUrlResponse getPreviewInfo(Long actor, Long projectId, Long attachmentId) {
+    /** 附件元数据与短期内容地址；不读取文件字节。 */
+    public AttachmentInfoResponse info(Long actor, Long projectId, Long attachmentId) {
         AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
         String previewType = classifyPreviewType(attachment);
-        String downloadUrl = null;
-        try {
-            downloadUrl = storage.createDownloadUrl(attachment.getObjectKey(), downloadExpirySeconds);
-        } catch (UnsupportedOperationException e) {
-            // 本地磁盘通过 preview/content 接口读取，不提供独立下载 URL。
-        }
-        String accessToken = tokens.access(actor);
-        String previewUrl = "/api/v1/projects/" + projectId + "/attachments/" + attachmentId
-                + "/preview?token=" + accessToken;
+        String contentUrl = "/api/v1/projects/" + projectId + "/attachments/" + attachmentId
+                + "/content?token=" + tokens.access(actor);
         LocalDateTime expiresAt = LocalDateTime.now(ZoneOffset.UTC).plusSeconds(tokens.accessSeconds());
-        return new AttachmentPreviewUrlResponse(attachment.getId().toString(), attachment.getFileName(),
-                attachment.getMediaType(), attachment.getSizeBytes(),
-                !"UNSUPPORTED".equals(previewType), previewType, previewUrl, downloadUrl, expiresAt);
+        return new AttachmentInfoResponse(attachment.getId().toString(), attachment.getFileName(),
+                attachment.getMediaType(), attachment.getSizeBytes(), previewType,
+                !"UNSUPPORTED".equals(previewType), contentUrl, expiresAt);
     }
 
     /** Agent 按需读取前，先用类型和大小判断能否处理，不读取字节。 */
@@ -261,16 +231,16 @@ public class AttachmentService {
         return end - lead < expected ? lead : end;
     }
 
-    /** 浏览器预览仅准备元数据，内容由 Spring 在写响应时按需打开。 */
-    public AttachmentPreviewResource previewResource(Long actor, Long projectId, Long attachmentId) {
+    /** 统一内容读取入口；预览和下载共用同一份元数据与存储流。 */
+    public AttachmentContentResource contentResource(Long actor, Long projectId, Long attachmentId) {
         AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
         long size = storage.objectSize(attachment.getObjectKey())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ATTACHMENT_NOT_FOUND", "附件文件不存在"));
-        return new AttachmentPreviewResource(new AttachmentResource(storage, attachment.getObjectKey(),
+        return new AttachmentContentResource(new AttachmentResource(storage, attachment.getObjectKey(),
                 attachment.getFileName(), attachment.getMediaType(), size), classifyPreviewType(attachment));
     }
 
-    public record AttachmentPreviewResource(AttachmentResource resource, String previewType) {
+    public record AttachmentContentResource(AttachmentResource resource, String previewType) {
     }
 
     public record AttachmentTextChunk(String fileName, String mediaType, long sizeBytes, long offset,

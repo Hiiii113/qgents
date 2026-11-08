@@ -13,7 +13,6 @@ import qg.qgent.attachment.config.AliyunOssProperties;
 import qg.qgent.attachment.dto.UploadCredential;
 
 import java.io.InputStream;
-import java.net.URL;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Date;
@@ -46,13 +45,6 @@ public class AliyunOssAttachmentStorage implements AttachmentStorageStrategy {
             request.setContentType(mediaType);
         }
         return new UploadCredential(oss.generatePresignedUrl(request).toString(), "PUT", headers, expiry);
-    }
-
-    @Override
-    public String createDownloadUrl(String objectKey, long expiresSeconds) {
-        Date expiresAt = new Date(System.currentTimeMillis() + expiresSeconds * 1000L);
-        URL url = oss.generatePresignedUrl(properties.getBucketName(), objectKey, expiresAt, HttpMethod.GET);
-        return url.toString();
     }
 
     @Override

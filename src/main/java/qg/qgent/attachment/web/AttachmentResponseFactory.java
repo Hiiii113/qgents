@@ -1,7 +1,6 @@
 package qg.qgent.attachment.web;
 
 import jakarta.servlet.http.HttpServletRequest;
-import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpRange;
@@ -9,8 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
-import qg.qgent.attachment.service.AttachmentService.AttachmentPreviewResource;
-import qg.qgent.attachment.storage.AttachmentContent;
+import qg.qgent.attachment.service.AttachmentService.AttachmentContentResource;
 import qg.qgent.attachment.storage.AttachmentResource;
 import qg.qgent.common.web.RequestIdFilter;
 
@@ -21,9 +19,9 @@ import java.util.Map;
 /** 附件的 HTTP 展示策略：文件名、媒体类型、单段 Range 和错误响应。 */
 @Component
 public class AttachmentResponseFactory {
-    public ResponseEntity<?> preview(AttachmentPreviewResource preview, Integer raw, String rangeHeader,
+    public ResponseEntity<?> content(AttachmentContentResource content, boolean download, String rangeHeader,
             HttpServletRequest request) {
-        AttachmentResource resource = preview.resource();
+        AttachmentResource resource = content.resource();
         long total = resource.contentLength();
         ResponseEntity.BodyBuilder response = ResponseEntity.ok();
         if (rangeHeader != null && !rangeHeader.isBlank()) {
@@ -47,24 +45,14 @@ public class AttachmentResponseFactory {
             }
         }
         String type = resource.contentType();
-        if (("TEXT".equals(preview.previewType()) || "CODE".equals(preview.previewType()))
-                && !Integer.valueOf(1).equals(raw)) {
+        if (!download && ("TEXT".equals(content.previewType()) || "CODE".equals(content.previewType()))) {
             type = "text/plain; charset=utf-8";
         }
         return response.header(HttpHeaders.ACCEPT_RANGES, "bytes")
-                .header(HttpHeaders.CONTENT_DISPOSITION, disposition("inline", resource.getFilename()))
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        disposition(download ? "attachment" : "inline", resource.getFilename()))
                 .contentType(MediaType.parseMediaType(type))
                 .contentLength(resource.contentLength()).body(resource);
-    }
-
-    public ResponseEntity<InputStreamResource> content(AttachmentContent content) {
-        String type = content.getContentType() == null || content.getContentType().isBlank()
-                ? "application/octet-stream" : content.getContentType();
-        return ResponseEntity.ok().contentType(MediaType.parseMediaType(type))
-                .contentLength(content.getSizeBytes() == null ? -1 : content.getSizeBytes())
-                .header(HttpHeaders.CONTENT_DISPOSITION,
-                        disposition(type.startsWith("image/") ? "inline" : "attachment", content.getFileName()))
-                .body(new InputStreamResource(content.getStream()));
     }
 
     private String disposition(String type, String fileName) {

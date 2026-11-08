@@ -7,10 +7,11 @@ import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
+/** 附件元数据与短期内容访问地址；不读取文件字节。 */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-public class AttachmentPreviewUrlResponse {
+public class AttachmentInfoResponse {
 
     @Schema(description = "附件 ID")
     private String attachmentId;
@@ -24,18 +25,15 @@ public class AttachmentPreviewUrlResponse {
     @Schema(description = "文件大小（字节）")
     private Long sizeBytes;
 
-    @Schema(description = "是否可内联预览")
-    private boolean previewable;
-
     @Schema(description = "预览类型：IMAGE/PDF/TEXT/CODE/UNSUPPORTED")
     private String previewType;
 
-    @Schema(description = "短期签名预览地址（相对路径，带 token 查询参数）")
-    private String previewUrl;
+    @Schema(description = "是否可内联预览")
+    private boolean previewable;
 
-    @Schema(description = "下载地址；存储策略不支持时可为 null")
-    private String downloadUrl;
+    @Schema(description = "短期内容地址（相对路径，带 token 查询参数）")
+    private String contentUrl;
 
-    @Schema(description = "previewUrl 过期时间")
+    @Schema(description = "contentUrl 过期时间")
     private LocalDateTime expiresAt;
 }

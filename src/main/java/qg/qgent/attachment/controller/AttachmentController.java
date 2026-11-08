@@ -3,7 +3,6 @@ package qg.qgent.attachment.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -11,7 +10,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import qg.qgent.attachment.dto.AttachmentCreateRequest;
-import qg.qgent.attachment.dto.AttachmentDownloadUrlResponse;
+import qg.qgent.attachment.dto.AttachmentInfoResponse;
 import qg.qgent.attachment.dto.AttachmentStatusResponse;
 import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.attachment.web.AttachmentResponseFactory;
@@ -20,7 +19,7 @@ import qg.qgent.common.web.RequestIdFilter;
 
 import java.io.IOException;
 
-/** 附件上传、确认、下载和预览入口。 */
+/** 附件上传、确认、信息与内容读取入口。 */
 @RestController
 @RequestMapping("/api/v1")
 public class AttachmentController {
@@ -58,40 +57,25 @@ public class AttachmentController {
         attachmentService.uploadBytes(userId, projectId, attachmentId, request.getInputStream());
     }
 
-    @Operation(summary = "获取附件临时下载地址", description = "返回短期有效的预签名 GET 地址，客户端据此下载/预览文件；过期需重新签发。")
-    @GetMapping("/projects/{projectId}/attachments/{attachmentId}/download-url")
-    public ApiResponse<?> downloadUrl(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
-            @PathVariable Long attachmentId, HttpServletRequest request) {
-        AttachmentDownloadUrlResponse data = attachmentService.downloadUrl(userId, projectId, attachmentId);
-        return ok(data, request);
+    @Operation(summary = "获取附件信息与短期内容地址", description = "返回附件元数据、预览类型和带 token 的短期内容地址；只读取元数据，不读取文件内容。")
+    @GetMapping("/projects/{projectId}/attachments/{attachmentId}")
+    public ApiResponse<AttachmentInfoResponse> info(@AuthenticationPrincipal Long userId,
+            @PathVariable Long projectId, @PathVariable Long attachmentId, HttpServletRequest request) {
+        return ok(attachmentService.info(userId, projectId, attachmentId), request);
     }
 
-    @Operation(summary = "获取附件预览元数据与签名预览地址", description = "返回预览类型与短期签名预览地址（带 token），前端可直接交给 img/iframe/系统查看器打开。")
-    @GetMapping("/projects/{projectId}/attachments/{attachmentId}/preview-url")
-    public ApiResponse<?> getPreviewInfo(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
-            @PathVariable Long attachmentId, HttpServletRequest request) {
-        return ok(attachmentService.getPreviewInfo(userId, projectId, attachmentId), request);
-    }
-
-    @Operation(summary = "获取附件内联预览内容（双通道鉴权 + Range）", description = "内联返回附件字节，浏览器/系统查看器直接展示；支持 Authorization 头或 ?token= 双通道鉴权与 HTTP Range 分段。")
-    @GetMapping("/projects/{projectId}/attachments/{attachmentId}/preview")
-    public ResponseEntity<?> preview(@PathVariable Long projectId, @PathVariable Long attachmentId,
-            @RequestParam(name = "raw", required = false) Integer raw,
-            @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader,
-            @AuthenticationPrincipal Long userId,
-            HttpServletRequest request) {
-        return responses.preview(attachmentService.previewResource(userId, projectId, attachmentId), raw, rangeHeader,
-                request);
-    }
-
-    @Operation(summary = "获取附件内容（鉴权下载代理）", description = "鉴权后流式返回附件内容，图片 inline 展示、文件可下载；作为 content.url 的稳定地址。")
+    @Operation(summary = "获取附件内容（预览或下载）", description = "默认内联预览，download=1 以附件下载；支持 Authorization 头或 ?token= 鉴权与单段 HTTP Range。")
     @GetMapping("/projects/{projectId}/attachments/{attachmentId}/content")
-    public ResponseEntity<InputStreamResource> content(@AuthenticationPrincipal Long userId,
-            @PathVariable Long projectId, @PathVariable Long attachmentId) {
-        return responses.content(attachmentService.downloadContent(userId, projectId, attachmentId));
+    public ResponseEntity<?> content(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
+            @PathVariable Long attachmentId,
+            @RequestParam(name = "download", required = false, defaultValue = "false") boolean download,
+            @RequestHeader(value = HttpHeaders.RANGE, required = false) String rangeHeader,
+            HttpServletRequest request) {
+        return responses.content(attachmentService.contentResource(userId, projectId, attachmentId), download,
+                rangeHeader, request);
     }
 
-    private ApiResponse<?> ok(Object data, HttpServletRequest request) {
+    private <T> ApiResponse<T> ok(T data, HttpServletRequest request) {
         return ApiResponse.ok(data, (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
     }
 }

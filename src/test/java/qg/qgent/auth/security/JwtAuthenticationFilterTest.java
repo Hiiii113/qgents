@@ -24,12 +24,12 @@ class JwtAuthenticationFilterTest {
     }
 
     @Test
-    void authenticatesPreviewQueryToken() throws Exception {
+    void authenticatesContentQueryToken() throws Exception {
         TokenService tokens = mock(TokenService.class);
         var actor = TestIds.next();
-        when(tokens.verifyAccess("preview-token")).thenReturn(actor);
-        var request = new MockHttpServletRequest("GET", "/api/v1/projects/p/attachments/a/preview");
-        request.setParameter("token", "preview-token");
+        when(tokens.verifyAccess("content-token")).thenReturn(actor);
+        var request = new MockHttpServletRequest("GET", "/api/v1/projects/p/attachments/a/content");
+        request.setParameter("token", "content-token");
         var chain = mock(jakarta.servlet.FilterChain.class);
         new JwtAuthenticationFilter(tokens, new ObjectMapper()).doFilter(request, new MockHttpServletResponse(), chain);
         assertThat(SecurityContextHolder.getContext().getAuthentication().getPrincipal()).isEqualTo(actor);
@@ -37,21 +37,21 @@ class JwtAuthenticationFilterTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"/api/v1/projects/p/attachments/a/content", "/api/v1/projects/p/attachments/a/preview-url", "/api/v1/projects"})
-    void ignoresQueryTokenOutsidePreview(String path) throws Exception {
+    @ValueSource(strings = {"/api/v1/projects/p/attachments/a", "/api/v1/projects/p/attachments/a/preview", "/api/v1/projects"})
+    void ignoresQueryTokenOutsideContent(String path) throws Exception {
         TokenService tokens = mock(TokenService.class);
         var request = new MockHttpServletRequest("GET", path);
-        request.setParameter("token", "preview-token");
+        request.setParameter("token", "content-token");
         new JwtAuthenticationFilter(tokens, new ObjectMapper()).doFilter(request, new MockHttpServletResponse(), mock(jakarta.servlet.FilterChain.class));
         verifyNoInteractions(tokens);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
 
     @Test
-    void rejectsInvalidPreviewToken() throws Exception {
+    void rejectsInvalidContentToken() throws Exception {
         TokenService tokens = mock(TokenService.class);
         when(tokens.verifyAccess("forged")).thenReturn(null);
-        var request = new MockHttpServletRequest("GET", "/api/v1/projects/p/attachments/a/preview");
+        var request = new MockHttpServletRequest("GET", "/api/v1/projects/p/attachments/a/content");
         request.setParameter("token", "forged");
         var response = new MockHttpServletResponse();
         var chain = mock(jakarta.servlet.FilterChain.class);
@@ -61,9 +61,31 @@ class JwtAuthenticationFilterTest {
     }
 
     @Test
+    void rejectsExpiredContentQueryToken() throws Exception {
+        TokenService tokens = new TokenService("01234567890123456789012345678901", 0, 30, 30);
+        var request = new MockHttpServletRequest("GET", "/api/v1/projects/p/attachments/a/content");
+        request.setParameter("token", tokens.access(TestIds.next()));
+        var response = new MockHttpServletResponse();
+        new JwtAuthenticationFilter(tokens, new ObjectMapper()).doFilter(request, response,
+                mock(jakarta.servlet.FilterChain.class));
+        assertThat(response.getStatus()).isEqualTo(401);
+    }
+
+    @Test
+    void doesNotAcceptQueryTokenForContentPost() throws Exception {
+        TokenService tokens = mock(TokenService.class);
+        var request = new MockHttpServletRequest("POST", "/api/v1/projects/p/attachments/a/content");
+        request.setParameter("token", "content-token");
+        new JwtAuthenticationFilter(tokens, new ObjectMapper()).doFilter(request,
+                new MockHttpServletResponse(), mock(jakarta.servlet.FilterChain.class));
+        verifyNoInteractions(tokens);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
     void bearerTakesPrecedenceOverQueryToken() throws Exception {
         TokenService tokens = mock(TokenService.class);
-        var request = new MockHttpServletRequest("GET", "/api/v1/projects/p/attachments/a/preview");
+        var request = new MockHttpServletRequest("GET", "/api/v1/projects/p/attachments/a/content");
         when(tokens.verifyAccess("invalid")).thenReturn(null);
         request.addHeader("Authorization", "Bearer invalid");
         request.setParameter("token", "valid");

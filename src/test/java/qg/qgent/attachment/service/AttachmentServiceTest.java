@@ -10,7 +10,7 @@ import qg.qgent.attachment.dto.AttachmentUploadCredentialResponse;
 import qg.qgent.attachment.storage.LocalAttachmentStorage;
 import org.springframework.http.HttpStatus;
 
-import qg.qgent.attachment.dto.AttachmentPreviewUrlResponse;
+import qg.qgent.attachment.dto.AttachmentInfoResponse;
 import qg.qgent.attachment.entity.AttachmentEntity;
 import qg.qgent.attachment.mapper.AttachmentMapper;
 import qg.qgent.attachment.service.AttachmentService.AttachmentPreviewMetadata;
@@ -34,10 +34,11 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
- * 附件服务单测：previewUrl / 分段读取 / 图片读取 / previewType 分类 / 鉴权与状态拒绝。
+ * 附件服务单测：附件信息 / 分段读取 / 图片读取 / previewType 分类 / 鉴权与状态拒绝。
  * <p>
  * 使用真实 TokenService（测试密钥签发短期 access token）与 Mockito 隔离 Mapper/存储/项目访问。
  */
@@ -47,53 +48,37 @@ class AttachmentServiceTest {
     private final AttachmentStorageStrategy storage = mock(AttachmentStorageStrategy.class);
     private final ProjectAccessService access = mock(ProjectAccessService.class);
     private final TokenService tokens = new TokenService("01234567890123456789012345678901", 15, 30, 30);
-    private final AttachmentService service = new AttachmentService(mapper, storage, access, tokens, 52428800, 900);
+    private final AttachmentService service = new AttachmentService(mapper, storage, access, tokens, 52428800);
 
     @Test
-    void previewUrlReturnsSignedTokenUrlAndMetadata() {
+    void infoReturnsMetadataAndTokenizedContentUrlWithoutReadingBytes() {
         Long projectId = TestIds.next();
         Long actor = TestIds.next();
         Long attachmentId = TestIds.next();
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "photo.png", "image/png", "READY"));
-        when(storage.createDownloadUrl(eq("projects/" + projectId + "/attachments/" + attachmentId), eq(900L)))
-                .thenReturn("https://oss.example/photo.png");
 
-        AttachmentPreviewUrlResponse r = service.getPreviewInfo(actor, projectId, attachmentId);
+        AttachmentInfoResponse r = service.info(actor, projectId, attachmentId);
 
         assertThat(r.getAttachmentId()).isEqualTo(attachmentId.toString());
         assertThat(r.getFileName()).isEqualTo("photo.png");
         assertThat(r.getMediaType()).isEqualTo("image/png");
         assertThat(r.getPreviewType()).isEqualTo("IMAGE");
         assertThat(r.isPreviewable()).isTrue();
-        assertThat(r.getDownloadUrl()).isEqualTo("https://oss.example/photo.png");
-        assertThat(r.getPreviewUrl()).startsWith("/api/v1/projects/" + projectId + "/attachments/" + attachmentId
-                + "/preview?token=");
-        String token = r.getPreviewUrl().substring(r.getPreviewUrl().indexOf("token=") + "token=".length());
+        assertThat(r.getContentUrl()).startsWith("/api/v1/projects/" + projectId + "/attachments/" + attachmentId
+                + "/content?token=");
+        String token = r.getContentUrl().substring(r.getContentUrl().indexOf("token=") + "token=".length());
         assertThat(tokens.verifyAccess(token)).isEqualTo(actor);
         assertThat(r.getExpiresAt()).isNotNull();
+        verifyNoInteractions(storage);
     }
 
     @Test
-    void previewUrlKeepsPreviewUrlWhenDownloadUnsupported() {
-        Long projectId = TestIds.next();
-        Long actor = TestIds.next();
-        Long attachmentId = TestIds.next();
-        when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "doc.pdf", "application/pdf", "READY"));
-        doThrow(new UnsupportedOperationException()).when(storage).createDownloadUrl(any(), anyLong());
-
-        AttachmentPreviewUrlResponse r = service.getPreviewInfo(actor, projectId, attachmentId);
-
-        assertThat(r.getDownloadUrl()).isNull();
-        assertThat(r.getPreviewUrl()).contains("?token=");
-    }
-
-    @Test
-    void previewUrlRejectsNotReady() {
+    void infoRejectsNotReady() {
         Long projectId = TestIds.next();
         Long attachmentId = TestIds.next();
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "x.txt", "text/plain", "PENDING"));
 
-        assertThatThrownBy(() -> service.getPreviewInfo(TestIds.next(), projectId, attachmentId))
+        assertThatThrownBy(() -> service.info(TestIds.next(), projectId, attachmentId))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> {
                     assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_NOT_READY");
@@ -102,24 +87,24 @@ class AttachmentServiceTest {
     }
 
     @Test
-    void previewUrlRejectsAttachmentNotInProject() {
+    void infoRejectsAttachmentNotInProject() {
         Long projectId = TestIds.next();
         Long otherProject = TestIds.next();
         Long attachmentId = TestIds.next();
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, otherProject, "x.txt", "text/plain", "READY"));
 
-        assertThatThrownBy(() -> service.getPreviewInfo(TestIds.next(), projectId, attachmentId))
+        assertThatThrownBy(() -> service.info(TestIds.next(), projectId, attachmentId))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_NOT_FOUND"));
     }
 
     @Test
-    void previewUrlRejectsMissingAttachment() {
+    void infoRejectsMissingAttachment() {
         Long projectId = TestIds.next();
         Long attachmentId = TestIds.next();
         when(mapper.selectById(attachmentId)).thenReturn(null);
 
-        assertThatThrownBy(() -> service.getPreviewInfo(TestIds.next(), projectId, attachmentId))
+        assertThatThrownBy(() -> service.info(TestIds.next(), projectId, attachmentId))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_NOT_FOUND"));
     }
@@ -323,7 +308,7 @@ class AttachmentServiceTest {
 
     @Test
     void uploadBytesRejectsExceedingMaxSize(@TempDir Path root) {
-        AttachmentService small = new AttachmentService(mapper, new LocalAttachmentStorage(root.toString(), 900), access, tokens, 10, 900);
+        AttachmentService small = new AttachmentService(mapper, new LocalAttachmentStorage(root.toString(), 900), access, tokens, 10);
         Long projectId = TestIds.next();
         Long attachmentId = TestIds.next();
         byte[] oversized = "more-than-ten-bytes".getBytes(StandardCharsets.UTF_8);
@@ -367,7 +352,7 @@ class AttachmentServiceTest {
     @Test
     void localUploadLifecycleRequiresStoredFileBeforeConfirmation(@TempDir Path root) {
         LocalAttachmentStorage local = new LocalAttachmentStorage(root.toString(), 900);
-        AttachmentService localService = new AttachmentService(mapper, local, access, tokens, 1024, 900);
+        AttachmentService localService = new AttachmentService(mapper, local, access, tokens, 1024);
         Long actor = TestIds.next();
         Long projectId = TestIds.next();
         AttachmentCreateRequest body = new AttachmentCreateRequest();
@@ -393,16 +378,14 @@ class AttachmentServiceTest {
         assertThat(localService.confirmUpload(actor, projectId, id).getStatus()).isEqualTo("READY");
         assertThat(localService.readTextChunk(actor, projectId, id, 0, 1024).content()).isEqualTo("hello");
         assertThat(localService.messagePreview(projectId, id.toString()).getPreviewType()).isEqualTo("TEXT");
-        assertThat(localService.getPreviewInfo(actor, projectId, id).getDownloadUrl()).isNull();
+        assertThat(localService.info(actor, projectId, id).getContentUrl()).contains("/content?token=");
     }
 
     private void assertPreviewType(String fileName, String mediaType, String expected) {
         Long projectId = TestIds.next();
         Long attachmentId = TestIds.next();
         when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, fileName, mediaType, "READY"));
-        doThrow(new UnsupportedOperationException()).when(storage).createDownloadUrl(any(), anyLong());
-
-        AttachmentPreviewUrlResponse r = service.getPreviewInfo(TestIds.next(), projectId, attachmentId);
+        AttachmentInfoResponse r = service.info(TestIds.next(), projectId, attachmentId);
 
         assertThat(r.getPreviewType()).as("%s (%s) 应为 %s", fileName, mediaType, expected).isEqualTo(expected);
     }

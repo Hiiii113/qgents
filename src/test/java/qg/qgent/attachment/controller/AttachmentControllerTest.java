@@ -47,7 +47,7 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-/** 经过实际 Spring MVC 与项目安全过滤链验证预览字节、范围、鉴权和资源关闭。 */
+/** 经过实际 Spring MVC 与项目安全过滤链验证附件信息、统一内容、范围、鉴权和资源关闭。 */
 class AttachmentControllerTest {
     private AnnotationConfigWebApplicationContext context;
     private MockMvc mvc;
@@ -95,15 +95,44 @@ class AttachmentControllerTest {
     }
 
     private String path() { return "/api/v1/projects/" + project + "/attachments/" + id; }
+    private String contentPath() { return path() + "/content"; }
     private String token() { return context.getBean(TokenService.class).access(actor); }
 
     @Test
-    void fullPreviewUsesBearerAndClosesStream() throws Exception {
-        mvc.perform(get(path() + "/preview").header("Authorization", "Bearer " + token()))
+    void infoReturnsMetadataAndTokenUrlWithoutOpeningFile() throws Exception {
+        mvc.perform(get(path()).header("Authorization", "Bearer " + token()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.attachmentId").value(id.toString()))
+                .andExpect(jsonPath("$.data.fileName").value("notes.txt"))
+                .andExpect(jsonPath("$.data.mediaType").value("text/plain"))
+                .andExpect(jsonPath("$.data.sizeBytes").value(bytes.length))
+                .andExpect(jsonPath("$.data.previewType").value("TEXT"))
+                .andExpect(jsonPath("$.data.previewable").value(true))
+                .andExpect(jsonPath("$.data.contentUrl").value(org.hamcrest.Matchers.startsWith(
+                        path() + "/content?token=")))
+                .andExpect(jsonPath("$.data.expiresAt").isNotEmpty());
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void infoRejectsQueryTokenAndPendingAttachment() throws Exception {
+        mvc.perform(get(path()).param("token", token())).andExpect(status().isUnauthorized());
+
+        attachment.setStatus("PENDING");
+        mvc.perform(get(path()).header("Authorization", "Bearer " + token()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error.code").value("ATTACHMENT_NOT_READY"));
+        verifyNoInteractions(storage);
+    }
+
+    @Test
+    void fullContentUsesBearerAndClosesStream() throws Exception {
+        mvc.perform(get(contentPath()).header("Authorization", "Bearer " + token()))
                 .andExpect(status().isOk()).andExpect(content().bytes(bytes))
                 .andExpect(header().string("Content-Length", "10"))
                 .andExpect(header().string("Accept-Ranges", "bytes"))
-                .andExpect(header().string("Content-Type", "text/plain;charset=utf-8"));
+                .andExpect(header().string("Content-Type", "text/plain;charset=utf-8"))
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("inline;")));
         assertThat(closed).isTrue();
         verify(storage).loadContent("key", "notes.txt", "text/plain");
         verify(storage, never()).loadRange(any(), anyLong(), anyLong());
@@ -112,7 +141,7 @@ class AttachmentControllerTest {
     @ParameterizedTest
     @CsvSource({"bytes=0-4,0,4,hello", "bytes=6-,6,9,qwen", "bytes=-4,6,9,qwen", "bytes=0-999,0,9,hello qwen"})
     void rangeUsesQueryTokenAndReadsOnlyRequestedRegion(String range, long start, long end, String expected) throws Exception {
-        mvc.perform(get(path() + "/preview").param("token", token()).header("Range", range))
+        mvc.perform(get(contentPath()).param("token", token()).header("Range", range))
                 .andExpect(status().isPartialContent()).andExpect(content().string(expected))
                 .andExpect(header().string("Content-Range", "bytes " + start + "-" + end + "/10"))
                 .andExpect(header().string("Content-Length", Long.toString(end - start + 1)));
@@ -124,7 +153,7 @@ class AttachmentControllerTest {
     @ParameterizedTest
     @ValueSource(strings = {"bytes=10-", "bytes=4-2", "bytes=-0", "bytes=", "items=0-2", "bytes=0-1,3-4", "bytes=abc", "bytes=999999999999999999999999-"})
     void rejectsInvalidRangesWithoutOpeningContent(String range) throws Exception {
-        mvc.perform(get(path() + "/preview").param("token", token()).header("Range", range))
+        mvc.perform(get(contentPath()).param("token", token()).header("Range", range))
                 .andExpect(status().isRequestedRangeNotSatisfiable())
                 .andExpect(header().string("Content-Range", "bytes */10"))
                 .andExpect(jsonPath("$.error.code").value("ATTACHMENT_RANGE_INVALID"))
@@ -135,8 +164,8 @@ class AttachmentControllerTest {
 
     @Test
     void rejectsMissingAndInvalidCredentials() throws Exception {
-        mvc.perform(get(path() + "/preview")).andExpect(status().isUnauthorized());
-        mvc.perform(get(path() + "/preview").param("token", "forged")).andExpect(status().isUnauthorized());
+        mvc.perform(get(contentPath())).andExpect(status().isUnauthorized());
+        mvc.perform(get(contentPath()).param("token", "forged")).andExpect(status().isUnauthorized());
         verifyNoInteractions(storage);
     }
 
@@ -144,49 +173,48 @@ class AttachmentControllerTest {
     void rejectsNonMembersBeforeOpeningContent() throws Exception {
         doThrow(new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "无权访问"))
                 .when(context.getBean(ProjectAccessService.class)).requireProjectMember(project, actor);
-        mvc.perform(get(path() + "/preview").param("token", token())).andExpect(status().isForbidden());
+        mvc.perform(get(contentPath()).param("token", token())).andExpect(status().isForbidden());
         verifyNoInteractions(storage);
     }
 
     @Test
     void rejectsPendingAttachment() throws Exception {
         attachment.setStatus("PENDING");
-        mvc.perform(get(path() + "/preview").param("token", token())).andExpect(status().isConflict())
+        mvc.perform(get(contentPath()).param("token", token())).andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error.code").value("ATTACHMENT_NOT_READY"));
         verifyNoInteractions(storage);
     }
 
     @Test
-    void rawCodeKeepsOriginalMediaType() throws Exception {
-        attachment.setFileName("Main.java");
-        attachment.setMediaType("application/octet-stream");
-        mvc.perform(get(path() + "/preview").param("token", token()).param("raw", "1"))
+    void downloadUsesAttachmentDispositionAndOriginalFilename() throws Exception {
+        mvc.perform(get(contentPath()).param("download", "1").header("Authorization", "Bearer " + token()))
                 .andExpect(status().isOk()).andExpect(content().bytes(bytes))
-                .andExpect(header().string("Content-Type", "application/octet-stream"));
-    }
-
-    @Test
-    void contentDownloadRemainsAuthenticatedAndClosesStream() throws Exception {
-        mvc.perform(get(path() + "/content").param("token", token())).andExpect(status().isUnauthorized());
-        mvc.perform(get(path() + "/content").header("Authorization", "Bearer " + token()))
-                .andExpect(status().isOk()).andExpect(content().bytes(bytes))
-                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("attachment;")));
+                .andExpect(header().string("Content-Type", "text/plain"))
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.allOf(
+                        org.hamcrest.Matchers.startsWith("attachment;"),
+                        org.hamcrest.Matchers.containsString("notes.txt"))));
         assertThat(closed).isTrue();
     }
 
     @Test
-    void previewInfoReturnsMetadataWithoutOpeningFile() throws Exception {
-        mvc.perform(get(path() + "/preview-url").header("Authorization", "Bearer " + token()))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.data.previewType").value("TEXT"))
-                .andExpect(jsonPath("$.data.previewUrl").isNotEmpty());
-        verify(storage, never()).loadContent(any(), any(), any());
+    void codePreviewUsesPlainTextAndDownloadKeepsOriginalType() throws Exception {
+        attachment.setFileName("Main.java");
+        attachment.setMediaType("application/octet-stream");
+        mvc.perform(get(contentPath()).param("token", token()))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "text/plain;charset=utf-8"))
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("inline;")));
+        mvc.perform(get(contentPath()).param("token", token()).param("download", "1"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Type", "application/octet-stream"))
+                .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("attachment;")));
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"image/png", "application/pdf"})
     void mediaPreviewsRemainInline(String type) throws Exception {
         attachment.setMediaType(type);
-        mvc.perform(get(path() + "/preview").param("token", token()))
+        mvc.perform(get(contentPath()).param("token", token()))
                 .andExpect(status().isOk()).andExpect(content().bytes(bytes))
                 .andExpect(header().string("Content-Type", type))
                 .andExpect(header().string("Content-Disposition", org.hamcrest.Matchers.startsWith("inline;")));
@@ -195,14 +223,14 @@ class AttachmentControllerTest {
     @Test
     void missingFileDoesNotOpenContent() throws Exception {
         when(storage.objectSize("key")).thenReturn(OptionalLong.empty());
-        mvc.perform(get(path() + "/preview").param("token", token())).andExpect(status().isNotFound());
+        mvc.perform(get(contentPath()).param("token", token())).andExpect(status().isNotFound());
         verify(storage, never()).loadContent(any(), any(), any());
     }
 
     @Test
     void emptyFileRejectsRangeWithoutOpeningContent() throws Exception {
         when(storage.objectSize("key")).thenReturn(OptionalLong.of(0));
-        mvc.perform(get(path() + "/preview").param("token", token()).header("Range", "bytes=0-"))
+        mvc.perform(get(contentPath()).param("token", token()).header("Range", "bytes=0-"))
                 .andExpect(status().isRequestedRangeNotSatisfiable())
                 .andExpect(header().string("Content-Range", "bytes */0"));
         verify(storage, never()).loadRange(any(), anyLong(), anyLong());
@@ -219,6 +247,6 @@ class AttachmentControllerTest {
         @Bean AttachmentStorageStrategy storage() { return mock(AttachmentStorageStrategy.class); }
         @Bean ProjectAccessService access() { return mock(ProjectAccessService.class); }
         @Bean com.fasterxml.jackson.databind.Module utcLocalDateTimeModule() { return new SimpleModule(); }
-        @Bean AttachmentService attachments() { return new AttachmentService(mapper(), storage(), access(), tokens(), 1024, 900); }
+        @Bean AttachmentService attachments() { return new AttachmentService(mapper(), storage(), access(), tokens(), 1024); }
     }
 }
