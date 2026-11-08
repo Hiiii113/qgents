@@ -32,7 +32,7 @@ public class ContextMessage {
     @Schema(description = "消息正文")
     private String text;
 
-    // 附件 ID（IMAGE/FILE 消息，十进制字符串）；其他类型为空。供多模态链路按此读取附件字节。
+    // 附件 ID（IMAGE/FILE 消息，十进制字符串）；其他类型为空。需要内容时用 read_attachment 读取。
     @Schema(description = "附件 ID（IMAGE/FILE 消息）")
     private String attachmentId;
 
@@ -44,12 +44,16 @@ public class ContextMessage {
     @Schema(description = "附件 MIME 类型（IMAGE/FILE 消息）")
     private String mediaType;
 
+    // 消息声明的附件大小（字节），仅供展示；实际读取以服务端附件记录为准。
+    @Schema(description = "附件大小（字节，仅展示）")
+    private Long size;
+
     public ContextMessage(Long sequence, String type, String senderType, String senderId, String text) {
-        this(sequence, type, senderType, senderId, text, null, null, null);
+        this(sequence, type, senderType, senderId, text, null, null, null, null);
     }
 
     public ContextMessage(Long sequence, String type, String senderType, String senderId, String text,
-                          String attachmentId, String fileName, String mediaType) {
+                          String attachmentId, String fileName, String mediaType, Long size) {
         this.sequence = sequence;
         this.type = type;
         this.senderType = senderType;
@@ -58,5 +62,6 @@ public class ContextMessage {
         this.attachmentId = attachmentId;
         this.fileName = fileName;
         this.mediaType = mediaType;
+        this.size = size;
     }
 }

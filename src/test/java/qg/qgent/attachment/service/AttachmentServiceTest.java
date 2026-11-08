@@ -13,8 +13,9 @@ import org.springframework.http.HttpStatus;
 import qg.qgent.attachment.dto.AttachmentPreviewUrlResponse;
 import qg.qgent.attachment.entity.AttachmentEntity;
 import qg.qgent.attachment.mapper.AttachmentMapper;
-import qg.qgent.attachment.service.AttachmentService.AttachmentPreviewContent;
 import qg.qgent.attachment.service.AttachmentService.AttachmentPreviewMetadata;
+import qg.qgent.attachment.service.AttachmentService.AttachmentImage;
+import qg.qgent.attachment.service.AttachmentService.AttachmentTextChunk;
 import qg.qgent.attachment.storage.AttachmentContent;
 import qg.qgent.attachment.storage.AttachmentStorageStrategy;
 import qg.qgent.auth.service.TokenService;
@@ -36,7 +37,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * 附件内联预览服务单测：previewUrl / previewContent / previewType 分类 / 鉴权与状态拒绝。
+ * 附件服务单测：previewUrl / 分段读取 / 图片读取 / previewType 分类 / 鉴权与状态拒绝。
  * <p>
  * 使用真实 TokenService（测试密钥签发短期 access token）与 Mockito 隔离 Mapper/存储/项目访问。
  */
@@ -150,35 +151,133 @@ class AttachmentServiceTest {
     }
 
     @Test
-    void previewContentReadsBytesAndClassifiesType() {
+    void readTextChunkConcatenatesToOriginalContentAcrossMultibyteBoundaries() {
         Long projectId = TestIds.next();
         Long actor = TestIds.next();
         Long attachmentId = TestIds.next();
-        byte[] payload = "hello qwen".getBytes(StandardCharsets.UTF_8);
-        when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "doc.pdf", "application/pdf", "READY"));
-        when(storage.loadContent(any(), any(), any())).thenReturn(
-                new AttachmentContent(new ByteArrayInputStream(payload), "application/pdf", "doc.pdf", (long) payload.length));
+        String text = "第一行 abc\n" + "长".repeat(500) + "\n中文🙂结尾";
+        byte[] payload = text.getBytes(StandardCharsets.UTF_8);
+        AttachmentEntity entity = attachment(attachmentId, projectId, "notes.txt", "text/plain", "READY");
+        entity.setSizeBytes((long) payload.length);
+        when(mapper.selectById(attachmentId)).thenReturn(entity);
+        when(storage.loadRange(eq(entity.getObjectKey()), anyLong(), anyLong())).thenAnswer(invocation -> {
+            int start = Math.toIntExact(invocation.getArgument(1));
+            int end = Math.toIntExact(invocation.getArgument(2));
+            return new ByteArrayInputStream(payload, start, end - start + 1);
+        });
 
-        AttachmentPreviewContent pc = service.previewContent(actor, projectId, attachmentId);
+        StringBuilder joined = new StringBuilder();
+        Long cursor = 0L;
+        int chunks = 0;
+        while (cursor != null) {
+            AttachmentTextChunk chunk = service.readTextChunk(actor, projectId, attachmentId, cursor, 5);
+            assertThat(chunk.offset()).isEqualTo(cursor);
+            joined.append(chunk.content());
+            cursor = chunk.nextOffset();
+            chunks++;
+        }
 
-        assertThat(pc.previewType()).isEqualTo("PDF");
-        assertThat(pc.bytes()).isEqualTo(payload);
-        assertThat(pc.mediaType()).isEqualTo("application/pdf");
-        assertThat(pc.fileName()).isEqualTo("doc.pdf");
+        assertThat(joined.toString()).isEqualTo(text);
+        assertThat(chunks).isGreaterThan(1);
     }
 
     @Test
-    void previewContentRejectsNotReady() {
+    void readTextChunkAtEndReturnsEmptyContentWithoutNextCursor() {
         Long projectId = TestIds.next();
         Long attachmentId = TestIds.next();
-        when(mapper.selectById(attachmentId)).thenReturn(attachment(attachmentId, projectId, "x.txt", "text/plain", "FAILED"));
+        AttachmentEntity entity = attachment(attachmentId, projectId, "notes.txt", "text/plain", "READY");
+        entity.setSizeBytes(5L);
+        when(mapper.selectById(attachmentId)).thenReturn(entity);
 
-        assertThatThrownBy(() -> service.previewContent(TestIds.next(), projectId, attachmentId))
+        AttachmentTextChunk chunk = service.readTextChunk(TestIds.next(), projectId, attachmentId, 5, 64);
+
+        assertThat(chunk.content()).isEmpty();
+        assertThat(chunk.nextOffset()).isNull();
+    }
+
+    @Test
+    void readTextChunkRejectsOffsetPastEndAndUnsupportedTypes() {
+        Long projectId = TestIds.next();
+        Long attachmentId = TestIds.next();
+        AttachmentEntity text = attachment(attachmentId, projectId, "notes.txt", "text/plain", "READY");
+        text.setSizeBytes(5L);
+        when(mapper.selectById(attachmentId)).thenReturn(text);
+
+        assertThatThrownBy(() -> service.readTextChunk(TestIds.next(), projectId, attachmentId, 6, 64))
                 .isInstanceOf(ApiException.class)
-                .satisfies(e -> {
-                    assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_NOT_READY");
-                    assertThat(((ApiException) e).status().value()).isEqualTo(409);
-                });
+                .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_OFFSET_INVALID"));
+
+        AttachmentEntity pdf = attachment(attachmentId, projectId, "doc.pdf", "application/pdf", "READY");
+        when(mapper.selectById(attachmentId)).thenReturn(pdf);
+        assertThatThrownBy(() -> service.readTextChunk(TestIds.next(), projectId, attachmentId, 0, 64))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_TYPE_UNSUPPORTED"));
+        verify(storage, org.mockito.Mockito.never()).loadRange(any(), anyLong(), anyLong());
+    }
+
+    @Test
+    void readTextChunkReportsStreamFailure() {
+        Long projectId = TestIds.next();
+        Long attachmentId = TestIds.next();
+        AttachmentEntity entity = attachment(attachmentId, projectId, "notes.txt", "text/plain", "READY");
+        entity.setSizeBytes(5L);
+        when(mapper.selectById(attachmentId)).thenReturn(entity);
+        when(storage.loadRange(eq(entity.getObjectKey()), anyLong(), anyLong())).thenReturn(new InputStream() {
+            @Override
+            public int read() throws java.io.IOException {
+                throw new java.io.IOException("broken stream");
+            }
+        });
+
+        assertThatThrownBy(() -> service.readTextChunk(TestIds.next(), projectId, attachmentId, 0, 64))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_READ_FAILED"));
+    }
+
+    @Test
+    void readImageReturnsSupportedImageBytes() {
+        Long projectId = TestIds.next();
+        Long attachmentId = TestIds.next();
+        byte[] payload = new byte[] { 1, 2, 3 };
+        AttachmentEntity entity = attachment(attachmentId, projectId, "photo.png", "image/png", "READY");
+        entity.setSizeBytes((long) payload.length);
+        when(mapper.selectById(attachmentId)).thenReturn(entity);
+        when(storage.loadContent(entity.getObjectKey(), "photo.png", "image/png"))
+                .thenReturn(new AttachmentContent(new ByteArrayInputStream(payload), "image/png", "photo.png", 3L));
+
+        AttachmentImage image = service.readImage(TestIds.next(), projectId, attachmentId);
+
+        assertThat(image.fileName()).isEqualTo("photo.png");
+        assertThat(image.mediaType()).isEqualTo("image/png");
+        assertThat(image.bytes()).isEqualTo(payload);
+    }
+
+    @Test
+    void readImageRejectsUnsupportedFormatAndOversizedBytes() {
+        Long projectId = TestIds.next();
+        Long attachmentId = TestIds.next();
+        AttachmentEntity svg = attachment(attachmentId, projectId, "icon.svg", "image/svg+xml", "READY");
+        when(mapper.selectById(attachmentId)).thenReturn(svg);
+        assertThatThrownBy(() -> service.readImage(TestIds.next(), projectId, attachmentId))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_IMAGE_TYPE_UNSUPPORTED"));
+
+        AttachmentEntity declaredLarge = attachment(attachmentId, projectId, "huge.png", "image/png", "READY");
+        declaredLarge.setSizeBytes(AttachmentService.IMAGE_BYTES_CAP + 1);
+        when(mapper.selectById(attachmentId)).thenReturn(declaredLarge);
+        assertThatThrownBy(() -> service.readImage(TestIds.next(), projectId, attachmentId))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_IMAGE_TOO_LARGE"));
+
+        AttachmentEntity actualLarge = attachment(attachmentId, projectId, "large.png", "image/png", "READY");
+        actualLarge.setSizeBytes(3L);
+        when(mapper.selectById(attachmentId)).thenReturn(actualLarge);
+        when(storage.loadContent(actualLarge.getObjectKey(), "large.png", "image/png"))
+                .thenReturn(new AttachmentContent(new ByteArrayInputStream(new byte[(int) AttachmentService.IMAGE_BYTES_CAP + 1]),
+                        "image/png", "large.png", AttachmentService.IMAGE_BYTES_CAP + 1));
+        assertThatThrownBy(() -> service.readImage(TestIds.next(), projectId, attachmentId))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_IMAGE_TOO_LARGE"));
     }
 
     @Test
@@ -292,7 +391,7 @@ class AttachmentServiceTest {
         byte[] data = "hello".getBytes(StandardCharsets.UTF_8);
         localService.uploadBytes(actor, projectId, id, new ByteArrayInputStream(data));
         assertThat(localService.confirmUpload(actor, projectId, id).getStatus()).isEqualTo("READY");
-        assertThat(localService.previewContent(actor, projectId, id).bytes()).isEqualTo(data);
+        assertThat(localService.readTextChunk(actor, projectId, id, 0, 1024).content()).isEqualTo("hello");
         assertThat(localService.messagePreview(projectId, id.toString()).getPreviewType()).isEqualTo("TEXT");
         assertThat(localService.getPreviewInfo(actor, projectId, id).getDownloadUrl()).isNull();
     }

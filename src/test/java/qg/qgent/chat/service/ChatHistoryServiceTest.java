@@ -31,10 +31,13 @@ class ChatHistoryServiceTest {
 
         String attachmentId = Long.toString(TestIds.next());
         message.setMessageType("IMAGE");
-        message.setContent("{\"attachmentId\":\"" + attachmentId + "\",\"mediaType\":\"image/png\"}");
+        message.setContent("{\"attachmentId\":\"" + attachmentId + "\",\"name\":\"photo.png\","
+                + "\"mediaType\":\"image/png\",\"size\":2048}");
         var context = service.readChatMessage(TestIds.next(), TestIds.next(), group, message.getId());
         assertThat(context.getAttachmentId()).isEqualTo(attachmentId);
+        assertThat(context.getFileName()).isEqualTo("photo.png");
         assertThat(context.getMediaType()).isEqualTo("image/png");
+        assertThat(context.getSize()).isEqualTo(2048L);
         assertThat(context.getText()).isEmpty();
     }
 

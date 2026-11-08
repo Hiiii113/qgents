@@ -22,6 +22,7 @@ import qg.qgent.project.service.ProjectAccessService;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Locale;
@@ -151,7 +152,7 @@ public class AttachmentService {
                 !"UNSUPPORTED".equals(previewType), previewType, previewUrl, downloadUrl, expiresAt);
     }
 
-    /** Agent 读取文件前，先用类型和大小判断是否放入模型上下文。 */
+    /** Agent 按需读取前，先用类型和大小判断能否处理，不读取字节。 */
     public AttachmentPreviewMetadata previewMetadata(Long actor, Long projectId, Long attachmentId) {
         AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
         return new AttachmentPreviewMetadata(classifyPreviewType(attachment), attachment.getSizeBytes());
@@ -176,13 +177,88 @@ public class AttachmentService {
         return new MessageAttachmentPreview(!"UNSUPPORTED".equals(previewType), previewType);
     }
 
-    /** Agent 在已有大小预算内读取完整内容；浏览器预览使用 previewResource。 */
-    public AttachmentPreviewContent previewContent(Long actor, Long projectId, Long attachmentId) {
+    /** 按字节游标读取文本或代码附件；返回内容始终停在完整 UTF-8 字符边界。 */
+    public AttachmentTextChunk readTextChunk(Long actor, Long projectId, Long attachmentId,
+            long offset, int maxBytes) {
+        if (maxBytes < 4) throw new IllegalArgumentException("maxBytes 至少为 4，避免 UTF-8 字符无法前进");
         AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
-        AttachmentContent loaded = storage.loadContent(attachment.getObjectKey(), attachment.getFileName(),
-                attachment.getMediaType());
-        return new AttachmentPreviewContent(readAll(loaded.getStream()), classifyPreviewType(attachment),
-                attachment.getFileName(), attachment.getMediaType(), attachment.getSizeBytes());
+        String previewType = classifyPreviewType(attachment);
+        if (!"TEXT".equals(previewType) && !"CODE".equals(previewType)) {
+            throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "ATTACHMENT_TYPE_UNSUPPORTED",
+                    "暂不支持读取该附件类型（" + previewType + "），仅支持文本和代码");
+        }
+        long size = attachment.getSizeBytes();
+        if (offset < 0 || offset > size) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ATTACHMENT_OFFSET_INVALID",
+                    "读取位置无效，附件大小为 " + size + " 字节");
+        }
+        if (offset == size) {
+            return new AttachmentTextChunk(attachment.getFileName(), attachment.getMediaType(), size, offset, "", null);
+        }
+        long end = Math.min(offset + maxBytes - 1, size - 1);
+        byte[] bytes;
+        try (InputStream stream = storage.loadRange(attachment.getObjectKey(), offset, end)) {
+            bytes = stream.readNBytes(maxBytes);
+        } catch (IOException e) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "ATTACHMENT_READ_FAILED", "读取附件内容失败");
+        }
+        if (bytes.length == 0) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "ATTACHMENT_READ_FAILED", "附件内容为空或不可读");
+        }
+        int length = utf8CompleteLength(bytes);
+        // 极端无效 UTF-8 下没有完整字符边界，也要前进，避免同一游标反复返回。
+        if (length == 0) length = bytes.length;
+        long nextOffset = offset + length;
+        return new AttachmentTextChunk(attachment.getFileName(), attachment.getMediaType(), size, offset,
+                new String(bytes, 0, length, StandardCharsets.UTF_8), nextOffset < size ? nextOffset : null);
+    }
+
+    /** 读取单张图片；类型须为当前模型接口可处理的格式，字节数在读取时再次限制。 */
+    public AttachmentImage readImage(Long actor, Long projectId, Long attachmentId) {
+        AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
+        if (!"IMAGE".equals(classifyPreviewType(attachment))) {
+            throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "ATTACHMENT_TYPE_UNSUPPORTED",
+                    "附件不是图片，无法作为图片读取");
+        }
+        String mediaType = attachment.getMediaType() == null ? ""
+                : attachment.getMediaType().toLowerCase(Locale.ROOT).trim();
+        if (!SUPPORTED_IMAGE_MEDIA_TYPES.contains(mediaType)) {
+            throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "ATTACHMENT_IMAGE_TYPE_UNSUPPORTED",
+                    "当前模型接口不支持图片格式 " + mediaType + "，支持 png/jpeg/gif/webp");
+        }
+        if (attachment.getSizeBytes() > IMAGE_BYTES_CAP) {
+            throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "ATTACHMENT_IMAGE_TOO_LARGE",
+                    "图片超过 " + IMAGE_BYTES_CAP + " 字节上限");
+        }
+        byte[] bytes;
+        try (InputStream stream = storage.loadContent(attachment.getObjectKey(), attachment.getFileName(),
+                attachment.getMediaType()).getStream()) {
+            bytes = stream.readNBytes((int) IMAGE_BYTES_CAP + 1);
+        } catch (IOException e) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "ATTACHMENT_READ_FAILED", "读取附件内容失败");
+        }
+        if (bytes.length > IMAGE_BYTES_CAP) {
+            throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "ATTACHMENT_IMAGE_TOO_LARGE",
+                    "图片超过 " + IMAGE_BYTES_CAP + " 字节上限");
+        }
+        return new AttachmentImage(attachment.getFileName(), mediaType, bytes);
+    }
+
+    /** 截掉末尾不完整的 UTF-8 多字节序列；无效字节按替换字符解码。 */
+    private static int utf8CompleteLength(byte[] bytes) {
+        int end = bytes.length;
+        int lead = end - 1;
+        while (lead >= 0 && end - lead <= 4 && (bytes[lead] & 0xC0) == 0x80) {
+            lead--;
+        }
+        if (lead < 0) return end;
+        int value = bytes[lead] & 0xFF;
+        int expected = value < 0x80 ? 1
+                : (value >> 5) == 0x6 ? 2
+                : (value >> 4) == 0xE ? 3
+                : (value >> 3) == 0x1E ? 4
+                : 1;
+        return end - lead < expected ? lead : end;
     }
 
     /** 浏览器预览仅准备元数据，内容由 Spring 在写响应时按需打开。 */
@@ -197,13 +273,18 @@ public class AttachmentService {
     public record AttachmentPreviewResource(AttachmentResource resource, String previewType) {
     }
 
-    private byte[] readAll(InputStream in) {
-        try (InputStream stream = in) {
-            return stream.readAllBytes();
-        } catch (IOException e) {
-            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "ATTACHMENT_READ_FAILED", "读取附件内容失败");
-        }
+    public record AttachmentTextChunk(String fileName, String mediaType, long sizeBytes, long offset,
+            String content, Long nextOffset) {
     }
+
+    public record AttachmentImage(String fileName, String mediaType, byte[] bytes) {
+    }
+
+    // 单张图片字节上限；超限时工具返回明确失败，不加入模型请求。
+    public static final long IMAGE_BYTES_CAP = 3_900_000L;
+
+    private static final Set<String> SUPPORTED_IMAGE_MEDIA_TYPES =
+            Set.of("image/png", "image/jpeg", "image/gif", "image/webp");
 
     private static final Set<String> CODE_MEDIA_TYPES = Set.of(
             "application/json", "application/xml", "application/javascript", "application/x-javascript",
@@ -256,10 +337,6 @@ public class AttachmentService {
     public static class MessageAttachmentPreview {
         boolean previewable;
         String previewType;
-    }
-
-    public record AttachmentPreviewContent(byte[] bytes, String previewType, String fileName,
-            String mediaType, Long sizeBytes) {
     }
 
     private AttachmentEntity requireReadyAttachment(Long actor, Long projectId, Long attachmentId) {

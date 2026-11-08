@@ -5,9 +5,11 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.content.Media;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Value;
@@ -57,64 +59,70 @@ public class AgentLoop {
     public Result run(Conversation conversation,
                       Supplier<List<ToolCallback>> availableTools, BooleanSupplier cancelled,
                       UpdateSource updates) {
-        for (int round = 1; round <= maxRounds; round++) {
-            if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
-                return new Result(false, "Agent 运行已取消", round - 1);
-            }
-            conversation.appendAll(updates.drain());
-            List<ToolCallback> tools = availableTools.get();
-            Map<String, ToolCallback> callbacks = new LinkedHashMap<>();
-            for (ToolCallback tool : tools) {
-                String name = tool.getToolDefinition().name();
-                if (callbacks.putIfAbsent(name, tool) != null) {
-                    throw new IllegalArgumentException("重复工具名：" + name);
+        try {
+            for (int round = 1; round <= maxRounds; round++) {
+                if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
+                    return new Result(false, "Agent 运行已取消", round - 1);
                 }
-            }
-            if (!(model.getOptions() instanceof OpenAiChatOptions defaults)) {
-                throw new IllegalStateException("当前模型需要 OpenAiChatOptions");
-            }
-            OpenAiChatOptions options = (OpenAiChatOptions) defaults.mutate()
-                    .toolCallbacks(tools).toolChoice(tools.isEmpty() ? "none" : "auto")
-                    .maxRetries(0).build();
-            List<Message> request = new ArrayList<>();
-            request.add(new SystemMessage(conversation.systemPrompt()));
-            request.addAll(conversation.history());
-            ChatResponse response = model.call(new Prompt(request, options));
-            if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
-                return new Result(false, "Agent 运行已取消", round);
-            }
-            if (response == null || response.getResult() == null) {
-                return new Result(false, "模型没有返回有效回复", round);
-            }
-            if (response.getResult().getMetadata() != null
-                    && "length".equalsIgnoreCase(response.getResult().getMetadata().getFinishReason())) {
-                return new Result(false, "模型回复被截断，请缩小问题范围后重试", round);
-            }
-            AssistantMessage assistant = response.getResult().getOutput();
-            if (assistant == null) return new Result(false, "模型没有返回有效回复", round);
-            if (!assistant.hasToolCalls()) {
-                String text = assistant.getText();
-                if (text == null || text.isBlank()) return new Result(false, "模型返回了空回复", round);
-                conversation.append(assistant);
-                List<Message> arrivedBeforeWait = updates.drain();
-                conversation.appendAll(arrivedBeforeWait);
-                List<Message> completedWork = updates.awaitNext();
+                conversation.appendAll(updates.drain());
+                List<ToolCallback> tools = availableTools.get();
+                Map<String, ToolCallback> callbacks = new LinkedHashMap<>();
+                for (ToolCallback tool : tools) {
+                    String name = tool.getToolDefinition().name();
+                    if (callbacks.putIfAbsent(name, tool) != null) {
+                        throw new IllegalArgumentException("重复工具名：" + name);
+                    }
+                }
+                if (!(model.getOptions() instanceof OpenAiChatOptions defaults)) {
+                    throw new IllegalStateException("当前模型需要 OpenAiChatOptions");
+                }
+                OpenAiChatOptions options = (OpenAiChatOptions) defaults.mutate()
+                        .toolCallbacks(tools).toolChoice(tools.isEmpty() ? "none" : "auto")
+                        .maxRetries(0).build();
+                List<Message> request = new ArrayList<>();
+                request.add(new SystemMessage(conversation.systemPrompt()));
+                request.addAll(conversation.history());
+                ChatResponse response = model.call(new Prompt(request, options));
                 if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
                     return new Result(false, "Agent 运行已取消", round);
                 }
-                if (!arrivedBeforeWait.isEmpty() || !completedWork.isEmpty()) {
-                    conversation.appendAll(completedWork);
-                    continue;
+                if (response == null || response.getResult() == null) {
+                    return new Result(false, "模型没有返回有效回复", round);
                 }
-                return new Result(true, text, round);
+                if (response.getResult().getMetadata() != null
+                        && "length".equalsIgnoreCase(response.getResult().getMetadata().getFinishReason())) {
+                    return new Result(false, "模型回复被截断，请缩小问题范围后重试", round);
+                }
+                AssistantMessage assistant = response.getResult().getOutput();
+                if (assistant == null) return new Result(false, "模型没有返回有效回复", round);
+                if (!assistant.hasToolCalls()) {
+                    String text = assistant.getText();
+                    if (text == null || text.isBlank()) return new Result(false, "模型返回了空回复", round);
+                    conversation.append(assistant);
+                    List<Message> arrivedBeforeWait = updates.drain();
+                    conversation.appendAll(arrivedBeforeWait);
+                    List<Message> completedWork = updates.awaitNext();
+                    if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
+                        return new Result(false, "Agent 运行已取消", round);
+                    }
+                    if (!arrivedBeforeWait.isEmpty() || !completedWork.isEmpty()) {
+                        conversation.appendAll(completedWork);
+                        continue;
+                    }
+                    return new Result(true, text, round);
+                }
+                // 保留原始消息及供应商元数据，下一轮完整回传 tool_calls/reasoning_content。
+                conversation.append(assistant);
+                ToolCallExecutor.Result results = toolCalls.execute(assistant.getToolCalls(), callbacks, cancelled);
+                if (results.cancelled()) return new Result(false, "Agent 运行已取消", round);
+                conversation.append(ToolResponseMessage.builder().responses(results.responses()).build());
+                // 图片必须在完整工具结果之后追加，且只在确实还有下一轮模型调用时发送。
+                if (round < maxRounds) conversation.appendAll(conversation.takeStagedImages());
             }
-            // 保留原始消息及供应商元数据，下一轮完整回传 tool_calls/reasoning_content。
-            conversation.append(assistant);
-            ToolCallExecutor.Result results = toolCalls.execute(assistant.getToolCalls(), callbacks, cancelled);
-            if (results.cancelled()) return new Result(false, "Agent 运行已取消", round);
-            conversation.append(ToolResponseMessage.builder().responses(results.responses()).build());
+            return new Result(false, "Agent 已达到最大调用轮次（" + maxRounds + "），请缩小问题范围后重试", maxRounds);
+        } finally {
+            conversation.clearStagedImages();
         }
-        return new Result(false, "Agent 已达到最大调用轮次（" + maxRounds + "），请缩小问题范围后重试", maxRounds);
     }
 
     public record Result(boolean success, String text, int rounds) { }
@@ -134,6 +142,7 @@ public class AgentLoop {
     public static final class Conversation {
         private final String systemPrompt;
         private final List<Message> history;
+        private final List<StagedImage> stagedImages = new ArrayList<>();
 
         private Conversation(String systemPrompt, List<Message> initialHistory) {
             this.systemPrompt = systemPrompt;
@@ -141,8 +150,35 @@ public class AgentLoop {
         }
 
         public synchronized void addUserMessage(String text) {
-            history.add(new org.springframework.ai.chat.messages.UserMessage(text));
+            history.add(new UserMessage(text));
         }
+
+        /** 图片暂存在各自会话中，由 loop 在工具结果之后追加。 */
+        public synchronized void stageImage(String attachmentId, String fileName, Media media) {
+            stagedImages.add(new StagedImage(attachmentId, fileName, media));
+        }
+
+        private synchronized List<Message> takeStagedImages() {
+            if (stagedImages.isEmpty()) return List.of();
+            StringBuilder text = new StringBuilder("以下图片由 read_attachment 读取，按工具调用顺序附在本消息中：\n");
+            List<Media> media = new ArrayList<>();
+            for (StagedImage image : stagedImages) {
+                text.append("- 附件 ").append(image.attachmentId());
+                if (image.fileName() != null && !image.fileName().isBlank()) {
+                    text.append(' ').append(image.fileName());
+                }
+                text.append('\n');
+                media.add(image.media());
+            }
+            stagedImages.clear();
+            return List.of(UserMessage.builder().text(text.toString()).media(media).build());
+        }
+
+        private synchronized void clearStagedImages() {
+            stagedImages.clear();
+        }
+
+        private record StagedImage(String attachmentId, String fileName, Media media) { }
 
         private String systemPrompt() { return systemPrompt; }
         private synchronized List<Message> history() { return List.copyOf(history); }

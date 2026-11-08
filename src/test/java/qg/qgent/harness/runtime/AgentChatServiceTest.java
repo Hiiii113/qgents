@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
@@ -15,7 +16,8 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import qg.qgent.harness.entity.AgentRunEntity;
 import qg.qgent.harness.service.AgentRunService;
-import qg.qgent.attachment.service.AttachmentMediaLoader;
+import qg.qgent.attachment.service.AttachmentService;
+import qg.qgent.chat.dto.ContextMessage;
 import qg.qgent.chat.service.ChatHistoryService;
 import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.service.MessageService;
@@ -51,6 +53,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -66,6 +70,28 @@ class AgentChatServiceTest {
     void stopExecutors() {
         childExecutor.shutdownNow();
         rootExecutor.shutdownNow();
+    }
+
+    @Test
+    void rootPromptCarriesAttachmentReferencesWithoutLoadingContentOrMedia() {
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
+        ChatModel model = model();
+        when(model.call(any(Prompt.class))).thenReturn(reply("已收到"));
+        var fixture = fixture(model, actor, project, group, message, childExecutor);
+        GroupContext groupContext = new GroupContext();
+        groupContext.setConversation(List.of(new ContextMessage(1L, "IMAGE", "USER", "1", "",
+                "9", "photo.png", "image/png", 2048L)));
+        when(fixture.context().buildForGroup(actor, project, group, 30)).thenReturn(groupContext);
+
+        fixture.service().replyToMention(fixture.event(), "看看图片");
+
+        org.mockito.ArgumentCaptor<Prompt> prompts = org.mockito.ArgumentCaptor.forClass(Prompt.class);
+        verify(model).call(prompts.capture());
+        UserMessage first = (UserMessage) prompts.getValue().getInstructions().get(1);
+        assertThat(first.getMedia()).isEmpty();
+        assertThat(first.getText()).contains("\"attachmentId\":\"9\"", "\"size\":2048");
+        verify(fixture.attachments(), never()).readImage(any(), any(), any());
+        verify(fixture.attachments(), never()).readTextChunk(any(), any(), any(), anyLong(), anyInt());
     }
 
     @Test
@@ -90,6 +116,9 @@ class AgentChatServiceTest {
                 case 1 -> {
                     assertThat(prompt.getInstructions()).anySatisfy(item ->
                             assertThat(item.getText()).contains("published-skill", "适用于测试任务"));
+                    assertThat(((OpenAiChatOptions) prompt.getOptions()).getToolCallbacks())
+                            .extracting(callback -> callback.getToolDefinition().name())
+                            .contains("read_attachment");
                     yield toolCall("start_subagent", "{\"instruction\":\"独立分析接口\"}");
                 }
                 case 2 -> {
@@ -117,7 +146,8 @@ class AgentChatServiceTest {
         assertThat(childInput.get()).contains("published-skill", "适用于测试任务", "activate_skill", "# 项目约定")
                 .doesNotContain("root-only context");
         assertThat(childToolNames.get()).doesNotContain("start_subagent", "wait_subagent", "get_subagent_result",
-                "message_subagent", "continue_subagent", "stop_subagent", "cancel_agent");
+                "message_subagent", "continue_subagent", "stop_subagent", "cancel_agent")
+                .contains("read_attachment");
         verify(fixture.messages()).sendAsAgent(eq(group), argThat(request ->
                 "已汇总子任务结果".equals(request.getContent().get("text"))));
     }
@@ -677,14 +707,13 @@ class AgentChatServiceTest {
         ContextService context = mock(ContextService.class);
         SkillService skills = mock(SkillService.class);
         ChatHistoryService history = mock(ChatHistoryService.class);
-        AttachmentMediaLoader attachments = mock(AttachmentMediaLoader.class);
+        AttachmentService attachments = mock(AttachmentService.class);
         GroupContext groupContext = new GroupContext();
         groupContext.setTitle("root-only context");
         groupContext.setConversation(List.of());
         groupContext.setSkills(List.of(new ContextSkill(TestIds.next(), "published-skill", "适用于测试任务")));
         when(context.buildForGroup(actor, project, group, 30)).thenReturn(groupContext);
         when(skills.publishedCatalog(actor, project)).thenReturn(groupContext.getSkills());
-        when(attachments.load(actor, project, List.of())).thenReturn(new AttachmentMediaLoader.Result(List.of(), ""));
         AgentRunEntity root = new AgentRunEntity();
         root.setId(TestIds.next());
         root.setProjectId(project);
@@ -721,7 +750,7 @@ class AgentChatServiceTest {
                 attachments, memories, new ObjectMapper(),
                 childExecutor, maxSubagents);
         MessageSentEvent event = new MessageSentEvent(actor, project, group, message, List.of());
-        return new Fixture(service, event, messages, runs, root, workspaces, codeAccess, sessions);
+        return new Fixture(service, event, messages, runs, root, workspaces, codeAccess, sessions, context, attachments);
     }
 
     private AgentRunEntity run(AgentRunEntity parent, String instruction) {
@@ -799,5 +828,6 @@ class AgentChatServiceTest {
 
     private record Fixture(AgentChatService service, MessageSentEvent event, MessageService messages,
                            AgentRunService runs, AgentRunEntity root, WorkspaceService workspaces,
-                           SandboxFiles codeAccess, SandboxSessionManager sessions) { }
+                           SandboxFiles codeAccess, SandboxSessionManager sessions, ContextService context,
+                           AttachmentService attachments) { }
 }

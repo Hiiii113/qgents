@@ -61,7 +61,7 @@ public class ChatHistoryService {
         return m.getAuthorUserId() == null ? null : m.getAuthorUserId().toString();
     }
 
-    /** 提取文本或代码正文；附件仅保留 ID、名称和媒体类型供多模态输入读取。 */
+    /** 提取文本或代码正文；附件仅保留 ID、名称、媒体类型和声明大小供按需读取。 */
     private ContextMessage toContextMessage(MessageEntity m) {
         Map<?, ?> content = parseContent(m);
         String type = m.getMessageType();
@@ -71,10 +71,15 @@ public class ChatHistoryService {
         String attachmentId = stringField(content, "attachmentId");
         ContextMessage message = new ContextMessage(m.getSequenceNo(), type, senderType(m), senderId(m), text,
                 attachmentId, stringField(content, "name"),
-                stringField(content, "mediaType"));
+                stringField(content, "mediaType"), sizeField(content));
         message.setId(m.getId() == null ? null : m.getId().toString());
         message.setReplyToId(m.getReplyToMessageId() == null ? null : m.getReplyToMessageId().toString());
         return message;
+    }
+
+    /** 附件大小来自客户端消息内容，只用于展示。 */
+    private Long sizeField(Map<?, ?> content) {
+        return content.get("size") instanceof Number size ? size.longValue() : null;
     }
 
     /** 解析 content JSON；正文损坏时带上消息 ID 抛出，避免把空内容当作正常消息。 */
