@@ -147,6 +147,21 @@ class AvatarStorageServiceTest {
     }
 
     @Test
+    void objectKeyOnlyResolvesCurrentPublicUrlAndOwnerPrefix() {
+        AvatarStorageService storage = enabled();
+
+        // 公共地址带尾斜杠、URL 带查询参数时仍能还原对象键
+        assertThat(storage.objectKey("avatars", 7L, "https://cdn.example.com/avatars/7/a.png?v=1"))
+                .isEqualTo("avatars/7/a.png");
+        assertThat(storage.objectKey("avatars", 7L, "https://cdn.example.com/avatars/7/a.png")).isEqualTo("avatars/7/a.png");
+        // 外链、其他 bucket、其他主体前缀都不处理
+        assertThat(storage.objectKey("avatars", 7L, "https://other.example.com/avatars/7/a.png")).isNull();
+        assertThat(storage.objectKey("avatars", 7L, "https://cdn.example.com/avatars/8/a.png")).isNull();
+        assertThat(storage.objectKey("avatars", 7L, "https://cdn.example.com/teams/7/a.png")).isNull();
+        assertThat(storage.objectKey("avatars", 7L, null)).isNull();
+    }
+
+    @Test
     void confirmReturnsPublicReadUrl() {
         when(oss.doesObjectExist(eq("my-bucket"), any(String.class))).thenReturn(true);
         assertThat(enabled().confirm("avatars", 1L, "avatars/1/x.png"))

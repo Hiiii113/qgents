@@ -23,7 +23,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** AvatarService 头像上传业务测试：凭证透传、对象键归属校验、确认落库并尽力删旧对象。 */
+/** AvatarService 头像上传业务测试：凭证透传、确认写入头像 URL 并清理被替换的旧对象。 */
 class AvatarServiceTest {
 
     private final UserMapper userMapper = mock(UserMapper.class);
@@ -36,8 +36,7 @@ class AvatarServiceTest {
     void stubUser() {
         UserEntity user = new UserEntity();
         user.setId(userId);
-        user.setAvatarUrl("https://bucket/old");
-        user.setAvatarObjectKey("avatars/" + userId + "/old.jpg");
+        user.setAvatarUrl("https://bucket/avatars/" + userId + "/old.jpg");
         when(userMapper.selectById(userId)).thenReturn(user);
     }
 
@@ -55,7 +54,7 @@ class AvatarServiceTest {
     }
 
     @Test
-    void confirmSetsAvatarUrlAndObjectKeyAndDeletesOld() {
+    void confirmWritesAvatarUrlAndDeletesReplacedObject() {
         String newKey = "avatars/" + userId + "/new.jpg";
         when(storage.confirm("avatars", userId, newKey)).thenReturn("https://public/" + newKey);
         AvatarConfirmRequest request = new AvatarConfirmRequest();
@@ -64,19 +63,9 @@ class AvatarServiceTest {
         AvatarConfirmResponse response = service.confirm(userId, request);
 
         assertThat(response.getAvatarUrl()).isEqualTo("https://public/" + newKey);
-        verify(userMapper).selectById(userId);
-        verify(userMapper).updateById(any(UserEntity.class));
-        verify(storage).deleteObject("avatars/" + userId + "/old.jpg");
-    }
-
-    @Test
-    void confirmDoesNotDeleteOldWhenSameAsNewOrNoPrevious() {
-        when(storage.confirm("avatars", userId, "avatars/" + userId + "/old.jpg")).thenReturn("https://public/x");
-        AvatarConfirmRequest request = new AvatarConfirmRequest();
-        request.setObjectKey("avatars/" + userId + "/old.jpg");
-
-        service.confirm(userId, request);
-
-        org.mockito.Mockito.verify(storage, org.mockito.Mockito.never()).deleteObject(any());
+        verify(userMapper).update(any(), any());
+        // 只按旧 URL 定位旧对象，不再依赖 avatar_object_key 列
+        verify(storage).deleteReplacedAfterCommit("avatars", userId,
+                "https://bucket/avatars/" + userId + "/old.jpg", newKey);
     }
 }

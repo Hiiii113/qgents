@@ -1,5 +1,6 @@
 package qg.qgent.user.service;
 
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -14,7 +15,7 @@ import qg.qgent.user.mapper.UserMapper;
 import qg.qgent.common.storage.AvatarStorageService;
 
 
-/** 确认上传后保存用户头像 URL 和对象键，并尝试删除旧头像。 */
+/** 用户头像：签发凭证、确认上传后写入头像 URL 并删除被替换的旧对象。 */
 @Service
 @RequiredArgsConstructor
 public class AvatarService {
@@ -31,7 +32,7 @@ public class AvatarService {
                 credential.credential().getExpiresAt());
     }
 
-    /** 确认头像上传并落库：校验对象属于当前用户、已真实上传，切换当前头像并尽力删除旧对象。 */
+    /** 确认头像上传：校验对象属于当前用户且已真实上传，写入头像 URL 并在提交后删除旧对象。 */
     @Transactional
     public AvatarConfirmResponse confirm(Long userId, AvatarConfirmRequest body) {
         String objectKey = body.getObjectKey();
@@ -39,15 +40,11 @@ public class AvatarService {
         if (user == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "用户不存在");
         }
-        String previousObjectKey = user.getAvatarObjectKey();
         String publicUrl = storage.confirm("avatars", userId, objectKey);
-        user.setAvatarUrl(publicUrl);
-        user.setAvatarObjectKey(objectKey);
-        userMapper.updateById(user);
-        if (previousObjectKey != null && !previousObjectKey.equals(objectKey)) {
-            // 尽力删除旧头像对象；删除失败静默（不影响新头像已生效）
-            storage.deleteObject(previousObjectKey);
-        }
+        userMapper.update(null, Wrappers.<UserEntity>lambdaUpdate()
+                .set(UserEntity::getAvatarUrl, publicUrl)
+                .eq(UserEntity::getId, userId));
+        storage.deleteReplacedAfterCommit("avatars", userId, user.getAvatarUrl(), objectKey);
         return new AvatarConfirmResponse(publicUrl);
     }
 }

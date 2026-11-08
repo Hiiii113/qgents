@@ -12,6 +12,7 @@ import qg.qgent.auth.dto.LoginRequest;
 import qg.qgent.auth.dto.RegisterRequest;
 import qg.qgent.auth.dto.ResetPasswordRequest;
 import qg.qgent.auth.mail.VerificationCodeMailer;
+import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.dto.ProjectResponse;
 import qg.qgent.project.mapper.ProjectMapper;
@@ -26,7 +27,6 @@ import qg.qgent.user.dto.UserUpdateRequest;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
 
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Duration;
@@ -55,6 +55,7 @@ public class AuthService {
     private final TokenService tokens;
     private final VerificationCodeMailer mailer;
     private final RateLimiter limiter;
+    private final AvatarStorageService avatarStorage;
     private final String dummyPasswordHash;
 
     public AuthService(UserMapper userMapper, RefreshTokenStore refreshTokens,
@@ -62,7 +63,7 @@ public class AuthService {
                        TeamMapper teamMapper, TeamMemberMapper teamMemberMapper,
                        ProjectMapper projectMapper, RsaPasswordDecryptor rsa,
                        PasswordEncoder passwords, TokenService tokens, VerificationCodeMailer mailer,
-                       RateLimiter limiter) {
+                       RateLimiter limiter, AvatarStorageService avatarStorage) {
         this.userMapper = userMapper;
         this.refreshTokens = refreshTokens;
         this.verificationCodes = verificationCodes;
@@ -74,6 +75,7 @@ public class AuthService {
         this.tokens = tokens;
         this.mailer = mailer;
         this.limiter = limiter;
+        this.avatarStorage = avatarStorage;
         this.dummyPasswordHash = passwords.encode("qgents-dummy-password-not-used");
     }
 
@@ -197,8 +199,10 @@ public class AuthService {
         }
         verifyCode(VerificationCodeStore.Purpose.PASSWORD_RESET, email, input.getToken(), fingerprint);
         refreshTokens.revokeAll(user.getId());
-        user.setPasswordHash(passwords.encode(password));
-        userMapper.updateById(user);
+        // 只更新密码字段，避免覆盖并发写入的最近团队选择
+        userMapper.update(null, Wrappers.<UserEntity>lambdaUpdate()
+                .set(UserEntity::getPasswordHash, passwords.encode(password))
+                .eq(UserEntity::getId, user.getId()));
     }
 
     @Transactional
@@ -229,6 +233,7 @@ public class AuthService {
         userMapper.updateLastTeam(userId, teamId);
     }
 
+    /** 修改昵称或清空头像；头像只能通过上传确认接口设置，这里拒绝外链地址。 */
     @Transactional
     public UserResponse updateMe(Long userId, UserUpdateRequest input) {
         if (input.getDisplayName() == null && input.getAvatarUrl() == null) {
@@ -238,11 +243,20 @@ public class AuthService {
         if (name != null && name.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", "昵称不能为空");
         }
-        String avatar = validatedAvatar(input.getAvatarUrl());
+        String avatar = input.getAvatarUrl() == null ? null : input.getAvatarUrl().trim();
+        if (avatar != null && !avatar.isEmpty()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "AVATAR_URL_NOT_ALLOWED",
+                    "头像只能通过头像上传接口设置");
+        }
+        // 只改目标字段，避免覆盖并发写入的最近团队选择
+        String previousAvatar = avatar == null ? null : requireUser(userId).getAvatarUrl();
         userMapper.update(null, Wrappers.<UserEntity>lambdaUpdate()
                 .set(name != null, UserEntity::getDisplayName, name)
-                .set(avatar != null, UserEntity::getAvatarUrl, avatar)
+                .set(avatar != null, UserEntity::getAvatarUrl, avatar == null || avatar.isEmpty() ? null : avatar)
                 .eq(UserEntity::getId, userId));
+        if (avatar != null) {
+            avatarStorage.deleteReplacedAfterCommit("avatars", userId, previousAvatar, null);
+        }
         return view(requireUser(userId));
     }
 
@@ -319,21 +333,6 @@ public class AuthService {
             throw new ApiException(HttpStatus.BAD_REQUEST, "WEAK_PASSWORD", "密码至少8个字符且UTF-8编码不超过72字节");
         }
         return value;
-    }
-
-    private String validatedAvatar(String value) {
-        if (value == null) {
-            return null;
-        }
-        try {
-            String scheme = URI.create(value).getScheme();
-            if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
-                throw new IllegalArgumentException();
-            }
-            return value;
-        } catch (IllegalArgumentException e) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_AVATAR_URL", "头像地址必须是HTTP或HTTPS URL");
-        }
     }
 
     // 六位数字，保留前导零。

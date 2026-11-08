@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import qg.qgent.common.dto.KeysetPagination;
+import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.common.dto.PageSlice;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
@@ -26,6 +27,7 @@ import qg.qgent.realtime.service.EventService;
 import qg.qgent.team.entity.TeamEntity;
 import qg.qgent.team.entity.TeamMemberEntity;
 import qg.qgent.team.mapper.TeamMapper;
+import qg.qgent.user.dto.AvatarConfirmResponse;
 import qg.qgent.workspace.service.WorkspaceService;
 import qg.qgent.team.mapper.TeamMemberMapper;
 
@@ -44,6 +46,7 @@ public class ProjectService {
     private final NotificationService notificationService;
     private final EventService eventService;
     private final WorkspaceService workspaceService;
+    private final AvatarStorageService avatarStorage;
 
     /** 创建项目并初始化项目成员关系。 */
     @Transactional
@@ -111,12 +114,42 @@ public class ProjectService {
         if (request.getDescription() != null) {
             project.setDescription(request.getDescription());
         }
-        // avatarUrl：null 保留原值；非 null（含空串清空）覆盖保存
+        // 头像只能通过上传确认接口设置；空串表示清空
         if (request.getAvatarUrl() != null) {
-            project.setAvatarUrl(blankToNull(request.getAvatarUrl()));
+            if (!request.getAvatarUrl().isBlank()) {
+                throw invalid("头像只能通过头像上传接口设置");
+            }
+            String previousAvatar = project.getAvatarUrl();
+            project.setAvatarUrl(null);
+            projectMapper.updateById(project);
+            avatarStorage.deleteReplacedAfterCommit("projects", projectId, previousAvatar, null);
+        } else {
+            projectMapper.updateById(project);
         }
-        projectMapper.updateById(project);
         return response(project, "PROJECT_ADMIN");
+    }
+
+    /** 签发项目头像直传凭证；权限与修改项目资料一致。 */
+    public AvatarStorageService.AvatarCredential avatarCredential(Long actor, Long projectId, String mediaType,
+                                                                  Long sizeBytes) {
+        ProjectEntity project = requireProjectForUpdate(projectId);
+        access.requireProjectAdminAnyState(project, actor);
+        requireActive(project);
+        return avatarStorage.createCredential("projects", projectId, mediaType, sizeBytes);
+    }
+
+    /** 确认项目头像上传：直接写入头像 URL 并返回，前端无需再调修改接口。 */
+    @Transactional
+    public AvatarConfirmResponse updateAvatar(Long actor, Long projectId, String objectKey) {
+        ProjectEntity project = requireProjectForUpdate(projectId);
+        access.requireProjectAdminAnyState(project, actor);
+        requireActive(project);
+        String publicUrl = avatarStorage.confirm("projects", projectId, objectKey);
+        String previousAvatar = project.getAvatarUrl();
+        project.setAvatarUrl(publicUrl);
+        projectMapper.updateById(project);
+        avatarStorage.deleteReplacedAfterCommit("projects", projectId, previousAvatar, objectKey);
+        return new AvatarConfirmResponse(publicUrl);
     }
 
     @Transactional

@@ -18,7 +18,7 @@ public interface UserMapper extends BaseMapper<UserEntity> {
     int updateLastTeam(@Param("userId") Long userId, @Param("teamId") Long teamId);
 
     /** 锁定用户行，用作该用户通知序号分配的跨实例串行化锚点。 */
-    @Select("SELECT id, email, display_name, avatar_url, avatar_object_key, last_team_id, password_hash, "
+    @Select("SELECT id, email, display_name, avatar_url, last_team_id, password_hash, "
             + "status, created_at, updated_at "
             + "FROM users WHERE id = #{userId} FOR UPDATE")
     @Results({
@@ -26,7 +26,6 @@ public interface UserMapper extends BaseMapper<UserEntity> {
             @Result(column = "password_hash", property = "passwordHash"),
             @Result(column = "display_name", property = "displayName"),
             @Result(column = "avatar_url", property = "avatarUrl"),
-            @Result(column = "avatar_object_key", property = "avatarObjectKey"),
             @Result(column = "last_team_id", property = "lastTeamId"),
             @Result(column = "status", property = "status"),
             @Result(column = "created_at", property = "createdAt")

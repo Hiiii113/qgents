@@ -1,5 +1,6 @@
 package qg.qgent.project.service;
 
+import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.support.TestIds;
 
 import org.junit.jupiter.api.Test;
@@ -34,9 +35,10 @@ class ProjectServiceTest {
     private final ProjectAccessService access = mock(ProjectAccessService.class);
     private final qg.qgent.workspace.service.WorkspaceService workspaces =
             mock(qg.qgent.workspace.service.WorkspaceService.class);
+    private final AvatarStorageService avatarStorage = mock(AvatarStorageService.class);
     private final ProjectService service = new ProjectService(projects, projectMembers, teams, teamMembers,
             access, mock(ApplicationEventPublisher.class), mock(NotificationService.class), mock(EventService.class),
-            workspaces);
+            workspaces, avatarStorage);
 
     @Test
     void projectListReturnsAvatarAndMemberCountWithoutExtraQueries() {
@@ -60,7 +62,7 @@ class ProjectServiceTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"unchanged", "clear", "replace", "archive", "restore"})
+    @ValueSource(strings = {"unchanged", "clear", "archive", "restore"})
     void projectChangesPreserveReplaceOrClearAvatar(String operation) {
         Long actor = TestIds.next();
         ProjectEntity project = new ProjectEntity();
@@ -82,9 +84,6 @@ class ProjectServiceTest {
             if ("clear".equals(operation)) {
                 request.setAvatarUrl(" ");
                 expectedAvatar = null;
-            } else if ("replace".equals(operation)) {
-                request.setAvatarUrl(" https://assets.example/new.png ");
-                expectedAvatar = "https://assets.example/new.png";
             }
             result = service.update(actor, project.getId(), request);
         }
@@ -92,6 +91,27 @@ class ProjectServiceTest {
         assertThat(result.getAvatarUrl()).isEqualTo(expectedAvatar);
         assertThat(project.getAvatarUrl()).isEqualTo(expectedAvatar);
         verify(projects).updateById(project);
+    }
+
+    @Test
+    void avatarConfirmWritesUrlAndDeletesReplacedObject() {
+        Long actor = TestIds.next();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(TestIds.next());
+        project.setTeamId(TestIds.next());
+        project.setStatus("ACTIVE");
+        project.setAvatarUrl("https://assets.example/original.png");
+        when(projects.selectByIdForUpdate(project.getId())).thenReturn(project);
+        String newKey = "projects/" + project.getId() + "/new.png";
+        when(avatarStorage.confirm("projects", project.getId(), newKey))
+                .thenReturn("https://assets.example/new.png");
+
+        var result = service.updateAvatar(actor, project.getId(), newKey);
+
+        assertThat(result.getAvatarUrl()).isEqualTo("https://assets.example/new.png");
+        verify(projects).updateById(project);
+        verify(avatarStorage).deleteReplacedAfterCommit("projects", project.getId(),
+                "https://assets.example/original.png", newKey);
     }
 
     @Test
@@ -117,7 +137,7 @@ class ProjectServiceTest {
         var service = new ProjectService(projects, mock(ProjectMemberMapper.class), teams,
                 members, mock(ProjectAccessService.class), events,
                 mock(NotificationService.class), mock(EventService.class),
-                mock(qg.qgent.workspace.service.WorkspaceService.class));
+                mock(qg.qgent.workspace.service.WorkspaceService.class), mock(AvatarStorageService.class));
         var request = new ProjectCreateRequest();
         request.setName("项目");
         var created = service.create(owner, teamId, request);

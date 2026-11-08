@@ -10,7 +10,6 @@ CREATE TABLE IF NOT EXISTS
         display_name VARCHAR(120) NOT NULL COMMENT '用户展示名称',
         avatar_url TEXT NULL COMMENT '用户头像URL',
         last_team_id BIGINT NULL COMMENT '用户最近选择的团队，失去权限后回退到首个可用团队',
-        avatar_object_key VARCHAR(512) NULL COMMENT '当前头像对象键（OSS avatars/{userId}/...），用于替换时定位并删除旧头像',
         password_hash VARCHAR(255) NOT NULL COMMENT '密码单向哈希，禁止存储明文',
         status VARCHAR(32) NOT NULL DEFAULT 'ACTIVE' COMMENT '账号状态枚举：ACTIVE/DISABLED',
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',

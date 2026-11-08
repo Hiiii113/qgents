@@ -1,5 +1,6 @@
 package qg.qgent.auth.service;
 
+import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.support.TestIds;
 
 import org.junit.jupiter.api.Test;
@@ -37,7 +38,8 @@ class AuthServiceTeamRoleTest {
                 mock(VerificationCodeStore.class),
                 teamMapper, memberMapper, mock(ProjectMapper.class),
                 mock(RsaPasswordDecryptor.class), passwords, mock(TokenService.class),
-                mock(VerificationCodeMailer.class), mock(RateLimiter.class));
+                mock(VerificationCodeMailer.class), mock(RateLimiter.class),
+                mock(AvatarStorageService.class));
         UserEntity user = new UserEntity();
         user.setId(userId);
         TeamMemberEntity membership = new TeamMemberEntity();
@@ -73,7 +75,8 @@ class AuthServiceTeamRoleTest {
                 mock(VerificationCodeStore.class),
                 teamMapper, memberMapper, projectMapper,
                 mock(RsaPasswordDecryptor.class), passwords, mock(TokenService.class),
-                mock(VerificationCodeMailer.class), mock(RateLimiter.class));
+                mock(VerificationCodeMailer.class), mock(RateLimiter.class),
+                mock(AvatarStorageService.class));
         UserEntity user = new UserEntity();
         user.setId(userId);
         ProjectMembershipView project = new ProjectMembershipView();

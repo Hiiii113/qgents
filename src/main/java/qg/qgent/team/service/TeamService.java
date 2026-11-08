@@ -10,6 +10,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import qg.qgent.auth.service.TokenService;
 import qg.qgent.common.dto.KeysetPagination;
+import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.common.dto.PageSlice;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
@@ -35,6 +36,7 @@ import qg.qgent.team.mapper.TeamMapper;
 import qg.qgent.team.mapper.TeamMemberMapper;
 import qg.qgent.team.mapper.view.TeamMemberView;
 import qg.qgent.team.mapper.view.TeamMembershipView;
+import qg.qgent.user.dto.AvatarConfirmResponse;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
 
@@ -58,6 +60,7 @@ public class TeamService {
     private final ProjectMapper projectMapper;
     private final UserMapper userMapper;
     private final TokenService tokens;
+    private final AvatarStorageService avatarStorage;
     private final TeamInvitationMailer invitationMailer;
     private final TeamDisbandService teamDisbandService;
     private final NotificationService notificationService;
@@ -70,7 +73,6 @@ public class TeamService {
         team.setOwnerUserId(actor);
         team.setName(request.getName().trim());
         team.setDescription(request.getDescription());
-        team.setAvatarUrl(blankToNull(request.getAvatarUrl()));
         team.setStatus("ACTIVE");
         teamMapper.insert(team);
 
@@ -115,12 +117,39 @@ public class TeamService {
         if (request.getDescription() != null) {
             team.setDescription(request.getDescription());
         }
-        // avatarUrl：null 保留原值；非 null（含空串清空）覆盖保存
+        // 头像只能通过上传确认接口设置；空串表示清空
         if (request.getAvatarUrl() != null) {
-            team.setAvatarUrl(blankToNull(request.getAvatarUrl()));
+            if (!request.getAvatarUrl().isBlank()) {
+                throw invalid("头像只能通过头像上传接口设置");
+            }
+            String previousAvatar = team.getAvatarUrl();
+            team.setAvatarUrl(null);
+            teamMapper.updateById(team);
+            avatarStorage.deleteReplacedAfterCommit("teams", teamId, previousAvatar, null);
+        } else {
+            teamMapper.updateById(team);
         }
-        teamMapper.updateById(team);
         return team(team, "TEAM_OWNER");
+    }
+
+    /** 签发团队头像直传凭证；权限与修改团队资料一致（Team Owner）。 */
+    public AvatarStorageService.AvatarCredential avatarCredential(Long actor, Long teamId, String mediaType,
+                                                                  Long sizeBytes) {
+        requireOwner(requireTeam(teamId), actor);
+        return avatarStorage.createCredential("teams", teamId, mediaType, sizeBytes);
+    }
+
+    /** 确认团队头像上传：直接写入头像 URL 并返回，前端无需再调修改接口。 */
+    @Transactional
+    public AvatarConfirmResponse updateAvatar(Long actor, Long teamId, String objectKey) {
+        TeamEntity team = requireTeamForUpdate(teamId);
+        requireOwner(team, actor);
+        String publicUrl = avatarStorage.confirm("teams", teamId, objectKey);
+        String previousAvatar = team.getAvatarUrl();
+        team.setAvatarUrl(publicUrl);
+        teamMapper.updateById(team);
+        avatarStorage.deleteReplacedAfterCommit("teams", teamId, previousAvatar, objectKey);
+        return new AvatarConfirmResponse(publicUrl);
     }
 
     /** 获取团队成员列表 */
@@ -370,7 +399,7 @@ public class TeamService {
         requireOwner(team, actor);
         // 解散前取一次摘要，避免删除后无法查询
         TeamResponse summary = team(team, "TEAM_OWNER");
-        teamDisbandService.deleteTeam(teamId);
+        teamDisbandService.deleteTeam(teamId, team.getAvatarUrl());
         return summary;
     }
 
@@ -501,10 +530,6 @@ public class TeamService {
 
     private String normalize(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
-    }
-
-    private String blankToNull(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private ApiException notFound() {

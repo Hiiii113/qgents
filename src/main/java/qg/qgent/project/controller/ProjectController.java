@@ -33,7 +33,6 @@ import qg.qgent.user.dto.AvatarCredentialResponse;
 public class ProjectController {
     private final ProjectService projects;
     private final ProjectAccessService access;
-    private final AvatarStorageService avatarStorage;
 
     /** 创建项目，创建者自动成为 PROJECT_ADMIN。 */
     @PostMapping("/teams/{teamId}/projects")
@@ -65,30 +64,27 @@ public class ProjectController {
         return ok(projects.update(actor, projectId, body), request);
     }
 
-    /** 签发项目头像直传凭证（项目成员；对象键 projects/{projectId}/{uuid}.{ext}）。 */
+    /** 签发项目头像直传凭证（与修改项目资料同权限；对象键 projects/{projectId}/{uuid}.{ext}）。 */
     @PostMapping("/projects/{projectId}/avatar/credential")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<AvatarCredentialResponse> avatarCredential(@PathVariable Long projectId,
                                                                   @AuthenticationPrincipal Long actor,
                                                                   @Valid @RequestBody AvatarCredentialRequest body,
                                                                   HttpServletRequest request) {
-        access.requireProjectMember(projectId, actor);
         AvatarStorageService.AvatarCredential credential =
-                avatarStorage.createCredential("projects", projectId, body.getMediaType(), body.getSizeBytes());
+                projects.avatarCredential(actor, projectId, body.getMediaType(), body.getSizeBytes());
         return ok(new AvatarCredentialResponse(credential.objectKey(),
                 credential.credential().getUploadUrl(), credential.credential().getMethod(),
                 credential.credential().getHeaders(), credential.credential().getExpiresAt()), request);
     }
 
-    /** 确认上传并返回头像 URL；客户端再通过修改项目接口保存 avatarUrl。 */
+    /** 确认上传，直接写入项目头像并返回公共读 URL。 */
     @PostMapping("/projects/{projectId}/avatar/confirm")
     public ApiResponse<AvatarConfirmResponse> avatarConfirm(@PathVariable Long projectId,
                                                             @AuthenticationPrincipal Long actor,
                                                             @Valid @RequestBody AvatarConfirmRequest body,
                                                             HttpServletRequest request) {
-        access.requireProjectMember(projectId, actor);
-        String avatarUrl = avatarStorage.confirm("projects", projectId, body.getObjectKey());
-        return ok(new AvatarConfirmResponse(avatarUrl), request);
+        return ok(projects.updateAvatar(actor, projectId, body.getObjectKey()), request);
     }
 
     /** 归档项目。 */

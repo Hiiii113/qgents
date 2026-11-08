@@ -34,7 +34,6 @@ import qg.qgent.user.dto.AvatarCredentialResponse;
 public class TeamController {
     private final TeamService teams;
     private final EventService eventService;
-    private final AvatarStorageService avatarStorage;
 
     /** 团队级实时事件流（需团队成员）。 */
     @GetMapping("/{teamId}/events")
@@ -128,30 +127,27 @@ public class TeamController {
         return ok(teams.removeMember(actor, teamId, userId), request);
     }
 
-    /** 签发团队头像直传凭证（团队成员；对象键 teams/{teamId}/{uuid}.{ext}）。 */
+    /** 签发团队头像直传凭证（Team Owner；对象键 teams/{teamId}/{uuid}.{ext}）。 */
     @PostMapping("/{teamId}/avatar/credential")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<AvatarCredentialResponse> avatarCredential(@PathVariable Long teamId,
                                                                   @AuthenticationPrincipal Long actor,
                                                                   @Valid @RequestBody AvatarCredentialRequest body,
                                                                   HttpServletRequest request) {
-        teams.requireMember(teamId, actor);
         AvatarStorageService.AvatarCredential credential =
-                avatarStorage.createCredential("teams", teamId, body.getMediaType(), body.getSizeBytes());
+                teams.avatarCredential(actor, teamId, body.getMediaType(), body.getSizeBytes());
         return ok(new AvatarCredentialResponse(credential.objectKey(),
                 credential.credential().getUploadUrl(), credential.credential().getMethod(),
                 credential.credential().getHeaders(), credential.credential().getExpiresAt()), request);
     }
 
-    /** 确认上传并返回头像 URL；调用团队修改接口保存 avatarUrl。 */
+    /** 确认上传，直接写入团队头像并返回公共读 URL。 */
     @PostMapping("/{teamId}/avatar/confirm")
     public ApiResponse<AvatarConfirmResponse> avatarConfirm(@PathVariable Long teamId,
                                                             @AuthenticationPrincipal Long actor,
                                                             @Valid @RequestBody AvatarConfirmRequest body,
                                                             HttpServletRequest request) {
-        teams.requireMember(teamId, actor);
-        String avatarUrl = avatarStorage.confirm("teams", teamId, body.getObjectKey());
-        return ok(new AvatarConfirmResponse(avatarUrl), request);
+        return ok(teams.updateAvatar(actor, teamId, body.getObjectKey()), request);
     }
 
     private <T> ApiResponse<T> ok(T data, HttpServletRequest request) {

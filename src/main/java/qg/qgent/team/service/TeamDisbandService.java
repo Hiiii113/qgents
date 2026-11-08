@@ -12,6 +12,7 @@ import qg.qgent.harness.mapper.AgentRunMapper;
 import qg.qgent.attachment.entity.AttachmentEntity;
 import qg.qgent.attachment.mapper.AttachmentMapper;
 import qg.qgent.chat.entity.ChatGroupEntity;
+import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.notification.entity.NotificationEntity;
@@ -47,12 +48,14 @@ public class TeamDisbandService {
     private final TeamMapper teamMapper;
     private final ProjectDirectoryService projectDirectories;
     private final SandboxService sandboxes;
+    private final AvatarStorageService avatarStorage;
 
-    /** 先清理各项目的数据，再删除团队记录。 */
+    /** 先清理各项目的数据，再删除团队记录；头像对象在提交后删除。 */
     @Transactional
-    public void deleteTeam(Long teamId) {
-        List<Long> projectIds = projectMapper.selectList(Wrappers.<ProjectEntity>lambdaQuery()
-                .eq(ProjectEntity::getTeamId, teamId)).stream().map(ProjectEntity::getId).toList();
+    public void deleteTeam(Long teamId, String teamAvatarUrl) {
+        List<ProjectEntity> projects = projectMapper.selectList(Wrappers.<ProjectEntity>lambdaQuery()
+                .eq(ProjectEntity::getTeamId, teamId));
+        List<Long> projectIds = projects.stream().map(ProjectEntity::getId).toList();
         // 仍有活动沙箱时明确失败，不能一边删目录一边让命令继续写
         for (Long projectId : projectIds) {
             for (WorkspaceEntity workspace : workspaceMapper.selectList(Wrappers.<WorkspaceEntity>lambdaQuery()
@@ -67,13 +70,23 @@ public class TeamDisbandService {
             deleteProject(projectId);
         }
         teamMapper.deleteById(teamId);
-        // 项目目录不在事务内：数据库回滚时不能已经删掉磁盘上的记忆文件
+        // 项目和头像对象不在事务内：数据库回滚时不能已经删掉磁盘文件或 OSS 对象
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
                 projectIds.forEach(projectDirectories::delete);
+                deleteAvatar("teams", teamId, teamAvatarUrl);
+                projects.forEach(project -> deleteAvatar("projects", project.getId(), project.getAvatarUrl()));
             }
         });
+    }
+
+    /** 只删除能由当前公共地址还原对象键的头像，外链和旧域名不处理。 */
+    private void deleteAvatar(String scope, Long ownerId, String avatarUrl) {
+        String objectKey = avatarStorage.objectKey(scope, ownerId, avatarUrl);
+        if (objectKey != null) {
+            avatarStorage.deleteObject(objectKey);
+        }
     }
 
     /** 按外键依赖顺序删除项目及其数据。 */

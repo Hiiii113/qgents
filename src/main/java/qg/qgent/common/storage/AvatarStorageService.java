@@ -3,9 +3,13 @@ package qg.qgent.common.storage;
 import com.aliyun.oss.HttpMethod;
 import com.aliyun.oss.OSS;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import qg.qgent.attachment.config.AliyunOssProperties;
 import qg.qgent.attachment.dto.UploadCredential;
@@ -24,6 +28,7 @@ import java.util.UUID;
 @Component
 @RequiredArgsConstructor
 public class AvatarStorageService {
+    private static final Logger log = LoggerFactory.getLogger(AvatarStorageService.class);
 
     /** 头像对象大小上限（字节），前端应同步限制图片体积。 */
     public static final long MAX_SIZE_BYTES = 5 * 1024 * 1024;
@@ -73,7 +78,42 @@ public class AvatarStorageService {
         return properties.getPublicBaseUrl().replaceAll("/+$", "") + "/" + objectKey;
     }
 
-    /** 尽力删除旧头像对象；OSS 未启用时 no-op。删除失败不抛出（不影响头像切换成功）。 */
+    /**
+     * 从公共读 URL 还原对象键：只识别当前配置的公共地址和该主体的对象前缀，
+     * 外链、旧域名或其他 bucket 返回 null（不删除无法归属的对象）。
+     */
+    public String objectKey(String scope, Long ownerId, String avatarUrl) {
+        String base = properties.getPublicBaseUrl();
+        if (avatarUrl == null || base == null || base.isBlank()) {
+            return null;
+        }
+        String prefix = base.replaceAll("/+$", "") + "/";
+        if (!avatarUrl.startsWith(prefix)) {
+            return null;
+        }
+        String objectKey = avatarUrl.substring(prefix.length()).replaceFirst("[?#].*$", "");
+        return objectKey.startsWith(scope + "/" + ownerId + "/") ? objectKey : null;
+    }
+
+    /** 事务提交后删除被替换或清空的旧头像，数据库回滚时不会提前删除对象。 */
+    public void deleteReplacedAfterCommit(String scope, Long ownerId, String oldUrl, String keepKey) {
+        String objectKey = objectKey(scope, ownerId, oldUrl);
+        if (objectKey == null || objectKey.equals(keepKey)) {
+            return;
+        }
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    deleteObject(objectKey);
+                }
+            });
+        } else {
+            deleteObject(objectKey);
+        }
+    }
+
+    /** 删除旧头像对象；OSS 未启用时 no-op，删除失败只记录日志，不影响已生效的新头像。 */
     public void deleteObject(String objectKey) {
         if (!properties.isEnabled() || properties.getBucketName().isBlank()
                 || objectKey == null || objectKey.isBlank()) {
@@ -82,7 +122,7 @@ public class AvatarStorageService {
         try {
             ossProvider.getObject().deleteObject(properties.getBucketName(), objectKey);
         } catch (RuntimeException e) {
-            // 旧头像删除是尽力而为，失败不影响新头像已生效
+            log.warn("Avatar object deletion failed: objectKey={}, error={}", objectKey, e.getMessage());
         }
     }
 

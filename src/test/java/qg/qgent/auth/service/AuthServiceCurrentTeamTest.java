@@ -1,5 +1,6 @@
 package qg.qgent.auth.service;
 
+import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.support.TestIds;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -35,7 +36,8 @@ class AuthServiceCurrentTeamTest {
         service = new AuthService(users, mock(RefreshTokenStore.class), mock(VerificationCodeStore.class),
                 teams, members, mock(ProjectMapper.class),
                 mock(RsaPasswordDecryptor.class), passwords, mock(TokenService.class),
-                mock(VerificationCodeMailer.class), mock(RateLimiter.class));
+                mock(VerificationCodeMailer.class), mock(RateLimiter.class),
+                mock(AvatarStorageService.class));
         user.setId(userId);
         when(users.selectById(userId)).thenReturn(user);
     }

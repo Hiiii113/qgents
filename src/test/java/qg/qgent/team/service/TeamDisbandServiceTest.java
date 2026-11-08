@@ -94,7 +94,7 @@ class TeamDisbandServiceTest {
                 agentRuns,
                 workspaceMapper, skillMapper, attachmentMapper,
                 teamMapper, new ProjectDirectoryService(projectDataRoot.toString(), projectDataRoot.toString()),
-                sandboxes);
+                sandboxes, mock(qg.qgent.common.storage.AvatarStorageService.class));
     }
 
     @Test
@@ -111,7 +111,7 @@ class TeamDisbandServiceTest {
         when(workspaceMapper.selectList(any())).thenReturn(List.of(workspace));
         when(sandboxes.isWorkspaceInUse(projectId + "/workspaces/default")).thenReturn(true);
 
-        assertThatThrownBy(() -> service.deleteTeam(teamId))
+        assertThatThrownBy(() -> service.deleteTeam(teamId, null))
                 .isInstanceOf(qg.qgent.common.web.ApiException.class)
                 .hasMessageContaining("沙箱");
         verify(teamMapper, never()).deleteById(teamId);
@@ -140,7 +140,7 @@ class TeamDisbandServiceTest {
 
         TransactionSynchronizationManager.initSynchronization();
         try {
-            service.deleteTeam(teamId);
+            service.deleteTeam(teamId, null);
             // 磁盘清理排在事务提交之后，回滚时不会丢文件
             assertThat(projectDirectory).exists();
             TransactionSynchronizationManager.getSynchronizations()
