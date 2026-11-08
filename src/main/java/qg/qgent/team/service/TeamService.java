@@ -12,7 +12,6 @@ import qg.qgent.auth.service.TokenService;
 import qg.qgent.common.dto.KeysetPagination;
 import qg.qgent.common.dto.PageSlice;
 import qg.qgent.common.web.ApiException;
-import qg.qgent.common.web.PersistedApiException;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.entity.ProjectMemberEntity;
@@ -225,8 +224,8 @@ public class TeamService {
                 invitation -> receivedInvitation(invitation, teamNames, inviterNames));
     }
 
-    /** 接受团队邀请。 */
-    @Transactional(noRollbackFor = PersistedApiException.class)
+    /** 接受团队邀请。过期状态由 expires_at 动态判定，不写入数据库。 */
+    @Transactional
     public TeamMemberResponse accept(Long actor, String reference) {
         if (reference == null || reference.isBlank() || reference.length() > 512) {
             throw notFound();
@@ -251,9 +250,7 @@ public class TeamService {
             throw conflict("INVITATION_NOT_PENDING", "邀请已不可接受");
         }
         if (!invitation.getExpiresAt().isAfter(now())) {
-            invitation.setStatus("EXPIRED");
-            invitationMapper.updateById(invitation);
-            throw new PersistedApiException(HttpStatus.CONFLICT, "INVITATION_EXPIRED", "邀请已过期");
+            throw conflict("INVITATION_EXPIRED", "邀请已过期");
         }
         TeamMemberEntity member = memberMapper.selectByTeamAndUser(invitation.getTeamId(), actor);
         if (member == null) {
@@ -297,8 +294,8 @@ public class TeamService {
         }
     }
 
-    /** 撤销团队邀请 */
-    @Transactional(noRollbackFor = PersistedApiException.class)
+    /** 撤销团队邀请。过期状态由 expires_at 动态判定，不写入数据库。 */
+    @Transactional
     public TeamInvitationResponse revoke(Long actor, Long teamId, Long invitationId) {
         TeamEntity team = requireTeamForUpdate(teamId);
 
@@ -310,9 +307,7 @@ public class TeamService {
             throw notFound();
         }
         if ("PENDING".equals(invitation.getStatus()) && !invitation.getExpiresAt().isAfter(now())) {
-            invitation.setStatus("EXPIRED");
-            invitationMapper.updateById(invitation);
-            throw new PersistedApiException(HttpStatus.CONFLICT, "INVITATION_EXPIRED", "邀请已过期");
+            throw conflict("INVITATION_EXPIRED", "邀请已过期");
         }
         if (!"PENDING".equals(invitation.getStatus())) {
             throw conflict("INVITATION_NOT_PENDING", "仅能撤销待处理邀请");

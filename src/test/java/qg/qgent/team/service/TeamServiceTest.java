@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 
 import qg.qgent.auth.service.TokenService;
 import qg.qgent.common.web.ApiException;
-import qg.qgent.common.web.PersistedApiException;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.entity.ProjectMemberEntity;
@@ -43,6 +42,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.argThat;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -295,7 +295,7 @@ class TeamServiceTest {
     }
 
     @Test
-    void acceptExpiredInvitationPersistsExpiredBeforeReturningError() {
+    void acceptExpiredInvitationFailsWithoutWritingStatus() {
         Long actor = TestIds.next();
         Long invitationId = TestIds.next();
         UserEntity user = new UserEntity();
@@ -314,16 +314,16 @@ class TeamServiceTest {
         when(tokens.hash("raw-token")).thenReturn(new byte[] { 1 });
         when(invitationMapper.selectOne(any())).thenReturn(invitation);
 
-        PersistedApiException error = assertThrows(PersistedApiException.class,
+        ApiException error = assertThrows(ApiException.class,
                 () -> localService.accept(actor, "raw-token"));
 
         assertEquals("INVITATION_EXPIRED", error.code());
-        verify(invitationMapper).updateById(org.mockito.ArgumentMatchers.<TeamInvitationEntity>argThat(
-                value -> "EXPIRED".equals(value.getStatus())));
+        // 过期状态按 expires_at 动态展示，不再写入数据库
+        verify(invitationMapper, never()).updateById(any(TeamInvitationEntity.class));
     }
 
     @Test
-    void revokeExpiredInvitationPersistsExpiredInsteadOfRevoked() {
+    void revokeExpiredInvitationFailsWithoutWritingStatus() {
         Long teamId = TestIds.next();
         Long owner = TestIds.next();
         Long invitationId = TestIds.next();
@@ -336,12 +336,11 @@ class TeamServiceTest {
         invitation.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).minusMinutes(1));
         when(invitationMapper.selectOne(any())).thenReturn(invitation);
 
-        PersistedApiException error = assertThrows(PersistedApiException.class,
+        ApiException error = assertThrows(ApiException.class,
                 () -> service.revoke(owner, teamId, invitationId));
 
         assertEquals("INVITATION_EXPIRED", error.code());
-        verify(invitationMapper).updateById(org.mockito.ArgumentMatchers.<TeamInvitationEntity>argThat(
-                value -> "EXPIRED".equals(value.getStatus())));
+        verify(invitationMapper, never()).updateById(any(TeamInvitationEntity.class));
     }
 
     @Test

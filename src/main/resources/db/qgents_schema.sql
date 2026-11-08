@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS
         invited_by BIGINT NOT NULL COMMENT '邀请发起用户ID',
         email_normalized VARCHAR(320) NOT NULL COMMENT '被邀请邮箱归一化值',
         token_hash BINARY(32) NOT NULL COMMENT '邀请令牌SHA-256哈希',
-        status VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT '邀请状态枚举：PENDING/ACCEPTED/REVOKED/EXPIRED',
+        status VARCHAR(32) NOT NULL DEFAULT 'PENDING' COMMENT '邀请状态枚举：PENDING/ACCEPTED/REVOKED；过期按 expires_at 动态判定',
         expires_at DATETIME (6) NOT NULL COMMENT '邀请过期时间（UTC）',
         accepted_at DATETIME (6) NULL COMMENT '接受邀请时间（UTC）',
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
