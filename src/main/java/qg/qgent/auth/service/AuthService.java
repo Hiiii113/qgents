@@ -11,13 +11,7 @@ import qg.qgent.auth.dto.AuthTokensResponse;
 import qg.qgent.auth.dto.LoginRequest;
 import qg.qgent.auth.dto.RegisterRequest;
 import qg.qgent.auth.dto.ResetPasswordRequest;
-import qg.qgent.auth.entity.EmailVerificationCodeEntity;
-import qg.qgent.auth.entity.PasswordResetTokenEntity;
-import qg.qgent.auth.entity.RefreshTokenEntity;
 import qg.qgent.auth.mail.VerificationCodeMailer;
-import qg.qgent.auth.mapper.EmailVerificationCodeMapper;
-import qg.qgent.auth.mapper.PasswordResetTokenMapper;
-import qg.qgent.auth.mapper.RefreshTokenMapper;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.dto.ProjectResponse;
 import qg.qgent.project.mapper.ProjectMapper;
@@ -34,11 +28,8 @@ import qg.qgent.user.mapper.UserMapper;
 
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.Duration;
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -47,11 +38,15 @@ import java.util.stream.Collectors;
 public class AuthService {
     // 注册验证码有效期（10 分钟）。
     private static final Duration VERIFICATION_TTL = Duration.ofMinutes(10);
+    // 验证码校验尝试限流：同一邮箱和同一来源分别限制，防止撞码。
+    private static final int CODE_ATTEMPTS_BY_EMAIL = 10;
+    private static final int CODE_ATTEMPTS_BY_SOURCE = 30;
+    private static final Duration CODE_ATTEMPT_WINDOW = Duration.ofHours(1);
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final UserMapper userMapper;
-    private final RefreshTokenMapper refreshTokenMapper;
-    private final PasswordResetTokenMapper resetTokenMapper;
-    private final EmailVerificationCodeMapper verificationCodeMapper;
+    private final RefreshTokenStore refreshTokens;
+    private final VerificationCodeStore verificationCodes;
     private final TeamMapper teamMapper;
     private final TeamMemberMapper teamMemberMapper;
     private final ProjectMapper projectMapper;
@@ -62,16 +57,15 @@ public class AuthService {
     private final RateLimiter limiter;
     private final String dummyPasswordHash;
 
-    public AuthService(UserMapper userMapper, RefreshTokenMapper refreshTokenMapper,
-                       PasswordResetTokenMapper resetTokenMapper, EmailVerificationCodeMapper verificationCodeMapper,
+    public AuthService(UserMapper userMapper, RefreshTokenStore refreshTokens,
+                       VerificationCodeStore verificationCodes,
                        TeamMapper teamMapper, TeamMemberMapper teamMemberMapper,
                        ProjectMapper projectMapper, RsaPasswordDecryptor rsa,
                        PasswordEncoder passwords, TokenService tokens, VerificationCodeMailer mailer,
                        RateLimiter limiter) {
         this.userMapper = userMapper;
-        this.refreshTokenMapper = refreshTokenMapper;
-        this.resetTokenMapper = resetTokenMapper;
-        this.verificationCodeMapper = verificationCodeMapper;
+        this.refreshTokens = refreshTokens;
+        this.verificationCodes = verificationCodes;
         this.teamMapper = teamMapper;
         this.teamMemberMapper = teamMemberMapper;
         this.projectMapper = projectMapper;
@@ -84,11 +78,11 @@ public class AuthService {
     }
 
     @Transactional
-    public AuthTokensResponse register(RegisterRequest input) {
+    public AuthTokensResponse register(RegisterRequest input, String fingerprint) {
         String email = normalize(input.getEmail());
         String password = validated(rsa.decrypt(input.getPasswordKeyId(), input.getPassword()));
         // 注册必须通过邮箱验证码校验，防止假邮箱注册
-        verifyCode(email, input.getVerificationCode());
+        verifyCode(VerificationCodeStore.Purpose.REGISTER, email, input.getVerificationCode(), fingerprint);
 
         UserEntity user = new UserEntity();
         user.setEmail(email);
@@ -119,39 +113,21 @@ public class AuthService {
         if (findByEmail(email) != null) {
             throw conflict("EMAIL_ALREADY_REGISTERED", "该邮箱已注册");
         }
-        // 生成 6 位数字验证码
-        String code = String.format(Locale.ROOT, "%06d", new Random().nextInt(1_000_000));
-        // 存储哈希，禁止明文落库
-        EmailVerificationCodeEntity record = new EmailVerificationCodeEntity();
-        record.setEmail(email);
-        record.setCodeHash(tokens.hash(code));
-        record.setExpiresAt(utc(Instant.now().plus(VERIFICATION_TTL)));
-        verificationCodeMapper.insert(record);
-        mailer.sendRegistration(email, code);
+        String code = sixDigitCode();
+        verificationCodes.save(VerificationCodeStore.Purpose.REGISTER, email, code, VERIFICATION_TTL);
+        mailer.sendRegistration(email, code, VERIFICATION_TTL);
     }
 
-    /**
-     * 校验注册验证码：匹配该邮箱最近一条未使用且未过期的验证码，命中后标记已使用。
-     * 校验失败统一返回 422 INVALID_VERIFICATION_CODE，不区分「过期/不存在/已使用」以免枚举。
-     */
-    private void verifyCode(String email, String rawCode) {
-        List<EmailVerificationCodeEntity> candidates = verificationCodeMapper.selectList(
-                Wrappers.<EmailVerificationCodeEntity>lambdaQuery()
-                        .eq(EmailVerificationCodeEntity::getEmail, email)
-                        .isNull(EmailVerificationCodeEntity::getUsedAt)
-                        .gt(EmailVerificationCodeEntity::getExpiresAt, LocalDateTime.now(ZoneOffset.UTC))
-                        .orderByDesc(EmailVerificationCodeEntity::getCreatedAt)
-                        .last("LIMIT 1"));
-        EmailVerificationCodeEntity record = candidates.isEmpty() ? null : candidates.get(0);
-        if (record == null) {
+    /** 校验并消费验证码；尝试次数先按邮箱和来源限流。 */
+    private void verifyCode(VerificationCodeStore.Purpose purpose, String email, String code, String fingerprint) {
+        String scope = purpose.key() + "-verify";
+        if (!limiter.allow(scope + "-email", email, CODE_ATTEMPTS_BY_EMAIL, CODE_ATTEMPT_WINDOW)
+                || !limiter.allow(scope + "-source", fingerprint, CODE_ATTEMPTS_BY_SOURCE, CODE_ATTEMPT_WINDOW)) {
+            throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMITED", "验证码尝试过于频繁，请稍后再试");
+        }
+        if (!verificationCodes.consume(purpose, email, code)) {
             throw verificationCodeInvalid();
         }
-        if (!MessageDigest.isEqual(record.getCodeHash(), tokens.hash(rawCode))) {
-            throw verificationCodeInvalid();
-        }
-        // 一次性使用：标记已用
-        record.setUsedAt(LocalDateTime.now(ZoneOffset.UTC));
-        verificationCodeMapper.updateById(record);
     }
 
     private ApiException verificationCodeInvalid() {
@@ -176,39 +152,23 @@ public class AuthService {
         return issue(user);
     }
 
-    @Transactional
     public AuthTokensResponse refresh(String raw) {
-        RefreshTokenEntity old = refreshTokenMapper.selectOne(Wrappers.<RefreshTokenEntity>lambdaQuery()
-                .eq(RefreshTokenEntity::getTokenHash, tokens.hash(raw)) // 检查token是否匹配
-                .isNull(RefreshTokenEntity::getRevokedAt) // 没有被撤销
-                .gt(RefreshTokenEntity::getExpiresAt, LocalDateTime.now(ZoneOffset.UTC)) // 未过期
-                .last("FOR UPDATE"));
-        if (old == null) {
+        Long userId = refreshTokens.consume(raw);
+        if (userId == null) {
             throw unauthorized("INVALID_REFRESH_TOKEN", "refresh token无效或已过期");
         }
-        old.setRevokedAt(LocalDateTime.now(ZoneOffset.UTC));
-        refreshTokenMapper.updateById(old);
-        UserEntity user = userMapper.selectById(old.getUserId());
+        UserEntity user = userMapper.selectById(userId);
         if (user == null || !"ACTIVE".equals(user.getStatus())) {
             throw unauthorized("INVALID_REFRESH_TOKEN", "用户不可用");
         }
         return issue(user);
     }
 
-    @Transactional
-    public void logout(Long userId, String raw) {
-        RefreshTokenEntity token = refreshTokenMapper.selectOne(Wrappers.<RefreshTokenEntity>lambdaQuery()
-                .eq(RefreshTokenEntity::getTokenHash, tokens.hash(raw))
-                .isNull(RefreshTokenEntity::getRevokedAt)
-                .gt(RefreshTokenEntity::getExpiresAt, LocalDateTime.now(ZoneOffset.UTC))
-                .last("FOR UPDATE"));
-        if (token != null && userId.equals(token.getUserId())) {
-            token.setRevokedAt(LocalDateTime.now(ZoneOffset.UTC));
-            refreshTokenMapper.updateById(token);
-        }
+    /** 退出登录：按提交的 refresh token 撤销，不依赖 access token。 */
+    public void logout(String raw) {
+        refreshTokens.revoke(raw);
     }
 
-    @Transactional
     public void requestReset(String rawEmail, String fingerprint) {
         String email = normalize(rawEmail);
         if (!limiter.allow("password-reset", fingerprint + ":" + email, 3, Duration.ofHours(1))) {
@@ -218,43 +178,27 @@ public class AuthService {
         if (user == null || !"ACTIVE".equals(user.getStatus())) {
             return;
         }
-        // 生成 6 位数字验证码（与注册验证码一致，用户输入到「邮箱中的验证码」字段）
-        String code = String.format(Locale.ROOT, "%06d", new Random().nextInt(1_000_000));
-        // 插入到数据库：token_hash 存验证码 SHA-256 哈希，禁止明文
-        PasswordResetTokenEntity reset = new PasswordResetTokenEntity();
-        reset.setUserId(user.getId());
-        reset.setTokenHash(tokens.hash(code));
-        reset.setExpiresAt(utc(tokens.resetExpiry()));
-        resetTokenMapper.insert(reset);
-        mailer.sendPasswordReset(user.getEmail(), code);
+        String code = sixDigitCode();
+        verificationCodes.save(VerificationCodeStore.Purpose.PASSWORD_RESET, email, code, tokens.resetTtl());
+        mailer.sendPasswordReset(user.getEmail(), code, tokens.resetTtl());
     }
 
+    /**
+     * 先完成密码和目标账户校验，再原子消费验证码；随后撤销该用户全部 refresh token 再改密码。
+     * Redis 与 MySQL 不在同一事务，数据库失败时用户重新获取验证码即可。
+     */
     @Transactional
-    public void reset(ResetPasswordRequest input) {
-        PasswordResetTokenEntity reset = resetTokenMapper.selectOne(Wrappers.<PasswordResetTokenEntity>lambdaQuery()
-                .eq(PasswordResetTokenEntity::getTokenHash, tokens.hash(input.getToken()))
-                .isNull(PasswordResetTokenEntity::getUsedAt)
-                .gt(PasswordResetTokenEntity::getExpiresAt, LocalDateTime.now(ZoneOffset.UTC))
-                .last("FOR UPDATE"));
-        if (reset == null) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_RESET_TOKEN", "重置令牌无效或已过期");
-        }
-
+    public void reset(ResetPasswordRequest input, String fingerprint) {
+        String email = normalize(input.getEmail());
         String password = validated(rsa.decrypt(input.getPasswordKeyId(), input.getNewPassword()));
-        UserEntity user = userMapper.selectById(reset.getUserId());
+        UserEntity user = findByEmail(email);
+        if (user == null || !"ACTIVE".equals(user.getStatus())) {
+            throw verificationCodeInvalid();
+        }
+        verifyCode(VerificationCodeStore.Purpose.PASSWORD_RESET, email, input.getToken(), fingerprint);
+        refreshTokens.revokeAll(user.getId());
         user.setPasswordHash(passwords.encode(password));
         userMapper.updateById(user);
-
-        // 将重置验证码标记为已用，并撤销用户的全部刷新令牌。
-        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
-        resetTokenMapper.update(null, Wrappers.<PasswordResetTokenEntity>lambdaUpdate()
-                .set(PasswordResetTokenEntity::getUsedAt, now)
-                .eq(PasswordResetTokenEntity::getUserId, reset.getUserId())
-                .isNull(PasswordResetTokenEntity::getUsedAt));
-        refreshTokenMapper.update(null, Wrappers.<RefreshTokenEntity>lambdaUpdate()
-                .set(RefreshTokenEntity::getRevokedAt, now)
-                .eq(RefreshTokenEntity::getUserId, reset.getUserId())
-                .isNull(RefreshTokenEntity::getRevokedAt));
     }
 
     @Transactional
@@ -304,11 +248,7 @@ public class AuthService {
 
     private AuthTokensResponse issue(UserEntity user) {
         String refresh = tokens.opaque();
-        RefreshTokenEntity entity = new RefreshTokenEntity();
-        entity.setUserId(user.getId());
-        entity.setTokenHash(tokens.hash(refresh));
-        entity.setExpiresAt(utc(tokens.refreshExpiry()));
-        refreshTokenMapper.insert(entity);
+        refreshTokens.save(user.getId(), refresh);
         return new AuthTokensResponse(tokens.access(user.getId()), tokens.accessSeconds(), refresh,
                 tokens.refreshSeconds(), view(user));
     }
@@ -396,8 +336,9 @@ public class AuthService {
         }
     }
 
-    private LocalDateTime utc(Instant instant) {
-        return LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
+    // 六位数字，保留前导零。
+    private String sixDigitCode() {
+        return String.format(Locale.ROOT, "%06d", RANDOM.nextInt(1_000_000));
     }
 
     private ApiException badCredentials() {

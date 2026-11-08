@@ -6,9 +6,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import qg.qgent.auth.mail.VerificationCodeMailer;
-import qg.qgent.auth.mapper.EmailVerificationCodeMapper;
-import qg.qgent.auth.mapper.PasswordResetTokenMapper;
-import qg.qgent.auth.mapper.RefreshTokenMapper;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.mapper.view.ProjectMembershipView;
 import qg.qgent.team.entity.TeamEntity;
@@ -36,8 +33,8 @@ class AuthServiceTeamRoleTest {
         TeamMemberMapper memberMapper = mock(TeamMemberMapper.class);
         PasswordEncoder passwords = mock(PasswordEncoder.class);
         when(passwords.encode("qgents-dummy-password-not-used")).thenReturn("dummy");
-        AuthService service = new AuthService(userMapper, mock(RefreshTokenMapper.class),
-                mock(PasswordResetTokenMapper.class), mock(EmailVerificationCodeMapper.class),
+        AuthService service = new AuthService(userMapper, mock(RefreshTokenStore.class),
+                mock(VerificationCodeStore.class),
                 teamMapper, memberMapper, mock(ProjectMapper.class),
                 mock(RsaPasswordDecryptor.class), passwords, mock(TokenService.class),
                 mock(VerificationCodeMailer.class), mock(RateLimiter.class));
@@ -72,8 +69,8 @@ class AuthServiceTeamRoleTest {
         ProjectMapper projectMapper = mock(ProjectMapper.class);
         PasswordEncoder passwords = mock(PasswordEncoder.class);
         when(passwords.encode("qgents-dummy-password-not-used")).thenReturn("dummy");
-        AuthService service = new AuthService(userMapper, mock(RefreshTokenMapper.class),
-                mock(PasswordResetTokenMapper.class), mock(EmailVerificationCodeMapper.class),
+        AuthService service = new AuthService(userMapper, mock(RefreshTokenStore.class),
+                mock(VerificationCodeStore.class),
                 teamMapper, memberMapper, projectMapper,
                 mock(RsaPasswordDecryptor.class), passwords, mock(TokenService.class),
                 mock(VerificationCodeMailer.class), mock(RateLimiter.class));

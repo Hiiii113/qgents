@@ -11,8 +11,10 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.HtmlUtils;
 
+import java.time.Duration;
+
 /**
- * 发送含 6 位数字验证码的账户邮件：注册验证码 10 分钟内有效，密码重置验证码 30 分钟内有效。
+ * 发送含 6 位数字验证码的账户邮件；有效期文案由调用方传入，与验证码真实 TTL 一致。
  * <p>
  * 异步发送；发送失败只记录固定事件，不暴露验证码明文到日志。
  */
@@ -29,19 +31,19 @@ public class VerificationCodeMailer {
 
     /** 注册验证码邮件，用于校验邮箱真实归属。 */
     @Async
-    public void sendRegistration(String email, String code) {
+    public void sendRegistration(String email, String code, Duration ttl) {
         send(email, code, "Qgents 注册验证码", "验证你的 Qgents 邮箱",
-                "你正在注册 Qgents 账号，本次验证码为：", "10 分钟");
+                "你正在注册 Qgents 账号，本次验证码为：", ttl);
     }
 
     /** 密码重置验证码邮件。 */
     @Async
-    public void sendPasswordReset(String email, String code) {
+    public void sendPasswordReset(String email, String code, Duration ttl) {
         send(email, code, "Qgents 重置密码验证码", "重置你的 Qgents 密码",
-                "你正在重置 Qgents 账户密码，本次验证码为：", "30 分钟");
+                "你正在重置 Qgents 账户密码，本次验证码为：", ttl);
     }
 
-    private void send(String email, String code, String subject, String heading, String intro, String validity) {
+    private void send(String email, String code, String subject, String heading, String intro, Duration ttl) {
         String html = """
                 <!DOCTYPE html>
                 <html lang="zh-CN">
@@ -70,7 +72,7 @@ public class VerificationCodeMailer {
                   </table>
                 </body>
                 </html>
-                """.formatted(heading, intro, HtmlUtils.htmlEscape(code), validity);
+                """.formatted(heading, intro, HtmlUtils.htmlEscape(code), ttl.toMinutes() + " 分钟");
         try {
             MimeMessage message = sender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, false, "UTF-8");

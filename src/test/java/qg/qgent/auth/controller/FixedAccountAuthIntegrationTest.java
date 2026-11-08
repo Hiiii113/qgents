@@ -14,6 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import qg.qgent.auth.dto.AuthTokensResponse;
 import qg.qgent.auth.dto.LoginRequest;
 import qg.qgent.auth.dto.RegisterRequest;
+import qg.qgent.auth.service.VerificationCodeStore;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -26,6 +27,7 @@ import java.security.PublicKey;
 import java.security.interfaces.RSAPrivateCrtKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.security.spec.RSAPublicKeySpec;
+import java.time.Duration;
 import java.util.Base64;
 import javax.crypto.Cipher;
 
@@ -47,6 +49,9 @@ public class FixedAccountAuthIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private VerificationCodeStore verificationCodes;
 
     @Test
     public void testFixedAccountAuthFlow() throws Exception {
@@ -72,14 +77,9 @@ public class FixedAccountAuthIntegrationTest {
         HttpClient httpClient = HttpClient.newHttpClient();
 
         // 2. 尝试注册（如果已存在则忽略失败）
-        // 注册现在需要邮箱验证码：直接向验证码表插入一条已知验证码（模拟邮件已发送），再带码注册。
+        // 注册需要邮箱验证码：直接向 Redis 写入一条已知验证码（模拟邮件已发送），再带码注册。
         String testCode = "123456";
-        byte[] codeHash = java.security.MessageDigest.getInstance("SHA-256").digest(testCode.getBytes(StandardCharsets.UTF_8));
-        jdbcTemplate.update("DELETE FROM email_verification_codes WHERE email = ?", fixedEmail);
-        jdbcTemplate.update("INSERT INTO email_verification_codes (email, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?)",
-                fixedEmail, codeHash,
-                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).plusMinutes(10),
-                java.time.LocalDateTime.now(java.time.ZoneOffset.UTC));
+        verificationCodes.save(VerificationCodeStore.Purpose.REGISTER, fixedEmail, testCode, Duration.ofMinutes(10));
 
         RegisterRequest registerReq = new RegisterRequest();
         registerReq.setEmail(fixedEmail);
@@ -113,7 +113,26 @@ public class FixedAccountAuthIntegrationTest {
         JsonNode loginRoot = objectMapper.readTree(loginResponse.body());
         AuthTokensResponse loginTokens = objectMapper.treeToValue(loginRoot.get("data"), AuthTokensResponse.class);
 
-        // 4. 为该固定账号检查并创建团队
+        // 4. refresh token 在 Redis 中轮换：旧令牌只能使用一次，退出后失效
+        HttpResponse<String> rotated = httpClient.send(
+                refreshRequest(loginTokens.getRefreshToken()), HttpResponse.BodyHandlers.ofString());
+        Assertions.assertEquals(200, rotated.statusCode(), "refresh 应成功");
+        String rotatedToken = objectMapper.readTree(rotated.body()).get("data").get("refreshToken").asText();
+        Assertions.assertNotEquals(loginTokens.getRefreshToken(), rotatedToken, "refresh 应轮换令牌");
+
+        HttpResponse<String> replay = httpClient.send(
+                refreshRequest(loginTokens.getRefreshToken()), HttpResponse.BodyHandlers.ofString());
+        Assertions.assertEquals(401, replay.statusCode(), "已消费的 refresh token 不能重放");
+
+        HttpResponse<String> logoutResponse = httpClient.send(
+                logoutRequest(rotatedToken), HttpResponse.BodyHandlers.ofString());
+        Assertions.assertEquals(200, logoutResponse.statusCode(), "退出应成功");
+
+        HttpResponse<String> afterLogout = httpClient.send(
+                refreshRequest(rotatedToken), HttpResponse.BodyHandlers.ofString());
+        Assertions.assertEquals(401, afterLogout.statusCode(), "退出后 refresh token 应失效");
+
+        // 5. 为该固定账号检查并创建团队
         Long userId = jdbcTemplate.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, fixedEmail);
         Assertions.assertNotNull(userId, "用户应该存在");
 
@@ -137,5 +156,23 @@ public class FixedAccountAuthIntegrationTest {
         System.out.println("-------------------------------------------------------");
         System.out.println("认证验证完成；敏感账号与 Token 不写入测试日志。");
         System.out.println("=======================================================\n\n");
+    }
+
+    private HttpRequest refreshRequest(String refreshToken) throws Exception {
+        return HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/v1/auth/refresh"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                        objectMapper.writeValueAsString(java.util.Map.of("refreshToken", refreshToken))))
+                .build();
+    }
+
+    private HttpRequest logoutRequest(String refreshToken) throws Exception {
+        return HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:" + port + "/api/v1/auth/logout"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                        objectMapper.writeValueAsString(java.util.Map.of("refreshToken", refreshToken))))
+                .build();
     }
 }

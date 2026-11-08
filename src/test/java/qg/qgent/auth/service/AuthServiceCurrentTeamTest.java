@@ -6,9 +6,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import qg.qgent.auth.mail.VerificationCodeMailer;
-import qg.qgent.auth.mapper.EmailVerificationCodeMapper;
-import qg.qgent.auth.mapper.PasswordResetTokenMapper;
-import qg.qgent.auth.mapper.RefreshTokenMapper;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.team.entity.TeamEntity;
@@ -35,8 +32,8 @@ class AuthServiceCurrentTeamTest {
     @BeforeEach
     void setUp() {
         PasswordEncoder passwords = mock(PasswordEncoder.class);
-        service = new AuthService(users, mock(RefreshTokenMapper.class), mock(PasswordResetTokenMapper.class),
-                mock(EmailVerificationCodeMapper.class), teams, members, mock(ProjectMapper.class),
+        service = new AuthService(users, mock(RefreshTokenStore.class), mock(VerificationCodeStore.class),
+                teams, members, mock(ProjectMapper.class),
                 mock(RsaPasswordDecryptor.class), passwords, mock(TokenService.class),
                 mock(VerificationCodeMailer.class), mock(RateLimiter.class));
         user.setId(userId);

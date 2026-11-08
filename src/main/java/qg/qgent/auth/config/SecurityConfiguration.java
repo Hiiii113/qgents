@@ -59,8 +59,8 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/register",
                                 "/api/v1/auth/register/verification-codes", "/api/v1/auth/login",
-                                "/api/v1/auth/refresh", "/api/v1/auth/password-reset-requests",
-                                "/api/v1/auth/password-resets")
+                                "/api/v1/auth/refresh", "/api/v1/auth/logout",
+                                "/api/v1/auth/password-reset-requests", "/api/v1/auth/password-resets")
                         .permitAll()
                         // App 回调通过一次性 state 识别安装发起人；Webhook 单独校验签名。
                         .requestMatchers(HttpMethod.GET, "/api/v1/integrations/github/callback").permitAll()

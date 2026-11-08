@@ -12,6 +12,7 @@ import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.UUID;
 
 /** 签发和校验 JWT 访问令牌，生成刷新令牌及令牌摘要。 */
@@ -69,7 +70,11 @@ public class TokenService {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(b);
     }
 
-    // 计算 refresh token 的 SHA-256 哈希值
+    // 计算 refresh token / 验证码的 SHA-256 摘要（十六进制），作为 Redis key 和存储值
+    public String digest(String value) {
+        return HexFormat.of().formatHex(hash(value));
+    }
+
     public byte[] hash(String token) {
         try {
             return MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8));
@@ -78,17 +83,16 @@ public class TokenService {
         }
     }
 
-    // 获取 access token 的过期时间
-    public Instant refreshExpiry() {
-        return Instant.now().plus(refreshTtl);
+    // 获取 refresh token 的有效期
+    public Duration refreshTtl() {
+        return refreshTtl;
     }
 
-    // 获取 reset token 的过期时间
-    public Instant resetExpiry() {
-        return Instant.now().plus(resetTtl);
+    // 获取密码重置验证码的有效期
+    public Duration resetTtl() {
+        return resetTtl;
     }
 
-    // 获取 access token 的过期时间（秒）
     public long accessSeconds() {
         return accessTtl.toSeconds();
     }

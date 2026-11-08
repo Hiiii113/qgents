@@ -37,7 +37,7 @@ public class AuthController {
     @PostMapping("/auth/register")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<?> register(@Valid @RequestBody RegisterRequest body, HttpServletRequest request) {
-        return ok(authService.register(body), request);
+        return ok(authService.register(body, fingerprint(request)), request);
     }
 
     /**
@@ -64,11 +64,10 @@ public class AuthController {
         return ok(authService.refresh(body.getRefreshToken()), request);
     }
 
-    /** 注销当前登录态。 */
+    /** 注销当前刷新令牌；不需要 Bearer，前端退出时不携带 access token。 */
     @PostMapping("/auth/logout")
-    public ApiResponse<?> logout(@AuthenticationPrincipal Long userId,
-                                 @Valid @RequestBody RefreshTokenRequest body, HttpServletRequest request) {
-        authService.logout(userId, body.getRefreshToken());
+    public ApiResponse<?> logout(@Valid @RequestBody RefreshTokenRequest body, HttpServletRequest request) {
+        authService.logout(body.getRefreshToken());
         return ok(Map.of(), request);
     }
 
@@ -81,10 +80,10 @@ public class AuthController {
         return ok(Map.of("message", "如果邮箱已注册，重置邮件将很快发送"), request);
     }
 
-    /** 用重置令牌设置新密码并撤销全部 refreshToken。 */
+    /** 用邮箱验证码设置新密码并撤销全部 refreshToken。 */
     @PostMapping("/auth/password-resets")
     public ApiResponse<?> reset(@Valid @RequestBody ResetPasswordRequest body, HttpServletRequest request) {
-        authService.reset(body);
+        authService.reset(body, fingerprint(request));
         return ok(Map.of(), request);
     }
 

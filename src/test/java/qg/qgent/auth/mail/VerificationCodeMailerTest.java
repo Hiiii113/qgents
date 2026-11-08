@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.mail.javamail.JavaMailSender;
 
+import java.time.Duration;
 import java.util.Properties;
 import java.util.function.Consumer;
 
@@ -19,7 +20,7 @@ class VerificationCodeMailerTest {
 
     @Test
     void registrationMailContainsCodeAndRegistrationCopy() throws Exception {
-        String html = capture(mailer -> mailer.sendRegistration("member@example.com", "483920"));
+        String html = capture(mailer -> mailer.sendRegistration("member@example.com", "483920", Duration.ofMinutes(10)));
 
         assertTrue(html.contains("验证你的 Qgents 邮箱"));
         assertTrue(html.contains("你正在注册 Qgents 账号"));
@@ -29,7 +30,7 @@ class VerificationCodeMailerTest {
 
     @Test
     void passwordResetMailContainsCodeAndResetCopy() throws Exception {
-        String html = capture(mailer -> mailer.sendPasswordReset("member@example.com", "483920"));
+        String html = capture(mailer -> mailer.sendPasswordReset("member@example.com", "483920", Duration.ofMinutes(30)));
 
         // 验证码邮件：展示 6 位数字，不包含重置深链
         assertTrue(html.contains("重置你的 Qgents 密码"));
