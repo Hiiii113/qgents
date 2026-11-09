@@ -33,7 +33,7 @@ import qg.qgent.sandbox.service.SandboxSession;
 import qg.qgent.skill.dto.ContextSkill;
 import qg.qgent.skill.service.SkillService;
 import qg.qgent.sandbox.service.SandboxFiles;
-import qg.qgent.workspace.service.WorkspaceCommands;
+import qg.qgent.sandbox.service.SandboxCommands;
 import qg.qgent.workspace.service.WorkspaceService;
 import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.sandbox.dto.SandboxExecutionContext;
@@ -740,11 +740,11 @@ class AgentChatServiceTest {
         }).when(runs).finishRoot(any(AgentRunEntity.class), any(String.class), any(String.class),
                 org.mockito.ArgumentMatchers.anyInt());
         var projects = mock(ProjectMapper.class);
-        var github = new GitHubCapability(mock(WorkspaceCommands.class), mock(GitHubRepositoryService.class));
+        var github = new GitHubCapability(mock(SandboxCommands.class), mock(GitHubRepositoryService.class));
         var memories = mock(ProjectMemoryService.class);
         when(memories.get(any(), any())).thenReturn(new ProjectMemoryResponse("1", "# 项目约定", "v1",
                 java.time.LocalDateTime.now()));
-        var service = new AgentChatService(github, mock(WorkspaceCommands.class), workspaces,
+        var service = new AgentChatService(github, mock(SandboxCommands.class), workspaces,
                 mock(qg.qgent.workspace.service.WorkspaceRepositoryService.class), loop, context,
                 skills, history, messages, runs, sessions, codeAccess,
                 attachments, memories, new ObjectMapper(),

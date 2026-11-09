@@ -9,8 +9,9 @@ import org.springframework.web.client.RestClient;
 
 import qg.qgent.common.web.ApiException;
 import qg.qgent.github.service.GitHubRepositoryService;
+import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.support.TestIds;
-import qg.qgent.workspace.service.WorkspaceCommands;
+import qg.qgent.sandbox.service.SandboxCommands;
 
 import java.util.List;
 import java.util.Map;
@@ -40,7 +41,7 @@ class GitHubToolsTest {
     private final Long workspace = TestIds.next();
     private final Long actor = TestIds.next();
     private final Long project = TestIds.next();
-    private final WorkspaceCommands commands = mock(WorkspaceCommands.class);
+    private final SandboxCommands commands = mock(SandboxCommands.class);
     private final GitHubRepositoryService repositories = mock(GitHubRepositoryService.class);
     private final RestClient.Builder builder = RestClient.builder().baseUrl(API);
     private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -152,8 +153,8 @@ class GitHubToolsTest {
         var result = tools.getIssue("owner/repo", 7);
 
         assertThat(result).containsEntry("ok", false);
-        assertThat(error(result)).containsEntry("code", "INVALID_ARGUMENT");
-        assertThat(error(result).get("message")).asString().contains("Pull Request");
+        assertThat(error(result)).containsEntry("errorCode", "INVALID_ARGUMENT");
+        assertThat(error(result).get("error")).asString().contains("Pull Request");
     }
 
     @Test
@@ -235,9 +236,9 @@ class GitHubToolsTest {
                         .header("Link", "<https://evil.example/repos/owner/repo/issues?page=2>; rel=\"next\""));
 
         assertThat(error(tools.request("GET", "/repos/owner/repo/pulls", null)))
-                .containsEntry("code", "GITHUB_PAGINATION_UNSUPPORTED");
+                .containsEntry("errorCode", "GITHUB_PAGINATION_UNSUPPORTED");
         assertThat(error(tools.request("GET", "/repos/owner/repo/issues", null)))
-                .containsEntry("code", "GITHUB_PAGINATION_UNSUPPORTED");
+                .containsEntry("errorCode", "GITHUB_PAGINATION_UNSUPPORTED");
         server.verify();
     }
 
@@ -262,7 +263,7 @@ class GitHubToolsTest {
 
         var error = error(tools.request("GET", "/repos/owner/repo", null));
 
-        assertThat(error).containsEntry("code", "GITHUB_RATE_LIMITED").containsEntry("httpStatus", 429)
+        assertThat(error).containsEntry("errorCode", "GITHUB_RATE_LIMITED").containsEntry("httpStatus", 429)
                 .containsEntry("retryAfterSeconds", 30L);
     }
 
@@ -273,8 +274,8 @@ class GitHubToolsTest {
 
         var error = error(tools.request("GET", "/repos/owner/repo", null));
 
-        assertThat(error).containsEntry("code", "GITHUB_FORBIDDEN_OR_RATE_LIMITED").containsEntry("httpStatus", 403)
-                .containsEntry("retryAfterSeconds", null);
+        assertThat(error).containsEntry("errorCode", "GITHUB_FORBIDDEN_OR_RATE_LIMITED").containsEntry("httpStatus", 403)
+                .doesNotContainKey("retryAfterSeconds");
     }
 
     @Test
@@ -286,9 +287,9 @@ class GitHubToolsTest {
                 .andRespond(withStatus(HttpStatus.NOT_FOUND));
 
         assertThat(error(tools.listPullRequests("owner/repo", null, null, null)))
-                .containsEntry("code", "GITHUB_AUTH_FAILED");
+                .containsEntry("errorCode", "GITHUB_AUTH_FAILED");
         assertThat(error(tools.listIssues("owner/repo", null, null, null)))
-                .containsEntry("code", "GITHUB_NOT_FOUND_OR_INACCESSIBLE");
+                .containsEntry("errorCode", "GITHUB_NOT_FOUND_OR_INACCESSIBLE");
         server.verify();
     }
 
@@ -300,7 +301,7 @@ class GitHubToolsTest {
 
         var error = error(tools.listPullRequests("owner/repo", null, null, null));
 
-        assertThat(error).containsEntry("code", "GITHUB_REQUEST_FAILED").containsEntry("httpStatus", null);
+        assertThat(error).containsEntry("errorCode", "GITHUB_REQUEST_FAILED").doesNotContainKey("httpStatus");
         assertThat(error.get("nextAction")).asString().contains("先查询确认");
     }
 
@@ -311,7 +312,7 @@ class GitHubToolsTest {
                 .andRespond(withStatus(HttpStatus.BAD_GATEWAY));
 
         assertThat(error(tools.listPullRequests("owner/repo", null, null, null)))
-                .containsEntry("code", "GITHUB_REQUEST_FAILED").containsEntry("httpStatus", 502);
+                .containsEntry("errorCode", "GITHUB_REQUEST_FAILED").containsEntry("httpStatus", 502);
     }
 
     @Test
@@ -324,10 +325,10 @@ class GitHubToolsTest {
         var notImported = error(tools.listPullRequests("owner/repo", null, null, null));
         var denied = error(tools.listRepositories(null, null, null));
 
-        assertThat(notImported).containsEntry("code", "REPOSITORY_NOT_IMPORTED")
+        assertThat(notImported).containsEntry("errorCode", "REPOSITORY_NOT_IMPORTED")
                 .containsEntry("httpStatus", 400);
         assertThat(notImported.get("nextAction")).asString().contains("项目管理员");
-        assertThat(denied).containsEntry("code", "PROJECT_ACCESS_DENIED").containsEntry("httpStatus", 404);
+        assertThat(denied).containsEntry("errorCode", "PROJECT_ACCESS_DENIED").containsEntry("httpStatus", 404);
     }
 
     @Test
@@ -338,22 +339,22 @@ class GitHubToolsTest {
 
         var error = error(tools.listPullRequests("owner/repo", null, null, null));
 
-        assertThat(error).containsEntry("code", "GITHUB_NOT_CONFIGURED").containsEntry("httpStatus", 503);
+        assertThat(error).containsEntry("errorCode", "GITHUB_NOT_CONFIGURED").containsEntry("httpStatus", 503);
         assertThat(error.get("nextAction")).asString().contains("管理员");
     }
 
     @Test
     void invalidArgumentsAreRejectedBeforeAnyRequest() {
-        assertThat(error(tools.listRepositories("ORG", null, null))).containsEntry("code", "INVALID_ARGUMENT");
-        assertThat(error(tools.listRepositories(null, 0, null))).containsEntry("code", "INVALID_ARGUMENT");
+        assertThat(error(tools.listRepositories("ORG", null, null))).containsEntry("errorCode", "INVALID_ARGUMENT");
+        assertThat(error(tools.listRepositories(null, 0, null))).containsEntry("errorCode", "INVALID_ARGUMENT");
         assertThat(error(tools.listPullRequests("owner/repo", null, null, 101)))
-                .containsEntry("code", "INVALID_ARGUMENT");
-        assertThat(error(tools.getIssue("owner/repo", 0))).containsEntry("code", "INVALID_ARGUMENT");
+                .containsEntry("errorCode", "INVALID_ARGUMENT");
+        assertThat(error(tools.getIssue("owner/repo", 0))).containsEntry("errorCode", "INVALID_ARGUMENT");
         assertThat(error(tools.request("TRACE", "/repos/owner/repo", null)))
-                .containsEntry("code", "INVALID_ARGUMENT");
+                .containsEntry("errorCode", "INVALID_ARGUMENT");
         assertThat(error(tools.request("GET", "https://evil.example/repos/owner/repo", null)))
-                .containsEntry("code", "INVALID_ARGUMENT");
-        assertThat(error(tools.request("GET", "/user/repos", null))).containsEntry("code", "INVALID_ARGUMENT");
+                .containsEntry("errorCode", "INVALID_ARGUMENT");
+        assertThat(error(tools.request("GET", "/user/repos", null))).containsEntry("errorCode", "INVALID_ARGUMENT");
         server.verify();
         verifyNoInteractions(repositories, commands);
     }
@@ -361,7 +362,9 @@ class GitHubToolsTest {
     @Test
     void gitUsesTransientAuthenticationAndReturnsCommandResult() {
         expectToken();
-        var failure = Map.<String, Object>of("exitCode", 1, "stderr", "permission denied", "ok", true);
+        var failure = ToolResult.ok();
+        failure.put("exitCode", 1);
+        failure.put("stderr", "permission denied");
         when(commands.run(any(), anyString(), anyList(), anyMap())).thenReturn(failure);
 
         assertThat(tools.git(List.of("fetch", "origin"), ".", "owner/repo")).isEqualTo(failure);
@@ -389,8 +392,9 @@ class GitHubToolsTest {
                 + "\"pull_request\":{\"url\":\"x\"},\"html_url\":\"https://github.com/owner/repo/pull/" + number + "\"}";
     }
 
+    /** 失败结果是扁平 envelope：errorCode/error 与可选 nextAction/httpStatus 同层。 */
     private Map<String, Object> error(Map<String, Object> result) {
         assertThat(result).containsEntry("ok", false);
-        return (Map<String, Object>) result.get("error");
+        return result;
     }
 }

@@ -30,7 +30,7 @@ public class PushNotificationService {
     private final PushDeliveryMapper deliveryMapper;
     private final NotificationMapper notificationMapper;
     private final PushTokenCipher tokenCipher;
-    private final PushGateway gateway;
+    private final FcmPushGateway gateway;
     private final PushProperties properties;
 
     /** 注册或刷新一个安装实例；相同用户与 installationId 重试只更新同一行。 */
@@ -78,7 +78,6 @@ public class PushNotificationService {
     /** 通知落库后创建每台活动设备一条推送记录（同一通知和设备只保留一条）。 */
     @Transactional
     public void enqueue(NotificationEntity notification) {
-        if (notification == null || notification.getRecipientUserId() == null) return;
         for (PushDeviceEntity device : deviceMapper.selectActiveByUser(notification.getRecipientUserId())) {
             PushDeliveryEntity delivery = new PushDeliveryEntity();
             delivery.setNotificationId(notification.getId());

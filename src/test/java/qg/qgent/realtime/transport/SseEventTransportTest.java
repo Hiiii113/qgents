@@ -40,15 +40,15 @@ class SseEventTransportTest {
         QueuedExecutor executor = new QueuedExecutor();
         SseEmitter emitter = mock(SseEmitter.class);
         doThrow(new IOException("disconnected")).when(emitter).send(any(SseEmitter.SseEventBuilder.class));
-        SseConnectionTransport transport = transport(executor, timeout -> emitter,
+        SseEventTransport transport = transport(executor, timeout -> emitter,
                 new PerformanceMetrics(registry), Clock.systemUTC());
         AtomicReference<Long> requestedCursor = new AtomicReference<>();
 
         transport.open("project", TestIds.next(), 0, cursor -> {
             requestedCursor.set(cursor);
             return List.of(
-                    new SseConnectionTransport.SseEvent(1, "message.created", Map.of(), false),
-                    new SseConnectionTransport.SseEvent(2, "task.updated", Map.of("status", "DONE"), true));
+                    new SseEventTransport.SseEvent(1, "message.created", Map.of(), false),
+                    new SseEventTransport.SseEvent(2, "task.updated", Map.of("status", "DONE"), true));
         }, false);
         executor.runNext();
 
@@ -71,7 +71,7 @@ class SseEventTransportTest {
         QueuedExecutor executor = new QueuedExecutor();
         SseEmitter emitter = mock(SseEmitter.class);
         doThrow(new IOException("disconnected")).when(emitter).send(any(SseEmitter.SseEventBuilder.class));
-        SseConnectionTransport transport = transport(executor, timeout -> emitter,
+        SseEventTransport transport = transport(executor, timeout -> emitter,
                 new PerformanceMetrics(registry), new AdvancingClock());
 
         transport.open("notification", TestIds.next(), 8, cursor -> List.of(), false);
@@ -96,10 +96,10 @@ class SseEventTransportTest {
             return null;
         }).when(firstEmitter).onCompletion(any());
         AtomicInteger created = new AtomicInteger();
-        SseConnectionTransport transport = transport(executor,
+        SseEventTransport transport = transport(executor,
                 timeout -> created.getAndIncrement() == 0 ? firstEmitter : mock(SseEmitter.class),
                 new PerformanceMetrics(registry), Clock.systemUTC());
-        var eventLoader = (java.util.function.LongFunction<List<SseConnectionTransport.SseEvent>>) cursor -> List.of();
+        var eventLoader = (java.util.function.LongFunction<List<SseEventTransport.SseEvent>>) cursor -> List.of();
 
         for (int i = 0; i < 128; i++) {
             transport.open("team", TestIds.next(), 0, eventLoader, false);
@@ -116,7 +116,7 @@ class SseEventTransportTest {
         assertEquals(127.0, registry.get("qgents.sse.connections").gauge().value());
     }
 
-    private SseConnectionTransport transport(Executor executor, SseEmitterFactory emitterFactory,
+    private SseEventTransport transport(Executor executor, SseEmitterFactory emitterFactory,
                                              PerformanceMetrics metrics, Clock clock) {
         return new SseEventTransport(executor, emitterFactory, metrics, clock);
     }

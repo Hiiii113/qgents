@@ -3,7 +3,7 @@ package qg.qgent.workspace.tool;
 import org.junit.jupiter.api.Test;
 
 import qg.qgent.workspace.entity.WorkspaceEntity;
-import qg.qgent.workspace.service.WorkspaceCommands;
+import qg.qgent.sandbox.service.SandboxCommands;
 import qg.qgent.workspace.service.WorkspaceRepositoryService;
 import qg.qgent.workspace.service.WorkspaceSelection;
 import qg.qgent.workspace.service.WorkspaceService;
@@ -28,7 +28,7 @@ class WorkspaceToolsTest {
     private final WorkspaceRepositoryService repositories = mock(WorkspaceRepositoryService.class);
     private final WorkspaceSelection selection = new WorkspaceSelection(11L, ".");
     private final WorkspaceTools tools = new WorkspaceTools(1L, projectId, workspaces, repositories,
-            mock(WorkspaceCommands.class), selection, () -> 11L, () -> 11L, id -> id, id -> { });
+            mock(SandboxCommands.class), selection, () -> 11L, () -> 11L, id -> id, id -> { });
 
     @Test
     void listWorkspacesMarksDefaultAndSelection() {
@@ -45,7 +45,7 @@ class WorkspaceToolsTest {
     @Test
     void listWorkspacesBeforeSelectionReturnsNullCurrentId() {
         WorkspaceTools unselected = new WorkspaceTools(1L, projectId, workspaces, repositories,
-                mock(WorkspaceCommands.class), new WorkspaceSelection(null, "."),
+                mock(SandboxCommands.class), new WorkspaceSelection(null, "."),
                 () -> null, () -> null, id -> id, id -> { });
         when(workspaces.list(projectId)).thenReturn(List.of(workspace(11L, true)));
 
@@ -114,7 +114,9 @@ class WorkspaceToolsTest {
         var result = tools.createWorkspace("隔离任务", List.of(
                 Map.of("providerRepositoryId", "42"), Map.of("providerRepositoryId", "43", "base", "release")));
 
-        assertThat(result).containsEntry("ok", false).containsEntry("workspaceId", "21").containsEntry("error", null);
+        assertThat(result).containsEntry("ok", false).containsEntry("workspaceId", "21")
+                .containsEntry("errorCode", "WORKSPACE_REPOSITORY_NOT_READY")
+                .containsEntry("error", "部分仓库未准备完成，见 repositories 中的 state 与 error");
         var items = (List<Map<String, Object>>) result.get("repositories");
         assertThat(items).hasSize(2);
         assertThat(items.get(0)).containsEntry("state", "READY").containsEntry("head", "abc");
@@ -128,13 +130,13 @@ class WorkspaceToolsTest {
         WorkspaceEntity created = workspace(21L, false);
         when(workspaces.create(projectId)).thenReturn(created);
         WorkspaceTools failing = new WorkspaceTools(1L, projectId, workspaces, repositories,
-                mock(WorkspaceCommands.class), selection, () -> 11L, () -> 11L,
+                mock(SandboxCommands.class), selection, () -> 11L, () -> 11L,
                 id -> { throw new IllegalStateException("无法启动沙箱"); }, id -> { });
 
         var result = failing.createWorkspace("隔离任务", List.of(Map.of("providerRepositoryId", "42")));
 
         assertThat(result).containsEntry("ok", false).containsEntry("workspaceId", "21")
-                .containsEntry("error", "无法启动沙箱");
+                .containsEntry("errorCode", "WORKSPACE_ENVIRONMENT_FAILED").containsEntry("error", "无法启动沙箱");
         assertThat((List<Map<String, Object>>) result.get("repositories")).singleElement()
                 .satisfies(item -> assertThat(item).containsEntry("state", "NOT_STARTED")
                         .containsEntry("error", null));
@@ -156,7 +158,9 @@ class WorkspaceToolsTest {
                 Map.of("providerRepositoryId", "42"), Map.of("providerRepositoryId", "43"),
                 Map.of("providerRepositoryId", "44")));
 
-        assertThat(result).containsEntry("ok", false).containsEntry("error", "无法保存仓库准备记录");
+        assertThat(result).containsEntry("ok", false)
+                .containsEntry("errorCode", "WORKSPACE_REPOSITORY_PREPARATION_FAILED")
+                .containsEntry("error", "无法保存仓库准备记录");
         var items = (List<Map<String, Object>>) result.get("repositories");
         assertThat(items).extracting(item -> item.get("state"))
                 .containsExactly("READY", "FAILED", "NOT_STARTED");

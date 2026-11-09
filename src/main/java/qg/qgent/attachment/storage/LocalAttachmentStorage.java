@@ -76,11 +76,11 @@ public class LocalAttachmentStorage implements AttachmentStorageStrategy {
         } catch (IOException e) {
             throw new IllegalStateException("Unable to store attachment locally: " + objectKey, e);
         } finally {
+            // 清理失败不能覆盖真正的失败原因：残留的 .upload-*.tmp 不在读取路径上。
             if (temporary != null) {
                 try {
                     Files.deleteIfExists(temporary);
-                } catch (IOException e) {
-                    throw new IllegalStateException("Unable to remove temporary upload", e);
+                } catch (IOException ignored) {
                 }
             }
         }

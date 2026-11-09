@@ -25,8 +25,8 @@ public class PerformanceMetrics {
     public void stop(Timer.Sample sample, String metric, String operation, String outcome) {
         if (sample != null) {
             sample.stop(Timer.builder(metric)
-                    .tag("operation", safe(operation))
-                    .tag("outcome", safe(outcome))
+                    .tag("operation", operation)
+                    .tag("outcome", outcome)
                     .publishPercentiles(0.5, 0.95, 0.99)
                     .register(registry));
         }
@@ -34,13 +34,9 @@ public class PerformanceMetrics {
 
     public void increment(String metric, String operation, String outcome) {
         Counter.builder(metric)
-                .tag("operation", safe(operation))
-                .tag("outcome", safe(outcome))
+                .tag("operation", operation)
+                .tag("outcome", outcome)
                 .register(registry)
                 .increment();
-    }
-
-    private String safe(String value) {
-        return value == null || value.isBlank() ? "unknown" : value;
     }
 }

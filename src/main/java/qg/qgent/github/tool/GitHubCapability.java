@@ -5,7 +5,7 @@ import org.springframework.stereotype.Component;
 
 import qg.qgent.github.client.GitHubAppClient;
 import qg.qgent.github.service.GitHubRepositoryService;
-import qg.qgent.workspace.service.WorkspaceCommands;
+import qg.qgent.sandbox.service.SandboxCommands;
 
 import java.util.function.Supplier;
 
@@ -13,7 +13,7 @@ import java.util.function.Supplier;
 @Component
 @RequiredArgsConstructor
 public class GitHubCapability {
-    private final WorkspaceCommands commands;
+    private final SandboxCommands commands;
     private final GitHubRepositoryService repositories;
 
     public GitHubTools tools(Long actor, Long projectId, Supplier<Long> workspace) {

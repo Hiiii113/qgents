@@ -60,7 +60,7 @@ class PushNotificationServiceTest {
         request.setPlatform("ANDROID");
         request.setToken(" token ");
         PushNotificationService service = new PushNotificationService(devices, mock(PushDeliveryMapper.class),
-                mock(NotificationMapper.class), cipher, mock(PushGateway.class), properties);
+                mock(NotificationMapper.class), cipher, mock(FcmPushGateway.class), properties);
 
         PushDeviceResponse response = service.register(userId, request);
 
@@ -93,7 +93,7 @@ class PushNotificationServiceTest {
         device.setId(TestIds.next());
         when(devices.selectActiveByUser(notification.getRecipientUserId())).thenReturn(List.of(device));
         when(deliveries.insert(any(PushDeliveryEntity.class))).thenThrow(new DuplicateKeyException("duplicate"));
-        PushNotificationService service = service(devices, deliveries, mock(PushGateway.class));
+        PushNotificationService service = service(devices, deliveries, mock(FcmPushGateway.class));
 
         service.enqueue(notification);
 
@@ -105,7 +105,7 @@ class PushNotificationServiceTest {
         PushDeliveryMapper deliveries = mock(PushDeliveryMapper.class);
         PushProperties properties = new PushProperties();
         PushNotificationService service = new PushNotificationService(mock(PushDeviceMapper.class), deliveries,
-                mock(NotificationMapper.class), mock(PushTokenCipher.class), mock(PushGateway.class), properties);
+                mock(NotificationMapper.class), mock(PushTokenCipher.class), mock(FcmPushGateway.class), properties);
 
         service.dispatchDue();
 
@@ -113,7 +113,7 @@ class PushNotificationServiceTest {
     }
 
     private PushNotificationService service(PushDeviceMapper devices, PushDeliveryMapper deliveries,
-                                            PushGateway gateway) {
+                                            FcmPushGateway gateway) {
         return new PushNotificationService(devices, deliveries, mock(NotificationMapper.class),
                 mock(PushTokenCipher.class), gateway, new PushProperties());
     }

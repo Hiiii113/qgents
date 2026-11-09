@@ -1,5 +1,6 @@
 package qg.qgent.sandbox.service;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -21,6 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
 /** 首次代码工具调用时准备 Workspace 和沙箱；会话按工作区复用，由根 AgentRun 持有。 */
+@Slf4j
 @Service
 public class SandboxSessionManager {
 
@@ -167,8 +169,9 @@ public class SandboxSessionManager {
             try {
                 renewWriteLease(workspaceId);
                 sandboxes.renew(session.sandboxId(), null);
-            } catch (RuntimeException ignored) {
+            } catch (RuntimeException exception) {
                 // 当前工具调用会传播 Sandbox 错误；心跳不应阻塞其他活跃 Sandbox 的续租。
+                log.debug("sandbox lease renew failed workspaceId={}: {}", workspaceId, exception.getMessage());
             }
         });
     }

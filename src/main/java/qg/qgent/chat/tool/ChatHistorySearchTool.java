@@ -1,6 +1,7 @@
 package qg.qgent.chat.tool;
 
 import qg.qgent.harness.tool.ParallelTool;
+import qg.qgent.harness.tool.ToolResult;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
@@ -43,18 +44,20 @@ public class ChatHistorySearchTool {
     @ParallelTool
     @Tool(name = "search_chat_history", description = "仅在当前项目群聊的历史聊天记录中按关键字检索；"
             + "当最近消息窗口缺少所需讨论时调用。query 必填，每个 AgentRun 的调用次数有限")
-    public Map<String, Object> searchChatHistory(
+    public ToolResult searchChatHistory(
             @ToolParam(description = "从任务或讨论中提取的非空检索关键字") String query,
             @ToolParam(description = "请求查询的最大命中数，默认 10、最多 50", required = false) Integer limit) {
-        Map<String, Object> result = new LinkedHashMap<>();
         if (query == null || query.isBlank()) {
-            return error(result, "search_chat_history 需要非空 query，请使用具体关键字定位历史讨论");
+            return ToolResult.error("CHAT_HISTORY_QUERY_REQUIRED",
+                    "search_chat_history 需要非空 query，请使用具体关键字定位历史讨论");
         }
         if (groupId == null) {
-            return error(result, "search_chat_history 当前运行未关联项目群聊，无法检索聊天记录");
+            return ToolResult.error("CHAT_HISTORY_GROUP_REQUIRED",
+                    "search_chat_history 当前运行未关联项目群聊，无法检索聊天记录");
         }
         if (searchesUsed.getAndUpdate(used -> Math.min(used + 1, maxSearches)) >= maxSearches) {
-            return error(result, "search_chat_history 检索预算已用尽（已调用 " + searchesUsed.get() + "/" + maxSearches
+            return ToolResult.error("CHAT_HISTORY_SEARCH_LIMIT",
+                    "search_chat_history 检索预算已用尽（已调用 " + searchesUsed.get() + "/" + maxSearches
                     + " 次），请基于已有上下文继续");
         }
         int messageLimit = Math.max(1, Math.min(limit == null ? DEFAULT_LIMIT : limit, MAX_LIMIT));
@@ -64,9 +67,10 @@ public class ChatHistorySearchTool {
         } catch (RuntimeException exception) {
             log.info("chat history search failed projectId={} groupId={} category={}", projectId, groupId,
                     exception.getClass().getSimpleName());
-            return error(result, "search_chat_history 检索失败: " + safeMessage(exception));
+            return ToolResult.error("CHAT_HISTORY_UNAVAILABLE",
+                    "search_chat_history 检索失败: " + safeMessage(exception));
         }
-        result.put("ok", true);
+        ToolResult result = ToolResult.ok();
         result.put("budget", "used " + searchesUsed.get() + "/" + maxSearches);
         result.put("messages", formatMessages(messages));
         log.info("chat history searched projectId={} groupId={} returned={} used={}", projectId, groupId,
@@ -103,12 +107,6 @@ public class ChatHistorySearchTool {
         String singleLine = text.replace('\n', ' ').replace('\r', ' ').strip();
         return singleLine.length() <= MAX_MESSAGE_CHARS ? singleLine
                 : singleLine.substring(0, MAX_MESSAGE_CHARS) + "...";
-    }
-
-    private Map<String, Object> error(Map<String, Object> result, String message) {
-        result.put("ok", false);
-        result.put("error", message);
-        return result;
     }
 
     private String safeMessage(Throwable throwable) {

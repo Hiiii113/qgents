@@ -28,7 +28,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -171,55 +174,47 @@ public class ToolExecutionService {
 
     /** 取消指定 Sandbox 中仍处于活动状态的全部工具执行。 */
     public void cancelBySandbox(UUID sandboxId) {
-        executionMapper.selectActiveIdsBySandbox(sandboxId.toString(), properties.getInstanceId()).forEach(id -> {
-            try {
-                cancel(id);
-            } catch (SandboxException exception) {
-                if (!"EXECUTION_NOT_CANCELLABLE".equals(exception.getCode())) {
-                    throw exception;
-                }
-            }
-        });
+        executionMapper.selectActiveIdsBySandbox(sandboxId.toString(), properties.getInstanceId())
+                .forEach(this::cancelIgnoringTerminal);
     }
 
     /** Cancels commands owned by a Sandbox and waits for their worker bodies to stop using it. */
     public void stopAndAwaitBySandbox(UUID sandboxId) {
-        var ids = activeIds(executionMapper.selectActiveIdsBySandbox(sandboxId.toString(), properties.getInstanceId()));
+        Set<Long> ids = new LinkedHashSet<>(
+                executionMapper.selectActiveIdsBySandbox(sandboxId.toString(), properties.getInstanceId()));
         ids.addAll(active.idsBySandbox(sandboxId));
         stopAndAwait(ids);
     }
 
     /** Cancels commands started by one root or child AgentRun without affecting sibling runs. */
     public void stopAndAwaitByAgentRun(Long agentRunId) {
-        var ids = activeIds(executionMapper.selectActiveIdsByAgentRun(agentRunId, properties.getInstanceId()));
-        ids.addAll(active.idsByAgentRun(agentRunId));
-        stopAndAwait(ids);
+        stopAndAwait(agentRunIds(agentRunId));
     }
 
     /** Requests cancellation for one AgentRun without waiting for its command workers to exit. */
     public void cancelByAgentRun(Long agentRunId) {
-        var ids = activeIds(executionMapper.selectActiveIdsByAgentRun(agentRunId, properties.getInstanceId()));
+        agentRunIds(agentRunId).forEach(this::cancelIgnoringTerminal);
+    }
+
+    private Set<Long> agentRunIds(Long agentRunId) {
+        Set<Long> ids = new LinkedHashSet<>(
+                executionMapper.selectActiveIdsByAgentRun(agentRunId, properties.getInstanceId()));
         ids.addAll(active.idsByAgentRun(agentRunId));
-        ids.forEach(id -> {
-            try { cancel(id); }
-            catch (SandboxException exception) {
-                if (!"EXECUTION_NOT_CANCELLABLE".equals(exception.getCode())) throw exception;
-            }
-        });
+        return ids;
     }
 
-    private java.util.Set<Long> activeIds(java.util.List<Long> persistedIds) {
-        return new java.util.LinkedHashSet<>(persistedIds);
-    }
-
-    private void stopAndAwait(java.util.Collection<Long> ids) {
-        ids.forEach(id -> {
-            try { cancel(id); }
-            catch (SandboxException exception) {
-                if (!"EXECUTION_NOT_CANCELLABLE".equals(exception.getCode())) throw exception;
-            }
-        });
+    private void stopAndAwait(Collection<Long> ids) {
+        ids.forEach(this::cancelIgnoringTerminal);
         active.awaitWorkers(ids);
+    }
+
+    /** 记录已进入终态或已由其他实例接管时不再重复取消。 */
+    private void cancelIgnoringTerminal(Long executionId) {
+        try {
+            cancel(executionId);
+        } catch (SandboxException exception) {
+            if (!"EXECUTION_NOT_CANCELLABLE".equals(exception.getCode())) throw exception;
+        }
     }
 
     /** 读取命令当前输出；执行记录限定输出目录，不接受外部路径。 */

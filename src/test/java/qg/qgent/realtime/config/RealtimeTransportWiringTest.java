@@ -15,15 +15,15 @@ import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.mapper.EventMapper;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.realtime.service.RealtimeHub;
-import qg.qgent.realtime.transport.RealtimeConnectionTransport;
-import qg.qgent.realtime.transport.SseConnectionTransport;
+import qg.qgent.realtime.transport.SseEventTransport;
 import qg.qgent.team.mapper.TeamEventMapper;
 import qg.qgent.team.mapper.TeamMapper;
 import qg.qgent.team.mapper.TeamMemberMapper;
 import qg.qgent.user.mapper.UserMapper;
 import qg.qgent.realtime.websocket.WebSocketRealtimeHandler;
 
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import java.time.Clock;
+
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
 
@@ -34,6 +34,7 @@ class RealtimeTransportWiringTest {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
             context.registerBean(SimpleMeterRegistry.class, SimpleMeterRegistry::new);
             context.registerBean(ObjectMapper.class, () -> new ObjectMapper());
+            context.registerBean(Clock.class, Clock::systemUTC);
             registerMock(context, EventMapper.class);
             registerMock(context, ProjectAccessService.class);
             registerMock(context, NotificationEventMapper.class);
@@ -47,12 +48,12 @@ class RealtimeTransportWiringTest {
             registerMock(context, PlatformTransactionManager.class);
             context.register(PerformanceMetrics.class, SseTransportConfiguration.class,
                     RealtimeHub.class, WebSocketRealtimeHandler.class, EventService.class,
-                    qg.qgent.realtime.transport.SseEventTransport.class);
+                    SseEventTransport.class);
             context.refresh();
 
             assertNotNull(context.getBean(EventService.class));
-            assertInstanceOf(RealtimeHub.class, context.getBean(RealtimeConnectionTransport.class));
-            assertNotNull(context.getBean(SseConnectionTransport.class));
+            assertNotNull(context.getBean(RealtimeHub.class));
+            assertNotNull(context.getBean(SseEventTransport.class));
             assertNotNull(context.getBean(WebSocketRealtimeHandler.class));
         }
     }

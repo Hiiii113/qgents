@@ -185,8 +185,7 @@ public class MessageService {
                     });
             return messageText(content);
         } catch (RuntimeException e) {
-            log.warn("message text preview extract failed, messageId={}: {}", message == null ? null : message.getId(),
-                    e.getMessage());
+            log.warn("message text preview extract failed, messageId={}: {}", message.getId(), e.getMessage());
             return "";
         }
     }
@@ -197,7 +196,7 @@ public class MessageService {
 
     /** 回填附件预览类型；短期预览 URL 由客户端打开附件时重新获取。 */
     private void enrichAttachmentPreview(MessageResponse response, Long projectId) {
-        if (response == null || projectId == null) {
+        if (projectId == null) {
             return;
         }
         String type = response.getType();

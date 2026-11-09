@@ -4,8 +4,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import qg.qgent.harness.tool.ParallelTool;
+import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.workspace.entity.WorkspaceEntity;
-import qg.qgent.workspace.service.WorkspaceCommands;
+import qg.qgent.sandbox.service.SandboxCommands;
 import qg.qgent.workspace.service.WorkspaceRepositoryService;
 import qg.qgent.workspace.service.WorkspaceSelection;
 import qg.qgent.workspace.service.WorkspaceService;
@@ -25,7 +26,7 @@ public final class WorkspaceTools {
     private final Long projectId;
     private final WorkspaceService workspaces;
     private final WorkspaceRepositoryService repositories;
-    private final WorkspaceCommands workspaceCommands;
+    private final SandboxCommands workspaceCommands;
     private final WorkspaceSelection selection;
     private final Supplier<Long> environment;
     private final Supplier<Long> initializedEnvironment;
@@ -33,7 +34,7 @@ public final class WorkspaceTools {
     private final Consumer<Long> selectionChanged;
 
     public WorkspaceTools(Long actor, Long projectId, WorkspaceService workspaces,
-                          WorkspaceRepositoryService repositories, WorkspaceCommands commands,
+                          WorkspaceRepositoryService repositories, SandboxCommands commands,
                           WorkspaceSelection selection, Supplier<Long> environment,
                           Supplier<Long> initializedEnvironment, Function<Long, Long> environmentFor,
                           Consumer<Long> selectionChanged) {
@@ -51,10 +52,9 @@ public final class WorkspaceTools {
 
     @ParallelTool
     @Tool(name = "list_workspaces", description = "列出当前项目的 Workspace 及是否默认、状态和当前选中项；不启动沙箱。")
-    public Map<String, Object> listWorkspaces() {
+    public ToolResult listWorkspaces() {
         Long current = selection.workspaceId();
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("ok", true);
+        ToolResult result = ToolResult.ok();
         // 首次运行尚未选择 Workspace，按合同显式返回 null；Map.of 不接受 null 值
         result.put("currentWorkspaceId", current == null ? null : current.toString());
         result.put("workspaces", workspaces.list(projectId).stream()
@@ -69,7 +69,7 @@ public final class WorkspaceTools {
     @ParallelTool
     @Tool(name = "list_workspace_repositories", description = "列出指定 Workspace（省略时用当前 Workspace）实际已准备的仓库：标识、名称、路径、当前分支与提交、状态。"
             + "项目已导入但未准备的仓库不会出现在这里；由命令创建的其他 Git 仓库以 managed=false 如实列出。不启动沙箱。")
-    public Map<String, Object> listWorkspaceRepositories(
+    public ToolResult listWorkspaceRepositories(
             @ToolParam(description = "Workspace ID；省略时使用当前 Workspace", required = false) String workspaceId) {
         WorkspaceEntity workspace = workspace(workspaceId);
         List<Map<String, Object>> items = new ArrayList<>();
@@ -85,7 +85,10 @@ public final class WorkspaceTools {
             item.put("imported", repository.imported());
             items.add(item);
         }
-        return Map.of("ok", true, "workspaceId", workspace.getId().toString(), "repositories", items);
+        ToolResult result = ToolResult.ok();
+        result.put("workspaceId", workspace.getId().toString());
+        result.put("repositories", items);
+        return result;
     }
 
     @Tool(name = "create_workspace", description = "仅在用户明确要求隔离工作时新建 Workspace，并为任务涉及的仓库准备 worktree 和独立分支。"
@@ -93,7 +96,7 @@ public final class WorkspaceTools {
             + "providerRepositoryId 必须是 GitHub 数字 ID 的十进制字符串，例如 \"42\"，不能传 JSON 数字；"
             + "base 是用户明确指定的基线分支或提交，省略时默认 Workspace 已准备该仓库则用其 HEAD，否则用远端默认分支。"
             + "不会自动 commit、push 或创建 PR；返回每个仓库的路径、基线 commit、当前 head 和分支，须在回复中说明。")
-    public Map<String, Object> createWorkspace(
+    public ToolResult createWorkspace(
             @ToolParam(description = "用户已确定的任务意图") String instruction,
             @ToolParam(description = "任务涉及的仓库，至少一个") List<Map<String, Object>> repositories) {
         if (instruction == null || instruction.isBlank()) throw new IllegalArgumentException("任务意图不能为空");
@@ -105,7 +108,7 @@ public final class WorkspaceTools {
             environmentFor.apply(workspace.getId());
         } catch (RuntimeException exception) {
             log.error("工作区环境初始化失败 workspaceId={}", workspace.getId(), exception);
-            return creation(workspace, false, describe(exception),
+            return creation(workspace, ToolResult.error("WORKSPACE_ENVIRONMENT_FAILED", describe(exception)),
                     requests.stream().map(this::notStarted).toList());
         }
         selection.select(workspace.getId());
@@ -125,10 +128,12 @@ public final class WorkspaceTools {
                 items.add(failedItem(request.id(), describe(exception)));
                 for (RepositoryRequest remaining : requests.subList(index + 1, requests.size()))
                     items.add(notStarted(remaining));
-                return creation(workspace, false, describe(exception), items);
+                return creation(workspace,
+                        ToolResult.error("WORKSPACE_REPOSITORY_PREPARATION_FAILED", describe(exception)), items);
             }
         }
-        return creation(workspace, ready, null, items);
+        return creation(workspace, ready ? ToolResult.ok() : ToolResult.error("WORKSPACE_REPOSITORY_NOT_READY",
+                "部分仓库未准备完成，见 repositories 中的 state 与 error"), items);
     }
 
     @Tool(name = "prepare_workspace_repository", description = "为 Workspace（省略时用当前 Workspace）按需准备一个已导入仓库的 worktree。"
@@ -136,7 +141,7 @@ public final class WorkspaceTools {
             + "base 省略时默认 Workspace 已准备该仓库则用其 HEAD，否则用远端默认分支。"
             + "分支已被其他工作树检出、或分支已存在但没有工作树时失败，不覆盖不重置。"
             + "仓库已从项目移除导入时失败，但本地工作树保留。不会自动 commit、push 或创建 PR。")
-    public Map<String, Object> prepareWorkspaceRepository(
+    public ToolResult prepareWorkspaceRepository(
             @ToolParam(description = "Workspace ID；省略时使用当前 Workspace", required = false) String workspaceId,
             @ToolParam(description = "GitHub 仓库数字 ID 的十进制字符串") String providerRepositoryId,
             @ToolParam(description = "基线分支或提交；省略时按默认规则", required = false) String base,
@@ -145,8 +150,8 @@ public final class WorkspaceTools {
         WorkspaceEntity workspace = workspace(workspaceId);
         environmentFor.apply(workspace.getId());
         var result = repositories.prepare(actor, projectId, workspace, id, base, branch);
-        Map<String, Object> value = new LinkedHashMap<>();
-        value.put("ok", "READY".equals(result.state()));
+        ToolResult value = "READY".equals(result.state()) ? ToolResult.ok()
+                : ToolResult.error("WORKSPACE_REPOSITORY_NOT_READY", result.error());
         value.put("workspaceId", workspace.getId().toString());
         value.put("providerRepositoryId", result.providerRepositoryId());
         value.put("path", result.path());
@@ -154,29 +159,32 @@ public final class WorkspaceTools {
         value.put("head", result.head());
         value.put("branch", result.branch());
         value.put("state", result.state());
-        value.put("error", result.error());
         value.put("note", result.note());
         return value;
     }
 
     @Tool(name = "use_workspace", description = "选择当前项目已有 Workspace，后续代码工具使用该工作区并重置当前目录；不会启动沙箱。")
-    public Map<String, Object> useWorkspace(@ToolParam(description = "Workspace ID") String workspaceId) {
+    public ToolResult useWorkspace(@ToolParam(description = "Workspace ID") String workspaceId) {
         Long id = workspaces.require(projectId, requiredResourceId(workspaceId)).getId();
         selection.select(id);
         selectionChanged.accept(id);
-        return Map.of("ok", true, "workspaceId", id.toString());
+        ToolResult result = ToolResult.ok();
+        result.put("workspaceId", id.toString());
+        return result;
     }
 
     @Tool(name = "set_working_directory", description = "设置当前 Agent 在已选 Workspace 中的工作目录，路径相对 Workspace 根；传 . 返回根目录。每个 Agent 的目录独立保存。")
-    public Map<String, Object> setWorkingDirectory(
+    public ToolResult setWorkingDirectory(
             @ToolParam(description = "相对 Workspace 根目录的路径；. 表示根目录") String directory) {
         String resolved = WorkspaceSelection.resolveDirectory(".", directory);
         selection.setDirectory(resolved);
-        return Map.of("ok", true, "directory", resolved);
+        ToolResult result = ToolResult.ok();
+        result.put("directory", resolved);
+        return result;
     }
 
     @Tool(name = "run_command", description = "在当前目录的 Docker 沙箱中执行 argv 数组。短等待后返回句柄；running=true 时用 command_output 继续等待。")
-    public Object runCommand(@ToolParam(description = "可执行文件和参数，例如 [git,status]") List<String> command,
+    public ToolResult runCommand(@ToolParam(description = "可执行文件和参数，例如 [git,status]") List<String> command,
             @ToolParam(description = "相对当前目录的工作目录，可选") String directory,
             @ToolParam(description = "执行超时秒数，1～3600，默认 600") Integer timeoutSeconds,
             @ToolParam(description = "本次等待秒数，0～30，默认 10") Integer waitSeconds) {
@@ -188,7 +196,7 @@ public final class WorkspaceTools {
 
     @ParallelTool
     @Tool(name = "command_output", description = "读取命令的有界输出，可短暂等待；running=true 时使用返回的游标继续读取。")
-    public Object commandOutput(@ToolParam(description = "run_command 返回的执行 ID") String executionId,
+    public ToolResult commandOutput(@ToolParam(description = "run_command 返回的执行 ID") String executionId,
             @ToolParam(description = "stdout 字节游标，默认 0") Long stdoutOffset,
             @ToolParam(description = "stderr 字节游标，默认 0") Long stderrOffset,
             @ToolParam(description = "每个流最多读取字节，4～64000，默认 16000") Integer maxBytes,
@@ -199,7 +207,7 @@ public final class WorkspaceTools {
     }
 
     @Tool(name = "cancel_command", description = "停止当前 Workspace 中正在运行的命令。")
-    public Object cancelCommand(@ToolParam(description = "命令执行 ID") String executionId) {
+    public ToolResult cancelCommand(@ToolParam(description = "命令执行 ID") String executionId) {
         return workspaceCommands.cancel(initializedEnvironment.get(), requiredResourceId(executionId));
     }
 
@@ -233,12 +241,8 @@ public final class WorkspaceTools {
         return text.isBlank() ? null : text;
     }
 
-    private Map<String, Object> creation(WorkspaceEntity workspace, boolean ok, String error,
-                                         List<Map<String, Object>> items) {
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("ok", ok);
+    private ToolResult creation(WorkspaceEntity workspace, ToolResult result, List<Map<String, Object>> items) {
         result.put("workspaceId", workspace.getId().toString());
-        result.put("error", error);
         result.put("repositories", items);
         return result;
     }

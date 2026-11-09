@@ -10,6 +10,7 @@ import qg.qgent.github.entity.ProjectRepositoryEntity;
 import qg.qgent.github.mapper.ProjectRepositoryMapper;
 import qg.qgent.github.service.GitHubRepositoryService;
 import qg.qgent.project.storage.ProjectDirectoryService;
+import qg.qgent.sandbox.service.SandboxCommands;
 import qg.qgent.workspace.entity.WorkspaceEntity;
 
 import java.io.IOException;
@@ -47,7 +48,7 @@ public class WorkspaceRepositoryService {
     private final ProjectDirectoryService directories;
     private final ProjectRepositoryMapper importedRepositories;
     private final GitHubRepositoryService github;
-    private final WorkspaceCommands commands;
+    private final SandboxCommands commands;
     private final WorkspaceOperationLock locks;
     private final ObjectMapper json;
 
@@ -217,21 +218,21 @@ public class WorkspaceRepositoryService {
     }
 
     private String configValue(Long sandboxWorkspaceId, Long projectId, Long providerRepositoryId, String key) {
-        Map<String, Object> result = commands.run(sandboxWorkspaceId, ".", List.of("git",
+        SandboxCommands.CommandResult result = commands.git(sandboxWorkspaceId, List.of("git",
                 "--git-dir=" + containerGit(projectId, providerRepositoryId), "config", "--get", key), Map.of());
-        if (!Integer.valueOf(0).equals(result.get("exitCode"))) return null;
-        String value = text(result, "stdout").trim();
+        if (result.exitCode() != 0) return null;
+        String value = result.stdout().trim();
         return value.isEmpty() ? null : value;
     }
 
     /** 解析引用为提交；引用不存在时返回 null。 */
     private String requireCommit(Long sandboxWorkspaceId, Long projectId, Long providerRepositoryId,
                                  String reference) {
-        Map<String, Object> result = commands.run(sandboxWorkspaceId, ".", List.of("git",
+        SandboxCommands.CommandResult result = commands.git(sandboxWorkspaceId, List.of("git",
                 "--git-dir=" + containerGit(projectId, providerRepositoryId), "rev-parse", "--verify", "--quiet",
                 reference + "^{commit}"), Map.of());
-        String sha = text(result, "stdout").trim();
-        return Integer.valueOf(0).equals(result.get("exitCode")) && !sha.isEmpty() ? sha : null;
+        String sha = result.stdout().trim();
+        return result.exitCode() == 0 && !sha.isEmpty() ? sha : null;
     }
 
     /** 分支被其他工作树检出时拒绝，避免切换或覆盖已有工作成果。 */
@@ -286,16 +287,11 @@ public class WorkspaceRepositoryService {
 
     private String run(Long sandboxWorkspaceId, List<String> command, Map<String, String> environment,
                        String message) {
-        Map<String, Object> result = commands.run(sandboxWorkspaceId, ".", command, environment);
-        if (!Integer.valueOf(0).equals(result.get("exitCode"))) {
+        SandboxCommands.CommandResult result = commands.git(sandboxWorkspaceId, command, environment);
+        if (result.exitCode() != 0) {
             throw new PreparationFailure(message);
         }
-        return text(result, "stdout");
-    }
-
-    private String text(Map<String, Object> result, String stream) {
-        Object value = result.get(stream);
-        return value instanceof Map<?, ?> map ? String.valueOf(map.get("text")) : "";
+        return result.stdout();
     }
 
     private Preparation failed(Long providerRepositoryId, String name, String path, String error) {

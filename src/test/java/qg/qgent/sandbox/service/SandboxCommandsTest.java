@@ -43,6 +43,16 @@ class SandboxCommandsTest {
         assertThatThrownBy(() -> commands.cancel(id,execution)).isInstanceOf(IllegalArgumentException.class);
         verify(executions,never()).cancel(any());verify(executions,never()).output(any(),anyLong(),anyLong(),anyInt());
     }
+    @Test void runForwardsTheRequestedDirectory() {
+        execution("SUCCEEDED",0);
+        commands.run(id,"backend",List.of("git","push"),Map.of());
+        verify(executions).submit(eq(sandbox),argThat(request -> "backend".equals(request.getArguments().get("directory"))));
+    }
+    @Test void gitRunsFromWorkspaceRoot() {
+        execution("SUCCEEDED",0);
+        assertThat(commands.git(id,List.of("git","fetch"),Map.of()).exitCode()).isZero();
+        verify(executions).submit(eq(sandbox),argThat(request -> ".".equals(request.getArguments().get("directory"))));
+    }
     @Test void cancelActiveCommandAndRepeatedCancelTerminalCommand() {
         execution("RUNNING",null);var cancelled=new ToolExecutionResponse();cancelled.setId(execution);cancelled.setStatus("CANCELLED");cancelled.setResult(Map.of());
         when(executions.cancel(execution)).thenReturn(cancelled);

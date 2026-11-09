@@ -7,6 +7,7 @@ import org.springframework.ai.chat.messages.AssistantMessage.ToolCall;
 import org.springframework.ai.chat.messages.ToolResponseMessage.ToolResponse;
 import org.springframework.ai.tool.ToolCallback;
 import qg.qgent.harness.tool.ParallelToolCallback;
+import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.sandbox.dto.SandboxExecutionContext;
 
 import java.util.ArrayList;
@@ -109,7 +110,7 @@ final class ToolCallExecutor {
     }
 
     private String error(String code, String message) {
-        try { return json.writeValueAsString(Map.of("ok", false, "errorCode", code, "error", message)); }
+        try { return json.writeValueAsString(ToolResult.error(code, message)); }
         catch (JsonProcessingException exception) { throw new IllegalStateException("无法编码工具结果", exception); }
     }
 

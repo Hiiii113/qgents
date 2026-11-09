@@ -41,3 +41,17 @@
 - 不得为了通过测试而随意删除用例、削弱断言、跳过失败测试或修改正确的业务行为。
 - 允许清理已失效、重复或无实际价值的测试，但须确认不会丢失独立的行为验证。
 - 测试代码同样遵循简洁、清晰和可维护原则，避免不必要的抽象和复杂测试设施。
+
+## Agent skills
+
+### Issue tracker
+
+Issue 与 spec 存为 GitHub issue（`Hiiii113/qgents`），统一用 `gh` 操作。见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+沿用五个默认 triage 角色标签。见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+单上下文：根目录 `GLOSSARY.md` + `docs/adr/`。见 `docs/agents/domain.md`。

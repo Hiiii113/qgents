@@ -25,8 +25,7 @@ import qg.qgent.project.mapper.ProjectMemberMapper;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.entity.EventEntity;
 import qg.qgent.realtime.mapper.EventMapper;
-import qg.qgent.realtime.transport.RealtimeConnectionTransport;
-import qg.qgent.realtime.transport.SseConnectionTransport;
+import qg.qgent.realtime.transport.SseEventTransport;
 import qg.qgent.realtime.websocket.RealtimeFrame;
 import qg.qgent.team.entity.TeamEventEntity;
 import qg.qgent.team.mapper.TeamEventMapper;
@@ -72,7 +71,7 @@ class EventServiceTest {
         when(fixture.groups.selectById(groupId)).thenReturn(group);
         when(fixture.groups.selectUserIds(groupId)).thenReturn(List.of(invitedUser));
 
-        RealtimeEventPublisher publisher = fixture.publisher();
+        EventService publisher = fixture.publisher();
         publisher.publish(projectId, groupId, "group.created", groupId.toString(), Map.of("name", "planning"));
 
         verify(fixture.projects).selectByIdForUpdate(projectId);
@@ -104,7 +103,7 @@ class EventServiceTest {
         when(fixture.events.nextSequence(projectId)).thenReturn(1L, 2L);
         fixture.startBusinessTransaction();
         try {
-            RealtimeEventPublisher publisher = fixture.publisher();
+            EventService publisher = fixture.publisher();
             publisher.publish(projectId, null, "project.updated", "project-1", Map.of("name", "A"));
             publisher.publish(projectId, null, "project.member.added", "member-1", Map.of("userId", "u1"));
 
@@ -150,7 +149,7 @@ class EventServiceTest {
         var loader = org.mockito.ArgumentCaptor.forClass(LongFunction.class);
         verify(fixture.sse).open(eq("project"), eq(projectId), eq(3L), loader.capture(), eq(true));
         @SuppressWarnings("unchecked")
-        LongFunction<List<SseConnectionTransport.SseEvent>> loadEvents = loader.getValue();
+        LongFunction<List<SseEventTransport.SseEvent>> loadEvents = loader.getValue();
         assertEquals(4L, loadEvents.apply(3L).getFirst().sequenceNo());
         assertEquals(false, loadEvents.apply(3L).getFirst().visible());
 
@@ -199,9 +198,9 @@ class EventServiceTest {
         var loader = org.mockito.ArgumentCaptor.forClass(LongFunction.class);
         verify(fixture.sse).open(eq("notification"), eq(userId), eq(1L), loader.capture(), eq(false));
         @SuppressWarnings("unchecked")
-        LongFunction<List<SseConnectionTransport.SseEvent>> loadEvents = loader.getValue();
+        LongFunction<List<SseEventTransport.SseEvent>> loadEvents = loader.getValue();
         assertEquals(List.of("notification.created", "notification.removed"),
-                loadEvents.apply(1L).stream().map(SseConnectionTransport.SseEvent::type).toList());
+                loadEvents.apply(1L).stream().map(SseEventTransport.SseEvent::type).toList());
     }
 
     @Test
@@ -214,7 +213,7 @@ class EventServiceTest {
         when(fixture.teams.maxSequence(teamId)).thenReturn(7L);
         fixture.startBusinessTransaction();
         try {
-            RealtimeEventPublisher publisher = fixture.publisher();
+            EventService publisher = fixture.publisher();
             publisher.publishNotification(userId, notificationId, "notification.created", Map.of("title", "Hello"));
             publisher.publishTeamEvent(teamId, "activity.created", "resource-1", Map.of("ok", true));
 
@@ -280,8 +279,8 @@ class EventServiceTest {
         private final ProjectAccessService access = mock(ProjectAccessService.class);
         private final NotificationEventMapper notifications = mock(NotificationEventMapper.class);
         private final TeamEventMapper teams = mock(TeamEventMapper.class);
-        private final RealtimeConnectionTransport realtime = mock(RealtimeConnectionTransport.class);
-        private final SseConnectionTransport sse = mock(SseConnectionTransport.class);
+        private final RealtimeHub realtime = mock(RealtimeHub.class);
+        private final SseEventTransport sse = mock(SseEventTransport.class);
         private final ProjectMemberMapper projectMembers = mock(ProjectMemberMapper.class);
         private final TeamMemberMapper teamMembers = mock(TeamMemberMapper.class);
         private final ChatGroupMapper groups = mock(ChatGroupMapper.class);
@@ -301,7 +300,7 @@ class EventServiceTest {
                     transactions, mock(PerformanceMetrics.class));
         }
 
-        private RealtimeEventPublisher publisher() {
+        private EventService publisher() {
             return service();
         }
 

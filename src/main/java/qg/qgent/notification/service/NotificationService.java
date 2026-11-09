@@ -50,9 +50,6 @@ public class NotificationService {
     @Transactional
     public void notify(Long recipientUserId, Long projectId, Long groupId, String kind, String title,
                        String description, String resourceId) {
-        if (recipientUserId == null) {
-            return;
-        }
         NotificationEntity entity = new NotificationEntity();
         entity.setRecipientUserId(recipientUserId);
         entity.setProjectId(projectId);

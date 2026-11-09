@@ -7,12 +7,11 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import qg.qgent.common.config.MdcTaskDecorator;
 import qg.qgent.realtime.transport.SseEmitterFactory;
 
-import java.time.Clock;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
 
-/** 配置 SSE 连接泵的执行器、emitter 工厂和时钟。 */
+/** 配置 SSE 连接泵的执行器和 emitter 工厂。 */
 @Configuration(proxyBeanMethods = false)
 public class SseTransportConfiguration {
 
@@ -28,10 +27,5 @@ public class SseTransportConfiguration {
     @Bean
     public SseEmitterFactory sseEmitterFactory() {
         return SseEmitter::new;
-    }
-
-    @Bean(name = "realtimeSseClock")
-    public Clock realtimeSseClock() {
-        return Clock.systemUTC();
     }
 }

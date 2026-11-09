@@ -14,7 +14,8 @@ import qg.qgent.common.web.ApiException;
 import qg.qgent.github.client.GitHubApiException;
 import qg.qgent.github.service.GitHubRepositoryService;
 import qg.qgent.harness.tool.ParallelTool;
-import qg.qgent.workspace.service.WorkspaceCommands;
+import qg.qgent.harness.tool.ToolResult;
+import qg.qgent.sandbox.service.SandboxCommands;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -46,11 +47,11 @@ public class GitHubTools {
     private final GitHubRepositoryService repositories;
     private final Long actor;
     private final Long projectId;
-    private final WorkspaceCommands commands;
+    private final SandboxCommands commands;
     private final Supplier<Long> workspace;
 
     public GitHubTools(RestClient http, GitHubRepositoryService repositories, Long actor, Long projectId,
-                       WorkspaceCommands commands, Supplier<Long> workspace) {
+                       SandboxCommands commands, Supplier<Long> workspace) {
         this.http = http;
         this.repositories = repositories;
         this.actor = actor;
@@ -63,7 +64,7 @@ public class GitHubTools {
     @Tool(name = "github_list_repositories",
             description = "列出仓库：scope=PROJECT（默认，本项目已导入的仓库）或 scope=TEAM（当前团队 App 安装可访问的仓库，含是否已导入）。"
                     + "只读远端清单，不启动沙箱。分页参数 page 从 1 开始，perPage 为 1～100，默认 30；nextPage 为 null 表示没有下一页。")
-    public Map<String, Object> listRepositories(
+    public ToolResult listRepositories(
             @ToolParam(description = "PROJECT 或 TEAM，默认 PROJECT", required = false) String scope,
             @ToolParam(description = "页码，从 1 开始", required = false) Integer page,
             @ToolParam(description = "每页条数，1～100，默认 30", required = false) Integer perPage) {
@@ -75,8 +76,7 @@ public class GitHubTools {
             List<GitHubRepositoryService.CatalogRepository> items = catalog.items();
             long from = Math.min((long) (current - 1) * size, items.size());
             long to = Math.min(from + size, items.size());
-            var result = new LinkedHashMap<String, Object>();
-            result.put("ok", true);
+            ToolResult result = ToolResult.ok();
             result.put("scope", teamScope ? "TEAM" : "PROJECT");
             result.put("connectionStatus", catalog.connectionStatus());
             result.put("message", connectionMessage(catalog.connectionStatus(), teamScope));
@@ -95,7 +95,7 @@ public class GitHubTools {
     @Tool(name = "github_list_pull_requests",
             description = "列出当前项目已导入仓库的 Pull Request；state 为 open（默认）、closed 或 all。"
                     + "只读远端，不启动沙箱；nextPage 为 null 表示没有下一页。")
-    public Map<String, Object> listPullRequests(
+    public ToolResult listPullRequests(
             @ToolParam(description = "owner/repo，须已导入当前项目") String repository,
             @ToolParam(description = "open/closed/all，默认 open", required = false) String state,
             @ToolParam(description = "页码，从 1 开始", required = false) Integer page,
@@ -107,8 +107,7 @@ public class GitHubTools {
             var credential = token(repository);
             var raw = get("/repos/" + repository + "/pulls?state=" + issueState + "&per_page=" + size
                     + "&page=" + current, credential.token());
-            var result = new LinkedHashMap<String, Object>();
-            result.put("ok", true);
+            ToolResult result = ToolResult.ok();
             result.put("repository", repository);
             result.put("items", rows(read(raw.body())).stream().map(this::pullRequestItem).toList());
             result.put("page", current);
@@ -123,15 +122,14 @@ public class GitHubTools {
     @ParallelTool
     @Tool(name = "github_get_pull_request",
             description = "读取当前项目已导入仓库的单个 Pull Request 详情，包含正文、是否已合并、源分支和目标分支；只读远端。")
-    public Map<String, Object> getPullRequest(
+    public ToolResult getPullRequest(
             @ToolParam(description = "owner/repo，须已导入当前项目") String repository,
             @ToolParam(description = "Pull Request 编号") Integer number) {
         try {
             int issueNumber = number(number);
             var credential = token(repository);
             var raw = get("/repos/" + repository + "/pulls/" + issueNumber, credential.token());
-            var result = new LinkedHashMap<String, Object>();
-            result.put("ok", true);
+            ToolResult result = ToolResult.ok();
             result.put("repository", repository);
             result.put("pullRequest", pullRequestDetail(read(raw.body())));
             return result;
@@ -144,7 +142,7 @@ public class GitHubTools {
     @Tool(name = "github_list_issues",
             description = "列出当前项目已导入仓库的 Issue，已排除 Pull Request；state 为 open（默认）、closed 或 all。"
                     + "只读远端，不启动沙箱；某页可能因为过滤而变少甚至为空，此时仍以 nextPage 判断是否继续。")
-    public Map<String, Object> listIssues(
+    public ToolResult listIssues(
             @ToolParam(description = "owner/repo，须已导入当前项目") String repository,
             @ToolParam(description = "open/closed/all，默认 open", required = false) String state,
             @ToolParam(description = "页码，从 1 开始", required = false) Integer page,
@@ -156,8 +154,7 @@ public class GitHubTools {
             var credential = token(repository);
             var raw = get("/repos/" + repository + "/issues?state=" + issueState + "&per_page=" + size
                     + "&page=" + current, credential.token());
-            var result = new LinkedHashMap<String, Object>();
-            result.put("ok", true);
+            ToolResult result = ToolResult.ok();
             result.put("repository", repository);
             result.put("items", rows(read(raw.body())).stream().filter(row -> !row.has("pull_request"))
                     .map(this::issueItem).toList());
@@ -173,7 +170,7 @@ public class GitHubTools {
     @ParallelTool
     @Tool(name = "github_get_issue",
             description = "读取当前项目已导入仓库的单个 Issue 详情，包含正文、标签和指派人；编号属于 Pull Request 时会提示改用 PR 工具。")
-    public Map<String, Object> getIssue(
+    public ToolResult getIssue(
             @ToolParam(description = "owner/repo，须已导入当前项目") String repository,
             @ToolParam(description = "Issue 编号") Integer number) {
         try {
@@ -184,8 +181,7 @@ public class GitHubTools {
             if (issue.has("pull_request")) {
                 throw invalid("该编号是 Pull Request，请使用 github_get_pull_request");
             }
-            var result = new LinkedHashMap<String, Object>();
-            result.put("ok", true);
+            ToolResult result = ToolResult.ok();
             result.put("repository", repository);
             result.put("issue", issueDetail(issue));
             return result;
@@ -198,7 +194,7 @@ public class GitHubTools {
             description = "对当前项目已导入仓库调用 GitHub REST API，用于创建或修改 PR/Issue、评论、标签等具名工具未覆盖的操作。"
                     + "method 只支持 GET/POST/PATCH/PUT/DELETE；path 是相对路径，例如 /repos/owner/repo/pulls，不接受绝对 URL。"
                     + "返回 {ok, status, data, pagination.next}，204 时 data 为 null；next 是下一页的相对路径。写请求按用户任务目标决定。")
-    public Map<String, Object> request(@ToolParam(description = "GET/POST/PATCH/PUT/DELETE") String method,
+    public ToolResult request(@ToolParam(description = "GET/POST/PATCH/PUT/DELETE") String method,
                                        @ToolParam(description = "GitHub API 相对路径，可含 query") String path,
                                        @ToolParam(description = "JSON 请求正文", required = false) Map<String, Object> body) {
         try {
@@ -213,8 +209,7 @@ public class GitHubTools {
             var credential = token(repository);
             var raw = exchange(httpMethod, path, credential.token(), body);
             if (raw.status() >= 300) throw raw.failure();
-            var result = new LinkedHashMap<String, Object>();
-            result.put("ok", true);
+            ToolResult result = ToolResult.ok();
             result.put("status", raw.status());
             result.put("data", raw.body().isBlank() ? null : JSON.convertValue(read(raw.body()), Object.class));
             var pagination = new LinkedHashMap<String, Object>();
@@ -228,7 +223,7 @@ public class GitHubTools {
 
     @Tool(name = "github_push",
             description = "将当前工作区仓库的 HEAD 推送到指定 GitHub 分支，不自动 commit，不创建 PR；按用户目标决定使用。")
-    public Object push(@ToolParam(description = "owner/repo") String repository,
+    public ToolResult push(@ToolParam(description = "owner/repo") String repository,
                        @ToolParam(description = "工作区内仓库目录") String directory,
                        @ToolParam(description = "远端目标分支") String branch) {
         try {
@@ -247,7 +242,7 @@ public class GitHubTools {
     @Tool(name = "github_git",
             description = "在工作区内执行带当前 Agent GitHub 认证的 Git 参数数组，例如 fetch、pull 或 ls-remote；需指定已导入仓库。"
                     + "远端操作按用户目标决定。command 不包含开头的 git。")
-    public Object git(@ToolParam(description = "例如 [fetch,origin]") List<String> command,
+    public ToolResult git(@ToolParam(description = "例如 [fetch,origin]") List<String> command,
                       @ToolParam(description = "工作区内目录", required = false) String directory,
                       @ToolParam(description = "目标 owner/repo，必须已导入当前项目") String repository) {
         try {
@@ -507,7 +502,7 @@ public class GitHubTools {
         };
     }
 
-    private Map<String, Object> error(RuntimeException exception) {
+    private ToolResult error(RuntimeException exception) {
         if (exception instanceof GitHubApiException failure) return githubError(failure);
         if (exception instanceof ApiException failure) return apiError(failure);
         if (exception instanceof IllegalArgumentException) {
@@ -516,7 +511,7 @@ public class GitHubTools {
         throw exception;
     }
 
-    private Map<String, Object> apiError(ApiException exception) {
+    private ToolResult apiError(ApiException exception) {
         String code = switch (exception.code()) {
             case "PROJECT_NOT_FOUND", "TEAM_RESOURCE_NOT_FOUND" -> "PROJECT_ACCESS_DENIED";
             case "INVALID_GITHUB_ARGUMENT" -> "INVALID_ARGUMENT";
@@ -526,7 +521,7 @@ public class GitHubTools {
         return errorResult(code, exception.getMessage(), nextAction(code), exception.status().value(), null);
     }
 
-    private Map<String, Object> githubError(GitHubApiException failure) {
+    private ToolResult githubError(GitHubApiException failure) {
         Integer status = failure.httpStatus();
         String code;
         if (status == null) code = "GITHUB_REQUEST_FAILED";
@@ -563,17 +558,12 @@ public class GitHubTools {
         };
     }
 
-    private Map<String, Object> errorResult(String code, String message, String nextAction,
-                                            Integer httpStatus, Long retryAfterSeconds) {
-        var error = new LinkedHashMap<String, Object>();
-        error.put("code", code);
-        error.put("message", message);
-        error.put("nextAction", nextAction);
-        error.put("httpStatus", httpStatus);
-        error.put("retryAfterSeconds", retryAfterSeconds);
-        var result = new LinkedHashMap<String, Object>();
-        result.put("ok", false);
-        result.put("error", error);
+    private ToolResult errorResult(String code, String message, String nextAction,
+                                   Integer httpStatus, Long retryAfterSeconds) {
+        ToolResult result = ToolResult.error(code, message);
+        if (nextAction != null) result.put("nextAction", nextAction);
+        if (httpStatus != null) result.put("httpStatus", httpStatus);
+        if (retryAfterSeconds != null) result.put("retryAfterSeconds", retryAfterSeconds);
         return result;
     }
 

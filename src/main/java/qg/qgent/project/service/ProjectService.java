@@ -121,11 +121,9 @@ public class ProjectService {
             }
             String previousAvatar = project.getAvatarUrl();
             project.setAvatarUrl(null);
-            projectMapper.updateById(project);
             avatarStorage.deleteReplacedAfterCommit("projects", projectId, previousAvatar, null);
-        } else {
-            projectMapper.updateById(project);
         }
+        projectMapper.updateById(project);
         return response(project, "PROJECT_ADMIN");
     }
 

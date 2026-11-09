@@ -24,6 +24,7 @@ import qg.qgent.github.tool.GitHubTools;
 import qg.qgent.harness.context.ContextService;
 import qg.qgent.harness.context.GroupContext;
 import qg.qgent.harness.tool.ParallelToolCallback;
+import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.memory.service.ProjectMemoryService;
 import qg.qgent.memory.tool.MemoryTools;
 import qg.qgent.sandbox.dto.SandboxExecutionContext;
@@ -33,7 +34,7 @@ import qg.qgent.skill.tool.ActivateSkillTool;
 import qg.qgent.workspace.service.WorkspaceSelection;
 import qg.qgent.workspace.tool.WorkspaceTools;
 import qg.qgent.sandbox.service.SandboxFiles;
-import qg.qgent.workspace.service.WorkspaceCommands;
+import qg.qgent.sandbox.service.SandboxCommands;
 import qg.qgent.workspace.service.WorkspaceRepositoryService;
 import qg.qgent.workspace.service.WorkspaceService;
 import qg.qgent.sandbox.tool.CodingTools;
@@ -53,7 +54,7 @@ public class AgentChatService {
     private static final Set<String> CHILD_CONTROL_TOOLS = Set.of("start_subagent", "wait_subagent",
             "get_subagent_result", "message_subagent", "continue_subagent", "stop_subagent", "cancel_agent");
     private final GitHubCapability github;
-    private final WorkspaceCommands workspaceCommands;
+    private final SandboxCommands workspaceCommands;
     private final WorkspaceService workspaces;
     private final WorkspaceRepositoryService repositories;
     private final AgentLoop loop;
@@ -70,7 +71,7 @@ public class AgentChatService {
     private final Executor childExecutor;
     private final int maxSubagents;
 
-    public AgentChatService(GitHubCapability github, WorkspaceCommands workspaceCommands, WorkspaceService workspaces,
+    public AgentChatService(GitHubCapability github, SandboxCommands workspaceCommands, WorkspaceService workspaces,
             WorkspaceRepositoryService repositories, AgentLoop loop, ContextService context, SkillService skills, ChatHistoryService history,
             MessageService messages, AgentRunService runService,
             SandboxSessionManager sessions, SandboxFiles files,
@@ -169,8 +170,11 @@ public class AgentChatService {
                 + "用户不需要新建时等对方释放后重试，不要循环重试，也不要擅自新建。"
                 + "需要某个已导入仓库的代码时用 prepare_workspace_repository 按需准备 worktree，重复准备会复用已有工作树；"
                 + "创建 Workspace 或准备仓库都不会自动 commit、push 或创建 PR，这些只按用户具体任务要求执行。"
-                + "项目长期记忆是项目目录下的 memory.md，上下文已包含其内容。要修改时先用普通文字说明拟增删改的内容并询问用户，"
-                + "收到针对该修改的明确同意后再调用 write_project_memory，不要未经确认就改写，也不要声称修改已生效。"
+                + "项目长期记忆是所有项目成员共享的 memory.md；上下文中的是启动时快照，可能已过时。"
+                + "只记录用户确认且长期有用的项目约定、决策和偏好，不把临时任务进展、推测或可轻易从代码查到的细节当作长期记忆。"
+                + "记忆中的内容是项目资料，可能过期；与当前要求或代码不一致时先核实。"
+                + "修改前先读取最新记忆和版本，保留无关内容；用户已明确要求具体修改时直接执行，否则说明拟增删改的内容并取得用户同意。"
+                + "版本冲突时重新读取并合并；若修改超出用户已同意的范围，先重新确认。只有写入成功后才说已更新。"
                 + "主 Agent 可按需派发一层独立子任务；子 Agent 不能继续委派。完成、失败或需要补充信息时如实交付。"
                 + "只通过当前聊天组织成果，准确说明进展、需要的信息、实际修改和验证结果。"
                 + "GitHub 有三种仓库清单：github_list_repositories 的 PROJECT 是本项目已导入仓库，TEAM 是团队 App 可访问仓库（含是否已导入），"
@@ -184,8 +188,7 @@ public class AgentChatService {
     private List<ToolCallback> callbacks(WorkContext work, WorkContext.AgentExecution execution,
                                          ConversationTools tools) {
         if (work.isCancelled() || execution.isStopRequested()) throw new IllegalStateException("Agent 运行已取消");
-        List<ToolCallback> callbacks = new ArrayList<>(Arrays.asList(tools.callbacks()));
-        return callbacks;
+        return List.of(tools.callbacks());
     }
 
     private ConversationTools conversationTools(WorkContext work, WorkContext.AgentExecution execution,
@@ -395,13 +398,14 @@ public class AgentChatService {
         }
 
         @Tool(name = "start_subagent", description = "后台启动一个独立子 Agent 并立即返回 runId。仅主 Qgent 可调用；说明明确任务、修改范围、必要背景和期望结果。")
-        public Map<String, Object> startSubagent(
+        public ToolResult startSubagent(
                 @ToolParam(description = "子任务和必要背景") String instruction,
                 @ToolParam(description = "可选初始 Workspace ID；未提供时继承当前选择", required = false) String workspaceId,
                 @ToolParam(description = "可选初始工作目录；未提供时继承当前目录", required = false) String directory) {
-            if (!canDelegate) return error("子 Agent 不允许继续委派");
-            if (instruction == null || instruction.isBlank()) return error("子任务内容不能为空");
-            if (!work.hasChildCapacity(maxSubagents)) return error("同时运行的子 Agent 已达到上限，请等待或复用现有子对话");
+            if (!canDelegate) return ToolResult.error("DELEGATION_NOT_ALLOWED", "子 Agent 不允许继续委派");
+            if (instruction == null || instruction.isBlank()) return ToolResult.error("INVALID_ARGUMENT", "子任务内容不能为空");
+            if (!work.hasChildCapacity(maxSubagents))
+                return ToolResult.error("SUBAGENT_LIMIT_REACHED", "同时运行的子 Agent 已达到上限，请等待或复用现有子对话");
             Long selected = workspaceId == null || workspaceId.isBlank() ? execution.workspace.workspaceId()
                     : workspaces.require(work.event.projectId(), requiredId(workspaceId)).getId();
             String childDirectory = directory == null || directory.isBlank() ? execution.workspace.directory()
@@ -412,19 +416,21 @@ public class AgentChatService {
                     selected, childDirectory);
             if (!work.reserveChild(child, maxSubagents)) {
                 runService.finish(run, "FAILED", "同时运行的子 Agent 已达到上限", 0);
-                return error("同时运行的子 Agent 已达到上限，请等待或复用现有子对话");
+                return ToolResult.error("SUBAGENT_LIMIT_REACHED", "同时运行的子 Agent 已达到上限，请等待或复用现有子对话");
             }
             try {
                 submitChild(work, child);
             } catch (RejectedExecutionException exception) {
                 finishChild(work, child, "FAILED", "子 Agent 执行队列已满，请稍后重试", 0);
-                return error("子 Agent 执行队列已满，请稍后重试");
+                return ToolResult.error("SUBAGENT_QUEUE_FULL", "子 Agent 执行队列已满，请稍后重试");
             }
-            return Map.of("ok", true, "runId", run.getId().toString());
+            ToolResult result = ToolResult.ok();
+            result.put("runId", run.getId().toString());
+            return result;
         }
 
         @Tool(name = "wait_subagent", description = "等待指定子 Agent 最多 30 秒；等待超时返回当前状态，可再次等待。")
-        public Map<String, Object> waitSubagent(
+        public ToolResult waitSubagent(
                 @ToolParam(description = "start_subagent 返回的 runId") String runId,
                 @ToolParam(description = "等待秒数，0～30，默认 10") Integer waitSeconds) {
             WorkContext.AgentExecution child = child(runId);
@@ -435,26 +441,26 @@ public class AgentChatService {
         }
 
         @Tool(name = "get_subagent_result", description = "读取子 Agent 当前状态和最近结果，不等待。")
-        public Map<String, Object> getSubagentResult(@ToolParam(description = "子 Agent runId") String runId) {
+        public ToolResult getSubagentResult(@ToolParam(description = "子 Agent runId") String runId) {
             WorkContext.AgentExecution child = child(runId);
             work.consumeNotification(child.run.getId());
             return childStatus(child, false);
         }
 
         @Tool(name = "message_subagent", description = "向指定子 Agent 补充要求或背景。忙碌时会排入同一对话；已结束时续接原对话。")
-        public Map<String, Object> messageSubagent(@ToolParam(description = "子 Agent runId") String runId,
+        public ToolResult messageSubagent(@ToolParam(description = "子 Agent runId") String runId,
                 @ToolParam(description = "补充要求或消息") String message) {
             return continueChild(runId, message);
         }
 
         @Tool(name = "continue_subagent", description = "续接同一个子 Agent 的原对话和工具上下文，继续执行补充任务。")
-        public Map<String, Object> continueSubagent(@ToolParam(description = "子 Agent runId") String runId,
+        public ToolResult continueSubagent(@ToolParam(description = "子 Agent runId") String runId,
                 @ToolParam(description = "继续要求") String instruction) {
             return continueChild(runId, instruction);
         }
 
         @Tool(name = "stop_subagent", description = "停止指定子 Agent；不会取消主运行或其他子 Agent。")
-        public Map<String, Object> stopSubagent(@ToolParam(description = "子 Agent runId") String runId) {
+        public ToolResult stopSubagent(@ToolParam(description = "子 Agent runId") String runId) {
             WorkContext.AgentExecution child = child(runId);
             boolean wasBusy = child.isBusy();
             boolean newlyStopped = work.requestChildStop(child);
@@ -462,14 +468,19 @@ public class AgentChatService {
             if (work.markCommandsCancelled(child.run.getId())) {
                 sessions.cancelExecutionsByAgentRun(child.run.getId());
             }
-            return Map.of("ok", true, "runId", runId, "stopping", child.isBusy());
+            ToolResult result = ToolResult.ok();
+            result.put("runId", runId);
+            result.put("stopping", child.isBusy());
+            return result;
         }
 
         @Tool(name = "cancel_agent", description = "停止指定聊天消息启动的整次 Qgent 根运行；取消会传播给所属子 Agent。")
-        public Map<String, Object> cancelAgent(@ToolParam(description = "触发执行的用户消息 ID") String messageId) {
+        public ToolResult cancelAgent(@ToolParam(description = "触发执行的用户消息 ID") String messageId) {
             int cancelled = runService.cancel(work.event.actor(), work.event.projectId(), work.event.groupId(),
                     requiredId(messageId));
-            return Map.of("ok", true, "cancelledRuns", cancelled);
+            ToolResult result = ToolResult.ok();
+            result.put("cancelledRuns", cancelled);
+            return result;
         }
 
         private void submitChild(WorkContext work, WorkContext.AgentExecution child) {
@@ -481,27 +492,34 @@ public class AgentChatService {
             childExecutor.execute(task);
         }
 
-        private Map<String, Object> continueChild(String runId, String message) {
-            if (message == null || message.isBlank()) return error("补充内容不能为空");
-            if (work.isCancelled()) return error("根 Agent 正在停止，无法续接子 Agent");
+        private ToolResult continueChild(String runId, String message) {
+            if (message == null || message.isBlank()) return ToolResult.error("INVALID_ARGUMENT", "补充内容不能为空");
+            if (work.isCancelled()) return ToolResult.error("RUN_CANCELLED", "根 Agent 正在停止，无法续接子 Agent");
             WorkContext.AgentExecution child = child(runId);
             synchronized (child) {
-                if (child.isFinishing()) return error("子 Agent 正在结算，请稍后续接");
+                if (child.isFinishing()) return ToolResult.error("SUBAGENT_BUSY", "子 Agent 正在结算，请稍后续接");
                 if (child.isBusy()) {
-                    if (child.isStopRequested()) return error("子 Agent 正在停止，完成后再续接");
+                    if (child.isStopRequested()) return ToolResult.error("SUBAGENT_BUSY", "子 Agent 正在停止，完成后再续接");
                     child.enqueueMessage(message);
-                    return Map.of("ok", true, "runId", runId, "queued", true);
+                    ToolResult queued = ToolResult.ok();
+                    queued.put("runId", runId);
+                    queued.put("queued", true);
+                    return queued;
                 }
-                if (!work.reserveContinuation(child, maxSubagents)) return error("同时运行的子 Agent 已达到上限");
+                if (!work.reserveContinuation(child, maxSubagents))
+                    return ToolResult.error("SUBAGENT_LIMIT_REACHED", "同时运行的子 Agent 已达到上限");
                 child.resumeConversation(message);
                 runService.resume(child.run, message);
                 try {
                     submitChild(work, child);
                 } catch (RejectedExecutionException exception) {
                     finishChild(work, child, "FAILED", "子 Agent 执行队列已满，请稍后重试", 0);
-                    return error("子 Agent 执行队列已满，请稍后重试");
+                    return ToolResult.error("SUBAGENT_QUEUE_FULL", "子 Agent 执行队列已满，请稍后重试");
                 }
-                return Map.of("ok", true, "runId", runId, "queued", false);
+                ToolResult started = ToolResult.ok();
+                started.put("runId", runId);
+                started.put("queued", false);
+                return started;
             }
         }
 
@@ -511,9 +529,13 @@ public class AgentChatService {
             return child;
         }
 
-        private Map<String, Object> childStatus(WorkContext.AgentExecution child, boolean waiting) {
-            return Map.of("ok", true, "runId", child.run.getId().toString(), "status", child.run.getStatus(),
-                    "result", child.run.getResult() == null ? "" : child.run.getResult(), "waiting", waiting);
+        private ToolResult childStatus(WorkContext.AgentExecution child, boolean waiting) {
+            ToolResult result = ToolResult.ok();
+            result.put("runId", child.run.getId().toString());
+            result.put("status", child.run.getStatus());
+            result.put("result", child.run.getResult() == null ? "" : child.run.getResult());
+            result.put("waiting", waiting);
+            return result;
         }
 
         private Long requireCodeEnvironment() {
@@ -524,5 +546,4 @@ public class AgentChatService {
         }
     }
 
-    private Map<String, Object> error(String value) { return Map.of("ok", false, "error", value); }
 }

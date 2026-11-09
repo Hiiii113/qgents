@@ -26,8 +26,7 @@ import qg.qgent.project.mapper.ProjectMemberMapper;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.entity.EventEntity;
 import qg.qgent.realtime.mapper.EventMapper;
-import qg.qgent.realtime.transport.RealtimeConnectionTransport;
-import qg.qgent.realtime.transport.SseConnectionTransport;
+import qg.qgent.realtime.transport.SseEventTransport;
 import qg.qgent.realtime.websocket.RealtimeFrame;
 import qg.qgent.team.entity.TeamEventEntity;
 import qg.qgent.team.mapper.TeamEventMapper;
@@ -47,7 +46,7 @@ import java.util.stream.Collectors;
 
 /** 持久化项目、团队和通知事件，校验 SSE 可见范围，并委托传输层管理实时连接。 */
 @Service
-public class EventService implements RealtimeEventPublisher {
+public class EventService {
     private static final Logger log = LoggerFactory.getLogger(EventService.class);
 
     // 单次轮询批量拉取上限。
@@ -63,8 +62,8 @@ public class EventService implements RealtimeEventPublisher {
     private final ProjectAccessService projectAccess;
     private final NotificationEventMapper notificationEventMapper;
     private final TeamEventMapper teamEventMapper;
-    private final RealtimeConnectionTransport realtimeTransport;
-    private final SseConnectionTransport sseTransport;
+    private final RealtimeHub realtimeTransport;
+    private final SseEventTransport sseTransport;
     private final ProjectMemberMapper projectMemberMapper;
     private final TeamMemberMapper teamMemberMapper;
     private final ChatGroupMapper groupMapper;
@@ -79,8 +78,8 @@ public class EventService implements RealtimeEventPublisher {
     @Autowired
     public EventService(EventMapper eventMapper, ProjectAccessService projectAccess,
                         NotificationEventMapper notificationEventMapper, TeamEventMapper teamEventMapper,
-                        RealtimeConnectionTransport realtimeTransport,
-                        SseConnectionTransport sseTransport,
+                        RealtimeHub realtimeTransport,
+                        SseEventTransport sseTransport,
                         ProjectMemberMapper projectMemberMapper, TeamMemberMapper teamMemberMapper,
                         ChatGroupMapper groupMapper,
                         ProjectMapper projectMapper, UserMapper userMapper, TeamMapper teamMapper,
@@ -104,7 +103,6 @@ public class EventService implements RealtimeEventPublisher {
     }
 
     /** 业务事务提交后，独立保存项目事件并推送；事件失败不回滚业务。 */
-    @Override
     public void publish(Long projectId, Long groupId, String eventType, String resourceId,
                         Map<String, Object> payload) {
         EventRequest request = new EventRequest(projectId, groupId, eventType, resourceId, payload);
@@ -159,25 +157,19 @@ public class EventService implements RealtimeEventPublisher {
             } catch (RuntimeException failure) {
                 boolean deadlock = isDeadlock(failure);
                 if (!deadlock || attempt + 1 >= EVENT_DEADLOCK_RETRIES) {
-                    if (metrics != null) {
-                        metrics.increment("qgents.sse.event.persist.failures", "event_persist",
-                                deadlock ? "deadlock_exhausted" : "failed");
-                    }
+                    metrics.increment("qgents.sse.event.persist.failures", "event_persist",
+                            deadlock ? "deadlock_exhausted" : "failed");
                     // 事件只承担前端刷新提示；业务事实已经提交，不能因其失败被误报为 Agent 失败。
                     log.warn("project event persistence skipped projectId={} eventType={} attempts={} exceptionType={}",
                             request.projectId, request.eventType, attempt + 1, failure.getClass().getSimpleName());
                     return;
                 }
                 long backoff = EVENT_DEADLOCK_BACKOFF_MS << attempt;
-                if (metrics != null) {
-                    metrics.increment("qgents.sse.event.persist.retries", "event_persist", "deadlock_retry");
-                }
+                metrics.increment("qgents.sse.event.persist.retries", "event_persist", "deadlock_retry");
                 log.warn("event publish deadlocked; retrying projectId={} eventType={} attempt={} backoffMs={}",
                         request.projectId, request.eventType, attempt + 1, backoff);
                 if (!sleepBackoff(backoff)) {
-                    if (metrics != null) {
-                        metrics.increment("qgents.sse.event.persist.failures", "event_persist", "interrupted");
-                    }
+                    metrics.increment("qgents.sse.event.persist.failures", "event_persist", "interrupted");
                     log.warn("project event persistence interrupted projectId={} eventType={} attempts={}",
                             request.projectId, request.eventType, attempt + 1);
                     return;
@@ -243,7 +235,6 @@ public class EventService implements RealtimeEventPublisher {
 
     /** 发布一条通知级事件。 按用户维度分配单调递增序号；payload 必须为已脱敏内容。 */
     @Transactional
-    @Override
     public void publishNotification(Long recipientUserId, Long notificationId, String eventType,
                                     Map<String, Object> payload) {
         if (recipientUserId == null) {
@@ -270,14 +261,13 @@ public class EventService implements RealtimeEventPublisher {
                 () -> notificationEventMapper.maxSequence(userId));
         return sseTransport.open("notification", userId, cursor, after ->
                 notificationEventMapper.listAfter(userId, after, BATCH_SIZE).stream()
-                        .map(event -> new SseConnectionTransport.SseEvent(
+                        .map(event -> new SseEventTransport.SseEvent(
                                 event.getSequenceNo(), notificationEventType(event.getKind()),
                                 event.getPayload(), true)).toList(), false);
     }
 
     /** 发布一条团队级事件。 按团队维度分配单调递增序号；payload 必须为已脱敏内容。 */
     @Transactional
-    @Override
     public void publishTeamEvent(Long teamId, String eventType, String resourceId, Map<String, Object> payload) {
         if (teamId == null) {
             return;
@@ -305,7 +295,7 @@ public class EventService implements RealtimeEventPublisher {
                 () -> teamEventMapper.maxSequence(teamId));
         return sseTransport.open("team", teamId, cursor, after ->
                 teamEventMapper.listAfter(teamId, after, BATCH_SIZE).stream()
-                        .map(event -> new SseConnectionTransport.SseEvent(event.getSequenceNo(), event.getEventType(),
+                        .map(event -> new SseEventTransport.SseEvent(event.getSequenceNo(), event.getEventType(),
                                 event.getPayload(), true)).toList(), false);
     }
 
@@ -316,7 +306,7 @@ public class EventService implements RealtimeEventPublisher {
                 () -> eventMapper.maxSequence(projectId));
         return sseTransport.open("project", projectId, cursor, after ->
                 eventMapper.listAfter(projectId, after, BATCH_SIZE).stream()
-                        .map(event -> new SseConnectionTransport.SseEvent(
+                        .map(event -> new SseEventTransport.SseEvent(
                                 event.getSequenceNo(), event.getEventType(), event.getPayload(),
                                 event.getGroupId() == null || canSeeGroup(event.getGroupId(), userId)))
                         .toList(), true);

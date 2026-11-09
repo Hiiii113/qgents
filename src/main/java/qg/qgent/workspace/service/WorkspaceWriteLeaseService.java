@@ -16,10 +16,6 @@ public class WorkspaceWriteLeaseService {
 
     /** 领取一把新的写入租约。若另一个 AgentRun 正在写入，返回稳定冲突码而不修改对方状态。 */
     public WorkspaceWriteLease acquire(Long projectId, Long workspaceId, Long agentRunId) {
-        if (projectId == null || workspaceId == null || agentRunId == null) {
-            throw new ApiException(HttpStatus.CONFLICT, "WORKSPACE_WRITE_LEASE_CONTEXT_INVALID",
-                    "Workspace write lease context is incomplete");
-        }
         String token = java.util.UUID.randomUUID().toString();
         if (workspaces.claimWriteLease(projectId, workspaceId, agentRunId, token) != 1) {
             throw new ApiException(HttpStatus.CONFLICT, "WORKSPACE_WRITE_LEASE_HELD",
@@ -30,7 +26,7 @@ public class WorkspaceWriteLeaseService {
 
     /** 在实际 Sandbox 写入前续租。租约已丢失时立即阻断外部写入，不能继续使用过期执行现场。 */
     public void renew(WorkspaceWriteLease lease) {
-        if (lease == null || workspaces.renewWriteLease(lease.getProjectId(), lease.getWorkspaceId(),
+        if (workspaces.renewWriteLease(lease.getProjectId(), lease.getWorkspaceId(),
                 lease.getAgentRunId(), lease.token()) != 1) {
             throw new ApiException(HttpStatus.CONFLICT, "WORKSPACE_WRITE_LEASE_LOST",
                     "Workspace write lease is no longer active");

@@ -8,11 +8,11 @@ import org.springframework.util.MimeTypeUtils;
 
 import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.common.web.ApiException;
+import qg.qgent.harness.tool.ToolResult;
 
 import java.net.URI;
 import java.util.Base64;
-import java.util.LinkedHashMap;
-import java.util.Map;
+
 
 /** 按需读取群聊附件：文本和代码分段返回，图片暂存到当前 Agent 会话。 */
 public class ReadAttachmentTool {
@@ -33,7 +33,7 @@ public class ReadAttachmentTool {
     @Tool(name = "read_attachment", description = "按附件 ID 读取当前项目的图片或文本/代码附件。"
             + "聊天上下文里的图片和文件消息只有引用信息，需要内容时必须调用本工具，不要假设已经看到。"
             + "文本/代码按字节游标分段返回，续读时把 nextOffset 作为 offset；图片会加入下一轮模型请求。")
-    public Map<String, Object> readAttachment(
+    public ToolResult readAttachment(
             @ToolParam(description = "附件 ID，来自聊天上下文或 read_chat_message") String attachmentId,
             @ToolParam(description = "文本/代码的字节游标，首次读取省略或传 0，续读传上次返回的 nextOffset",
                     required = false) Long offset) {
@@ -45,11 +45,10 @@ public class ReadAttachmentTool {
         return readText(id, offset == null ? 0 : offset);
     }
 
-    private Map<String, Object> readText(Long id, long offset) {
+    private ToolResult readText(Long id, long offset) {
         AttachmentService.AttachmentTextChunk chunk =
                 attachments.readTextChunk(actor, projectId, id, offset, TEXT_CHUNK_BYTES);
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("ok", true);
+        ToolResult result = ToolResult.ok();
         result.put("attachmentId", id.toString());
         result.put("fileName", chunk.fileName());
         result.put("mediaType", chunk.mediaType());
@@ -61,13 +60,12 @@ public class ReadAttachmentTool {
         return result;
     }
 
-    private Map<String, Object> readImage(Long id) {
+    private ToolResult readImage(Long id) {
         AttachmentService.AttachmentImage image = attachments.readImage(actor, projectId, id);
         var mime = MimeTypeUtils.parseMimeType(image.mediaType());
         String dataUri = "data:" + mime + ";base64," + Base64.getEncoder().encodeToString(image.bytes());
         images.stage(id.toString(), image.fileName(), new Media(mime, URI.create(dataUri)));
-        Map<String, Object> result = new LinkedHashMap<>();
-        result.put("ok", true);
+        ToolResult result = ToolResult.ok();
         result.put("attachmentId", id.toString());
         result.put("fileName", image.fileName());
         result.put("mediaType", image.mediaType());

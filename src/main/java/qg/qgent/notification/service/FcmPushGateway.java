@@ -21,7 +21,7 @@ import java.util.Map;
 
 /** 使用 FCM HTTP v1 调用受控配置的推送服务；响应只提取消息 ID 或稳定错误码。 */
 @Component
-public class FcmPushGateway implements PushGateway {
+public class FcmPushGateway {
     private static final String FCM_SCOPE = "https://www.googleapis.com/auth/firebase.messaging";
     private final PushProperties properties;
     private final ObjectMapper mapper;
@@ -34,7 +34,6 @@ public class FcmPushGateway implements PushGateway {
         this.client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
     }
 
-    @Override
     public PushSendResult send(String deviceToken, NotificationEntity notification) {
         if (!properties.deliveryConfigured()) {
             throw new PushGatewayException("PUSH_PROVIDER_NOT_CONFIGURED", false);

@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -25,7 +26,7 @@ import java.util.function.LongFunction;
 
 /** 为项目、团队和通知事件流运行共用的 SSE 连接泵。 */
 @Service
-public class SseEventTransport implements SseConnectionTransport {
+public class SseEventTransport {
     private static final Logger log = LoggerFactory.getLogger(SseEventTransport.class);
 
     private static final long HEARTBEAT_SECONDS = 15;
@@ -40,8 +41,7 @@ public class SseEventTransport implements SseConnectionTransport {
     private final AtomicInteger activeConnections = new AtomicInteger();
 
     public SseEventTransport(@Qualifier("sseEventPumpExecutor") Executor executor,
-                             SseEmitterFactory emitterFactory, PerformanceMetrics metrics,
-                             @Qualifier("realtimeSseClock") Clock clock) {
+                             SseEmitterFactory emitterFactory, PerformanceMetrics metrics, Clock clock) {
         this.executor = executor;
         this.emitterFactory = emitterFactory;
         this.metrics = metrics;
@@ -51,7 +51,10 @@ public class SseEventTransport implements SseConnectionTransport {
                 .register(metrics.registry());
     }
 
-    @Override
+    /** 由具体事件范围查询并完成可见性判断后的 SSE 事件。 */
+    public record SseEvent(long sequenceNo, String type, Map<String, Object> payload, boolean visible) {
+    }
+
     public SseEmitter open(String scope, Long ownerId, long cursor,
                            LongFunction<List<SseEvent>> loadEvents, boolean measurePoll) {
         if (!acquireConnectionSlot()) {

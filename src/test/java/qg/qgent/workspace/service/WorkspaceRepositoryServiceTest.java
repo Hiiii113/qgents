@@ -9,6 +9,7 @@ import qg.qgent.github.mapper.ProjectRepositoryMapper;
 import qg.qgent.github.service.GitHubRepositoryService;
 import qg.qgent.project.storage.ProjectDirectoryService;
 import qg.qgent.sandbox.exception.SandboxException;
+import qg.qgent.sandbox.service.SandboxCommands;
 import qg.qgent.workspace.entity.WorkspaceEntity;
 
 import java.io.IOException;
@@ -22,7 +23,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -36,7 +36,7 @@ class WorkspaceRepositoryServiceTest {
 
     private final ProjectRepositoryMapper importedRepositories = mock(ProjectRepositoryMapper.class);
     private final GitHubRepositoryService github = mock(GitHubRepositoryService.class);
-    private final WorkspaceCommands commands = mock(WorkspaceCommands.class);
+    private final SandboxCommands commands = mock(SandboxCommands.class);
     private final ObjectMapper json = new ObjectMapper();
     private final Map<Path, Map<String, String>> gitConfig = new HashMap<>();
     private final Long projectId = 7L;
@@ -119,7 +119,7 @@ class WorkspaceRepositoryServiceTest {
         var result = service().prepare(actor, projectId, workspace, repositoryId, null, null);
 
         assertThat(result.state()).isEqualTo("READY");
-        verify(commands, never()).run(any(), anyString(), anyList(), anyMap());
+        verify(commands, never()).git(any(), anyList(), anyMap());
     }
 
     @Test
@@ -186,7 +186,7 @@ class WorkspaceRepositoryServiceTest {
 
         assertThat(result.state()).isEqualTo("FAILED");
         assertThat(result.error()).contains("未导入");
-        verify(commands, never()).run(any(), anyString(), anyList(), anyMap());
+        verify(commands, never()).git(any(), anyList(), anyMap());
         assertThat(root.resolve(projectId + "/workspaces/11/42/.git")).doesNotExist();
     }
 
@@ -375,8 +375,8 @@ class WorkspaceRepositoryServiceTest {
 
     /** 用真实目录结构模拟沙箱内的 git：bare 仓库、refs、worktree 元数据、指针与配置。 */
     private void fakeGit() {
-        when(commands.run(any(), anyString(), anyList(), anyMap())).thenAnswer(invocation -> {
-            List<String> argv = invocation.getArgument(2);
+        when(commands.git(any(), anyList(), anyMap())).thenAnswer(invocation -> {
+            List<String> argv = invocation.getArgument(1);
             Path gitDir = host(argv.stream().filter(arg -> arg.startsWith("--git-dir=")).findFirst()
                     .map(arg -> arg.substring("--git-dir=".length())).orElse(argv.getLast()));
             if (argv.contains("init")) {
@@ -427,12 +427,12 @@ class WorkspaceRepositoryServiceTest {
         });
     }
 
-    private Map<String, Object> ok(String stdout) {
-        return Map.of("exitCode", 0, "stdout", Map.of("text", stdout), "stderr", Map.of("text", ""));
+    private SandboxCommands.CommandResult ok(String stdout) {
+        return new SandboxCommands.CommandResult(0, stdout);
     }
 
-    private Map<String, Object> exit(int code, String stdout) {
-        return Map.of("exitCode", code, "stdout", Map.of("text", stdout), "stderr", Map.of("text", ""));
+    private SandboxCommands.CommandResult exit(int code, String stdout) {
+        return new SandboxCommands.CommandResult(code, stdout);
     }
 
     private Path host(String containerPath) {
