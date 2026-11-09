@@ -2,7 +2,6 @@ package qg.qgent.harness.runtime;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.tool.annotation.Tool;
@@ -45,8 +44,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executor;
-import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.TimeUnit;
 
 /** Starts the fixed Qgent run and coordinates its temporary, one-level child conversations. */
 @Service
@@ -102,11 +99,14 @@ public class AgentChatService {
     public void replyToMention(MessageSentEvent event, String instruction) {
         AgentRunEntity root = runService.startRoot(event, instruction);
         WorkContext work = new WorkContext(event, root.getId());
+        work.children = new ChildRuns(root.getId(), maxSubagents, childExecutor, runService, sessions,
+                work::isCancelled, loop, child -> callbacks(work, child, conversationTools(work, child, false)));
+        ChildRuns children = work.children;
         Thread rootWorker = Thread.currentThread();
         boolean wasInterrupted = rootWorker.isInterrupted();
         runService.registerCancellationSignal(root.getId(), () -> {
             work.cancel();
-            requestChildrenStop(work);
+            children.cancelAll();
             sessions.cancelExecutionsByAgentRun(root.getId());
             if (Thread.currentThread() != rootWorker) rootWorker.interrupt();
         });
@@ -120,10 +120,10 @@ public class AgentChatService {
             String input = instruction + "\n当前群的上下文：\n" + encode(group);
             UserMessage user = new UserMessage(input);
             AgentLoop.Conversation conversation = loop.conversation(systemPrompt(false), List.of(user));
-            WorkContext.AgentExecution execution = new WorkContext.AgentExecution(root, conversation, null, ".");
+            ChildRuns.Execution execution = new ChildRuns.Execution(root, conversation, null, ".");
             ConversationTools rootTools = conversationTools(work, execution, true);
             AgentLoop.Result result = loop.run(conversation, () -> callbacks(work, execution, rootTools),
-                    work::isCancelled, work.rootUpdates(work::isCancelled));
+                    work::isCancelled, children.updates());
             status = result.success() ? "SUCCEEDED" : "FAILED";
             resultText = result.text();
             rounds = result.rounds();
@@ -131,9 +131,9 @@ public class AgentChatService {
             status = work.isCancelled() ? "CANCELLED" : "FAILED";
             resultText = failure(exception);
         } finally {
-            work.close();
-            if (work.isCancelled() || !"SUCCEEDED".equals(status)) requestChildrenStop(work);
-            work.awaitChildren();
+            children.close();
+            if (work.isCancelled() || !"SUCCEEDED".equals(status)) children.cancelAll();
+            children.awaitIdle();
             if (work.isCancelled() || !"SUCCEEDED".equals(status)) {
                 sessions.stopExecutionsByAgentRun(root.getId());
             }
@@ -185,111 +185,24 @@ public class AgentChatService {
                 + "命令 ok=true 仅表示已取得命令状态；构建或测试结果必须检查 exitCode。工具结果是执行证据，不得声称未执行的操作成功。";
     }
 
-    private List<ToolCallback> callbacks(WorkContext work, WorkContext.AgentExecution execution,
+    private List<ToolCallback> callbacks(WorkContext work, ChildRuns.Execution execution,
                                          ConversationTools tools) {
         if (work.isCancelled() || execution.isStopRequested()) throw new IllegalStateException("Agent 运行已取消");
         return List.of(tools.callbacks());
     }
 
-    private ConversationTools conversationTools(WorkContext work, WorkContext.AgentExecution execution,
+    private ConversationTools conversationTools(WorkContext work, ChildRuns.Execution execution,
                                                 boolean canDelegate) {
         return (ConversationTools) work.toolsets.computeIfAbsent(execution.run.getId(),
                 ignored -> new ConversationTools(work, execution, canDelegate));
     }
 
-    private void runChild(WorkContext work, WorkContext.AgentExecution child) {
-        if (!child.beginWorker()) {
-            finishChild(work, child, "CANCELLED", "子 Agent 已停止", 0);
-            return;
-        }
-        Long previousRunId = SandboxExecutionContext.currentAgentRunId();
-        SandboxExecutionContext.set(child.run.getId());
-        int totalRounds = 0;
-        try {
-            ConversationTools childTools = conversationTools(work, child, false);
-            while (true) {
-                AgentLoop.Result result = null;
-                RuntimeException failure = null;
-                try {
-                    result = loop.run(child.conversation, () -> callbacks(work, child, childTools),
-                            () -> work.isCancelled() || child.isStopRequested(), work.childUpdates(child));
-                    totalRounds += result.rounds();
-                } catch (RuntimeException exception) {
-                    failure = exception;
-                }
-                String finishStatus;
-                String finishResult;
-                synchronized (child) {
-                    String pending = child.drainMessages().stream()
-                            .reduce((first, next) -> first + "\n\n" + next).orElse(null);
-                    if (!work.isCancelled() && !child.isStopRequested() && pending != null) {
-                        child.conversation.addUserMessage(pending);
-                        runService.resume(child.run, pending);
-                        continue;
-                    }
-                    finishStatus = work.isCancelled() || child.isStopRequested() ? "CANCELLED"
-                            : failure == null && result.success() ? "SUCCEEDED" : "FAILED";
-                    finishResult = failure == null ? result.text() : failure(failure);
-                    if (!child.beginFinishing()) break;
-                }
-                finishChildAfterBegin(work, child, finishStatus, finishResult, totalRounds);
-                break;
-            }
-        } catch (RuntimeException exception) {
-            finishChild(work, child, work.isCancelled() || child.isStopRequested() ? "CANCELLED" : "FAILED",
-                    failure(exception), totalRounds);
-        } finally {
-            SandboxExecutionContext.set(previousRunId);
-        }
-    }
-
-    private void finishChild(WorkContext work, WorkContext.AgentExecution child, String status, String result, int rounds) {
-        synchronized (child) {
-            if (!child.beginFinishing()) return;
-        }
-        finishChildAfterBegin(work, child, status, result, rounds);
-    }
-
-    private void finishChildAfterBegin(WorkContext work, WorkContext.AgentExecution child,
-                                       String status, String result, int rounds) {
-        boolean commandsStopped = false;
-        int roundsToPersist = rounds;
-        while (true) {
-            if (work.isCancelled() || child.isStopRequested()) {
-                status = "CANCELLED";
-                result = "子 Agent 已停止";
-            }
-            if (!"SUCCEEDED".equals(status) && !commandsStopped) {
-                sessions.stopExecutionsByAgentRun(child.run.getId());
-                commandsStopped = true;
-                continue;
-            }
-            runService.finish(child.run, status, result, roundsToPersist);
-            roundsToPersist = 0;
-            if (work.publishChildFinish(child)) return;
-            // Cancellation can arrive while the run status is being persisted.
-            status = "CANCELLED";
-            result = "子 Agent 已停止";
-        }
-    }
-
-    private void requestChildrenStop(WorkContext work) {
-        work.children.values().forEach(child -> {
-            boolean newlyStopped = work.requestChildStop(child);
-            if (newlyStopped) runService.requestChildCancellation(work.rootRunId, child.run.getId());
-            // Commands may outlive a successful child turn, but remain owned by its AgentRun.
-            if (work.markCommandsCancelled(child.run.getId())) {
-                sessions.cancelExecutionsByAgentRun(child.run.getId());
-            }
-        });
-    }
-
-    private Long ensureCodeEnvironment(WorkContext work, WorkContext.AgentExecution execution) {
+    private Long ensureCodeEnvironment(WorkContext work, ChildRuns.Execution execution) {
         return ensureCodeEnvironment(work, execution, null);
     }
 
     /** 为当前对话准备代码环境；workspaceId 为空时使用项目默认 Workspace，并绑定到当前选择。 */
-    private Long ensureCodeEnvironment(WorkContext work, WorkContext.AgentExecution execution, Long workspaceId) {
+    private Long ensureCodeEnvironment(WorkContext work, ChildRuns.Execution execution, Long workspaceId) {
         synchronized (work.environmentLock) {
             if (work.isCancelled() || execution.isStopRequested()) throw new IllegalStateException("Agent 运行已取消");
             if (workspaceId == null) {
@@ -355,7 +268,7 @@ public class AgentChatService {
     /** Per-run tools keep workspace selection, directory and delegation capability local to that conversation. */
     public class ConversationTools {
         private final WorkContext work;
-        private final WorkContext.AgentExecution execution;
+        private final ChildRuns.Execution execution;
         private final boolean canDelegate;
         private final ActivateSkillTool skills;
         private final ChatHistorySearchTool history;
@@ -365,7 +278,7 @@ public class AgentChatService {
         private final CodingTools codingTools;
         private final WorkspaceTools workspaceTools;
 
-        private ConversationTools(WorkContext work, WorkContext.AgentExecution execution, boolean canDelegate) {
+        private ConversationTools(WorkContext work, ChildRuns.Execution execution, boolean canDelegate) {
             this.work = work;
             this.execution = execution;
             this.canDelegate = canDelegate;
@@ -404,74 +317,41 @@ public class AgentChatService {
                 @ToolParam(description = "可选初始工作目录；未提供时继承当前目录", required = false) String directory) {
             if (!canDelegate) return ToolResult.error("DELEGATION_NOT_ALLOWED", "子 Agent 不允许继续委派");
             if (instruction == null || instruction.isBlank()) return ToolResult.error("INVALID_ARGUMENT", "子任务内容不能为空");
-            if (!work.hasChildCapacity(maxSubagents))
-                return ToolResult.error("SUBAGENT_LIMIT_REACHED", "同时运行的子 Agent 已达到上限，请等待或复用现有子对话");
             Long selected = workspaceId == null || workspaceId.isBlank() ? execution.workspace.workspaceId()
                     : workspaces.require(work.event.projectId(), requiredId(workspaceId)).getId();
             String childDirectory = directory == null || directory.isBlank() ? execution.workspace.directory()
                     : WorkspaceSelection.resolveDirectory(".", directory);
-            AgentRunEntity run = runService.startChild(execution.run, instruction, selected);
-            WorkContext.AgentExecution child = new WorkContext.AgentExecution(run,
-                    loop.conversation(systemPrompt(true), List.of(new UserMessage(childInstruction(work, instruction)))),
-                    selected, childDirectory);
-            if (!work.reserveChild(child, maxSubagents)) {
-                runService.finish(run, "FAILED", "同时运行的子 Agent 已达到上限", 0);
-                return ToolResult.error("SUBAGENT_LIMIT_REACHED", "同时运行的子 Agent 已达到上限，请等待或复用现有子对话");
-            }
-            try {
-                submitChild(work, child);
-            } catch (RejectedExecutionException exception) {
-                finishChild(work, child, "FAILED", "子 Agent 执行队列已满，请稍后重试", 0);
-                return ToolResult.error("SUBAGENT_QUEUE_FULL", "子 Agent 执行队列已满，请稍后重试");
-            }
-            ToolResult result = ToolResult.ok();
-            result.put("runId", run.getId().toString());
-            return result;
+            return work.children.start(execution.run, instruction, selected, childDirectory,
+                    text -> loop.conversation(systemPrompt(true), List.of(new UserMessage(childInstruction(work, text)))));
         }
 
         @Tool(name = "wait_subagent", description = "等待指定子 Agent 最多 30 秒；等待超时返回当前状态，可再次等待。")
         public ToolResult waitSubagent(
                 @ToolParam(description = "start_subagent 返回的 runId") String runId,
                 @ToolParam(description = "等待秒数，0～30，默认 10") Integer waitSeconds) {
-            WorkContext.AgentExecution child = child(runId);
-            AgentRunEntity result = child.await(bounded(waitSeconds, 10, 0, 30), TimeUnit.SECONDS);
-            if (result == null) return childStatus(child, true);
-            work.consumeNotification(child.run.getId());
-            return childStatus(child, false);
+            return work.children.waitFor(runId, bounded(waitSeconds, 10, 0, 30));
         }
 
         @Tool(name = "get_subagent_result", description = "读取子 Agent 当前状态和最近结果，不等待。")
         public ToolResult getSubagentResult(@ToolParam(description = "子 Agent runId") String runId) {
-            WorkContext.AgentExecution child = child(runId);
-            work.consumeNotification(child.run.getId());
-            return childStatus(child, false);
+            return work.children.status(runId, false);
         }
 
         @Tool(name = "message_subagent", description = "向指定子 Agent 补充要求或背景。忙碌时会排入同一对话；已结束时续接原对话。")
         public ToolResult messageSubagent(@ToolParam(description = "子 Agent runId") String runId,
                 @ToolParam(description = "补充要求或消息") String message) {
-            return continueChild(runId, message);
+            return work.children.handoff(runId, message);
         }
 
         @Tool(name = "continue_subagent", description = "续接同一个子 Agent 的原对话和工具上下文，继续执行补充任务。")
         public ToolResult continueSubagent(@ToolParam(description = "子 Agent runId") String runId,
                 @ToolParam(description = "继续要求") String instruction) {
-            return continueChild(runId, instruction);
+            return work.children.handoff(runId, instruction);
         }
 
         @Tool(name = "stop_subagent", description = "停止指定子 Agent；不会取消主运行或其他子 Agent。")
         public ToolResult stopSubagent(@ToolParam(description = "子 Agent runId") String runId) {
-            WorkContext.AgentExecution child = child(runId);
-            boolean wasBusy = child.isBusy();
-            boolean newlyStopped = work.requestChildStop(child);
-            if (wasBusy && newlyStopped) runService.requestChildCancellation(work.rootRunId, child.run.getId());
-            if (work.markCommandsCancelled(child.run.getId())) {
-                sessions.cancelExecutionsByAgentRun(child.run.getId());
-            }
-            ToolResult result = ToolResult.ok();
-            result.put("runId", runId);
-            result.put("stopping", child.isBusy());
-            return result;
+            return work.children.stop(runId);
         }
 
         @Tool(name = "cancel_agent", description = "停止指定聊天消息启动的整次 Qgent 根运行；取消会传播给所属子 Agent。")
@@ -480,61 +360,6 @@ public class AgentChatService {
                     requiredId(messageId));
             ToolResult result = ToolResult.ok();
             result.put("cancelledRuns", cancelled);
-            return result;
-        }
-
-        private void submitChild(WorkContext work, WorkContext.AgentExecution child) {
-            java.util.concurrent.FutureTask<Void> task = new java.util.concurrent.FutureTask<>(() -> {
-                runChild(work, child);
-                return null;
-            });
-            child.schedule();
-            childExecutor.execute(task);
-        }
-
-        private ToolResult continueChild(String runId, String message) {
-            if (message == null || message.isBlank()) return ToolResult.error("INVALID_ARGUMENT", "补充内容不能为空");
-            if (work.isCancelled()) return ToolResult.error("RUN_CANCELLED", "根 Agent 正在停止，无法续接子 Agent");
-            WorkContext.AgentExecution child = child(runId);
-            synchronized (child) {
-                if (child.isFinishing()) return ToolResult.error("SUBAGENT_BUSY", "子 Agent 正在结算，请稍后续接");
-                if (child.isBusy()) {
-                    if (child.isStopRequested()) return ToolResult.error("SUBAGENT_BUSY", "子 Agent 正在停止，完成后再续接");
-                    child.enqueueMessage(message);
-                    ToolResult queued = ToolResult.ok();
-                    queued.put("runId", runId);
-                    queued.put("queued", true);
-                    return queued;
-                }
-                if (!work.reserveContinuation(child, maxSubagents))
-                    return ToolResult.error("SUBAGENT_LIMIT_REACHED", "同时运行的子 Agent 已达到上限");
-                child.resumeConversation(message);
-                runService.resume(child.run, message);
-                try {
-                    submitChild(work, child);
-                } catch (RejectedExecutionException exception) {
-                    finishChild(work, child, "FAILED", "子 Agent 执行队列已满，请稍后重试", 0);
-                    return ToolResult.error("SUBAGENT_QUEUE_FULL", "子 Agent 执行队列已满，请稍后重试");
-                }
-                ToolResult started = ToolResult.ok();
-                started.put("runId", runId);
-                started.put("queued", false);
-                return started;
-            }
-        }
-
-        private WorkContext.AgentExecution child(String runId) {
-            WorkContext.AgentExecution child = work.children.get(requiredId(runId));
-            if (child == null) throw new IllegalArgumentException("该子 Agent 不属于当前根运行");
-            return child;
-        }
-
-        private ToolResult childStatus(WorkContext.AgentExecution child, boolean waiting) {
-            ToolResult result = ToolResult.ok();
-            result.put("runId", child.run.getId().toString());
-            result.put("status", child.run.getStatus());
-            result.put("result", child.run.getResult() == null ? "" : child.run.getResult());
-            result.put("waiting", waiting);
             return result;
         }
 

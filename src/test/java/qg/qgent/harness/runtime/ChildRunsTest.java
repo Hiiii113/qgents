@@ -4,15 +4,18 @@ import qg.qgent.support.TestIds;
 
 import org.junit.jupiter.api.Test;
 import qg.qgent.harness.entity.AgentRunEntity;
-import qg.qgent.chat.event.MessageSentEvent;
+import qg.qgent.harness.service.AgentRunService;
+import qg.qgent.sandbox.service.SandboxSessionManager;
 
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
-class WorkContextTest {
+class ChildRunsTest {
     @Test
     void bindingTheLazyDefaultWorkspacePreservesTheAgentDirectory() {
-        WorkContext.AgentExecution execution = new WorkContext.AgentExecution(
+        ChildRuns.Execution execution = new ChildRuns.Execution(
                 new AgentRunEntity(), null, null, ".");
         Long workspace = TestIds.next();
         execution.workspace.setDirectory("src/runtime");
@@ -25,7 +28,7 @@ class WorkContextTest {
 
     @Test
     void explicitlySelectingAnotherWorkspaceResetsTheAgentDirectory() {
-        WorkContext.AgentExecution execution = new WorkContext.AgentExecution(
+        ChildRuns.Execution execution = new ChildRuns.Execution(
                 new AgentRunEntity(), null, TestIds.next(), "src/runtime");
 
         execution.workspace.select(TestIds.next());
@@ -38,21 +41,20 @@ class WorkContextTest {
         Long runId = TestIds.next();
         AgentRunEntity run = new AgentRunEntity();
         run.setId(runId);
-        WorkContext context = new WorkContext(
-                new MessageSentEvent(TestIds.next(), TestIds.next(), TestIds.next(), TestIds.next(), java.util.List.of()),
-                TestIds.next());
-        WorkContext.AgentExecution child = new WorkContext.AgentExecution(run, null, null, ".");
-        assertThat(context.reserveChild(child, 1)).isTrue();
+        ChildRuns children = new ChildRuns(TestIds.next(), 1, Runnable::run, mock(AgentRunService.class),
+                mock(SandboxSessionManager.class), () -> false, mock(AgentLoop.class), child -> List.of());
+        ChildRuns.Execution child = new ChildRuns.Execution(run, null, null, ".");
+        assertThat(children.reserve(child)).isTrue();
         child.schedule();
-        assertThat(context.requestChildStop(child)).isTrue();
-        assertThat(context.markCommandsCancelled(runId)).isTrue();
-        assertThat(context.markCommandsCancelled(runId)).isFalse();
+        assertThat(children.requestStop(child)).isTrue();
+        assertThat(children.markCommandsCancelled(runId)).isTrue();
+        assertThat(children.markCommandsCancelled(runId)).isFalse();
         assertThat(child.beginFinishing()).isTrue();
         run.setStatus("CANCELLED");
-        assertThat(context.publishChildFinish(child)).isTrue();
+        assertThat(children.publishFinish(child)).isTrue();
 
-        assertThat(context.reserveContinuation(child, 1)).isTrue();
+        assertThat(children.reserveContinuation(child)).isTrue();
 
-        assertThat(context.markCommandsCancelled(runId)).isTrue();
+        assertThat(children.markCommandsCancelled(runId)).isTrue();
     }
 }
