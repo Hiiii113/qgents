@@ -185,7 +185,12 @@ class ProjectServiceTest {
         ProjectCreateRequest request = new ProjectCreateRequest();
         request.setName("普通成员项目");
 
-        assertThatThrownBy(() -> service.create(member, teamId, request))
+        ProjectService localService = new ProjectService(projects, projectMembers, teams, teamMembers,
+                new ProjectAccessService(projects, projectMembers, teams, teamMembers),
+                mock(ApplicationEventPublisher.class), mock(NotificationService.class), mock(EventService.class),
+                workspaces, avatarStorage);
+
+        assertThatThrownBy(() -> localService.create(member, teamId, request))
                 .isInstanceOf(qg.qgent.common.web.ApiException.class)
                 .satisfies(error -> assertThat(((qg.qgent.common.web.ApiException) error).code())
                         .isEqualTo("TEAM_ADMIN_REQUIRED"));

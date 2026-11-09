@@ -15,6 +15,7 @@ import qg.qgent.common.dto.PageSlice;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.project.mapper.ProjectMemberMapper;
+import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.team.dto.ReceivedInvitationResponse;
 import qg.qgent.team.dto.TeamCreateRequest;
@@ -54,6 +55,7 @@ public class TeamService {
     private final TeamMemberMapper memberMapper;
     private final TeamInvitationMapper invitationMapper;
     private final ProjectMemberMapper projectMemberMapper;
+    private final ProjectAccessService access;
     private final UserMapper userMapper;
     private final TokenService tokens;
     private final AvatarStorageService avatarStorage;
@@ -95,9 +97,8 @@ public class TeamService {
 
     /** 获取团队详情 */
     public TeamResponse get(Long actor, Long teamId) {
-        TeamMemberEntity member = requireMember(teamId, actor);
         TeamEntity team = requireTeam(teamId);
-        return team(team, effectiveRole(team.getOwnerUserId(), actor, member.getRole()));
+        return team(team, access.requireTeamMemberRole(team, actor));
     }
 
     /** 更新团队信息；团队所有者和管理员均可修改。 */
@@ -105,7 +106,7 @@ public class TeamService {
     public TeamResponse update(Long actor, Long teamId, TeamUpdateRequest request) {
         TeamEntity team = requireTeamForUpdate(teamId);
 
-        String actorRole = requireManager(team, actor);
+        String actorRole = access.requireTeamManager(team, actor);
 
         if (request.getName() != null) {
             team.setName(request.getName().trim());
@@ -131,7 +132,7 @@ public class TeamService {
     /** 签发团队头像直传凭证；权限与修改团队资料一致（所有者或管理员）。 */
     public AvatarStorageService.AvatarCredential avatarCredential(Long actor, Long teamId, String mediaType,
                                                                   Long sizeBytes) {
-        requireManager(requireTeam(teamId), actor);
+        access.requireTeamManager(requireTeam(teamId), actor);
         return avatarStorage.createCredential("teams", teamId, mediaType, sizeBytes);
     }
 
@@ -139,7 +140,7 @@ public class TeamService {
     @Transactional
     public AvatarConfirmResponse updateAvatar(Long actor, Long teamId, String objectKey) {
         TeamEntity team = requireTeamForUpdate(teamId);
-        requireManager(team, actor);
+        access.requireTeamManager(team, actor);
         String publicUrl = avatarStorage.confirm("teams", teamId, objectKey);
         String previousAvatar = team.getAvatarUrl();
         team.setAvatarUrl(publicUrl);
@@ -150,8 +151,8 @@ public class TeamService {
 
     /** 获取团队成员列表 */
     public PageSlice<TeamMemberResponse> members(Long actor, Long teamId, String cursor, Integer limit) {
-        requireMember(teamId, actor);
         TeamEntity team = requireTeam(teamId);
+        access.requireTeamMemberRole(team, actor);
         int pageSize = KeysetPagination.pageSize(limit);
         String scope = "team-members:" + teamId;
         Long anchor = KeysetPagination.decodeCursor(cursor, scope);
@@ -159,7 +160,8 @@ public class TeamService {
         return KeysetPagination.keysetPage(rows, pageSize, scope, TeamMemberView::getUserId,
                 member -> {
                     TeamMemberResponse response = new TeamMemberResponse(member.getUserId().toString(),
-                            effectiveRole(team.getOwnerUserId(), member.getUserId(), member.getRole()));
+                            ProjectAccessService.effectiveTeamRole(team.getOwnerUserId(), member.getUserId(),
+                                    member.getRole()));
                     response.setDisplayName(member.getDisplayName());
                     response.setEmail(member.getEmail());
                     response.setAvatarUrl(member.getAvatarUrl());
@@ -172,7 +174,7 @@ public class TeamService {
     public TeamInvitationResponse invite(Long actor, Long teamId, TeamMemberInviteRequest request) {
         TeamEntity team = requireTeamForUpdate(teamId);
 
-        requireManager(team, actor);
+        access.requireTeamManager(team, actor);
         if (!"TEAM_MEMBER".equals(request.getRole())) {
             throw invalid("邀请角色目前仅支持 TEAM_MEMBER");
         }
@@ -224,7 +226,7 @@ public class TeamService {
 
     /** 获取团队邀请列表；所有者和管理员均可查看。 */
     public PageSlice<TeamInvitationResponse> invitations(Long actor, Long teamId, String cursor, Integer limit) {
-        requireManager(requireTeam(teamId), actor);
+        access.requireTeamManager(requireTeam(teamId), actor);
         int pageSize = KeysetPagination.pageSize(limit);
         String scope = "team-invitations:" + teamId;
         Long anchor = KeysetPagination.decodeCursor(cursor, scope);
@@ -324,7 +326,7 @@ public class TeamService {
     public TeamInvitationResponse revoke(Long actor, Long teamId, Long invitationId) {
         TeamEntity team = requireTeamForUpdate(teamId);
 
-        requireManager(team, actor);
+        access.requireTeamManager(team, actor);
         TeamInvitationEntity invitation = invitationMapper.selectOne(Wrappers.<TeamInvitationEntity>lambdaQuery()
                 .eq(TeamInvitationEntity::getId, invitationId).eq(TeamInvitationEntity::getTeamId, teamId)
                 .last("FOR UPDATE"));
@@ -347,11 +349,11 @@ public class TeamService {
     public TeamMemberResponse updateMember(Long actor, Long teamId, Long userId, TeamMemberUpdateRequest request) {
         TeamEntity team = requireTeamForUpdate(teamId);
 
-        requireOwner(team, actor);
+        access.requireTeamOwner(team, actor);
         if (!"TEAM_ADMIN".equals(request.getRole()) && !"TEAM_MEMBER".equals(request.getRole())) {
             throw invalid("成员角色仅支持 TEAM_ADMIN 或 TEAM_MEMBER，不能通过成员接口设置 TEAM_OWNER");
         }
-        TeamMemberEntity target = requireMember(teamId, userId);
+        TeamMemberEntity target = access.requireTeamMemberRow(teamId, userId);
         if (team.getOwnerUserId().equals(userId)) {
             throw conflict("TEAM_OWNER_IMMUTABLE", "Team Owner 不能通过成员角色接口降级");
         }
@@ -366,9 +368,9 @@ public class TeamService {
     public TeamMemberResponse removeMember(Long actor, Long teamId, Long userId) {
         TeamEntity team = requireTeamForUpdate(teamId);
 
-        String actorRole = requireManager(team, actor);
-        TeamMemberEntity target = requireMember(teamId, userId);
-        String targetRole = effectiveRole(team.getOwnerUserId(), userId, target.getRole());
+        String actorRole = access.requireTeamManager(team, actor);
+        TeamMemberEntity target = access.requireTeamMemberRow(teamId, userId);
+        String targetRole = ProjectAccessService.effectiveTeamRole(team.getOwnerUserId(), userId, target.getRole());
         if ("TEAM_OWNER".equals(targetRole)) {
             throw conflict("TEAM_OWNER_IMMUTABLE", "Team Owner 不能被移除");
         }
@@ -388,45 +390,11 @@ public class TeamService {
     @Transactional
     public TeamResponse disband(Long actor, Long teamId) {
         TeamEntity team = requireTeamForUpdate(teamId);
-        requireOwner(team, actor);
+        access.requireTeamOwner(team, actor);
         // 解散前取一次摘要，避免删除后无法查询
         TeamResponse summary = team(team, "TEAM_OWNER");
         teamDisbandService.deleteTeam(teamId, team.getAvatarUrl());
         return summary;
-    }
-
-    // 校验团队存在且当前用户属于该团队。
-    public TeamMemberEntity requireMember(Long teamId, Long userId) {
-        TeamMemberEntity member = memberMapper.selectByTeamAndUser(teamId, userId);
-        if (member == null) {
-            throw notFound();
-        }
-        return member;
-    }
-
-    // 校验当前用户为团队记录中的所有者。
-    private void requireOwner(TeamEntity team, Long userId) {
-        TeamMemberEntity member = requireMember(team.getId(), userId);
-        if (!team.getOwnerUserId().equals(userId) || !"TEAM_OWNER".equals(member.getRole())) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "TEAM_OWNER_REQUIRED", "需要 Team Owner 权限");
-        }
-    }
-
-    /** 校验当前用户为团队所有者或管理员，返回生效角色。 */
-    private String requireManager(TeamEntity team, Long userId) {
-        TeamMemberEntity member = requireMember(team.getId(), userId);
-        String role = effectiveRole(team.getOwnerUserId(), userId, member.getRole());
-        if ("TEAM_OWNER".equals(role) || "TEAM_ADMIN".equals(role)) {
-            return role;
-        }
-        throw new ApiException(HttpStatus.FORBIDDEN, "TEAM_ADMIN_REQUIRED", "需要团队所有者或管理员权限");
-    }
-
-    private String effectiveRole(Long ownerUserId, Long userId, String storedRole) {
-        if (ownerUserId != null && ownerUserId.equals(userId) && "TEAM_OWNER".equals(storedRole)) {
-            return "TEAM_OWNER";
-        }
-        return "TEAM_ADMIN".equals(storedRole) ? "TEAM_ADMIN" : "TEAM_MEMBER";
     }
 
     // 读取团队；不存在时返回 404。
@@ -449,7 +417,7 @@ public class TeamService {
 
     private TeamResponse membershipResponse(TeamMembershipView row, Long actor) {
         TeamResponse response = new TeamResponse(row.getId().toString(), row.getName(),
-                effectiveRole(row.getOwnerUserId(), actor, row.getRole()));
+                ProjectAccessService.effectiveTeamRole(row.getOwnerUserId(), actor, row.getRole()));
         response.setMemberCount(row.getMemberCount());
         response.setDescription(row.getDescription());
         response.setAvatarUrl(row.getAvatarUrl());
@@ -474,7 +442,7 @@ public class TeamService {
 
     private TeamMemberResponse memberResponse(Long userId, TeamEntity team, String storedRole, UserEntity user) {
         TeamMemberResponse response = new TeamMemberResponse(userId.toString(),
-                effectiveRole(team.getOwnerUserId(), userId, storedRole));
+                ProjectAccessService.effectiveTeamRole(team.getOwnerUserId(), userId, storedRole));
         response.setDisplayName(user == null ? null : user.getDisplayName());
         response.setEmail(user == null ? null : user.getEmail());
         response.setAvatarUrl(user == null ? null : user.getAvatarUrl());

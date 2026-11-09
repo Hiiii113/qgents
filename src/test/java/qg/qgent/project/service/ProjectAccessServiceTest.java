@@ -28,6 +28,32 @@ class ProjectAccessServiceTest {
             teamMembers);
 
     @Test
+    void teamManagerRuleIsDerivedInOnePlace() {
+        Long teamId = TestIds.next();
+        Long owner = TestIds.next();
+        Long admin = TestIds.next();
+        Long member = TestIds.next();
+        Long outsider = TestIds.next();
+        TeamEntity team = team(teamId, owner);
+        when(teams.selectById(teamId)).thenReturn(team);
+        when(teamMembers.selectByTeamAndUser(teamId, owner)).thenReturn(teamMember(teamId, owner, "TEAM_OWNER"));
+        when(teamMembers.selectByTeamAndUser(teamId, admin)).thenReturn(teamMember(teamId, admin, "TEAM_ADMIN"));
+        when(teamMembers.selectByTeamAndUser(teamId, member)).thenReturn(teamMember(teamId, member, "TEAM_MEMBER"));
+
+        assertEquals("TEAM_OWNER", access.requireTeamManager(team, owner));
+        assertEquals("TEAM_ADMIN", access.requireTeamManager(team, admin));
+        access.requireTeamOwner(team, owner);
+        assertEquals("TEAM_MEMBER", access.teamRole(team, member));
+
+        ApiException denied = assertThrows(ApiException.class, () -> access.requireTeamManager(team, member));
+        assertEquals("TEAM_ADMIN_REQUIRED", denied.code());
+        ApiException notOwner = assertThrows(ApiException.class, () -> access.requireTeamOwner(team, admin));
+        assertEquals("TEAM_OWNER_REQUIRED", notOwner.code());
+        ApiException unknown = assertThrows(ApiException.class, () -> access.requireTeamManager(team, outsider));
+        assertEquals("TEAM_RESOURCE_NOT_FOUND", unknown.code());
+    }
+
+    @Test
     void canonicalTeamOwnerIsAdminWithoutProjectMembership() {
         Long projectId = TestIds.next();
         Long teamId = TestIds.next();

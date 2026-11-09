@@ -52,7 +52,7 @@ public class ProjectService {
     @Transactional
     public ProjectResponse create(Long actor, Long teamId, ProjectCreateRequest request) {
         TeamEntity team = requireTeamForUpdate(teamId);
-        requireTeamManager(team, actor);
+        access.requireTeamManager(team, actor);
         ProjectEntity project = new ProjectEntity();
         project.setTeamId(teamId);
         project.setCreatedBy(actor);
@@ -246,17 +246,6 @@ public class ProjectService {
         member.setUserId(userId);
         member.setRole(role);
         memberMapper.insert(member);
-    }
-
-    private void requireTeamManager(TeamEntity team, Long actor) {
-        TeamMemberEntity member = requireTeamMember(team.getId(), actor);
-        if (actor.equals(team.getOwnerUserId()) && "TEAM_OWNER".equals(member.getRole())) {
-            return;
-        }
-        if ("TEAM_ADMIN".equals(member.getRole())) {
-            return;
-        }
-        throw new ApiException(HttpStatus.FORBIDDEN, "TEAM_ADMIN_REQUIRED", "需要团队所有者或管理员权限");
     }
 
     private TeamMemberEntity requireTeamMember(Long teamId, Long userId) {

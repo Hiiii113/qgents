@@ -13,7 +13,9 @@ import org.junit.jupiter.api.Test;
 import qg.qgent.auth.service.TokenService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
+import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.mapper.ProjectMemberMapper;
+import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.team.dto.TeamCreateRequest;
 import qg.qgent.team.dto.TeamMemberInviteRequest;
@@ -76,8 +78,10 @@ class TeamServiceTest {
     private final UserMapper userMapper = mock(UserMapper.class);
     private final TeamDisbandService teamDisbandService = mock(TeamDisbandService.class);
     private final NotificationService notificationService = mock(NotificationService.class);
+    private final ProjectAccessService access = new ProjectAccessService(
+            mock(ProjectMapper.class), projectMemberMapper, teamMapper, memberMapper);
     private final TeamService service = new TeamService(teamMapper, memberMapper, invitationMapper,
-            projectMemberMapper, userMapper, mock(TokenService.class),
+            projectMemberMapper, access, userMapper, mock(TokenService.class),
             mock(AvatarStorageService.class), mock(TeamInvitationMailer.class), teamDisbandService,
             notificationService, mock(EventService.class));
 
@@ -282,7 +286,7 @@ class TeamServiceTest {
         invitation.setExpiresAt(LocalDateTime.now(ZoneOffset.UTC).minusMinutes(1));
         TokenService tokens = mock(TokenService.class);
         TeamService localService = new TeamService(teamMapper, memberMapper, invitationMapper, projectMemberMapper,
-                userMapper, tokens, mock(AvatarStorageService.class),
+                access, userMapper, tokens, mock(AvatarStorageService.class),
                 mock(TeamInvitationMailer.class), mock(TeamDisbandService.class),
                 mock(NotificationService.class), mock(EventService.class));
         when(userMapper.selectById(actor)).thenReturn(user);
@@ -329,7 +333,7 @@ class TeamServiceTest {
         when(tokens.opaque()).thenReturn("raw-token");
         when(tokens.hash("raw-token")).thenReturn(new byte[] { 1 });
         TeamService localService = new TeamService(teamMapper, memberMapper, invitationMapper, projectMemberMapper,
-                userMapper, tokens, mock(AvatarStorageService.class),
+                access, userMapper, tokens, mock(AvatarStorageService.class),
                 mock(TeamInvitationMailer.class), mock(TeamDisbandService.class),
                 mock(NotificationService.class), mock(EventService.class));
         TeamMemberInviteRequest request = new TeamMemberInviteRequest();

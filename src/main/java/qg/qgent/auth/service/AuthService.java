@@ -16,6 +16,7 @@ import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.dto.ProjectResponse;
 import qg.qgent.project.mapper.ProjectMapper;
+import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.team.dto.TeamResponse;
 import qg.qgent.team.entity.TeamEntity;
 import qg.qgent.team.entity.TeamMemberEntity;
@@ -292,9 +293,8 @@ public class AuthService {
         return members.stream().filter(member -> teams.containsKey(member.getTeamId()))
                 .map(member -> {
                     TeamEntity team = teams.get(member.getTeamId());
-                    String role = team.getOwnerUserId().equals(userId) && "TEAM_OWNER".equals(member.getRole())
-                            ? "TEAM_OWNER"
-                            : "TEAM_ADMIN".equals(member.getRole()) ? "TEAM_ADMIN" : "TEAM_MEMBER";
+                    String role = ProjectAccessService.effectiveTeamRole(team.getOwnerUserId(), userId,
+                            member.getRole());
                     TeamResponse response = new TeamResponse(team.getId().toString(), team.getName(), role);
                     response.setDescription(team.getDescription());
                     response.setAvatarUrl(team.getAvatarUrl());
