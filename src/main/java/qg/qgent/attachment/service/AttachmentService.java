@@ -117,19 +117,19 @@ public class AttachmentService {
     /** 附件元数据与短期内容地址；不读取文件字节。 */
     public AttachmentInfoResponse info(Long actor, Long projectId, Long attachmentId) {
         AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
-        String previewType = classifyPreviewType(attachment);
+        AttachmentKind kind = kind(attachment);
         String contentUrl = "/api/v1/projects/" + projectId + "/attachments/" + attachmentId
                 + "/content?token=" + tokens.access(actor);
         LocalDateTime expiresAt = LocalDateTime.now(ZoneOffset.UTC).plusSeconds(tokens.accessSeconds());
         return new AttachmentInfoResponse(attachment.getId().toString(), attachment.getFileName(),
-                attachment.getMediaType(), attachment.getSizeBytes(), previewType,
-                !"UNSUPPORTED".equals(previewType), contentUrl, expiresAt);
+                attachment.getMediaType(), attachment.getSizeBytes(), kind.name(),
+                kind.previewable(), contentUrl, expiresAt);
     }
 
     /** Agent 按需读取前，先用类型和大小判断能否处理，不读取字节。 */
     public AttachmentPreviewMetadata previewMetadata(Long actor, Long projectId, Long attachmentId) {
         AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
-        return new AttachmentPreviewMetadata(classifyPreviewType(attachment), attachment.getSizeBytes());
+        return new AttachmentPreviewMetadata(kind(attachment), attachment.getSizeBytes());
     }
 
     /** 批量回填消息附件预览：无效、跨项目或未就绪的 ID 不出现在结果里。 */
@@ -150,9 +150,8 @@ public class AttachmentService {
             if (!projectId.equals(attachment.getProjectId()) || !"READY".equals(attachment.getStatus())) {
                 continue;
             }
-            String previewType = classifyPreviewType(attachment);
             previews.put(attachment.getId().toString(),
-                    new MessageAttachmentPreview(!"UNSUPPORTED".equals(previewType), previewType));
+                    new MessageAttachmentPreview(kind(attachment)));
         }
         return previews;
     }
@@ -162,10 +161,10 @@ public class AttachmentService {
             long offset, int maxBytes) {
         if (maxBytes < 4) throw new IllegalArgumentException("maxBytes 至少为 4，避免 UTF-8 字符无法前进");
         AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
-        String previewType = classifyPreviewType(attachment);
-        if (!"TEXT".equals(previewType) && !"CODE".equals(previewType)) {
+        AttachmentKind kind = kind(attachment);
+        if (!kind.readableAsText()) {
             throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "ATTACHMENT_TYPE_UNSUPPORTED",
-                    "暂不支持读取该附件类型（" + previewType + "），仅支持文本和代码");
+                    "暂不支持读取该附件类型（" + kind + "），仅支持文本和代码");
         }
         long size = attachment.getSizeBytes();
         if (offset < 0 || offset > size) {
@@ -196,7 +195,7 @@ public class AttachmentService {
     /** 读取单张图片；类型须为当前模型接口可处理的格式，字节数在读取时再次限制。 */
     public AttachmentImage readImage(Long actor, Long projectId, Long attachmentId) {
         AttachmentEntity attachment = requireReadyAttachment(actor, projectId, attachmentId);
-        if (!"IMAGE".equals(classifyPreviewType(attachment))) {
+        if (!kind(attachment).readableAsImage()) {
             throw new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "ATTACHMENT_TYPE_UNSUPPORTED",
                     "附件不是图片，无法作为图片读取");
         }
@@ -247,10 +246,10 @@ public class AttachmentService {
         long size = storage.objectSize(attachment.getObjectKey())
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ATTACHMENT_NOT_FOUND", "附件文件不存在"));
         return new AttachmentContentResource(new AttachmentResource(storage, attachment.getObjectKey(),
-                attachment.getFileName(), attachment.getMediaType(), size), classifyPreviewType(attachment));
+                attachment.getFileName(), attachment.getMediaType(), size), kind(attachment));
     }
 
-    public record AttachmentContentResource(AttachmentResource resource, String previewType) {
+    public record AttachmentContentResource(AttachmentResource resource, AttachmentKind kind) {
     }
 
     public record AttachmentTextChunk(String fileName, String mediaType, long sizeBytes, long offset,
@@ -266,57 +265,14 @@ public class AttachmentService {
     private static final Set<String> SUPPORTED_IMAGE_MEDIA_TYPES =
             Set.of("image/png", "image/jpeg", "image/gif", "image/webp");
 
-    private static final Set<String> CODE_MEDIA_TYPES = Set.of(
-            "application/json", "application/xml", "application/javascript", "application/x-javascript",
-            "application/x-yaml", "application/x-sh", "application/x-python");
-
-    private static final Set<String> CODE_EXTENSIONS = Set.of(
-            "java", "kt", "ts", "tsx", "js", "jsx", "py", "go", "rs", "c", "cpp", "cc", "h", "hpp",
-            "sql", "sh", "bash", "zsh", "json", "yaml", "yml", "xml", "md", "markdown", "properties",
-            "css", "scss", "html", "htm", "vue", "gradle", "toml", "ini", "cfg", "conf");
-
-    private static final Set<String> TEXT_EXTENSIONS = Set.of("txt", "log");
-
-    private String classifyPreviewType(AttachmentEntity attachment) {
-        String mediaType = attachment.getMediaType();
-        if (mediaType != null) {
-            String lower = mediaType.toLowerCase(Locale.ROOT).trim();
-            if (lower.startsWith("image/")) {
-                return "IMAGE";
-            }
-            if ("application/pdf".equals(lower)) {
-                return "PDF";
-            }
-            if (lower.startsWith("text/")) {
-                return "TEXT";
-            }
-            if (CODE_MEDIA_TYPES.contains(lower)) {
-                return "CODE";
-            }
-        }
-        String fileName = attachment.getFileName();
-        if (fileName != null) {
-            int dot = fileName.lastIndexOf('.');
-            if (dot >= 0 && dot < fileName.length() - 1) {
-                String ext = fileName.substring(dot + 1).toLowerCase(Locale.ROOT).trim();
-                if (CODE_EXTENSIONS.contains(ext)) {
-                    return "CODE";
-                }
-                if (TEXT_EXTENSIONS.contains(ext)) {
-                    return "TEXT";
-                }
-            }
-        }
-        return "UNSUPPORTED";
+    private static AttachmentKind kind(AttachmentEntity attachment) {
+        return AttachmentKind.from(attachment.getMediaType(), attachment.getFileName());
     }
 
-    public record AttachmentPreviewMetadata(String previewType, Long sizeBytes) {
+    public record AttachmentPreviewMetadata(AttachmentKind kind, Long sizeBytes) {
     }
 
-    @lombok.Value
-    public static class MessageAttachmentPreview {
-        boolean previewable;
-        String previewType;
+    public record MessageAttachmentPreview(AttachmentKind kind) {
     }
 
     private AttachmentEntity requireReadyAttachment(Long actor, Long projectId, Long attachmentId) {

@@ -65,8 +65,8 @@ public class MessageViews {
             if (preview == null) {
                 continue;
             }
-            response.getContent().put("previewable", preview.isPreviewable());
-            response.getContent().put("previewType", preview.getPreviewType());
+            response.getContent().put("previewable", preview.kind().previewable());
+            response.getContent().put("previewType", preview.kind().name());
         }
     }
 

@@ -39,7 +39,7 @@ public class ReadAttachmentTool {
                     required = false) Long offset) {
         Long id = parseId(attachmentId);
         AttachmentService.AttachmentPreviewMetadata meta = attachments.previewMetadata(actor, projectId, id);
-        if ("IMAGE".equals(meta.previewType())) {
+        if (meta.kind().readableAsImage()) {
             return readImage(id);
         }
         return readText(id, offset == null ? 0 : offset);

@@ -45,7 +45,7 @@ public class AttachmentResponseFactory {
             }
         }
         String type = resource.contentType();
-        if (!download && ("TEXT".equals(content.previewType()) || "CODE".equals(content.previewType()))) {
+        if (!download && content.kind().inlineAsText()) {
             type = "text/plain; charset=utf-8";
         }
         return response.header(HttpHeaders.ACCEPT_RANGES, "bytes")

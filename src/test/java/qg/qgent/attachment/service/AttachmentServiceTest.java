@@ -121,7 +121,7 @@ class AttachmentServiceTest {
 
         AttachmentPreviewMetadata meta = service.previewMetadata(actor, projectId, attachmentId);
 
-        assertThat(meta.previewType()).isEqualTo("IMAGE");
+        assertThat(meta.kind()).isEqualTo(AttachmentKind.IMAGE);
         assertThat(meta.sizeBytes()).isEqualTo(102400L);
     }
 
@@ -379,7 +379,8 @@ class AttachmentServiceTest {
         localService.uploadBytes(actor, projectId, id, new ByteArrayInputStream(data));
         assertThat(localService.confirmUpload(actor, projectId, id).getStatus()).isEqualTo("READY");
         assertThat(localService.readTextChunk(actor, projectId, id, 0, 1024).content()).isEqualTo("hello");
-        assertThat(localService.messagePreviews(projectId, List.of(id.toString())).get(id.toString()).getPreviewType()).isEqualTo("TEXT");
+        assertThat(localService.messagePreviews(projectId, List.of(id.toString())).get(id.toString()).kind())
+                .isEqualTo(AttachmentKind.TEXT);
         assertThat(localService.info(actor, projectId, id).getContentUrl()).contains("/content?token=");
     }
 

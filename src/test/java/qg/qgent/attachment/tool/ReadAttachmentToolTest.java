@@ -3,6 +3,7 @@ package qg.qgent.attachment.tool;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import qg.qgent.attachment.service.AttachmentService;
+import qg.qgent.attachment.service.AttachmentKind;
 import qg.qgent.attachment.service.AttachmentService.AttachmentImage;
 import qg.qgent.attachment.service.AttachmentService.AttachmentPreviewMetadata;
 import qg.qgent.attachment.service.AttachmentService.AttachmentTextChunk;
@@ -28,7 +29,7 @@ class ReadAttachmentToolTest {
 
     @Test
     void textAttachmentReturnsChunkWithContinuationCursor() {
-        when(attachments.previewMetadata(1L, 2L, 9L)).thenReturn(new AttachmentPreviewMetadata("TEXT", 100L));
+        when(attachments.previewMetadata(1L, 2L, 9L)).thenReturn(new AttachmentPreviewMetadata(AttachmentKind.TEXT, 100L));
         when(attachments.readTextChunk(1L, 2L, 9L, 0L, ReadAttachmentTool.TEXT_CHUNK_BYTES))
                 .thenReturn(new AttachmentTextChunk("notes.txt", "text/plain", 100L, 0L, "hello", 5L));
 
@@ -46,7 +47,7 @@ class ReadAttachmentToolTest {
     @Test
     void imageAttachmentIsStagedWithoutPuttingBytesInToolResult() {
         byte[] bytes = "image".getBytes(StandardCharsets.UTF_8);
-        when(attachments.previewMetadata(1L, 2L, 9L)).thenReturn(new AttachmentPreviewMetadata("IMAGE", 5L));
+        when(attachments.previewMetadata(1L, 2L, 9L)).thenReturn(new AttachmentPreviewMetadata(AttachmentKind.IMAGE, 5L));
         when(attachments.readImage(1L, 2L, 9L)).thenReturn(new AttachmentImage("photo.png", "image/png", bytes));
 
         Map<String, Object> result = tool.readAttachment("9", null);
@@ -61,7 +62,7 @@ class ReadAttachmentToolTest {
 
     @Test
     void unsupportedAttachmentTypePropagatesServiceFailure() {
-        when(attachments.previewMetadata(1L, 2L, 9L)).thenReturn(new AttachmentPreviewMetadata("PDF", 100L));
+        when(attachments.previewMetadata(1L, 2L, 9L)).thenReturn(new AttachmentPreviewMetadata(AttachmentKind.PDF, 100L));
         when(attachments.readTextChunk(1L, 2L, 9L, 0L, ReadAttachmentTool.TEXT_CHUNK_BYTES))
                 .thenThrow(new ApiException(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "ATTACHMENT_TYPE_UNSUPPORTED",
                         "暂不支持读取该附件类型（PDF）"));
@@ -84,7 +85,7 @@ class ReadAttachmentToolTest {
 
     @Test
     void offsetIsPassedThroughForContinuation() {
-        when(attachments.previewMetadata(1L, 2L, 9L)).thenReturn(new AttachmentPreviewMetadata("CODE", 100L));
+        when(attachments.previewMetadata(1L, 2L, 9L)).thenReturn(new AttachmentPreviewMetadata(AttachmentKind.CODE, 100L));
         when(attachments.readTextChunk(1L, 2L, 9L, 5L, ReadAttachmentTool.TEXT_CHUNK_BYTES))
                 .thenReturn(new AttachmentTextChunk("Main.java", "text/x-java", 100L, 5L, "tail", null));
 

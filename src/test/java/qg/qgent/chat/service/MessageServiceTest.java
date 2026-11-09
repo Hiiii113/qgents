@@ -358,7 +358,7 @@ class MessageServiceTest {
         user.setDisplayName("小王");
         when(users.selectBatchIds(any())).thenReturn(List.of(user));
         when(attachments.messagePreviews(eq(projectId), any())).thenReturn(Map.of("9",
-                new AttachmentService.MessageAttachmentPreview(true, "IMAGE")));
+                new AttachmentService.MessageAttachmentPreview(qg.qgent.attachment.service.AttachmentKind.IMAGE)));
         MessageViews views = new MessageViews(users, attachments, new ObjectMapper());
         MessageService service = new MessageService(messages, mock(ChatGroupMapper.class), users, groupService,
                 new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), views,
