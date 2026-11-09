@@ -11,7 +11,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.chat.dto.Mention;
 import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.dto.MessageSendRequest;
@@ -21,19 +20,19 @@ import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.QgentIdentity;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
+import qg.qgent.common.dto.KeysetPagination;
 import qg.qgent.common.dto.PageInfo;
 import qg.qgent.common.dto.PageSlice;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
-import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
 
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 /** 群消息业务：发送、clientMessageId 去重、消息序号分配、历史分页与断线补拉。 */
@@ -41,7 +40,6 @@ import java.util.stream.Collectors;
 public class MessageService {
     private static final Logger log = LoggerFactory.getLogger(MessageService.class);
     private static final Set<String> PUBLIC_TYPES = Set.of("TEXT", "CODE", "IMAGE", "FILE");
-    private static final String CURSOR_PREFIX = "cursor_";
 
     private final MessageMapper messageMapper;
     private final ChatGroupMapper groupMapper;
@@ -50,7 +48,7 @@ public class MessageService {
     private final ObjectMapper mapper;
     private final EventService eventService;
     private final NotificationService notificationService;
-    private final AttachmentService attachmentService;
+    private final MessageViews views;
     private final ApplicationEventPublisher eventPublisher;
 
     public MessageService(MessageMapper messageMapper, ChatGroupMapper groupMapper,
@@ -58,7 +56,7 @@ public class MessageService {
                           GroupService groupService,
                           ObjectMapper mapper,
                           EventService eventService, NotificationService notificationService,
-                          AttachmentService attachmentService, ApplicationEventPublisher eventPublisher) {
+                          MessageViews views, ApplicationEventPublisher eventPublisher) {
         this.messageMapper = messageMapper;
         this.groupMapper = groupMapper;
         this.userMapper = userMapper;
@@ -66,7 +64,7 @@ public class MessageService {
         this.mapper = mapper;
         this.eventService = eventService;
         this.notificationService = notificationService;
-        this.attachmentService = attachmentService;
+        this.views = views;
         this.eventPublisher = eventPublisher;
     }
 
@@ -95,9 +93,7 @@ public class MessageService {
                 throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_QGENT_MENTION", "请选择当前群聊中的 Qgent");
             }
         }
-        MessageResponse response = doSend(projectId, groupId, actor, "USER", body);
-        enrichAttachmentPreview(response, projectId);
-        return response;
+        return doSend(projectId, groupId, actor, "USER", body);
     }
 
     /**
@@ -194,36 +190,6 @@ public class MessageService {
         return value.length() <= 60 ? value : value.substring(0, 60) + "…";
     }
 
-    /** 回填附件预览类型；短期预览 URL 由客户端打开附件时重新获取。 */
-    private void enrichAttachmentPreview(MessageResponse response, Long projectId) {
-        if (projectId == null) {
-            return;
-        }
-        String type = response.getType();
-        if (!"IMAGE".equals(type) && !"FILE".equals(type)) {
-            return;
-        }
-        Map<String, Object> content = response.getContent();
-        if (content == null || content.isEmpty()) {
-            return;
-        }
-        String attachmentId = stringField(content, "attachmentId");
-        if (attachmentId == null) {
-            return;
-        }
-        AttachmentService.MessageAttachmentPreview preview = attachmentService.messagePreview(projectId, attachmentId);
-        if (preview == null) {
-            return;
-        }
-        content.put("previewable", preview.isPreviewable());
-        content.put("previewType", preview.getPreviewType());
-    }
-
-    private String stringField(Map<String, Object> content, String key) {
-        Object value = content.get(key);
-        return value instanceof String s ? s : null;
-    }
-
     /** Qgent 回复与用户消息共用序号、引用和幂等规则。 */
     @Transactional
     public MessageResponse sendAsAgent(Long groupId, MessageSendRequest body) {
@@ -231,9 +197,7 @@ public class MessageService {
         if (group == null || !Boolean.TRUE.equals(group.getQgentEnabled())) {
             throw new ApiException(HttpStatus.NOT_FOUND, "QGENT_NOT_IN_GROUP", "Qgent 未加入当前群聊");
         }
-        MessageResponse response = doSend(group.getProjectId(), groupId, null, "AGENT", body);
-        enrichAttachmentPreview(response, group.getProjectId());
-        return response;
+        return doSend(group.getProjectId(), groupId, null, "AGENT", body);
     }
 
     private ChatGroupEntity lockGroup(Long groupId) {
@@ -253,7 +217,7 @@ public class MessageService {
         if (clientMessageId != null) {
             MessageEntity existing = findByClientMessageId(groupId, clientMessageId);
             if (existing != null) {
-                return toResponse(existing);
+                return views.assemble(List.of(existing), projectId).getFirst();
             }
         }
         if (body.getReplyToId() != null) {
@@ -283,7 +247,7 @@ public class MessageService {
             if (clientMessageId != null) {
                 MessageEntity existing = findByClientMessageId(groupId, clientMessageId);
                 if (existing != null) {
-                    return toResponse(existing);
+                    return views.assemble(List.of(existing), projectId).getFirst();
                 }
             }
             throw new ApiException(HttpStatus.CONFLICT, "MESSAGE_SEND_CONFLICT", "消息发送冲突，请重试");
@@ -300,7 +264,7 @@ public class MessageService {
             eventPublisher.publishEvent(new MessageSentEvent(authorUserId, projectId, groupId,
                     message.getId(), mentions));
         }
-        return toResponse(message);
+        return views.assemble(List.of(message), projectId).getFirst();
     }
 
     private String id(Long value) {
@@ -319,20 +283,18 @@ public class MessageService {
     public PageSlice<MessageResponse> list(Long actor, Long projectId, Long groupId, String cursor, int limit) {
         // 默认群对项目成员开放，新建群要求受邀成员身份。
         groupService.requireGroupMember(projectId, groupId, actor);
-        Long cursorSequence = decodeCursor(cursor);
-        int pageSize = Math.min(Math.max(limit, 1), 100);
+        int pageSize = KeysetPagination.pageSize(limit);
+        String scope = "group-messages:" + groupId;
+        Long before = KeysetPagination.decodeCursor(cursor, scope);
         List<MessageEntity> rows = messageMapper.selectList(Wrappers.<MessageEntity>lambdaQuery()
                 .eq(MessageEntity::getGroupId, groupId)
-                .lt(cursorSequence != null, MessageEntity::getSequenceNo, cursorSequence)
+                .lt(before != null, MessageEntity::getSequenceNo, before)
                 .orderByDesc(MessageEntity::getSequenceNo)
                 .last("limit " + (pageSize + 1)));
-        boolean hasMore = rows.size() > pageSize;
-        List<MessageEntity> pageRows = rows.stream().limit(pageSize).toList();
-        List<MessageResponse> views = messageResponses(pageRows, projectId);
-        String nextCursor = hasMore && !views.isEmpty()
-                ? encodeCursor(views.get(views.size() - 1).getSequence())
-                : null;
-        return new PageSlice<>(views, new PageInfo(nextCursor, hasMore));
+        Map<Long, MessageResponse> bySequence = views.assemble(rows, projectId).stream()
+                .collect(Collectors.toMap(MessageResponse::getSequence, Function.identity()));
+        return KeysetPagination.keysetPage(rows, pageSize, scope, MessageEntity::getSequenceNo,
+                row -> bySequence.get(row.getSequenceNo()));
     }
 
     /**
@@ -345,14 +307,13 @@ public class MessageService {
         if (afterSequence < 0) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_MESSAGE_CURSOR", "afterSequence 必须为非负数");
         }
-        int pageSize = Math.min(Math.max(limit, 1), 100);
+        int pageSize = KeysetPagination.pageSize(limit);
         List<MessageEntity> rows = messageMapper.selectAfterSequence(groupId, afterSequence, pageSize + 1);
         boolean hasMore = rows.size() > pageSize;
-        List<MessageEntity> pageRows = rows.stream().limit(pageSize).toList();
-        List<MessageResponse> views = messageResponses(pageRows, projectId);
-        String nextCursor = hasMore && !views.isEmpty()
-                ? String.valueOf(views.get(views.size() - 1).getSequence()) : null;
-        return new PageSlice<>(views, new PageInfo(nextCursor, hasMore));
+        List<MessageResponse> page = views.assemble(rows.stream().limit(pageSize).toList(), projectId);
+        // 增量补拉的续读参数是消息序号，不使用游标
+        String nextCursor = hasMore ? String.valueOf(page.getLast().getSequence()) : null;
+        return new PageSlice<>(page, new PageInfo(nextCursor, hasMore));
     }
 
     /**
@@ -373,9 +334,7 @@ public class MessageService {
         if (message == null || !groupId.equals(message.getGroupId())) {
             throw new ApiException(HttpStatus.NOT_FOUND, "MESSAGE_NOT_FOUND", "消息不存在或不属于该群");
         }
-        MessageResponse response = toResponse(message);
-        enrichAttachmentPreview(response, projectId);
-        return response;
+        return views.assemble(List.of(message), projectId).getFirst();
     }
 
     private MessageEntity findByClientMessageId(Long groupId, String clientMessageId) {
@@ -420,79 +379,6 @@ public class MessageService {
         }
     }
 
-    /** 历史分页与增量补拉共用响应组装，批量查询发送者名称。 */
-    private List<MessageResponse> messageResponses(List<MessageEntity> rows, Long projectId) {
-        Map<Long, String> userNames = loadUserNames(rows);
-        List<MessageResponse> responses = rows.stream().map(m -> toResponse(m, userNames)).toList();
-        responses.forEach(response -> enrichAttachmentPreview(response, projectId));
-        return responses;
-    }
-
-    private MessageResponse toResponse(MessageEntity m) {
-        // 单条路径（发送/幂等返回）逐条解析发送者名称；列表路径使用批量加载版本 toResponse(m, userNames)
-        String senderName = "AGENT".equals(m.getSenderType())
-                ? QgentIdentity.NAME
-                : m.getAuthorUserId() != null ? userName(m.getAuthorUserId()) : null;
-        return toResponse(m, senderName);
-    }
-
-    private MessageResponse toResponse(MessageEntity m, Map<Long, String> userNames) {
-        String senderName = "AGENT".equals(m.getSenderType()) ? QgentIdentity.NAME
-                : m.getAuthorUserId() != null ? userNames.get(m.getAuthorUserId()) : null;
-        return toResponse(m, senderName);
-    }
-
-    private MessageResponse toResponse(MessageEntity m, String senderName) {
-        Map<String, Object> content = readJson(m.getContent(), new TypeReference<Map<String, Object>>() {
-        });
-        List<Mention> mentions = m.getMentions() == null || m.getMentions().isBlank()
-                ? List.of()
-                : readJson(m.getMentions(), new TypeReference<List<Mention>>() {
-        });
-        String senderType;
-        String senderId;
-        if ("AGENT".equals(m.getSenderType())) {
-            senderType = "AGENT";
-            senderId = QgentIdentity.ID.toString();
-        } else if (m.getAuthorUserId() != null) {
-            senderType = "USER";
-            senderId = m.getAuthorUserId().toString();
-        } else {
-            senderType = "SYSTEM";
-            senderId = null;
-        }
-        return new MessageResponse(m.getId().toString(), m.getGroupId().toString(), m.getSequenceNo(),
-                m.getMessageType(), content, senderId, senderType, senderName,
-                m.getReplyToMessageId() == null ? null : m.getReplyToMessageId().toString(), mentions,
-                iso(m.getCreatedAt()));
-    }
-
-    /** 时间统一序列化为 UTC 并带 Z 后缀（ISO8601），避免前端按本地时区误解析。 */
-    private String iso(LocalDateTime value) {
-        return value == null ? null : value.toInstant(ZoneOffset.UTC).toString();
-    }
-
-    /** 批量加载消息页中出现的用户显示名，返回 userId → displayName。 */
-    private Map<Long, String> loadUserNames(List<MessageEntity> pageRows) {
-        Set<Long> userIds = pageRows.stream().map(MessageEntity::getAuthorUserId).filter(Objects::nonNull)
-                .collect(Collectors.toSet());
-        if (userIds.isEmpty()) {
-            return Map.of();
-        }
-        return userMapper.selectList(Wrappers.<UserEntity>lambdaQuery().in(UserEntity::getId, userIds)).stream()
-                .collect(Collectors.toMap(UserEntity::getId,
-                        u -> u.getDisplayName() == null || u.getDisplayName().isBlank() ? "已注销用户"
-                                : u.getDisplayName()));
-    }
-
-    private String userName(Long userId) {
-        UserEntity user = userMapper.selectById(userId);
-        if (user == null || user.getDisplayName() == null || user.getDisplayName().isBlank()) {
-            return "已注销用户";
-        }
-        return user.getDisplayName();
-    }
-
     private String writeJson(Object value) {
         try {
             return mapper.writeValueAsString(value);
@@ -513,23 +399,4 @@ public class MessageService {
         return value == null ? null : value.trim();
     }
 
-    private String encodeCursor(Long sequence) {
-        byte[] raw = Long.toString(sequence).getBytes(StandardCharsets.UTF_8);
-        return CURSOR_PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
-    }
-
-    private Long decodeCursor(String cursor) {
-        if (cursor == null || cursor.isBlank()) {
-            return null;
-        }
-        try {
-            if (!cursor.startsWith(CURSOR_PREFIX)) {
-                throw new IllegalArgumentException();
-            }
-            byte[] raw = Base64.getUrlDecoder().decode(cursor.substring(CURSOR_PREFIX.length()));
-            return Long.parseLong(new String(raw, StandardCharsets.UTF_8));
-        } catch (Exception e) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CURSOR", "游标无效");
-        }
-    }
 }

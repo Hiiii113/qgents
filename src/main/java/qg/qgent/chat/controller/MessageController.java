@@ -44,7 +44,7 @@ public class MessageController {
 
     /**
      * 按消息序号倒序查询历史消息；不传 cursor 时从最新消息开始，后续使用返回的 nextCursor 翻页。
-     * limit 默认 30，实际取值限制在 1～100。
+     * limit 默认 30，必须在 1～100。
      */
     @GetMapping("/projects/{projectId}/groups/{groupId}/messages")
     public PagedApiResponse<MessageResponse> list(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
@@ -59,7 +59,7 @@ public class MessageController {
     /**
      * 断线后补拉新消息：仅返回 sequence 大于 afterSequence 的消息，按 sequence 升序。
      * afterSequence 为非负数；还有下一页时，用本页最后一条消息的 sequence 继续补拉。
-     * limit 默认 100，实际取值限制在 1～100。
+     * limit 默认 100，必须在 1～100。
      */
     @GetMapping("/projects/{projectId}/groups/{groupId}/messages/incremental")
     public PagedApiResponse<MessageResponse> listIncremental(@AuthenticationPrincipal Long userId,

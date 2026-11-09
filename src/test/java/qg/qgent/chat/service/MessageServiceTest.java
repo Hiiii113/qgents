@@ -26,6 +26,7 @@ import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.realtime.service.EventService;
+import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
 
 import java.time.LocalDateTime;
@@ -67,7 +68,7 @@ class MessageServiceTest {
         when(groups.selectOne(any())).thenReturn(group);
         MessageService service = new MessageService(messages, groups, mock(UserMapper.class),
                 mock(GroupService.class), new ObjectMapper(), mock(EventService.class), mock(NotificationService.class),
-                mock(AttachmentService.class), mock(ApplicationEventPublisher.class));
+                new MessageViews(mock(UserMapper.class), mock(AttachmentService.class), new ObjectMapper()), mock(ApplicationEventPublisher.class));
         assertThatThrownBy(() -> service.sendAsAgent(groupId, new MessageSendRequest()))
                 .isInstanceOf(ApiException.class).hasMessageContaining("Qgent");
         verifyNoInteractions(messages);
@@ -95,7 +96,7 @@ class MessageServiceTest {
         when(messages.selectById(any())).thenAnswer(invocation -> inserted.get());
         MessageService service = new MessageService(messages, groups, mock(UserMapper.class),
                 mock(GroupService.class),
-                new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
+                new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), new MessageViews(mock(UserMapper.class), mock(AttachmentService.class), new ObjectMapper()),
                 mock(ApplicationEventPublisher.class));
         MessageSendRequest request = new MessageSendRequest();
         request.setType("TEXT");
@@ -135,7 +136,7 @@ class MessageServiceTest {
         MessageService service = new MessageService(messages, groups,
                 mock(UserMapper.class),
                 mock(GroupService.class), new ObjectMapper(),
-                mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
+                mock(EventService.class), mock(NotificationService.class), new MessageViews(mock(UserMapper.class), mock(AttachmentService.class), new ObjectMapper()),
                 publisher);
         MessageSendRequest request = new MessageSendRequest();
         request.setType("TEXT");
@@ -190,7 +191,7 @@ class MessageServiceTest {
         MessageService service = new MessageService(messages, groups,
                 mock(UserMapper.class),
                 mock(GroupService.class), new ObjectMapper(),
-                mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class), publisher);
+                mock(EventService.class), mock(NotificationService.class), new MessageViews(mock(UserMapper.class), mock(AttachmentService.class), new ObjectMapper()), publisher);
         MessageSendRequest request = new MessageSendRequest();
         request.setType("TEXT");
         request.setContent(Map.of("text", "重试"));
@@ -226,7 +227,7 @@ class MessageServiceTest {
         MessageService service = new MessageService(messages, groups,
                 mock(UserMapper.class),
                 mock(GroupService.class),
-                new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
+                new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), new MessageViews(mock(UserMapper.class), mock(AttachmentService.class), new ObjectMapper()),
                 mock(ApplicationEventPublisher.class));
 
         MessageSendRequest request = new MessageSendRequest();
@@ -271,7 +272,7 @@ class MessageServiceTest {
         MessageService service = new MessageService(messages, groups,
                 mock(UserMapper.class),
                 mock(GroupService.class),
-                new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
+                new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), new MessageViews(mock(UserMapper.class), mock(AttachmentService.class), new ObjectMapper()),
                 mock(ApplicationEventPublisher.class));
 
         MessageSendRequest request = new MessageSendRequest();
@@ -304,7 +305,7 @@ class MessageServiceTest {
         MessageService service = new MessageService(messages, groups,
                 mock(UserMapper.class),
                 groupService,
-                new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
+                new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), new MessageViews(mock(UserMapper.class), mock(AttachmentService.class), new ObjectMapper()),
                 mock(ApplicationEventPublisher.class));
 
         var page = service.listAfterSequence(actor, projectId, groupId, 10L, 2);
@@ -329,13 +330,56 @@ class MessageServiceTest {
         MessageService service = new MessageService(messages, groups,
                 mock(UserMapper.class),
                 mock(GroupService.class),
-                new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), mock(AttachmentService.class),
+                new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), new MessageViews(mock(UserMapper.class), mock(AttachmentService.class), new ObjectMapper()),
                 mock(ApplicationEventPublisher.class));
 
         assertThatThrownBy(() -> service.listAfterSequence(TestIds.next(), projectId, groupId, -1, 100))
                 .isInstanceOfSatisfying(ApiException.class,
                         error -> assertThat(error.code()).isEqualTo("INVALID_MESSAGE_CURSOR"));
         verify(messages, never()).selectAfterSequence(any(), anyLong(), anyInt());
+    }
+
+    @Test
+    void historyPageBatchesPreviewsAndBindsCursorToGroup() {
+        Long projectId = TestIds.next(), groupId = TestIds.next(), actor = TestIds.next();
+        MessageMapper messages = mock(MessageMapper.class);
+        GroupService groupService = mock(GroupService.class);
+        UserMapper users = mock(UserMapper.class);
+        AttachmentService attachments = mock(AttachmentService.class);
+        MessageEntity first = message(groupId, 12L, "第二条");
+        first.setAuthorUserId(actor);
+        MessageEntity image = message(groupId, 11L, "");
+        image.setMessageType("IMAGE");
+        image.setContent("{\"attachmentId\":\"9\"}");
+        MessageEntity last = message(groupId, 10L, "第一条");
+        when(messages.selectList(any())).thenReturn(List.of(first, image, last));
+        UserEntity user = new UserEntity();
+        user.setId(actor);
+        user.setDisplayName("小王");
+        when(users.selectBatchIds(any())).thenReturn(List.of(user));
+        when(attachments.messagePreviews(eq(projectId), any())).thenReturn(Map.of("9",
+                new AttachmentService.MessageAttachmentPreview(true, "IMAGE")));
+        MessageViews views = new MessageViews(users, attachments, new ObjectMapper());
+        MessageService service = new MessageService(messages, mock(ChatGroupMapper.class), users, groupService,
+                new ObjectMapper(), mock(EventService.class), mock(NotificationService.class), views,
+                mock(ApplicationEventPublisher.class));
+
+        var page = service.list(actor, projectId, groupId, null, 2);
+
+        assertThat(page.getData()).extracting(MessageResponse::getSequence).containsExactly(12L, 11L);
+        assertThat(page.getPage().isHasMore()).isTrue();
+        assertThat(page.getData().getFirst().getSenderName()).isEqualTo("小王");
+        assertThat(page.getData().get(1).getContent())
+                .containsEntry("previewable", true).containsEntry("previewType", "IMAGE");
+        verify(attachments).messagePreviews(projectId, java.util.Set.of("9"));
+        // 游标绑定群：同一群可续页，换一个群按无效游标拒绝
+        service.list(actor, projectId, groupId, page.getPage().getNextCursor(), 2);
+        assertThatThrownBy(() -> service.list(actor, projectId, TestIds.next(), page.getPage().getNextCursor(), 2))
+                .isInstanceOfSatisfying(ApiException.class,
+                        error -> assertThat(error.code()).isEqualTo("INVALID_CURSOR"));
+        assertThatThrownBy(() -> service.list(actor, projectId, groupId, null, 0))
+                .isInstanceOfSatisfying(ApiException.class,
+                        error -> assertThat(error.code()).isEqualTo("INVALID_PAGE_LIMIT"));
     }
 
     private MessageEntity message(Long groupId, long sequence, String text) {

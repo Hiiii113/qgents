@@ -23,7 +23,11 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 /** 文件存储独立于附件元数据；上传确认后可供消息展示和 Agent 读取。 */
@@ -128,23 +132,29 @@ public class AttachmentService {
         return new AttachmentPreviewMetadata(classifyPreviewType(attachment), attachment.getSizeBytes());
     }
 
-    /** 消息回显只补充类型，避免将会过期的 token URL 存进消息。 */
-    public MessageAttachmentPreview messagePreview(Long projectId, String attachmentId) {
-        Long id;
-        try {
-            id = Long.valueOf(attachmentId);
-        } catch (IllegalArgumentException | NullPointerException e) {
-            return null;
+    /** 批量回填消息附件预览：无效、跨项目或未就绪的 ID 不出现在结果里。 */
+    public Map<String, MessageAttachmentPreview> messagePreviews(Long projectId, Collection<String> attachmentIds) {
+        Set<Long> ids = new LinkedHashSet<>();
+        for (String attachmentId : attachmentIds) {
+            try {
+                ids.add(Long.valueOf(attachmentId));
+            } catch (NumberFormatException ignored) {
+                // 消息正文里的附件 ID 非法时只是没有预览，不影响消息本身
+            }
         }
-        AttachmentEntity attachment = attachmentMapper.selectById(id);
-        if (attachment == null || !projectId.equals(attachment.getProjectId())) {
-            return null;
+        if (ids.isEmpty()) {
+            return Map.of();
         }
-        if (!"READY".equals(attachment.getStatus())) {
-            return null;
+        Map<String, MessageAttachmentPreview> previews = new LinkedHashMap<>();
+        for (AttachmentEntity attachment : attachmentMapper.selectBatchIds(ids)) {
+            if (!projectId.equals(attachment.getProjectId()) || !"READY".equals(attachment.getStatus())) {
+                continue;
+            }
+            String previewType = classifyPreviewType(attachment);
+            previews.put(attachment.getId().toString(),
+                    new MessageAttachmentPreview(!"UNSUPPORTED".equals(previewType), previewType));
         }
-        String previewType = classifyPreviewType(attachment);
-        return new MessageAttachmentPreview(!"UNSUPPORTED".equals(previewType), previewType);
+        return previews;
     }
 
     /** 按字节游标读取文本或代码附件；返回内容始终停在完整 UTF-8 字符边界。 */

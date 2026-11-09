@@ -25,6 +25,7 @@ import qg.qgent.project.service.ProjectAccessService;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -363,6 +364,7 @@ class AttachmentServiceTest {
             AttachmentEntity entity = invocation.getArgument(0);
             entity.setId(TestIds.next());
             when(mapper.selectById(entity.getId())).thenReturn(entity);
+            when(mapper.selectBatchIds(any())).thenReturn(List.of(entity));
             return 1;
         });
 
@@ -377,7 +379,7 @@ class AttachmentServiceTest {
         localService.uploadBytes(actor, projectId, id, new ByteArrayInputStream(data));
         assertThat(localService.confirmUpload(actor, projectId, id).getStatus()).isEqualTo("READY");
         assertThat(localService.readTextChunk(actor, projectId, id, 0, 1024).content()).isEqualTo("hello");
-        assertThat(localService.messagePreview(projectId, id.toString()).getPreviewType()).isEqualTo("TEXT");
+        assertThat(localService.messagePreviews(projectId, List.of(id.toString())).get(id.toString()).getPreviewType()).isEqualTo("TEXT");
         assertThat(localService.info(actor, projectId, id).getContentUrl()).contains("/content?token=");
     }
 
