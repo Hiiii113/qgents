@@ -30,6 +30,7 @@ import qg.qgent.sandbox.dto.SandboxExecutionContext;
 import qg.qgent.sandbox.service.SandboxSessionManager;
 import qg.qgent.skill.service.SkillService;
 import qg.qgent.skill.tool.ActivateSkillTool;
+import qg.qgent.workspace.service.WorkSession;
 import qg.qgent.workspace.service.WorkspaceSelection;
 import qg.qgent.workspace.tool.WorkspaceTools;
 import qg.qgent.sandbox.service.SandboxFiles;
@@ -197,41 +198,6 @@ public class AgentChatService {
                 ignored -> new ConversationTools(work, execution, canDelegate));
     }
 
-    private Long ensureCodeEnvironment(WorkContext work, ChildRuns.Execution execution) {
-        return ensureCodeEnvironment(work, execution, null);
-    }
-
-    /** 为当前对话准备代码环境；workspaceId 为空时使用项目默认 Workspace，并绑定到当前选择。 */
-    private Long ensureCodeEnvironment(WorkContext work, ChildRuns.Execution execution, Long workspaceId) {
-        synchronized (work.environmentLock) {
-            if (work.isCancelled() || execution.isStopRequested()) throw new IllegalStateException("Agent 运行已取消");
-            if (workspaceId == null) {
-                workspaceId = execution.workspace.workspaceId();
-            }
-            if (workspaceId == null) {
-                if (work.defaultWorkspaceId == null) {
-                    work.defaultWorkspaceId = workspaces.defaultWorkspace(work.event.projectId()).getId();
-                }
-                workspaceId = work.defaultWorkspaceId;
-                execution.workspace.bindDefault(workspaceId);
-            }
-            workspaces.require(work.event.projectId(), workspaceId);
-            if (!workspaceId.equals(execution.run.getWorkspaceId())) {
-                execution.run.setWorkspaceId(workspaceId);
-                runService.save(execution.run);
-            }
-            if (work.openedWorkspaces.add(workspaceId)) {
-                try {
-                    sessions.acquire(work.rootRunId, work.event.projectId(), workspaceId);
-                } catch (RuntimeException exception) {
-                    work.openedWorkspaces.remove(workspaceId);
-                    throw exception;
-                }
-            }
-            return workspaceId;
-        }
-    }
-
     private String encode(Object value) {
         try { return json.writeValueAsString(value); }
         catch (JsonProcessingException exception) { throw new IllegalStateException("无法序列化上下文", exception); }
@@ -288,18 +254,11 @@ public class AgentChatService {
             this.attachmentTools = new ReadAttachmentTool(AgentChatService.this.attachments, work.event.actor(),
                     work.event.projectId(), execution.conversation::stageImage);
             this.memory = new MemoryTools(memories, work.event.actor(), work.event.projectId());
-            this.githubTools = github.tools(work.event.actor(), work.event.projectId(),
-                    () -> ensureCodeEnvironment(work, execution));
+            WorkSession session = new WorkspaceSession(work, execution, workspaces, sessions, runService);
+            this.githubTools = github.tools(work.event.actor(), work.event.projectId(), session);
             this.workspaceTools = new WorkspaceTools(work.event.actor(), work.event.projectId(), workspaces,
-                    repositories, workspaceCommands, execution.workspace,
-                    () -> ensureCodeEnvironment(work, execution), this::requireCodeEnvironment,
-                    target -> ensureCodeEnvironment(work, execution, target),
-                    workspaceId -> {
-                        execution.run.setWorkspaceId(workspaceId);
-                        runService.save(execution.run);
-                    });
-            this.codingTools = new CodingTools(() -> ensureCodeEnvironment(work, execution),
-                    execution.workspace::directory, files);
+                    repositories, workspaceCommands, session);
+            this.codingTools = new CodingTools(session, files);
         }
 
         private ToolCallback[] callbacks() {
@@ -363,12 +322,6 @@ public class AgentChatService {
             return result;
         }
 
-        private Long requireCodeEnvironment() {
-            Long workspace = execution.workspace.workspaceId();
-            if (workspace == null || !work.openedWorkspaces.contains(workspace))
-                throw new IllegalArgumentException("请先通过代码工具或 run_command 初始化当前 Workspace");
-            return ensureCodeEnvironment(work, execution);
-        }
     }
 
 }

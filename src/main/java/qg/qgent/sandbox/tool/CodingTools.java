@@ -5,26 +5,21 @@ import qg.qgent.harness.tool.ToolResult;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import qg.qgent.sandbox.service.SandboxFiles;
+import qg.qgent.workspace.service.WorkSession;
 import qg.qgent.workspace.service.WorkspaceSelection;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
-import java.util.function.Supplier;
 
 /** 面向模型的文件工具；读取版本留在内部，错误与真实结果回给 loop。 */
 public class CodingTools {
-    private final Supplier<Long> workspace;
-    private final Supplier<String> currentDirectory;
+    private final WorkSession session;
     private final SandboxFiles files;
     private final Map<String, String> hashes = new ConcurrentHashMap<>();
     private Long selected;
 
-    public CodingTools(Supplier<Long> workspace, SandboxFiles files) {
-        this(workspace, () -> ".", files);
-    }
-
-    public CodingTools(Supplier<Long> workspace, Supplier<String> currentDirectory,
-                       SandboxFiles files) {
-        this.workspace = workspace; this.currentDirectory = currentDirectory; this.files = files;
+    public CodingTools(WorkSession session, SandboxFiles files) {
+        this.session = session;
+        this.files = files;
     }
 
     @ParallelTool
@@ -97,12 +92,12 @@ public class CodingTools {
     }
 
     private synchronized Long workspaceId() {
-        Long id = workspace.get();
+        Long id = session.ensure();
         if (!id.equals(selected)) { hashes.clear(); selected = id; }
         return id;
     }
     private String resolve(String value) {
-        return WorkspaceSelection.resolveDirectory(currentDirectory.get(), value);
+        return WorkspaceSelection.resolveDirectory(session.directory(), value);
     }
 
     private String resolveFile(String value) {

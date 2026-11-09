@@ -4,9 +4,11 @@ import qg.qgent.support.TestIds;
 
 import qg.qgent.harness.tool.ParallelToolCallback;
 import qg.qgent.harness.tool.ToolResult;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.support.ToolCallbacks;
 import qg.qgent.sandbox.service.SandboxFiles;
+import qg.qgent.workspace.service.WorkSession;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import static org.assertj.core.api.Assertions.*;
@@ -16,8 +18,21 @@ import static org.mockito.ArgumentMatchers.*;
 class CodingToolsTest {
     private final Long id = TestIds.next();
     private final SandboxFiles files = mock(SandboxFiles.class);
-    private final CodingTools tools = new CodingTools(() -> id, files);
+    private final WorkSession session = mock(WorkSession.class);
+    private final CodingTools tools = new CodingTools(session, files);
     private final String hash = "a".repeat(64);
+
+    @BeforeEach
+    void sessionUsesCurrentWorkspace() {
+        when(session.ensure()).thenReturn(id);
+    }
+
+    private CodingTools nested(String directory) {
+        WorkSession nested = mock(WorkSession.class);
+        when(nested.ensure()).thenReturn(id);
+        when(nested.directory()).thenReturn(directory);
+        return new CodingTools(nested, files);
+    }
 
     private ToolResult ok(Map<String, Object> fields) {
         ToolResult result = ToolResult.ok();
@@ -76,7 +91,9 @@ class CodingToolsTest {
     }
     @Test void switchingWorkspaceInvalidatesObservedVersions() {
         var selected = new AtomicReference<>(id);
-        var tool = new CodingTools(selected::get,files);
+        WorkSession switching = mock(WorkSession.class);
+        when(switching.ensure()).thenAnswer(invocation -> selected.get());
+        var tool = new CodingTools(switching, files);
         when(files.readFile(id,"x.txt",1,200)).thenReturn(ok(Map.of("sha256", hash)));
         tool.readFile("x.txt",null,null); selected.set(TestIds.next());
         assertThat(tool.applyPatch("x.txt","patch")).containsEntry("errorCode","FILE_NOT_READ");
@@ -97,7 +114,7 @@ class CodingToolsTest {
     }
 
     @Test void fileToolsResolvePathsFromTheCurrentDirectoryAndNormalizeWindowsSeparators() {
-        var nestedTools = new CodingTools(() -> id, () -> "src/main", files);
+        var nestedTools = nested("src/main");
         when(files.readFile(id, "src/README.md", 1, 200)).thenReturn(ok(Map.of("sha256", hash)));
         when(files.readFile(id, "src/test/App.java", 1, 200)).thenReturn(ok(Map.of("sha256", hash)));
 
@@ -109,7 +126,7 @@ class CodingToolsTest {
     }
 
     @Test void fileToolsRejectPathsThatEscapeTheWorkspaceAndDirectoriesUsedAsFiles() {
-        var nestedTools = new CodingTools(() -> id, () -> "src/main", files);
+        var nestedTools = nested("src/main");
 
         assertThatThrownBy(() -> nestedTools.readFile("../../../outside.txt", null, null))
                 .isInstanceOf(IllegalArgumentException.class);

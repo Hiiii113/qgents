@@ -4,8 +4,8 @@ import org.junit.jupiter.api.Test;
 
 import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.sandbox.service.SandboxCommands;
+import qg.qgent.workspace.service.WorkSession;
 import qg.qgent.workspace.service.WorkspaceRepositoryService;
-import qg.qgent.workspace.service.WorkspaceSelection;
 import qg.qgent.workspace.service.WorkspaceService;
 
 import java.util.List;
@@ -26,9 +26,16 @@ class WorkspaceToolsTest {
     private final Long projectId = 7L;
     private final WorkspaceService workspaces = mock(WorkspaceService.class);
     private final WorkspaceRepositoryService repositories = mock(WorkspaceRepositoryService.class);
-    private final WorkspaceSelection selection = new WorkspaceSelection(11L, ".");
+    private final WorkSession session = mock(WorkSession.class);
     private final WorkspaceTools tools = new WorkspaceTools(1L, projectId, workspaces, repositories,
-            mock(SandboxCommands.class), selection, () -> 11L, () -> 11L, id -> id, id -> { });
+            mock(SandboxCommands.class), session);
+
+    @org.junit.jupiter.api.BeforeEach
+    void sessionUsesDefaultWorkspace() {
+        when(session.workspaceId()).thenReturn(11L);
+        when(session.ensure()).thenReturn(11L);
+        when(session.ensure(anyLong())).thenAnswer(invocation -> invocation.getArgument(0));
+    }
 
     @Test
     void listWorkspacesMarksDefaultAndSelection() {
@@ -44,9 +51,10 @@ class WorkspaceToolsTest {
 
     @Test
     void listWorkspacesBeforeSelectionReturnsNullCurrentId() {
+        WorkSession unselectedSession = mock(WorkSession.class);
+        when(unselectedSession.workspaceId()).thenReturn(null);
         WorkspaceTools unselected = new WorkspaceTools(1L, projectId, workspaces, repositories,
-                mock(SandboxCommands.class), new WorkspaceSelection(null, "."),
-                () -> null, () -> null, id -> id, id -> { });
+                mock(SandboxCommands.class), unselectedSession);
         when(workspaces.list(projectId)).thenReturn(List.of(workspace(11L, true)));
 
         var result = unselected.listWorkspaces();
@@ -121,17 +129,17 @@ class WorkspaceToolsTest {
         assertThat(items).hasSize(2);
         assertThat(items.get(0)).containsEntry("state", "READY").containsEntry("head", "abc");
         assertThat(items.get(1)).containsEntry("state", "FAILED").containsEntry("error", "指定的基线不存在");
-        assertThat(selection.workspaceId()).isEqualTo(21L);
-        assertThat(selection.directory()).isEqualTo(".");
+        verify(session).select(21L);
     }
 
     @Test
     void sandboxFailureKeepsWorkspaceIdAndMarksRepositoriesNotStarted() {
         WorkspaceEntity created = workspace(21L, false);
         when(workspaces.create(projectId)).thenReturn(created);
+        WorkSession failingSession = mock(WorkSession.class);
+        when(failingSession.ensure(21L)).thenThrow(new IllegalStateException("无法启动沙箱"));
         WorkspaceTools failing = new WorkspaceTools(1L, projectId, workspaces, repositories,
-                mock(SandboxCommands.class), selection, () -> 11L, () -> 11L,
-                id -> { throw new IllegalStateException("无法启动沙箱"); }, id -> { });
+                mock(SandboxCommands.class), failingSession);
 
         var result = failing.createWorkspace("隔离任务", List.of(Map.of("providerRepositoryId", "42")));
 
@@ -141,7 +149,7 @@ class WorkspaceToolsTest {
                 .satisfies(item -> assertThat(item).containsEntry("state", "NOT_STARTED")
                         .containsEntry("error", null));
         verifyNoInteractions(repositories);
-        assertThat(selection.workspaceId()).isEqualTo(11L);
+        verify(failingSession, never()).select(any());
     }
 
     @Test

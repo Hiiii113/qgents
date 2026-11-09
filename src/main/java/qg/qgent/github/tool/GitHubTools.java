@@ -16,6 +16,7 @@ import qg.qgent.github.service.GitHubRepositoryService;
 import qg.qgent.harness.tool.ParallelTool;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.sandbox.service.SandboxCommands;
+import qg.qgent.workspace.service.WorkSession;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -25,7 +26,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -48,16 +48,16 @@ public class GitHubTools {
     private final Long actor;
     private final Long projectId;
     private final SandboxCommands commands;
-    private final Supplier<Long> workspace;
+    private final WorkSession session;
 
     public GitHubTools(RestClient http, GitHubRepositoryService repositories, Long actor, Long projectId,
-                       SandboxCommands commands, Supplier<Long> workspace) {
+                       SandboxCommands commands, WorkSession session) {
         this.http = http;
         this.repositories = repositories;
         this.actor = actor;
         this.projectId = projectId;
         this.commands = commands;
-        this.workspace = workspace;
+        this.session = session;
     }
 
     @ParallelTool
@@ -231,7 +231,7 @@ public class GitHubTools {
             if (branch == null || !branch.matches("[A-Za-z0-9][A-Za-z0-9._/-]*") || branch.contains("..")) {
                 throw invalid("分支名不合法");
             }
-            return commands.run(workspace.get(), directory, List.of("git", "push", "--",
+            return commands.run(session.ensure(), directory, List.of("git", "push", "--",
                     "https://github.com/" + repository + ".git", "HEAD:refs/heads/" + branch),
                     gitEnvironment(credential.token()));
         } catch (RuntimeException e) {
@@ -251,7 +251,7 @@ public class GitHubTools {
             List<String> argv = new ArrayList<>();
             argv.add("git");
             argv.addAll(command);
-            return commands.run(workspace.get(), directory, argv, gitEnvironment(credential.token()));
+            return commands.run(session.ensure(), directory, argv, gitEnvironment(credential.token()));
         } catch (RuntimeException e) {
             return error(e);
         }

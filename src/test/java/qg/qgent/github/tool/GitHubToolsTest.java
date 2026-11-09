@@ -10,6 +10,7 @@ import org.springframework.web.client.RestClient;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.github.service.GitHubRepositoryService;
 import qg.qgent.harness.tool.ToolResult;
+import qg.qgent.workspace.service.WorkSession;
 import qg.qgent.support.TestIds;
 import qg.qgent.sandbox.service.SandboxCommands;
 
@@ -45,8 +46,14 @@ class GitHubToolsTest {
     private final GitHubRepositoryService repositories = mock(GitHubRepositoryService.class);
     private final RestClient.Builder builder = RestClient.builder().baseUrl(API);
     private final MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+    private final WorkSession session = mock(WorkSession.class);
     private final GitHubTools tools = new GitHubTools(builder.build(), repositories, actor, project,
-            commands, () -> workspace);
+            commands, session);
+
+    @org.junit.jupiter.api.BeforeEach
+    void sessionUsesCurrentWorkspace() {
+        when(session.ensure()).thenReturn(workspace);
+    }
 
     @Test
     void springAiCallbacksExposeAllToolsAndSerializeIdsAsStrings() {

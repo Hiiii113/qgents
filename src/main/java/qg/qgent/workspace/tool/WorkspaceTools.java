@@ -7,6 +7,7 @@ import qg.qgent.harness.tool.ParallelTool;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.sandbox.service.SandboxCommands;
+import qg.qgent.workspace.service.WorkSession;
 import qg.qgent.workspace.service.WorkspaceRepositoryService;
 import qg.qgent.workspace.service.WorkspaceSelection;
 import qg.qgent.workspace.service.WorkspaceService;
@@ -15,9 +16,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Consumer;
-import java.util.function.Function;
-import java.util.function.Supplier;
 
 /** 工作区选择、仓库准备与命令工具；Harness 提供当前对话的状态和按需环境获取。 */
 @Slf4j
@@ -27,33 +25,23 @@ public final class WorkspaceTools {
     private final WorkspaceService workspaces;
     private final WorkspaceRepositoryService repositories;
     private final SandboxCommands workspaceCommands;
-    private final WorkspaceSelection selection;
-    private final Supplier<Long> environment;
-    private final Supplier<Long> initializedEnvironment;
-    private final Function<Long, Long> environmentFor;
-    private final Consumer<Long> selectionChanged;
+    private final WorkSession session;
 
     public WorkspaceTools(Long actor, Long projectId, WorkspaceService workspaces,
                           WorkspaceRepositoryService repositories, SandboxCommands commands,
-                          WorkspaceSelection selection, Supplier<Long> environment,
-                          Supplier<Long> initializedEnvironment, Function<Long, Long> environmentFor,
-                          Consumer<Long> selectionChanged) {
+                          WorkSession session) {
         this.actor = actor;
         this.projectId = projectId;
         this.workspaces = workspaces;
         this.repositories = repositories;
         this.workspaceCommands = commands;
-        this.selection = selection;
-        this.environment = environment;
-        this.initializedEnvironment = initializedEnvironment;
-        this.environmentFor = environmentFor;
-        this.selectionChanged = selectionChanged;
+        this.session = session;
     }
 
     @ParallelTool
     @Tool(name = "list_workspaces", description = "列出当前项目的 Workspace 及是否默认、状态和当前选中项；不启动沙箱。")
     public ToolResult listWorkspaces() {
-        Long current = selection.workspaceId();
+        Long current = session.workspaceId();
         ToolResult result = ToolResult.ok();
         // 首次运行尚未选择 Workspace，按合同显式返回 null；Map.of 不接受 null 值
         result.put("currentWorkspaceId", current == null ? null : current.toString());
@@ -105,14 +93,13 @@ public final class WorkspaceTools {
         List<RepositoryRequest> requests = repositoryRequests(repositories);
         WorkspaceEntity workspace = workspaces.create(projectId);
         try {
-            environmentFor.apply(workspace.getId());
+            session.ensure(workspace.getId());
         } catch (RuntimeException exception) {
             log.error("工作区环境初始化失败 workspaceId={}", workspace.getId(), exception);
             return creation(workspace, ToolResult.error("WORKSPACE_ENVIRONMENT_FAILED", describe(exception)),
                     requests.stream().map(this::notStarted).toList());
         }
-        selection.select(workspace.getId());
-        selectionChanged.accept(workspace.getId());
+        session.select(workspace.getId());
         List<Map<String, Object>> items = new ArrayList<>();
         boolean ready = true;
         for (int index = 0; index < requests.size(); index++) {
@@ -148,7 +135,7 @@ public final class WorkspaceTools {
             @ToolParam(description = "工作分支名；省略时自动生成", required = false) String branch) {
         Long id = requiredResourceId(providerRepositoryId);
         WorkspaceEntity workspace = workspace(workspaceId);
-        environmentFor.apply(workspace.getId());
+        session.ensure(workspace.getId());
         var result = repositories.prepare(actor, projectId, workspace, id, base, branch);
         ToolResult value = "READY".equals(result.state()) ? ToolResult.ok()
                 : ToolResult.error("WORKSPACE_REPOSITORY_NOT_READY", result.error());
@@ -166,8 +153,7 @@ public final class WorkspaceTools {
     @Tool(name = "use_workspace", description = "选择当前项目已有 Workspace，后续代码工具使用该工作区并重置当前目录；不会启动沙箱。")
     public ToolResult useWorkspace(@ToolParam(description = "Workspace ID") String workspaceId) {
         Long id = workspaces.require(projectId, requiredResourceId(workspaceId)).getId();
-        selection.select(id);
-        selectionChanged.accept(id);
+        session.select(id);
         ToolResult result = ToolResult.ok();
         result.put("workspaceId", id.toString());
         return result;
@@ -177,7 +163,7 @@ public final class WorkspaceTools {
     public ToolResult setWorkingDirectory(
             @ToolParam(description = "相对 Workspace 根目录的路径；. 表示根目录") String directory) {
         String resolved = WorkspaceSelection.resolveDirectory(".", directory);
-        selection.setDirectory(resolved);
+        session.setDirectory(resolved);
         ToolResult result = ToolResult.ok();
         result.put("directory", resolved);
         return result;
@@ -189,8 +175,8 @@ public final class WorkspaceTools {
             @ToolParam(description = "执行超时秒数，1～3600，默认 600") Integer timeoutSeconds,
             @ToolParam(description = "本次等待秒数，0～30，默认 10") Integer waitSeconds) {
         if (command == null || command.isEmpty()) throw new IllegalArgumentException("命令不能为空");
-        String cwd = WorkspaceSelection.resolveDirectory(selection.directory(), directory);
-        return workspaceCommands.start(environment.get(), cwd, command,
+        String cwd = WorkspaceSelection.resolveDirectory(session.directory(), directory);
+        return workspaceCommands.start(session.ensure(), cwd, command,
                 bounded(timeoutSeconds, 600, 1, 3600), bounded(waitSeconds, 10, 0, 30));
     }
 
@@ -201,14 +187,14 @@ public final class WorkspaceTools {
             @ToolParam(description = "stderr 字节游标，默认 0") Long stderrOffset,
             @ToolParam(description = "每个流最多读取字节，4～64000，默认 16000") Integer maxBytes,
             @ToolParam(description = "等待秒数，0～30，默认 10") Integer waitSeconds) {
-        return workspaceCommands.output(initializedEnvironment.get(), requiredResourceId(executionId),
+        return workspaceCommands.output(session.requireInitialized(), requiredResourceId(executionId),
                 offset(stdoutOffset), offset(stderrOffset), bounded(maxBytes, 16000, 4, 64000),
                 bounded(waitSeconds, 10, 0, 30));
     }
 
     @Tool(name = "cancel_command", description = "停止当前 Workspace 中正在运行的命令。")
     public ToolResult cancelCommand(@ToolParam(description = "命令执行 ID") String executionId) {
-        return workspaceCommands.cancel(initializedEnvironment.get(), requiredResourceId(executionId));
+        return workspaceCommands.cancel(session.requireInitialized(), requiredResourceId(executionId));
     }
 
     /** 未指定时使用当前选择，其次使用项目默认 Workspace。 */
@@ -216,7 +202,7 @@ public final class WorkspaceTools {
         if (workspaceId != null && !workspaceId.isBlank()) {
             return workspaces.require(projectId, requiredResourceId(workspaceId));
         }
-        Long selected = selection.workspaceId();
+        Long selected = session.workspaceId();
         return selected == null ? workspaces.defaultWorkspace(projectId) : workspaces.require(projectId, selected);
     }
 
