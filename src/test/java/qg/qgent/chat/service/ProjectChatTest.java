@@ -120,6 +120,7 @@ class ProjectChatTest {
         GroupAgentRow agent = new GroupAgentRow();
         agent.setAgentId(agentId);
         agent.setName("项目助手");
+        agent.setAvatarUrl("https://cdn.example.com/agent.png");
         when(groupAgents.selectAgents(groupId)).thenReturn(List.of(agent));
 
         var members = service.members(actor, projectId, groupId);
@@ -128,6 +129,7 @@ class ProjectChatTest {
             assertThat(member.getId()).isEqualTo(agentId.toString());
             assertThat(member.getDisplayName()).isEqualTo("项目助手");
             assertThat(member.getMemberType()).isEqualTo("AGENT");
+            assertThat(member.getAvatarUrl()).isEqualTo("https://cdn.example.com/agent.png");
         });
     }
 

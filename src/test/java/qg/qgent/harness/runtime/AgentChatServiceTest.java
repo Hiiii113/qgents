@@ -28,6 +28,9 @@ import qg.qgent.github.tool.GitHubCapability;
 import qg.qgent.github.service.GitHubRepositoryService;
 import qg.qgent.harness.context.ContextService;
 import qg.qgent.harness.context.GroupContext;
+import qg.qgent.agent.entity.AgentEntity;
+import qg.qgent.agent.service.AgentApplicationService;
+import qg.qgent.agent.service.AgentService;
 import qg.qgent.memory.dto.AgentMemoryView;
 import qg.qgent.memory.dto.GroupMemoryResponse;
 import qg.qgent.memory.dto.ProjectMemoryResponse;
@@ -58,7 +61,12 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+import org.springframework.http.HttpStatus;
+
+import qg.qgent.common.web.ApiException;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -138,6 +146,63 @@ class AgentChatServiceTest {
         assertThat(((OpenAiChatOptions) prompt.getOptions()).getToolCallbacks())
                 .extracting(callback -> callback.getToolDefinition().name())
                 .contains("read_agent_memory", "write_agent_memory", "read_project_memory", "propose_project_memory");
+    }
+
+    @Test
+    void promptCarriesTheAgentsOwnNameDescriptionAndPrompt() {
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
+        ChatModel model = model();
+        when(model.call(any(Prompt.class))).thenReturn(reply("收到"));
+        var fixture = fixture(model, actor, project, group, message, childExecutor);
+
+        fixture.service().replyToMention(fixture.event(), fixture.agentId(), "开始评审");
+
+        org.mockito.ArgumentCaptor<Prompt> prompts = org.mockito.ArgumentCaptor.forClass(Prompt.class);
+        verify(model).call(prompts.capture());
+        assertThat(prompts.getValue().getInstructions().getFirst().getText())
+                .contains("你是 评审助手", "负责代码评审", "你只评审 Pull Request");
+    }
+
+    @Test
+    void agentOutsideTheProjectOrNotApprovedDoesNotRun() {
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
+        ChatModel model = model();
+        when(model.call(any(Prompt.class))).thenReturn(reply("不应被调用"));
+        var fixture = fixture(model, actor, project, group, message, childExecutor);
+        when(fixture.agents().requireActiveProjectAgent(project, fixture.agentId()))
+                .thenThrow(new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_NOT_ACTIVE",
+                        "Agent 未启用或不属于本项目"));
+
+        assertThatThrownBy(() -> fixture.service().replyToMention(fixture.event(), fixture.agentId(), "你好"))
+                .isInstanceOf(ApiException.class);
+
+        verify(fixture.runs(), never()).startRoot(any(), any(), any());
+        verify(fixture.messages(), never()).sendAsAgent(any(), any(), any());
+        verify(model, never()).call(any(Prompt.class));
+    }
+
+    @Test
+    void announcedAgentApplicationIsBoundToTheAgentReplyMessage() {
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
+        ChatModel model = model();
+        AtomicInteger calls = new AtomicInteger();
+        when(model.call(any(Prompt.class))).thenAnswer(invocation -> switch (calls.incrementAndGet()) {
+            case 1 -> toolCall("submit_agent_application", "{\"name\":\"评审助手\",\"description\":\"负责代码评审\","
+                    + "\"systemPrompt\":\"你只评审 Pull Request\"}");
+            default -> reply("已提交申请，等待管理员审核");
+        });
+        var fixture = fixture(model, actor, project, group, message, childExecutor);
+        AgentEntity application = new AgentEntity();
+        application.setId(TestIds.next());
+        application.setStatus(AgentEntity.STATUS_PENDING);
+        when(fixture.agentApplications().apply(org.mockito.ArgumentMatchers.eq(actor),
+                org.mockito.ArgumentMatchers.eq(project), org.mockito.ArgumentMatchers.eq(group),
+                any(qg.qgent.agent.dto.AgentApplicationRequest.class))).thenReturn(application);
+
+        fixture.service().replyToMention(fixture.event(), fixture.agentId(), "帮我申请一个评审助手");
+
+        verify(fixture.agentApplications()).bindAnnouncements(List.of(application.getId()),
+                fixture.replyMessageId());
     }
 
     @Test
@@ -933,14 +998,25 @@ class AgentChatServiceTest {
         var agentMemories = mock(AgentMemoryService.class);
         when(agentMemories.view(any(), any(), any())).thenReturn(new AgentMemoryView("# 你的分工", ""));
         var groups = mock(GroupService.class);
+        AgentEntity agent = new AgentEntity();
+        agent.setId(agentId);
+        agent.setProjectId(project);
+        agent.setName("评审助手");
+        agent.setDescription("负责代码评审");
+        agent.setSystemPrompt("你只评审 Pull Request");
+        agent.setStatus(AgentEntity.STATUS_ACTIVE);
+        AgentService agents = mock(AgentService.class);
+        when(agents.requireActiveProjectAgent(project, agentId)).thenReturn(agent);
+        var agentApplications = mock(AgentApplicationService.class);
         var service = new AgentChatService(github, mock(SandboxCommands.class), workspaces,
                 mock(WorkspaceRepositoryService.class), loop, context,
                 skills, history, messages, runs, sessions, codeAccess,
                 attachments, memories, groupMemory, mock(GroupMemoryExtractionService.class), proposals,
-                agentMemories, new CrossGroupAccessService(groups), new ObjectMapper(), childExecutor, maxSubagents);
+                agentMemories, new CrossGroupAccessService(groups), agents, agentApplications, new ObjectMapper(),
+                childExecutor, maxSubagents);
         MessageSentEvent event = new MessageSentEvent(actor, project, group, message, List.of());
         return new Fixture(service, event, agentId, messages, runs, root, workspaces, codeAccess, sessions, context,
-                attachments, proposals, replyMessageId, groups, history);
+                attachments, proposals, replyMessageId, groups, history, agents, agentApplications);
     }
 
     private AgentRunEntity run(AgentRunEntity parent, String instruction) {
@@ -1021,5 +1097,6 @@ class AgentChatServiceTest {
                            SandboxFiles codeAccess, SandboxSessionManager sessions, ContextService context,
                            AttachmentService attachments,
                            qg.qgent.memory.service.ProjectMemoryProposalService proposals, Long replyMessageId,
-                           GroupService groups, ChatHistoryService history) { }
+                           GroupService groups, ChatHistoryService history,
+                           AgentService agents, AgentApplicationService agentApplications) { }
 }

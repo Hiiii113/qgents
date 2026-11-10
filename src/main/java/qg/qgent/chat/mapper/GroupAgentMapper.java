@@ -16,7 +16,7 @@ public interface GroupAgentMapper {
     @Insert("INSERT IGNORE INTO group_agents(group_id, agent_id) VALUES(#{groupId}, #{agentId})")
     int insertAgent(@Param("groupId") Long groupId, @Param("agentId") Long agentId);
 
-    @Select("SELECT a.id AS agent_id, a.name FROM group_agents ga JOIN agents a ON a.id = ga.agent_id "
+    @Select("SELECT a.id AS agent_id, a.name, a.avatar_url FROM group_agents ga JOIN agents a ON a.id = ga.agent_id "
             + "WHERE ga.group_id = #{groupId} ORDER BY a.name")
     List<GroupAgentRow> selectAgents(@Param("groupId") Long groupId);
 

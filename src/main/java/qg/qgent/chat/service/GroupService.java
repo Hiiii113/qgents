@@ -182,8 +182,8 @@ public class GroupService {
                         null, "USER"))
                 .forEach(members::add);
         groupAgentMapper.selectAgents(groupId).stream()
-                .map(agent -> new GroupMemberResponse(agent.getAgentId().toString(), agent.getName(), null, null,
-                        "AGENT"))
+                .map(agent -> new GroupMemberResponse(agent.getAgentId().toString(), agent.getName(),
+                        agent.getAvatarUrl(), null, "AGENT"))
                 .forEach(members::add);
         return members;
     }
