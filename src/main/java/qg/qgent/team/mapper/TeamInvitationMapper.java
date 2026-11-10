@@ -15,7 +15,7 @@ public interface TeamInvitationMapper extends BaseMapper<TeamInvitationEntity> {
             "<if test='anchor != null'>AND id &gt; #{anchor}</if>",
             "ORDER BY id LIMIT #{limit}",
             "</script>"})
-    @Results({
+    @Results(id = "invitation", value = {
             @Result(column = "id", property = "id"),
             @Result(column = "team_id", property = "teamId"),
             @Result(column = "invited_by", property = "invitedBy"),
@@ -36,17 +36,7 @@ public interface TeamInvitationMapper extends BaseMapper<TeamInvitationEntity> {
             "<if test='anchor != null'>AND id &gt; #{anchor}</if>",
             "ORDER BY id LIMIT #{limit}",
             "</script>"})
-    @Results({
-            @Result(column = "id", property = "id"),
-            @Result(column = "team_id", property = "teamId"),
-            @Result(column = "invited_by", property = "invitedBy"),
-            @Result(column = "email_normalized", property = "emailNormalized"),
-            @Result(column = "token_hash", property = "tokenHash"),
-            @Result(column = "status", property = "status"),
-            @Result(column = "expires_at", property = "expiresAt"),
-            @Result(column = "accepted_at", property = "acceptedAt"),
-            @Result(column = "created_at", property = "createdAt")
-    })
+    @ResultMap("invitation")
     List<TeamInvitationEntity> selectPendingByEmail(@Param("emailNormalized") String emailNormalized,
                                                     @Param("anchor") Long anchor, @Param("limit") int limit);
 }

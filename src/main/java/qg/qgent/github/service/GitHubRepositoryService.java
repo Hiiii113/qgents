@@ -16,8 +16,10 @@ import qg.qgent.github.mapper.*;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.service.ProjectAccessService;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -209,6 +211,13 @@ public class GitHubRepositoryService {
         var installation = requireInstallation(projects.selectById(projectId).getTeamId(), repository.getInstallationId());
         if (Boolean.TRUE.equals(installation.getSuspended())) throw suspended();
         return app.installationToken(installation.getProviderInstallationId(), providerRepositoryId);
+    }
+
+    /** git 通过 HTTP 访问 GitHub 的凭证环境；命令行里不出现 token。 */
+    public static Map<String, String> gitAuthEnvironment(String token) {
+        String auth = Base64.getEncoder().encodeToString(("x-access-token:" + token).getBytes(StandardCharsets.UTF_8));
+        return Map.of("GIT_CONFIG_COUNT", "1", "GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader",
+                "GIT_CONFIG_VALUE_0", "AUTHORIZATION: basic " + auth, "GIT_TERMINAL_PROMPT", "0");
     }
 
     /** Agent 每次操作都检查当前项目访问权和导入关系，再取得仅授权目标仓库的凭证。 */

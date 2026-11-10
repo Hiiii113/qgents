@@ -14,12 +14,10 @@ import qg.qgent.sandbox.service.SandboxCommands;
 import qg.qgent.workspace.entity.WorkspaceEntity;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -214,7 +212,7 @@ public class WorkspaceRepositoryService {
     private void fetch(Long sandboxWorkspaceId, Long projectId, Long providerRepositoryId, String token) {
         run(sandboxWorkspaceId, List.of("git", "--git-dir=" + containerGit(projectId, providerRepositoryId),
                         "fetch", "--quiet", "--no-tags", "origin", "+refs/heads/*:refs/remotes/origin/*"),
-                gitEnvironment(token), "无法从远端获取仓库");
+                GitHubRepositoryService.gitAuthEnvironment(token), "无法从远端获取仓库");
     }
 
     private String configValue(Long sandboxWorkspaceId, Long projectId, Long providerRepositoryId, String key) {
@@ -277,12 +275,6 @@ public class WorkspaceRepositoryService {
 
     private String containerGit(Long projectId, Long providerRepositoryId) {
         return CONTAINER_PROJECT + "/.git/" + providerRepositoryId + ".git";
-    }
-
-    private Map<String, String> gitEnvironment(String token) {
-        String auth = Base64.getEncoder().encodeToString(("x-access-token:" + token).getBytes(StandardCharsets.UTF_8));
-        return Map.of("GIT_CONFIG_COUNT", "1", "GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader",
-                "GIT_CONFIG_VALUE_0", "AUTHORIZATION: basic " + auth, "GIT_TERMINAL_PROMPT", "0");
     }
 
     private String run(Long sandboxWorkspaceId, List<String> command, Map<String, String> environment,

@@ -60,11 +60,6 @@ public enum AttachmentKind {
         return this == IMAGE;
     }
 
-    /** 预览响应按纯文本输出，避免浏览器按源码类型下载。 */
-    public boolean inlineAsText() {
-        return readableAsText();
-    }
-
     private static String extension(String fileName) {
         if (fileName == null) {
             return null;

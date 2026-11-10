@@ -31,7 +31,6 @@ import qg.qgent.user.dto.AvatarConfirmResponse;
 import qg.qgent.workspace.service.WorkspaceService;
 import qg.qgent.team.mapper.TeamMemberMapper;
 
-import java.time.ZoneOffset;
 import java.util.*;
 
 @Service
@@ -319,10 +318,6 @@ public class ProjectService {
 
     private ApiException invalid(String message) {
         return new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_PROJECT_OPERATION", message);
-    }
-
-    private String blankToNull(String value) {
-        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private ApiException conflict(String code, String message) {

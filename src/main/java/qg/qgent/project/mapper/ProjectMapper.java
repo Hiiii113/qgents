@@ -39,11 +39,6 @@ public interface ProjectMapper extends BaseMapper<ProjectEntity> {
                                                      @Param("userId") Long userId, @Param("teamOwner") boolean teamOwner,
                                                      @Param("anchor") Long anchor, @Param("limit") int limit);
 
-    @Select("SELECT id, team_id, created_by, name, description, avatar_url, status FROM projects "
-            + "WHERE team_id = #{teamId} ORDER BY id FOR UPDATE")
-    @ResultMap("project")
-    List<ProjectEntity> selectByTeamForUpdate(@Param("teamId") Long teamId);
-
     @Select("SELECT DISTINCT p.id, p.team_id, p.name, p.description, p.avatar_url, p.status, "
             + "CASE WHEN t.owner_user_id = #{userId} AND tom.role = 'TEAM_OWNER' "
             + "THEN 'PROJECT_ADMIN' ELSE pm.role END AS role "

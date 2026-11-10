@@ -16,13 +16,10 @@ class ProjectMapperTest {
         var configuration = new MybatisConfiguration();
         configuration.addMapper(ProjectMapper.class);
         String namespace = ProjectMapper.class.getName();
-        for (String method : new String[]{"selectByIdForUpdate", "selectByTeamForUpdate"}) {
-            var statement = configuration.getMappedStatement(namespace + "." + method);
-            assertThat(statement.getBoundSql(Map.of("projectId", TestIds.next(), "teamId", TestIds.next()))
-                    .getSql()).contains("avatar_url");
-            assertThat(statement.getResultMaps().getFirst().getResultMappings())
-                    .anyMatch(field -> "avatarUrl".equals(field.getProperty()));
-        }
+        var statement = configuration.getMappedStatement(namespace + ".selectByIdForUpdate");
+        assertThat(statement.getBoundSql(Map.of("projectId", TestIds.next())).getSql()).contains("avatar_url");
+        assertThat(statement.getResultMaps().getFirst().getResultMappings())
+                .anyMatch(field -> "avatarUrl".equals(field.getProperty()));
         ProjectEntity project = new ProjectEntity();
         project.setId(TestIds.next());
         project.setName("项目");

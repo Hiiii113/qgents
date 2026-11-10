@@ -20,7 +20,6 @@ import qg.qgent.workspace.service.WorkSession;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -233,7 +232,7 @@ public class GitHubTools {
             }
             return commands.run(session.ensure(), directory, List.of("git", "push", "--",
                     "https://github.com/" + repository + ".git", "HEAD:refs/heads/" + branch),
-                    gitEnvironment(credential.token()));
+                    GitHubRepositoryService.gitAuthEnvironment(credential.token()));
         } catch (RuntimeException e) {
             return error(e);
         }
@@ -251,7 +250,7 @@ public class GitHubTools {
             List<String> argv = new ArrayList<>();
             argv.add("git");
             argv.addAll(command);
-            return commands.run(session.ensure(), directory, argv, gitEnvironment(credential.token()));
+            return commands.run(session.ensure(), directory, argv, GitHubRepositoryService.gitAuthEnvironment(credential.token()));
         } catch (RuntimeException e) {
             return error(e);
         }
@@ -569,12 +568,6 @@ public class GitHubTools {
 
     private IllegalArgumentException invalid(String message) {
         return new IllegalArgumentException(message);
-    }
-
-    private Map<String, String> gitEnvironment(String token) {
-        String auth = Base64.getEncoder().encodeToString(("x-access-token:" + token).getBytes(StandardCharsets.UTF_8));
-        return Map.of("GIT_CONFIG_COUNT", "1", "GIT_CONFIG_KEY_0", "http.https://github.com/.extraheader",
-                "GIT_CONFIG_VALUE_0", "AUTHORIZATION: basic " + auth, "GIT_TERMINAL_PROMPT", "0");
     }
 
     private record Raw(int status, String link, String body, Long retryAfterSeconds, boolean rateLimited) {

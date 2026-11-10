@@ -83,6 +83,4 @@ public class SandboxProperties {
     // 新建沙箱默认使用的镜像配置。
     private String imageProfile = "dev-tools";
 
-    // 活跃 AgentRun 的租约续租间隔，覆盖模型推理期间。
-    private Duration leaseRenewInterval = Duration.ofSeconds(10);
 }

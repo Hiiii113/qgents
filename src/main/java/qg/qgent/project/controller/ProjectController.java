@@ -17,7 +17,6 @@ import qg.qgent.project.dto.ProjectMemberResponse;
 import qg.qgent.project.dto.ProjectMemberUpdateRequest;
 import qg.qgent.project.dto.ProjectResponse;
 import qg.qgent.project.dto.ProjectUpdateRequest;
-import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.project.service.ProjectService;
 import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.user.dto.AvatarConfirmRequest;
@@ -32,7 +31,6 @@ import qg.qgent.user.dto.AvatarCredentialResponse;
 @RequiredArgsConstructor
 public class ProjectController {
     private final ProjectService projects;
-    private final ProjectAccessService access;
 
     /** 创建项目，团队所有者或管理员可创建，创建者自动成为 PROJECT_ADMIN。 */
     @PostMapping("/teams/{teamId}/projects")
