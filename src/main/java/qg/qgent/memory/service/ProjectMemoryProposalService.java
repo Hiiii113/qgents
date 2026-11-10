@@ -102,6 +102,9 @@ public class ProjectMemoryProposalService {
     /**
      * 项目是否还有仍可审批的候选：基线版本已过时的候选再也无法写入（审批会报版本冲突），
      * 因此不阻塞后续发现，也不主动改写它的状态。
+     * <p>
+     * 没绑定回复消息的候选同样不会再被审批：运行失败、取消或被拦下披露时候选留在库里，
+     * 这些行按死候选处理，否则后台发现会被它们永久挡住。
      */
     public boolean hasPending(Long projectId) {
         String version = memories.read(projectId).getVersion();
