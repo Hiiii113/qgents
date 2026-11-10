@@ -367,6 +367,25 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT fk_grs_group FOREIGN KEY (group_id) REFERENCES chat_groups (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '群成员已读游标（未读数=最新sequence-游标，排除本人）';
 
+-- 群聊记忆后台提炼的进度与调度状态：一个群一行，消息事件更新活跃状态，定时任务扫描并异步提炼。
+CREATE TABLE IF NOT EXISTS
+    group_memory_state (
+        group_id BIGINT NOT NULL PRIMARY KEY COMMENT '项目群聊ID',
+        project_id BIGINT NOT NULL COMMENT '所属项目ID',
+        last_processed_sequence BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '已提炼到的群内消息序号（水位，成功后推进）',
+        last_message_at DATETIME(6) NULL COMMENT '最近消息时间（UTC），用于闲置时长判定',
+        status VARCHAR(16) NOT NULL DEFAULT 'IDLE' COMMENT 'IDLE/RUNNING，用于互斥并发提炼',
+        attempt_count INT NOT NULL DEFAULT 0 COMMENT '连续失败次数；新消息清零',
+        next_attempt_at DATETIME(6) NULL COMMENT '下次允许重试时间（UTC）',
+        correction TEXT NULL COMMENT '用户通过对话提出的待应用纠错内容',
+        last_error VARCHAR(500) NULL COMMENT '最近一次失败摘要',
+        updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',
+        KEY idx_gms_due (status, last_message_at),
+        CONSTRAINT fk_gms_group FOREIGN KEY (group_id) REFERENCES chat_groups (id) ON DELETE CASCADE,
+        CONSTRAINT fk_gms_project FOREIGN KEY (project_id) REFERENCES projects (id),
+        CONSTRAINT chk_gms_status CHECK (status IN ('IDLE', 'RUNNING'))
+    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '群聊记忆提炼进度与调度状态';
+
 -- 全新整库初始化时上方 users 建表已含该列，此处仅服务已存在的库；已存在该列的库自动跳过。
 CREATE TABLE IF NOT EXISTS
     user_group_preference (

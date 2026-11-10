@@ -14,7 +14,7 @@ import java.util.stream.Stream;
 /**
  * 项目持久目录：一个项目一个目录，按项目 ID 命名。
  * <p>
- * 目录内 memory.md 是项目记忆，.git/ 保存各仓库共享的 bare Git 数据，
+ * 目录内 memory.md 是项目记忆，groups/ 保存每个群聊的群记忆，.git/ 保存各仓库共享的 bare Git 数据，
  * workspaces/ 保存每个 Workspace 的普通工作文件（每仓库一个 worktree）。
  */
 @Component
@@ -31,6 +31,11 @@ public class ProjectDirectoryService {
     /** 项目根目录，不存在时创建；已存在时保留原有文件。 */
     public Path projectRoot(Long projectId) {
         return create(root.resolve(projectId.toString()));
+    }
+
+    /** 项目内某个群聊的目录，群记忆等群级文件位于其中；不存在时创建。 */
+    public Path groupRoot(Long projectId, Long groupId) {
+        return create(projectRoot(projectId).resolve("groups").resolve(groupId.toString()));
     }
 
     /** 项目共享 Git 数据目录，不存在时创建。 */

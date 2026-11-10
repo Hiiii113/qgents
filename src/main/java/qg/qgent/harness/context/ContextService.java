@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import qg.qgent.chat.service.ChatHistoryService;
 import qg.qgent.chat.service.GroupService;
+import qg.qgent.memory.service.GroupMemoryService;
 import qg.qgent.memory.service.ProjectMemoryService;
 import qg.qgent.skill.service.SkillService;
 
@@ -15,11 +16,13 @@ public class ContextService {
     private final ChatHistoryService history;
     private final SkillService skills;
     private final ProjectMemoryService memories;
+    private final GroupMemoryService groupMemories;
 
     public GroupContext buildForGroup(Long actor, Long projectId, Long groupId, Integer limit) {
         var group = groups.requireGroupMember(projectId, groupId, actor);
         return new GroupContext(groupId.toString(), projectId.toString(), group.getName(),
                 history.recentMessages(actor, projectId, groupId, limit),
-                skills.publishedCatalog(actor, projectId), memories.get(actor, projectId).getContent());
+                skills.publishedCatalog(actor, projectId), memories.get(actor, projectId).getContent(),
+                groupMemories.read(projectId, groupId).getContent());
     }
 }

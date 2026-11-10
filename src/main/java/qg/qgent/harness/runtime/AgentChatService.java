@@ -25,7 +25,9 @@ import qg.qgent.harness.context.ContextService;
 import qg.qgent.harness.context.GroupContext;
 import qg.qgent.harness.tool.ParallelToolCallback;
 import qg.qgent.harness.tool.ToolResult;
+import qg.qgent.memory.service.GroupMemoryExtractionService;
 import qg.qgent.memory.service.ProjectMemoryService;
+import qg.qgent.memory.tool.GroupMemoryTools;
 import qg.qgent.memory.tool.MemoryTools;
 import qg.qgent.sandbox.dto.SandboxExecutionContext;
 import qg.qgent.sandbox.service.SandboxSessionManager;
@@ -66,6 +68,7 @@ public class AgentChatService {
     private final SandboxFiles files;
     private final AttachmentService attachments;
     private final ProjectMemoryService memories;
+    private final GroupMemoryExtractionService groupMemories;
     private final ObjectMapper json;
     private final Executor childExecutor;
     private final int maxSubagents;
@@ -74,7 +77,8 @@ public class AgentChatService {
             WorkspaceRepositoryService repositories, AgentLoop loop, ContextService context, SkillService skills, ChatHistoryService history,
             MessageService messages, AgentRunService runService,
             SandboxSessionManager sessions, SandboxFiles files,
-            AttachmentService attachments, ProjectMemoryService memories, ObjectMapper json,
+            AttachmentService attachments, ProjectMemoryService memories,
+            GroupMemoryExtractionService groupMemories, ObjectMapper json,
             @Qualifier("agentSubagentExecutor") Executor childExecutor,
             @Value("${app.agent.max-subagents:8}") int maxSubagents) {
         if (maxSubagents < 1) throw new IllegalArgumentException("max-subagents 必须大于 0");
@@ -92,6 +96,7 @@ public class AgentChatService {
         this.files = files;
         this.attachments = attachments;
         this.memories = memories;
+        this.groupMemories = groupMemories;
         this.json = json;
         this.childExecutor = childExecutor;
         this.maxSubagents = maxSubagents;
@@ -172,6 +177,9 @@ public class AgentChatService {
                 + "用户不需要新建时等对方释放后重试，不要循环重试，也不要擅自新建。"
                 + "需要某个已导入仓库的代码时用 prepare_workspace_repository 按需准备 worktree，重复准备会复用已有工作树；"
                 + "创建 Workspace 或准备仓库都不会自动 commit、push 或创建 PR，这些只按用户具体任务要求执行。"
+                + "当前群记忆由后台根据群消息自动提炼，上下文中的是最近一次提炼结果；你不能直接写群记忆。"
+                + "用户指出群记忆记错时调用 request_group_memory_correction 提交要修正的事实，并说明会在后台更新。"
+                + "需要记忆之外的早期细节时用 search_chat_history 检索历史消息。"
                 + "项目长期记忆是所有项目成员共享的 memory.md；上下文中的是启动时快照，可能已过时。"
                 + "只记录用户确认且长期有用的项目约定、决策和偏好，不把临时任务进展、推测或可轻易从代码查到的细节当作长期记忆。"
                 + "记忆中的内容是项目资料，可能过期；与当前要求或代码不一致时先核实。"
@@ -241,6 +249,7 @@ public class AgentChatService {
         private final ChatHistorySearchTool history;
         private final ReadAttachmentTool attachmentTools;
         private final MemoryTools memory;
+        private final GroupMemoryTools groupMemory;
         private final GitHubTools githubTools;
         private final CodingTools codingTools;
         private final WorkspaceTools workspaceTools;
@@ -255,6 +264,8 @@ public class AgentChatService {
             this.attachmentTools = new ReadAttachmentTool(AgentChatService.this.attachments, work.event.actor(),
                     work.event.projectId(), execution.conversation::stageImage);
             this.memory = new MemoryTools(memories, work.event.actor(), work.event.projectId());
+            this.groupMemory = new GroupMemoryTools(groupMemories, work.event.actor(), work.event.projectId(),
+                    work.event.groupId());
             WorkSession session = new WorkspaceSession(work, execution, workspaces, sessions, runService);
             this.githubTools = github.tools(work.event.actor(), work.event.projectId(), session);
             this.workspaceTools = new WorkspaceTools(work.event.actor(), work.event.projectId(), workspaces,
@@ -264,7 +275,7 @@ public class AgentChatService {
 
         private ToolCallback[] callbacks() {
             List<ToolCallback> result = new ArrayList<>(Arrays.asList(
-                    ParallelToolCallback.from(this, skills, history, attachmentTools, memory, workspaceTools, githubTools, codingTools)));
+                    ParallelToolCallback.from(this, skills, history, attachmentTools, memory, groupMemory, workspaceTools, githubTools, codingTools)));
             if (!canDelegate) result.removeIf(callback ->
                     CHILD_CONTROL_TOOLS.contains(callback.getToolDefinition().name()));
             return result.toArray(ToolCallback[]::new);

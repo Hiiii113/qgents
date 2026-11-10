@@ -72,7 +72,21 @@ app:
     context:
       # 项目 memory.md 注入 Agent 上下文的字符上限；超过时拒绝保存。
       max-memory-chars: ${APP_AGENT_CONTEXT_MAX_MEMORY_CHARS:12000}
-  # 项目持久目录根；每个项目一个子目录，存放 memory.md、共享 Git 数据和各 Workspace 工作树。
+# 群记忆后台提炼：新消息数与闲置时长同时达到才触发，失败有限重试；阈值均可在环境覆盖。
+  memory:
+    group:
+      # 自上次提炼以来至少新增的消息条数（含 Agent 回复）。
+      min-messages: ${APP_MEMORY_GROUP_MIN_MESSAGES:20}
+      # 群内最后一次消息后需要静默的分钟数。
+      idle-minutes: ${APP_MEMORY_GROUP_IDLE_MINUTES:15}
+      # 扫描周期，支持 s/m/h 时长写法。
+      scan-interval: ${APP_MEMORY_GROUP_SCAN_INTERVAL:1m}
+      # 失败后再次尝试的最短间隔（分钟），与最大重试次数一起限制重复失败。
+      retry-delay-minutes: ${APP_MEMORY_GROUP_RETRY_DELAY_MINUTES:5}
+      max-attempts: ${APP_MEMORY_GROUP_MAX_ATTEMPTS:3}
+      # RUNNING 超过该分钟数视为上次进程中断，允许重新领取。
+      stale-claim-minutes: ${APP_MEMORY_GROUP_STALE_CLAIM_MINUTES:30}
+  # 项目持久目录根；每个项目一个子目录，存放 memory.md、groups/ 下的群记忆、共享 Git 数据和各 Workspace 工作树。
   # docker-host-root 指向同一份数据的宿主机路径，用于创建沙箱 bind mount。
   project:
     root: ${PROJECT_DATA_ROOT:./data/projects}
