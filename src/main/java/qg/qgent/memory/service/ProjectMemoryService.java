@@ -98,7 +98,7 @@ public class ProjectMemoryService {
         Path file = memoryFile(projectId);
         try {
             String content = Files.readString(file, StandardCharsets.UTF_8);
-            return new ProjectMemoryResponse(projectId.toString(), content, MemoryText.version(content),
+            return new ProjectMemoryResponse(projectId.toString(), content, MemorySupport.version(content),
                     LocalDateTime.ofInstant(Files.getLastModifiedTime(file).toInstant(), ZoneOffset.UTC));
         } catch (IOException e) {
             throw new IllegalStateException("项目记忆读取失败: " + file, e);

@@ -76,12 +76,20 @@ class GroupMemoryStateMapperTest {
     }
 
     @Test
-    void discoveryOnlyScansDueProjectDefaultGroups() {
-        String sql = sql("selectDiscoveryCandidates", Map.of("now", LocalDateTime.now(), "limit", 10));
+    void discoveryOnlyScansDueProjectDefaultGroupsWithinTheRetryBudget() {
+        String sql = sql("selectDiscoveryCandidates", Map.of("now", LocalDateTime.now(), "maxAttempts", 3,
+                "limit", 10));
 
         // 受限群的群记忆不是候选来源：连模型都不该看到，所以由 SQL 先排除
         assertThat(sql).contains("default_group = 1").contains("discovery_next_attempt_at <= ?")
-                .contains("ORDER BY g.group_id");
+                .contains("discovery_attempt_count < ?").contains("ORDER BY g.group_id");
+    }
+
+    @Test
+    void groupMemoryUpdateGivesDiscoveryAFreshRetryBudget() {
+        String sql = sql("finishSuccess", successParameters());
+
+        assertThat(sql).contains("discovery_attempt_count = 0");
     }
 
     @Test

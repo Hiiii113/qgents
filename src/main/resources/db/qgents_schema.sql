@@ -413,6 +413,18 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT chk_gms_status CHECK (status IN ('IDLE', 'RUNNING'))
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '群聊记忆提炼进度与调度状态';
 
+-- 已存在的数据卷不会重新建表（README 第 2 步）；升级到带项目记忆发现的版本时手工执行：
+-- ALTER TABLE project_memory_proposals
+--     MODIFY agent_run_id BIGINT NULL COMMENT '提出候选的 AgentRun；每个运行最多一个候选；后台发现时为空',
+--     MODIFY proposed_by BIGINT NULL COMMENT '提出候选的真实用户ID；后台发现时为空',
+--     ADD COLUMN source_memory_version VARCHAR(64) NULL
+--         COMMENT '后台发现时的来源群记忆内容版本；群聊提出时为空' AFTER base_version;
+-- ALTER TABLE group_memory_state
+--     ADD COLUMN discovered_version VARCHAR(64) NULL COMMENT '最近一次项目记忆发现所依据的群记忆内容版本',
+--     ADD COLUMN discovery_attempt_count INT NOT NULL DEFAULT 0 COMMENT '项目记忆发现连续失败次数；成功后清零',
+--     ADD COLUMN discovery_next_attempt_at DATETIME(6) NULL COMMENT '下次允许发现项目记忆候选的时间（UTC）',
+--     ADD COLUMN discovery_error VARCHAR(500) NULL COMMENT '最近一次项目记忆发现失败摘要';
+
 -- 全新整库初始化时上方 users 建表已含该列，此处仅服务已存在的库；已存在该列的库自动跳过。
 CREATE TABLE IF NOT EXISTS
     user_group_preference (

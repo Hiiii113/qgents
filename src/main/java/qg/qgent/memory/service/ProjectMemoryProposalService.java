@@ -66,35 +66,46 @@ public class ProjectMemoryProposalService {
                                                String content) {
         // 先按真实用户校验项目成员身份，同时得到候选的基线版本
         ProjectMemoryResponse current = memories.get(actor, projectId);
-        return insert(candidate(actor, projectId, groupId, agentRunId, content, current, null));
+        ProjectMemoryProposalEntity proposal = newProposal(projectId, groupId,
+                requirePublishable(projectId, groupId, content, current), current);
+        proposal.setAgentRunId(agentRunId);
+        proposal.setProposedBy(actor);
+        return insert(proposal);
     }
 
     /**
      * 后台从群记忆发现候选：默认 Agent 在来源默认群发出普通文本候选消息，候选绑定这条消息等待管理员审批。
      * <p>
      * 先校验来源群与内容，再发消息：受限群的候选不会出现在任何群消息里，也不会进入项目记忆。
-     * @param sourceVersion 本次发现依据的群记忆内容版本，用于追溯来源并避免重复发送
+     * @param sourceVersion 本次发现依据的群记忆内容版本，用于追溯来源
      * @return 待审批候选
      */
     @Transactional
     public ProjectMemoryProposalEntity publishDiscovered(Long projectId, Long groupId, String content,
                                                          String sourceVersion) {
-        ProjectMemoryProposalEntity proposal = candidate(null, projectId, groupId, null, content,
-                memories.read(projectId), sourceVersion);
+        ProjectMemoryResponse current = memories.read(projectId);
+        ProjectMemoryProposalEntity proposal = newProposal(projectId, groupId,
+                requirePublishable(projectId, groupId, content, current), current);
+        proposal.setSourceMemoryVersion(sourceVersion);
+        // shortcut: 候选消息本身也进入群消息，下次提炼可能把它当成讨论内容；提炼提示只保留议题与结论，
+        // 若出现明显噪音再按消息来源过滤
         MessageSendRequest message = new MessageSendRequest();
         message.setType("TEXT");
         message.setContent(Map.of("text", "从本群记忆中发现可以写入项目记忆的内容，请项目管理员回复本条消息并 @我 批准；"
                 + "未批准不会写入。\n\n" + proposal.getContent()));
-        // 同一群记忆版本只发一条候选消息：重试命中同一个 clientMessageId 时返回原消息，不重复发送
-        message.setClientMessageId("memory-discovery:" + sourceVersion);
+        // 消息与候选同事务：发送或插入失败时一起回滚，不会留下可回复却无法审批的候选消息
         MessageResponse sent = chat.sendAsAgent(agents.defaultAgent(projectId).getId(), groupId, message);
         proposal.setMessageId(Long.valueOf(sent.getId()));
         return insert(proposal);
     }
 
-    /** 项目是否已有待审批候选；后台发现据此避免重复申请。 */
+    /**
+     * 项目是否还有仍可审批的候选：基线版本已过时的候选再也无法写入（审批会报版本冲突），
+     * 因此不阻塞后续发现，也不主动改写它的状态。
+     */
     public boolean hasPending(Long projectId) {
-        return proposals.selectPendingId(projectId) != null;
+        String version = memories.read(projectId).getVersion();
+        return proposals.selectPendingBaseVersions(projectId).contains(version);
     }
 
     /**
@@ -139,10 +150,9 @@ public class ProjectMemoryProposalService {
         proposals.bindMessage(agentRunId, messageId);
     }
 
-    /** 校验来源群和候选内容，构造待审批候选；消息在发出后绑定。 */
-    private ProjectMemoryProposalEntity candidate(Long actor, Long projectId, Long groupId, Long agentRunId,
-                                                 String content, ProjectMemoryResponse current,
-                                                 String sourceVersion) {
+    /** 校验来源群与候选正文，返回待写入的整篇记忆；受限群与无变化的内容在这里被拒绝。 */
+    private String requirePublishable(Long projectId, Long groupId, String content,
+                                      ProjectMemoryResponse current) {
         ChatGroupEntity group = groups.selectById(groupId);
         if (group == null || !group.getProjectId().equals(projectId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
@@ -157,15 +167,17 @@ public class ProjectMemoryProposalService {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "MEMORY_PROPOSAL_UNCHANGED",
                     "候选内容与当前项目记忆一致");
         }
+        return text;
+    }
+
+    private ProjectMemoryProposalEntity newProposal(Long projectId, Long groupId, String content,
+                                                   ProjectMemoryResponse current) {
         ProjectMemoryProposalEntity proposal = new ProjectMemoryProposalEntity();
         proposal.setProjectId(projectId);
         proposal.setGroupId(groupId);
-        proposal.setAgentRunId(agentRunId);
-        proposal.setContent(text);
+        proposal.setContent(content);
         proposal.setBaseVersion(current.getVersion());
-        proposal.setSourceMemoryVersion(sourceVersion);
         proposal.setStatus("PENDING");
-        proposal.setProposedBy(actor);
         proposal.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
         return proposal;
     }

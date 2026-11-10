@@ -65,10 +65,12 @@ public interface GroupMemoryStateMapper extends BaseMapper<GroupMemoryStateEntit
     /**
      * 提炼成功后推进水位，并只清空本次实际应用的纠错；水位只增不减，旧任务的完成不会覆盖新进度。
      * 提炼期间新增的纠错文本与本次读到的不同，保留待下一次处理。
+     * 群记忆更新后项目记忆发现重新获得重试次数：新内容值得再试一次。
      */
     @Update("UPDATE group_memory_state SET status = 'IDLE', claim_token = NULL, "
             + "last_processed_sequence = GREATEST(last_processed_sequence, #{processedThrough}), "
             + "attempt_count = 0, next_attempt_at = NULL, last_error = NULL, updated_at = #{now}, "
+            + "discovery_attempt_count = 0, "
             + "correction = CASE WHEN correction = #{appliedCorrection} THEN NULL ELSE correction END "
             + "WHERE group_id = #{groupId} AND status = 'RUNNING' AND claim_token = #{claimToken}")
     int finishSuccess(@Param("groupId") Long groupId, @Param("claimToken") LocalDateTime claimToken,
@@ -86,13 +88,14 @@ public interface GroupMemoryStateMapper extends BaseMapper<GroupMemoryStateEntit
 
     /**
      * 项目记忆发现的到期群：只取项目默认群。受限群内容不进模型、不发候选消息、不写入项目记忆，
-     * 因此这里先用 SQL 排除，不依赖提示词或后续校验。
+     * 因此这里先用 SQL 排除，不依赖提示词或后续校验。连续失败达到上限的群等待群记忆重新提炼后再试。
      */
     @Select("SELECT g.* FROM group_memory_state g JOIN chat_groups cg ON cg.id = g.group_id "
-            + "WHERE cg.default_group = 1 "
+            + "WHERE cg.default_group = 1 AND g.discovery_attempt_count < #{maxAttempts} "
             + "AND (g.discovery_next_attempt_at IS NULL OR g.discovery_next_attempt_at <= #{now}) "
             + "ORDER BY g.group_id LIMIT #{limit}")
     List<GroupMemoryStateEntity> selectDiscoveryCandidates(@Param("now") LocalDateTime now,
+                                                          @Param("maxAttempts") int maxAttempts,
                                                           @Param("limit") int limit);
 
     /** 领取一轮项目记忆发现并把下次发现时间推到 nextSlot；返回 0 说明其他任务已领取或未到周期。 */
@@ -109,7 +112,7 @@ public interface GroupMemoryStateMapper extends BaseMapper<GroupMemoryStateEntit
     int finishDiscovery(@Param("groupId") Long groupId, @Param("version") String version,
                         @Param("nextSlot") LocalDateTime nextSlot, @Param("now") LocalDateTime now);
 
-    /** 发现失败：不推进 discovered_version，记录失败摘要并安排重试。 */
+    /** 发现失败：不推进 discovered_version，记录失败摘要并安排重试；达到上限后等群记忆更新。 */
     @Update("UPDATE group_memory_state SET discovery_attempt_count = discovery_attempt_count + 1, "
             + "discovery_next_attempt_at = #{nextAttemptAt}, discovery_error = #{error}, updated_at = #{now} "
             + "WHERE group_id = #{groupId}")
