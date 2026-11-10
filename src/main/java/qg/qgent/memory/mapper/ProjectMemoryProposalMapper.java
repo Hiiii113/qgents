@@ -18,9 +18,14 @@ public interface ProjectMemoryProposalMapper extends BaseMapper<ProjectMemoryPro
     @Select("SELECT * FROM project_memory_proposals WHERE message_id = #{messageId}")
     ProjectMemoryProposalEntity selectByMessageId(@Param("messageId") Long messageId);
 
-    /** 项目待审批候选的基线版本；基线过时的候选已无法写入，由调用方决定是否还算待审批。 */
+    /**
+     * 项目待审批候选的基线版本；基线过时的候选已无法写入，由调用方决定是否还算待审批。
+     * <p>
+     * 只统计已绑定回复消息的候选：运行失败、取消或正文不能被披露时，候选永远绑定不到消息，
+     * 审批也只在「回复引用的消息」上定位候选，这类行不会再有人处理，不算待审批。
+     */
     @Select("SELECT base_version FROM project_memory_proposals WHERE project_id = #{projectId} "
-            + "AND status = 'PENDING'")
+            + "AND status = 'PENDING' AND message_id IS NOT NULL")
     List<String> selectPendingBaseVersions(@Param("projectId") Long projectId);
 
     /** 记忆写入成功后标记完成；只在仍待审批时生效，重复审批得到 0。 */

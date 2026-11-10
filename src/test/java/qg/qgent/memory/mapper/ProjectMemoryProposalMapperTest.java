@@ -78,7 +78,8 @@ class ProjectMemoryProposalMapperTest {
         String sql = statement("selectPendingBaseVersions").getBoundSql(Map.of("projectId", TestIds.next()))
                 .getSql();
 
-        assertThat(sql).contains("base_version", "project_id = ?", "status = 'PENDING'");
+        // 没有回复消息的候选（运行失败/取消/不披露）永远不会被审批，不能算待审批阻塞后台发现。
+        assertThat(sql).contains("base_version", "project_id = ?", "status = 'PENDING'", "message_id IS NOT NULL");
     }
 
     @Test
