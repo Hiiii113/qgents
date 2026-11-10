@@ -47,7 +47,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Executor;
 
-/** Starts the fixed Qgent run and coordinates its temporary, one-level child conversations. */
+/** Starts the run of one project Agent and coordinates its temporary, one-level child conversations. */
 @Service
 public class AgentChatService {
     private static final Set<String> CHILD_CONTROL_TOOLS = Set.of("start_subagent", "wait_subagent",
@@ -97,9 +97,9 @@ public class AgentChatService {
         this.maxSubagents = maxSubagents;
     }
 
-    /** Runs one Qgent conversation for a committed @Qgent message and replies in the same chat. */
-    public void replyToMention(MessageSentEvent event, String instruction) {
-        AgentRunEntity root = runService.startRoot(event, instruction);
+    /** Runs one conversation for a committed @Agent message and replies as that same Agent. */
+    public void replyToMention(MessageSentEvent event, Long agentId, String instruction) {
+        AgentRunEntity root = runService.startRoot(agentId, event, instruction);
         WorkContext work = new WorkContext(event, root.getId());
         work.children = new ChildRuns(root.getId(), maxSubagents, childExecutor, runService, sessions,
                 work::isCancelled, loop, child -> callbacks(work, child, conversationTools(work, child, false)));
@@ -155,7 +155,7 @@ public class AgentChatService {
         reply.setContent(Map.of("text", root.getResult() == null ? "Agent 本次运行未返回文本" : root.getResult()));
         reply.setReplyToId(event.messageId());
         reply.setClientMessageId("qgent-reply:" + root.getId());
-        messages.sendAsAgent(event.groupId(), reply);
+        messages.sendAsAgent(agentId, event.groupId(), reply);
     }
 
     private String systemPrompt(boolean child) {

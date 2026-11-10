@@ -47,7 +47,8 @@ class GroupPinServiceTest {
 
     private final GroupService service = new GroupService(groupMapper, projectMemberMapper,
             mock(qg.qgent.chat.mapper.GroupUserMapper.class),
-            messageMapper, groupReadStateMapper, userGroupPreferenceMapper, access, eventService);
+            messageMapper, groupReadStateMapper, userGroupPreferenceMapper, access, eventService,
+            mock(qg.qgent.chat.mapper.GroupAgentMapper.class), mock(qg.qgent.agent.service.AgentService.class));
 
     private final Long projectId = TestIds.next();
     private final Long creator = TestIds.next();

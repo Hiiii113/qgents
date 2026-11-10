@@ -90,12 +90,24 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT fk_pm_user FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目成员及角色关系';
 
+CREATE TABLE IF NOT EXISTS agents (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '项目内 Agent ID，自增且各项目互不复用',
+    project_id BIGINT NOT NULL COMMENT '所属项目ID',
+    name VARCHAR(120) NOT NULL COMMENT 'Agent 名称，在群成员与消息发送者中展示',
+    default_agent TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否项目默认 Agent；每项目唯一',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
+    -- 生成列只对默认 Agent 取 project_id，其余为 NULL；唯一索引允许多个 NULL，保证每项目只有一个默认 Agent。
+    default_slot BIGINT GENERATED ALWAYS AS (IF(default_agent = 1, project_id, NULL)) STORED,
+    UNIQUE KEY uk_agent_default (default_slot),
+    KEY idx_agent_project (project_id),
+    CONSTRAINT fk_agent_project FOREIGN KEY (project_id) REFERENCES projects (id)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目内 Agent；每个项目创建自己的默认 Agent';
+
 CREATE TABLE IF NOT EXISTS
     chat_groups (
         id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '项目群聊ID',
         project_id BIGINT NOT NULL COMMENT '所属项目ID',
         created_by BIGINT NOT NULL COMMENT '创建用户ID',
-        qgent_enabled TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'Qgent 是否已加入群聊',
         default_group TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否为项目自动创建的默认群',
         name VARCHAR(255) NOT NULL COMMENT '群聊名称',
         last_message_at DATETIME (6) NULL COMMENT '最近消息时间（UTC）',
@@ -117,13 +129,22 @@ CREATE TABLE IF NOT EXISTS group_users (
     CONSTRAINT fk_gu_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '新建群聊的用户成员';
 
+CREATE TABLE IF NOT EXISTS group_agents (
+    group_id BIGINT NOT NULL,
+    agent_id BIGINT NOT NULL,
+    PRIMARY KEY (group_id, agent_id),
+    CONSTRAINT fk_ga_group FOREIGN KEY (group_id) REFERENCES chat_groups(id) ON DELETE CASCADE,
+    CONSTRAINT fk_ga_agent FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '群聊的 Agent 成员；邀请即加入';
+
 CREATE TABLE IF NOT EXISTS
     messages (
         id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '消息ID',
         group_id BIGINT NOT NULL COMMENT '所属项目群聊ID',
         sequence_no BIGINT UNSIGNED NOT NULL COMMENT '群内单调递增消息序号',
-        sender_type VARCHAR(16) NOT NULL COMMENT '发送方 USER/AGENT/SYSTEM；AGENT 为固定 Qgent',
+        sender_type VARCHAR(16) NOT NULL COMMENT '发送方 USER/AGENT/SYSTEM',
         author_user_id BIGINT NULL COMMENT '用户作者ID；Agent/系统消息时为空',
+        sender_agent_id BIGINT NULL COMMENT '发送 Agent ID；AGENT 消息必填，其余为空',
         client_message_id VARCHAR(128) NULL COMMENT '客户端生成的消息幂等ID',
         message_type VARCHAR(32) NOT NULL DEFAULT 'TEXT' COMMENT '消息类型枚举：TEXT/CODE/IMAGE/FILE/SYSTEM',
         content JSON NOT NULL COMMENT '按消息类型校验的结构化内容JSON',
@@ -133,21 +154,24 @@ CREATE TABLE IF NOT EXISTS
         UNIQUE KEY uk_msg_seq (group_id, sequence_no),
         UNIQUE KEY uk_msg_client (group_id, client_message_id),
         KEY idx_msg_user (author_user_id),
+        KEY idx_msg_agent (sender_agent_id),
         KEY idx_msg_reply (reply_to_message_id),
         CONSTRAINT fk_msg_group FOREIGN KEY (group_id) REFERENCES chat_groups (id),
         CONSTRAINT fk_msg_user FOREIGN KEY (author_user_id) REFERENCES users (id),
+        CONSTRAINT fk_msg_agent FOREIGN KEY (sender_agent_id) REFERENCES agents (id),
         CONSTRAINT fk_msg_reply FOREIGN KEY (reply_to_message_id) REFERENCES messages (id),
         CONSTRAINT chk_message_sender CHECK (
             (
                 message_type = 'SYSTEM'
                 AND sender_type = 'SYSTEM'
                 AND author_user_id IS NULL
+                AND sender_agent_id IS NULL
             )
             OR (
                 message_type <> 'SYSTEM'
                 AND
-                ((sender_type = 'USER' AND author_user_id IS NOT NULL)
-                 OR (sender_type = 'AGENT' AND author_user_id IS NULL))
+                ((sender_type = 'USER' AND author_user_id IS NOT NULL AND sender_agent_id IS NULL)
+                 OR (sender_type = 'AGENT' AND author_user_id IS NULL AND sender_agent_id IS NOT NULL))
             )
         )
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目群聊有序消息，提及在MVP内以JSON保存';
@@ -196,11 +220,12 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT fk_skill_submitter FOREIGN KEY (submitted_by) REFERENCES users (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目Skill，MVP标签内嵌JSON';
 
--- 聊天 Agent 执行记录；关联触发消息与工作区，子 Agent 关联父运行。
+-- 聊天 Agent 执行记录；关联触发消息、实际 Agent 身份与工作区，子 Agent 关联父运行。
 CREATE TABLE IF NOT EXISTS agent_runs (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
     project_id BIGINT NOT NULL,
     group_id BIGINT NOT NULL,
+    agent_id BIGINT NOT NULL COMMENT '执行该轮运行的项目内 Agent',
     trigger_message_id BIGINT NULL,
     parent_run_id BIGINT NULL,
     workspace_id BIGINT NULL COMMENT '本轮最近使用的工作区',
@@ -247,8 +272,6 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT fk_event_project FOREIGN KEY (project_id) REFERENCES projects (id),
         CONSTRAINT fk_event_group FOREIGN KEY (group_id) REFERENCES chat_groups (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目级实时事件存储，至少保留24小时';
-
--- Agent 表创建后补充消息发送者外键。
 
 CREATE TABLE IF NOT EXISTS
     notifications (

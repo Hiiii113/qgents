@@ -9,6 +9,8 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import qg.qgent.harness.entity.AgentRunEntity;
 import qg.qgent.harness.mapper.AgentRunMapper;
+import qg.qgent.agent.entity.AgentEntity;
+import qg.qgent.agent.mapper.AgentMapper;
 import qg.qgent.attachment.entity.AttachmentEntity;
 import qg.qgent.attachment.mapper.AttachmentMapper;
 import qg.qgent.chat.entity.ChatGroupEntity;
@@ -42,6 +44,7 @@ public class TeamDisbandService {
     private final ChatGroupMapper chatGroupMapper;
     private final MessageMapper messageMapper;
     private final AgentRunMapper agentRuns;
+    private final AgentMapper agentMapper;
     private final WorkspaceMapper workspaceMapper;
     private final SkillMapper skillMapper;
     private final AttachmentMapper attachmentMapper;
@@ -120,6 +123,9 @@ public class TeamDisbandService {
         // 须在 messages/events/notifications 之后删除
         chatGroupMapper.delete(Wrappers.<ChatGroupEntity>lambdaQuery()
                 .eq(ChatGroupEntity::getProjectId, projectId));
+
+        // agents 引用 project，且 messages.sender_agent_id 已在上方清空
+        agentMapper.delete(Wrappers.<AgentEntity>lambdaQuery().eq(AgentEntity::getProjectId, projectId));
 
         // project 级联 project_members
         projectMapper.deleteById(projectId);

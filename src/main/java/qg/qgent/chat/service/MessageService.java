@@ -17,7 +17,6 @@ import qg.qgent.chat.dto.MessageSendRequest;
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.event.MessageSentEvent;
-import qg.qgent.chat.QgentIdentity;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.dto.KeysetPagination;
@@ -88,12 +87,11 @@ public class MessageService {
             throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
         }
         for (Mention mention : body.getMentions() == null ? List.<Mention>of() : body.getMentions()) {
-            if ("AGENT".equals(mention.getType()) && (!QgentIdentity.ID.equals(mention.getId())
-                    || !Boolean.TRUE.equals(group.getQgentEnabled()))) {
-                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_QGENT_MENTION", "请选择当前群聊中的 Qgent");
+            if ("AGENT".equals(mention.getType())) {
+                groupService.requireGroupAgent(groupId, mention.getId());
             }
         }
-        return doSend(projectId, groupId, actor, "USER", body);
+        return doSend(projectId, groupId, actor, null, body);
     }
 
     /**
@@ -190,14 +188,15 @@ public class MessageService {
         return value.length() <= 60 ? value : value.substring(0, 60) + "…";
     }
 
-    /** Qgent 回复与用户消息共用序号、引用和幂等规则。 */
+    /** Agent 回复与用户消息共用序号、引用和幂等规则；发送者为群内的具体 Agent。 */
     @Transactional
-    public MessageResponse sendAsAgent(Long groupId, MessageSendRequest body) {
+    public MessageResponse sendAsAgent(Long agentId, Long groupId, MessageSendRequest body) {
         ChatGroupEntity group = lockGroup(groupId);
-        if (group == null || !Boolean.TRUE.equals(group.getQgentEnabled())) {
-            throw new ApiException(HttpStatus.NOT_FOUND, "QGENT_NOT_IN_GROUP", "Qgent 未加入当前群聊");
+        if (group == null) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
         }
-        return doSend(group.getProjectId(), groupId, null, "AGENT", body);
+        groupService.requireGroupAgent(groupId, agentId);
+        return doSend(group.getProjectId(), groupId, null, agentId, body);
     }
 
     private ChatGroupEntity lockGroup(Long groupId) {
@@ -206,7 +205,7 @@ public class MessageService {
                 .last("FOR UPDATE"));
     }
 
-    private MessageResponse doSend(Long projectId, Long groupId, Long authorUserId, String senderType,
+    private MessageResponse doSend(Long projectId, Long groupId, Long authorUserId, Long senderAgentId,
                                    MessageSendRequest body) {
         String type = normalizeType(body.getType());
         validateContent(type, body.getContent());
@@ -232,7 +231,8 @@ public class MessageService {
         message.setGroupId(groupId);
         message.setSequenceNo(messageMapper.nextSequence(groupId));
         message.setAuthorUserId(authorUserId);
-        message.setSenderType(senderType);
+        message.setSenderType(authorUserId == null ? "AGENT" : "USER");
+        message.setSenderAgentId(senderAgentId);
         message.setClientMessageId(clientMessageId);
         message.setMessageType(type);
         message.setContent(writeJson(body.getContent()));

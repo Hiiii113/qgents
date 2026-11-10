@@ -63,6 +63,7 @@ class TeamDisbandServiceTest {
         for (Class<?> entity : List.of(ProjectEntity.class, NotificationEntity.class, EventEntity.class,
                 ChatGroupEntity.class, MessageEntity.class,
                 AgentRunEntity.class,
+                qg.qgent.agent.entity.AgentEntity.class,
                 WorkspaceEntity.class,
                 SkillEntity.class, AttachmentEntity.class,
                 ChatGroupEntity.class)) {
@@ -76,6 +77,7 @@ class TeamDisbandServiceTest {
     private final ChatGroupMapper chatGroupMapper = mock(ChatGroupMapper.class);
     private final MessageMapper messageMapper = mock(MessageMapper.class);
     private final AgentRunMapper agentRuns = mock(AgentRunMapper.class);
+    private final qg.qgent.agent.mapper.AgentMapper agentMapper = mock(qg.qgent.agent.mapper.AgentMapper.class);
     private final WorkspaceMapper workspaceMapper = mock(WorkspaceMapper.class);
     private final SkillMapper skillMapper = mock(SkillMapper.class);
     private final AttachmentMapper attachmentMapper = mock(AttachmentMapper.class);
@@ -91,7 +93,7 @@ class TeamDisbandServiceTest {
     void setUp() {
         service = new TeamDisbandService(projectMapper, notificationMapper,
                 eventMapper, chatGroupMapper, messageMapper,
-                agentRuns,
+                agentRuns, agentMapper,
                 workspaceMapper, skillMapper, attachmentMapper,
                 teamMapper, new ProjectDirectoryService(projectDataRoot.toString(), projectDataRoot.toString()),
                 sandboxes, mock(qg.qgent.common.storage.AvatarStorageService.class));
@@ -152,8 +154,8 @@ class TeamDisbandServiceTest {
 
         // 关键依赖顺序：子表先于父表，引用行先于被引用行；agents 在项目级引用清理后最后删除。
         var order = inOrder(notificationMapper, eventMapper, messageMapper,
-                agentRuns,
-                workspaceMapper, skillMapper, attachmentMapper, chatGroupMapper, projectMapper,
+                agentRuns, agentMapper,
+                workspaceMapper, skillMapper, attachmentMapper, chatGroupMapper, agentMapper, projectMapper,
                 teamMapper);
         order.verify(notificationMapper).delete(any());
         order.verify(eventMapper).delete(any());
@@ -163,6 +165,7 @@ class TeamDisbandServiceTest {
         order.verify(skillMapper).delete(any());
         order.verify(attachmentMapper).delete(any());
         order.verify(chatGroupMapper).delete(any());
+        order.verify(agentMapper).delete(any());
         order.verify(projectMapper).deleteById(projectId);
         order.verify(teamMapper).deleteById(teamId);
     }

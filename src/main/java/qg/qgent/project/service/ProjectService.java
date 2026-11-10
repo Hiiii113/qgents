@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import qg.qgent.common.dto.KeysetPagination;
+import qg.qgent.agent.service.AgentService;
 import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.common.dto.PageSlice;
 import qg.qgent.common.web.ApiException;
@@ -46,6 +47,7 @@ public class ProjectService {
     private final EventService eventService;
     private final WorkspaceService workspaceService;
     private final AvatarStorageService avatarStorage;
+    private final AgentService agentService;
 
     /** 创建项目并初始化项目成员关系；团队所有者和管理员均可创建。 */
     @Transactional
@@ -61,6 +63,8 @@ public class ProjectService {
         projectMapper.insert(project);
         // 默认 Workspace 与项目同一事务登记；物理目录和沙箱仍按需建立。
         workspaceService.defaultWorkspace(project.getId());
+        // 每个项目拥有自己的默认 Agent；默认群在同一事务里把它加为成员。
+        agentService.createDefaultAgent(project.getId());
 
         insertMember(project.getId(), actor, "PROJECT_ADMIN");
         for (Long userId : new LinkedHashSet<>(request.getMemberIds() == null ? List.of() : request.getMemberIds())) {

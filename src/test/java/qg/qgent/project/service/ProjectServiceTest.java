@@ -38,7 +38,7 @@ class ProjectServiceTest {
     private final AvatarStorageService avatarStorage = mock(AvatarStorageService.class);
     private final ProjectService service = new ProjectService(projects, projectMembers, teams, teamMembers,
             access, mock(ApplicationEventPublisher.class), mock(NotificationService.class), mock(EventService.class),
-            workspaces, avatarStorage);
+            workspaces, avatarStorage, mock(qg.qgent.agent.service.AgentService.class));
 
     @Test
     void projectListReturnsAvatarAndMemberCountWithoutExtraQueries() {
@@ -137,7 +137,8 @@ class ProjectServiceTest {
         var service = new ProjectService(projects, mock(ProjectMemberMapper.class), teams,
                 members, mock(ProjectAccessService.class), events,
                 mock(NotificationService.class), mock(EventService.class),
-                mock(qg.qgent.workspace.service.WorkspaceService.class), mock(AvatarStorageService.class));
+                mock(qg.qgent.workspace.service.WorkspaceService.class), mock(AvatarStorageService.class),
+                mock(qg.qgent.agent.service.AgentService.class));
         var request = new ProjectCreateRequest();
         request.setName("项目");
         var created = service.create(owner, teamId, request);
@@ -188,7 +189,7 @@ class ProjectServiceTest {
         ProjectService localService = new ProjectService(projects, projectMembers, teams, teamMembers,
                 new ProjectAccessService(projects, projectMembers, teams, teamMembers),
                 mock(ApplicationEventPublisher.class), mock(NotificationService.class), mock(EventService.class),
-                workspaces, avatarStorage);
+                workspaces, avatarStorage, mock(qg.qgent.agent.service.AgentService.class));
 
         assertThatThrownBy(() -> localService.create(member, teamId, request))
                 .isInstanceOf(qg.qgent.common.web.ApiException.class)

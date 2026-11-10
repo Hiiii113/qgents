@@ -60,6 +60,24 @@ class ChatHistoryServiceTest {
     }
 
     @Test
+    void agentMessagesExposeTheirOwnSenderId() {
+        Long group = TestIds.next(), agentId = TestIds.next();
+        MessageEntity message = new MessageEntity();
+        message.setId(TestIds.next());
+        message.setGroupId(group);
+        message.setMessageType("TEXT");
+        message.setSenderType("AGENT");
+        message.setSenderAgentId(agentId);
+        message.setContent("{\"text\":\"好的\"}");
+        when(messages.selectById(message.getId())).thenReturn(message);
+
+        var context = service.readChatMessage(TestIds.next(), TestIds.next(), group, message.getId());
+
+        assertThat(context.getSenderType()).isEqualTo("AGENT");
+        assertThat(context.getSenderId()).isEqualTo(agentId.toString());
+    }
+
+    @Test
     void corruptedContentFailsWithMessageId() {
         Long id = TestIds.next();
         MessageEntity message = new MessageEntity();
