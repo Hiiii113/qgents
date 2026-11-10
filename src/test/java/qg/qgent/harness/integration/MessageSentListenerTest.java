@@ -10,6 +10,7 @@ import qg.qgent.harness.runtime.AgentChatService;
 import qg.qgent.chat.dto.Mention;
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.mapper.MessageMapper;
+import qg.qgent.chat.service.GroupService;
 import qg.qgent.chat.service.MessageService;
 
 import java.util.List;
@@ -20,7 +21,9 @@ class MessageSentListenerTest {
     private final MessageMapper messages = mock(MessageMapper.class);
     private final AgentChatService agents = mock(AgentChatService.class);
     private final MessageService messageService = mock(MessageService.class);
-    private final MessageSentListener listener = new MessageSentListener(messages, agents, messageService);
+    private final GroupService groupService = mock(GroupService.class);
+    private final MessageSentListener listener = new MessageSentListener(messages, agents, messageService,
+            groupService);
 
     @Test
     void ordinaryMessagesDoNotStartAgents() {
@@ -38,32 +41,42 @@ class MessageSentListenerTest {
     }
 
     @Test
-    void qgentMentionStartsOneRunForDuplicateMentions() {
-        Mention mention = new Mention();
-        mention.setType("AGENT");
-        mention.setId(qg.qgent.chat.QgentIdentity.ID);
-        MessageSentEvent event = event(List.of(mention, mention));
+    void eachMentionedGroupAgentRunsOnceForDuplicateMentions() {
+        Long firstAgent = TestIds.next(), secondAgent = TestIds.next();
+        Mention first = mention(firstAgent);
+        MessageSentEvent event = event(List.of(first, first, mention(secondAgent)));
         MessageEntity message = new MessageEntity();
         message.setContent("{\"text\":\"你好\"}");
         when(messages.selectById(event.messageId())).thenReturn(message);
         when(messageService.agentInstruction(message)).thenReturn("你好");
+        when(groupService.groupAgentIds(event.groupId())).thenReturn(List.of(firstAgent, secondAgent));
+
         listener.onMessageSent(event);
-        verify(agents).replyToMention(event, "你好");
+
+        verify(agents).replyToMention(event, firstAgent, "你好");
+        verify(agents).replyToMention(event, secondAgent, "你好");
         verifyNoMoreInteractions(agents);
     }
 
     @Test
-    void arbitraryAgentIdsCannotTriggerQgent() {
-        Mention mention = new Mention();
-        mention.setType("AGENT");
-        mention.setId(TestIds.next());
-        MessageSentEvent event = event(List.of(mention));
+    void agentOutsideTheGroupDoesNotRun() {
+        Long groupAgent = TestIds.next(), foreignAgent = TestIds.next();
+        MessageSentEvent event = event(List.of(mention(foreignAgent)));
         MessageEntity message = new MessageEntity();
         message.setContent("{\"text\":\"你好\"}");
         when(messages.selectById(event.messageId())).thenReturn(message);
-        when(messageService.agentInstruction(message)).thenReturn("你好");
+        when(groupService.groupAgentIds(event.groupId())).thenReturn(List.of(groupAgent));
+
         listener.onMessageSent(event);
+
         verifyNoInteractions(agents);
+    }
+
+    private Mention mention(Long agentId) {
+        Mention mention = new Mention();
+        mention.setType("AGENT");
+        mention.setId(agentId);
+        return mention;
     }
 
     private MessageSentEvent event(List<Mention> mentions) {

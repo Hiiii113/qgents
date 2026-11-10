@@ -5,8 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import qg.qgent.agent.entity.AgentEntity;
+import qg.qgent.agent.mapper.AgentMapper;
 import qg.qgent.attachment.service.AttachmentService;
-import qg.qgent.chat.QgentIdentity;
 import qg.qgent.chat.dto.Mention;
 import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.entity.MessageEntity;
@@ -31,17 +32,26 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class MessageViews {
     private final UserMapper users;
+    private final AgentMapper agents;
     private final AttachmentService attachments;
     private final ObjectMapper json;
 
     /** 按入参顺序组装；projectId 为空时跳过附件预览。 */
     public List<MessageResponse> assemble(List<MessageEntity> rows, Long projectId) {
         Map<Long, String> names = userNames(rows);
+        Map<Long, String> agentNames = agentNames(rows);
         List<MessageResponse> responses = rows.stream()
-                .map(row -> response(row, row.getAuthorUserId() == null ? null : names.get(row.getAuthorUserId())))
+                .map(row -> response(row, senderName(row, names, agentNames)))
                 .toList();
         enrichPreviews(responses, projectId);
         return responses;
+    }
+
+    private String senderName(MessageEntity row, Map<Long, String> names, Map<Long, String> agentNames) {
+        if (row.getSenderAgentId() != null) {
+            return agentNames.get(row.getSenderAgentId());
+        }
+        return row.getAuthorUserId() == null ? null : names.get(row.getAuthorUserId());
     }
 
     private void enrichPreviews(List<MessageResponse> responses, Long projectId) {
@@ -70,6 +80,16 @@ public class MessageViews {
         }
     }
 
+    private Map<Long, String> agentNames(List<MessageEntity> rows) {
+        Set<Long> agentIds = rows.stream().map(MessageEntity::getSenderAgentId).filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (agentIds.isEmpty()) {
+            return Map.of();
+        }
+        return agents.selectBatchIds(agentIds).stream()
+                .collect(Collectors.toMap(AgentEntity::getId, AgentEntity::getName));
+    }
+
     private Map<Long, String> userNames(List<MessageEntity> rows) {
         Set<Long> userIds = rows.stream().map(MessageEntity::getAuthorUserId).filter(Objects::nonNull)
                 .collect(Collectors.toSet());
@@ -96,8 +116,7 @@ public class MessageViews {
         String senderId;
         if ("AGENT".equals(message.getSenderType())) {
             senderType = "AGENT";
-            senderId = QgentIdentity.ID.toString();
-            senderName = QgentIdentity.NAME;
+            senderId = message.getSenderAgentId().toString();
         } else if (message.getAuthorUserId() != null) {
             senderType = "USER";
             senderId = message.getAuthorUserId().toString();

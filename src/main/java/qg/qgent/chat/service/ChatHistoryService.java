@@ -8,7 +8,6 @@ import org.springframework.stereotype.Service;
 import qg.qgent.chat.dto.ContextMessage;
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.mapper.MessageMapper;
-import qg.qgent.chat.QgentIdentity;
 import qg.qgent.common.web.ApiException;
 import java.util.*;
 
@@ -56,7 +55,7 @@ public class ChatHistoryService {
 
     private String senderId(MessageEntity m) {
         if ("AGENT".equals(m.getSenderType())) {
-            return QgentIdentity.ID.toString();
+            return m.getSenderAgentId() == null ? null : m.getSenderAgentId().toString();
         }
         return m.getAuthorUserId() == null ? null : m.getAuthorUserId().toString();
     }

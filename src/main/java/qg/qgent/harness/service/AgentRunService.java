@@ -25,10 +25,11 @@ public class AgentRunService {
     private final ProjectAccessService access;
     private final Map<Long, Runnable> cancellationSignals = new ConcurrentHashMap<>();
 
-    public AgentRunEntity startRoot(MessageSentEvent event, String instruction) {
+    public AgentRunEntity startRoot(Long agentId, MessageSentEvent event, String instruction) {
         AgentRunEntity run = new AgentRunEntity();
         run.setProjectId(event.projectId());
         run.setGroupId(event.groupId());
+        run.setAgentId(agentId);
         run.setTriggerMessageId(event.messageId());
         run.setCreatedBy(event.actor());
         run.setInstruction(instruction);
@@ -43,6 +44,7 @@ public class AgentRunService {
         AgentRunEntity run = new AgentRunEntity();
         run.setProjectId(root.getProjectId());
         run.setGroupId(root.getGroupId());
+        run.setAgentId(root.getAgentId());
         run.setTriggerMessageId(root.getTriggerMessageId());
         run.setParentRunId(root.getId());
         run.setWorkspaceId(workspaceId);

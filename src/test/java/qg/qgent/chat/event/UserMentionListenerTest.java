@@ -3,7 +3,6 @@ package qg.qgent.chat.event;
 import qg.qgent.support.TestIds;
 
 import org.junit.jupiter.api.Test;
-import qg.qgent.chat.QgentIdentity;
 import qg.qgent.chat.dto.Mention;
 import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.entity.MessageEntity;
@@ -23,7 +22,7 @@ class UserMentionListenerTest {
 
     @Test
     void userAndQgentMentionStillNotifiesUsersWithChatContext() {
-        var event = event(List.of(mention("USER", TestIds.next()), mention("AGENT", QgentIdentity.ID)));
+        var event = event(List.of(mention("USER", TestIds.next()), mention("AGENT", TestIds.next())));
         var message = new MessageEntity();
         var group = new ChatGroupEntity();
         group.setName("项目讨论");
@@ -38,7 +37,7 @@ class UserMentionListenerTest {
 
     @Test
     void qgentOnlyAndOrdinaryMessagesDoNotCreateUserNotifications() {
-        listener.onMessageSent(event(List.of(mention("AGENT", QgentIdentity.ID))));
+        listener.onMessageSent(event(List.of(mention("AGENT", TestIds.next()))));
         listener.onMessageSent(event(List.of()));
         verifyNoInteractions(messages, groups, service);
     }

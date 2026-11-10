@@ -10,7 +10,6 @@ public class ChatGroupEntity {
     private Long id;
     private Long projectId;
     private Long createdBy;
-    private Boolean qgentEnabled = false;
 
     private Boolean defaultGroup = true;
     private String name;

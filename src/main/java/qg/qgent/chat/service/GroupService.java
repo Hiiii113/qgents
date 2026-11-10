@@ -6,9 +6,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import qg.qgent.agent.service.AgentService;
 import qg.qgent.chat.dto.GroupLatestMessage;
 import qg.qgent.chat.dto.GroupCreateRequest;
 import qg.qgent.chat.dto.GroupInviteRequest;
+import qg.qgent.chat.mapper.GroupAgentMapper;
 import qg.qgent.chat.mapper.GroupUserMapper;
 import qg.qgent.chat.dto.GroupMemberResponse;
 import qg.qgent.chat.dto.GroupPinResponse;
@@ -16,7 +18,6 @@ import qg.qgent.chat.dto.GroupReadResponse;
 import qg.qgent.chat.dto.GroupResponse;
 import qg.qgent.chat.dto.GroupUpdateRequest;
 import qg.qgent.chat.entity.ChatGroupEntity;
-import qg.qgent.chat.QgentIdentity;
 import qg.qgent.chat.mapper.GroupReadStateMapper;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
@@ -49,13 +50,16 @@ public class GroupService {
     private final UserGroupPreferenceMapper userGroupPreferenceMapper;
     private final ProjectAccessService access;
     private final EventService eventService;
+    private final GroupAgentMapper groupAgentMapper;
+    private final AgentService agents;
 
     public GroupService(ChatGroupMapper groupMapper,
                         ProjectMemberMapper projectMemberMapper,
                         GroupUserMapper groupUserMapper,
                         MessageMapper messageMapper, GroupReadStateMapper groupReadStateMapper,
                         UserGroupPreferenceMapper userGroupPreferenceMapper,
-                        ProjectAccessService access, EventService eventService) {
+                        ProjectAccessService access, EventService eventService,
+                        GroupAgentMapper groupAgentMapper, AgentService agents) {
         this.groupMapper = groupMapper;
         this.projectMemberMapper = projectMemberMapper;
         this.groupUserMapper = groupUserMapper;
@@ -64,6 +68,8 @@ public class GroupService {
         this.userGroupPreferenceMapper = userGroupPreferenceMapper;
         this.access = access;
         this.eventService = eventService;
+        this.groupAgentMapper = groupAgentMapper;
+        this.agents = agents;
     }
 
     @EventListener
@@ -86,9 +92,9 @@ public class GroupService {
         group.setCreatedBy(createdBy);
         group.setName(title);
         group.setDefaultGroup(true);
-        group.setQgentEnabled(true);
         group.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
         groupMapper.insert(group);
+        groupAgentMapper.insertAgent(group.getId(), agents.defaultAgent(projectId).getId());
         eventService.publish(projectId, group.getId(), "group.created", id(group.getId()),
                 Map.of("projectId", id(projectId), "groupId", id(group.getId())));
         return toResponse(group);
@@ -172,9 +178,10 @@ public class GroupService {
                 .map(m -> new GroupMemberResponse(m.getUserId().toString(), m.getDisplayName(), m.getAvatarUrl(),
                         null, "USER"))
                 .forEach(members::add);
-        if (Boolean.TRUE.equals(group.getQgentEnabled())) {
-            members.add(new GroupMemberResponse(QgentIdentity.ID.toString(), QgentIdentity.NAME, null, null, "AGENT"));
-        }
+        groupAgentMapper.selectAgents(groupId).stream()
+                .map(agent -> new GroupMemberResponse(agent.getAgentId().toString(), agent.getName(), null, null,
+                        "AGENT"))
+                .forEach(members::add);
         return members;
     }
 
@@ -185,6 +192,18 @@ public class GroupService {
             throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
         }
         return group;
+    }
+
+    /** 发送消息与 Agent 回复前校验：传入的 Agent 必须是本群成员。 */
+    public void requireGroupAgent(Long groupId, Long agentId) {
+        if (agentId == null || !groupAgentMapper.selectAgentIds(groupId).contains(agentId)) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_NOT_IN_GROUP", "Agent 未加入当前群聊");
+        }
+    }
+
+    /** 群内 Agent 成员 ID；只有它们在群中被 @ 时才启动运行。 */
+    public List<Long> groupAgentIds(Long groupId) {
+        return groupAgentMapper.selectAgentIds(groupId);
     }
 
     private String id(Long value) {
@@ -228,7 +247,7 @@ public class GroupService {
         GroupLatestMessage latestMessage = latest == null ? null
                 : new GroupLatestMessage(latest.getSenderName(), latest.getText(), latest.getMessageType());
         long members = (isDefault(g) ? projectMemberMapper.countMembers(g.getProjectId()) : groupUserMapper.selectUserIds(g.getId()).size())
-                + (Boolean.TRUE.equals(g.getQgentEnabled()) ? 1 : 0);
+                + groupAgentMapper.countAgents(g.getId());
         GroupResponse response = new GroupResponse(g.getId().toString(), g.getProjectId().toString(),
                 g.getName(), id(g.getCreatedBy()), iso(g.getLastMessageAt()),
                 iso(g.getLastMessageAt() != null ? g.getLastMessageAt() : g.getCreatedAt()), latestMessage,
@@ -250,11 +269,11 @@ public class GroupService {
         group.setDefaultGroup(false);
         group.setName(body.getTitle().trim());
         group.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
-        validateInvites(actor, projectId, body.getUserIds(), body.getAgentIds());
-        group.setQgentEnabled(body.getAgentIds().contains(QgentIdentity.ID));
+        validateInvites(projectId, body.getUserIds(), body.getAgentIds());
         groupMapper.insert(group);
         groupUserMapper.insertUser(group.getId(), actor);
         addMembers(group.getId(), body.getUserIds());
+        body.getAgentIds().forEach(agentId -> groupAgentMapper.insertAgent(group.getId(), agentId));
         eventService.publish(projectId, group.getId(), "group.created", id(group.getId()),
                 Map.of("projectId", id(projectId), "groupId", id(group.getId())));
         return toResponse(group);
@@ -263,27 +282,21 @@ public class GroupService {
     @Transactional
     public List<GroupMemberResponse> invite(Long actor, Long projectId, Long groupId, GroupInviteRequest body) {
         ChatGroupEntity group = requireGroupMember(projectId, groupId, actor);
-        validateInvites(actor, projectId, body.getUserIds(), body.getAgentIds());
+        validateInvites(projectId, body.getUserIds(), body.getAgentIds());
         // 默认群的用户随项目同步，只需追加 Agent。
         addMembers(groupId, isDefault(group) ? List.of() : body.getUserIds());
-        if (body.getAgentIds().contains(QgentIdentity.ID)) {
-            groupMapper.update(null, Wrappers.<ChatGroupEntity>lambdaUpdate()
-                    .set(ChatGroupEntity::getQgentEnabled, true).eq(ChatGroupEntity::getId, groupId));
-            group.setQgentEnabled(true);
-        }
+        body.getAgentIds().forEach(agentId -> groupAgentMapper.insertAgent(groupId, agentId));
         eventService.publish(projectId, groupId, "group.member.updated", id(groupId),
                 Map.of("projectId", id(projectId), "groupId", id(groupId)));
         return members(actor, projectId, groupId);
     }
 
-    private void validateInvites(Long actor, Long projectId, List<Long> users, List<Long> agents) {
-        if (users == null || agents == null || users.stream().anyMatch(java.util.Objects::isNull) || agents.stream().anyMatch(java.util.Objects::isNull)) {
+    private void validateInvites(Long projectId, List<Long> users, List<Long> agentIds) {
+        if (users == null || agentIds == null || users.stream().anyMatch(java.util.Objects::isNull) || agentIds.stream().anyMatch(java.util.Objects::isNull)) {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_GROUP_MEMBER", "请选择有效成员");
         }
         for (Long userId : users) access.requireProjectMember(projectId, userId);
-        if (agents.stream().anyMatch(id -> !QgentIdentity.ID.equals(id))) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_GROUP_AGENT", "只能邀请 Qgent");
-        }
+        agents.requireProjectAgents(projectId, agentIds);
     }
 
     private void addMembers(Long groupId, List<Long> users) {

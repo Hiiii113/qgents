@@ -29,8 +29,11 @@ public class MessageEntity {
     // 发送用户 ID；Agent/系统消息时为空。
     private Long authorUserId;
 
-    // 消息发送方 USER/AGENT/SYSTEM；AGENT 固定表示 Qgent。
+    // 消息发送方 USER/AGENT/SYSTEM；AGENT 表示项目内的具体 Agent。
     private String senderType;
+
+    // 发送 Agent ID；AGENT 消息必填，其余为空。
+    private Long senderAgentId;
 
     // 客户端幂等 ID（群内唯一），断线重试命中时返回原消息；可为空表示不启用客户端幂等。
     private String clientMessageId;
