@@ -19,6 +19,7 @@ import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.dto.MessageSendRequest;
 import qg.qgent.chat.dto.Mention;
+import qg.qgent.chat.event.GroupMessageCreatedEvent;
 import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.entity.ChatGroupEntity;
@@ -215,14 +216,16 @@ class MessageServiceTest {
         assertThat(second.getId()).isEqualTo(first.getId());
         assertThat(changedRetry.getId()).isEqualTo(first.getId());
         verify(messages, times(1)).insert(any(MessageEntity.class));
+        // 每条新消息都维护群记忆的活跃状态；幂等重试不再重复发布。
+        verify(publisher).publishEvent(new GroupMessageCreatedEvent(projectId, groupId));
         if (!originallyMentioned) {
-            verifyNoInteractions(publisher);
+            verify(publisher, never()).publishEvent(any(MessageSentEvent.class));
+            verifyNoMoreInteractions(publisher);
             return;
         }
-        ArgumentCaptor<MessageSentEvent> event = ArgumentCaptor.forClass(MessageSentEvent.class);
-        verify(publisher).publishEvent(event.capture());
-        assertThat(event.getValue().messageId()).isEqualTo(Long.valueOf(first.getId()));
-        assertThat(event.getValue().mentions()).containsExactly(agent, user);
+        MessageSentEvent event = new MessageSentEvent(actor, projectId, groupId, Long.valueOf(first.getId()),
+                List.of(agent, user));
+        verify(publisher).publishEvent(event);
         verifyNoMoreInteractions(publisher);
     }
 
