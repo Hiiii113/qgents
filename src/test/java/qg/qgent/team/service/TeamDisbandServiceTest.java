@@ -62,6 +62,7 @@ class TeamDisbandServiceTest {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(configuration, "");
         for (Class<?> entity : List.of(ProjectEntity.class, NotificationEntity.class, EventEntity.class,
                 ChatGroupEntity.class, MessageEntity.class,
+                qg.qgent.memory.entity.GroupMemoryStateEntity.class,
                 AgentRunEntity.class,
                 WorkspaceEntity.class,
                 SkillEntity.class, AttachmentEntity.class,
@@ -75,6 +76,8 @@ class TeamDisbandServiceTest {
     private final EventMapper eventMapper = mock(EventMapper.class);
     private final ChatGroupMapper chatGroupMapper = mock(ChatGroupMapper.class);
     private final MessageMapper messageMapper = mock(MessageMapper.class);
+    private final qg.qgent.memory.mapper.GroupMemoryStateMapper groupMemoryStates =
+            mock(qg.qgent.memory.mapper.GroupMemoryStateMapper.class);
     private final AgentRunMapper agentRuns = mock(AgentRunMapper.class);
     private final WorkspaceMapper workspaceMapper = mock(WorkspaceMapper.class);
     private final SkillMapper skillMapper = mock(SkillMapper.class);
@@ -91,6 +94,7 @@ class TeamDisbandServiceTest {
     void setUp() {
         service = new TeamDisbandService(projectMapper, notificationMapper,
                 eventMapper, chatGroupMapper, messageMapper,
+                groupMemoryStates,
                 agentRuns,
                 workspaceMapper, skillMapper, attachmentMapper,
                 teamMapper, new ProjectDirectoryService(projectDataRoot.toString(), projectDataRoot.toString()),

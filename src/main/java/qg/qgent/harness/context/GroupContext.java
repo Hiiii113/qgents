@@ -38,4 +38,7 @@ public class GroupContext {
     @Schema(description = "项目长期记忆 memory.md 全文")
     private String projectMemory;
 
+    @Schema(description = "当前群聊记忆全文，由后台提炼维护")
+    private String groupMemory;
+
 }

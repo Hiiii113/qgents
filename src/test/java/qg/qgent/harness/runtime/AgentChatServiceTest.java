@@ -745,10 +745,11 @@ class AgentChatServiceTest {
         var memories = mock(ProjectMemoryService.class);
         when(memories.get(any(), any())).thenReturn(new ProjectMemoryResponse("1", "# 项目约定", "v1",
                 java.time.LocalDateTime.now()));
+        var groupMemories = mock(qg.qgent.memory.service.GroupMemoryExtractionService.class);
         var service = new AgentChatService(github, mock(SandboxCommands.class), workspaces,
                 mock(qg.qgent.workspace.service.WorkspaceRepositoryService.class), loop, context,
                 skills, history, messages, runs, sessions, codeAccess,
-                attachments, memories, new ObjectMapper(),
+                attachments, memories, groupMemories, new ObjectMapper(),
                 childExecutor, maxSubagents);
         MessageSentEvent event = new MessageSentEvent(actor, project, group, message, List.of());
         return new Fixture(service, event, messages, runs, root, workspaces, codeAccess, sessions, context, attachments);
