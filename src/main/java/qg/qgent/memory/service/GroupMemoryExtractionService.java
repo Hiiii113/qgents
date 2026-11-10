@@ -57,15 +57,25 @@ public class GroupMemoryExtractionService {
         this.maxMemoryChars = maxMemoryChars;
     }
 
-    /** 定时扫描；新消息数量和闲置时长同时满足才提交后台提炼。 */
+    /** 定时扫描全部群；新消息数量和闲置时长同时满足才提交后台提炼。 */
     @Scheduled(fixedDelayString = "${app.memory.group.scan-interval:1m}")
     public void scan() {
         LocalDateTime now = now();
         LocalDateTime staleBefore = now.minusMinutes(properties.getStaleClaimMinutes());
-        for (GroupMemoryStateEntity state : states.selectCandidates(staleBefore, properties.getScanBatch())) {
-            if (due(state, now) && hasWork(state)) {
-                submit(state.getProjectId(), state.getGroupId());
+        Long afterGroupId = null;
+        while (true) {
+            List<GroupMemoryStateEntity> page = states.selectCandidates(staleBefore, afterGroupId,
+                    properties.getScanPageSize());
+            for (GroupMemoryStateEntity state : page) {
+                if (due(state, now) && hasWork(state)) {
+                    submit(state.getProjectId(), state.getGroupId());
+                }
             }
+            if (page.size() < properties.getScanPageSize()) {
+                return;
+            }
+            // 按键游标翻页：修好不再变化的群不会占住窗口，后面的群每轮都能轮到。
+            afterGroupId = page.getLast().getGroupId();
         }
     }
 
@@ -104,7 +114,7 @@ public class GroupMemoryExtractionService {
             memories.write(projectId, groupId, updated);
             Long processedThrough = batch.isEmpty() ? state.getLastProcessedSequence()
                     : batch.getLast().getSequenceNo();
-            if (states.finishSuccess(groupId, claimedAt, processedThrough, now()) != 1) {
+            if (states.finishSuccess(groupId, claimedAt, state.getCorrection(), processedThrough, now()) != 1) {
                 log.warn("群记忆结果已失效，进度未推进, projectId={}, groupId={}", projectId, groupId);
                 return;
             }

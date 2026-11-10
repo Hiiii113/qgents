@@ -30,9 +30,6 @@ public class GroupMemoryTools {
         if (correction == null || correction.isBlank()) {
             return ToolResult.error("INVALID_ARGUMENT", "correction 不能为空");
         }
-        if (groupId == null) {
-            return ToolResult.error("GROUP_MEMORY_GROUP_REQUIRED", "当前运行未关联项目群聊，无法提交群记忆纠错");
-        }
         try {
             memories.requestCorrection(actor, projectId, groupId, correction);
             ToolResult result = ToolResult.ok();
