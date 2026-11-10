@@ -22,6 +22,7 @@ import qg.qgent.chat.mapper.GroupReadStateMapper;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.chat.mapper.view.GroupLatestMessageRow;
+import qg.qgent.chat.mapper.view.GroupMemberRow;
 import qg.qgent.chat.mapper.view.GroupUnreadRow;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.event.ProjectCreatedEvent;
@@ -33,8 +34,10 @@ import qg.qgent.user.mapper.UserGroupPreferenceMapper;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -183,6 +186,20 @@ public class GroupService {
                         "AGENT"))
                 .forEach(members::add);
         return members;
+    }
+
+    /** 来源群成员包含目标群成员时，来源群内容才能进入目标群；默认群成员即全体项目成员。 */
+    public boolean audienceCoveredBy(Long projectId, Long sourceGroupId, Long targetGroupId) {
+        return membersOf(projectId, sourceGroupId).containsAll(membersOf(projectId, targetGroupId));
+    }
+
+    private Set<Long> membersOf(Long projectId, Long groupId) {
+        ChatGroupEntity group = requireGroupInProject(projectId, groupId);
+        if (isDefault(group)) {
+            return projectMemberMapper.selectMembers(projectId).stream().map(GroupMemberRow::getUserId)
+                    .collect(Collectors.toSet());
+        }
+        return new HashSet<>(groupUserMapper.selectUserIds(groupId));
     }
 
     public ChatGroupEntity requireGroupMember(Long projectId, Long groupId, Long actor) {

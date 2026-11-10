@@ -26,8 +26,10 @@ import qg.qgent.github.tool.GitHubCapability;
 import qg.qgent.github.service.GitHubRepositoryService;
 import qg.qgent.harness.context.ContextService;
 import qg.qgent.harness.context.GroupContext;
+import qg.qgent.memory.dto.AgentMemoryView;
 import qg.qgent.memory.dto.GroupMemoryResponse;
 import qg.qgent.memory.dto.ProjectMemoryResponse;
+import qg.qgent.memory.service.AgentMemoryService;
 import qg.qgent.memory.service.GroupMemoryExtractionService;
 import qg.qgent.memory.service.GroupMemoryService;
 import qg.qgent.memory.service.ProjectMemoryService;
@@ -86,7 +88,7 @@ class AgentChatServiceTest {
         GroupContext groupContext = new GroupContext();
         groupContext.setConversation(List.of(new ContextMessage(1L, "IMAGE", "USER", "1", "",
                 "9", "photo.png", "image/png", 2048L)));
-        when(fixture.context().buildForGroup(actor, project, group, 30)).thenReturn(groupContext);
+        when(fixture.context().buildForGroup(actor, project, group, fixture.agentId(), 30)).thenReturn(groupContext);
 
         fixture.service().replyToMention(fixture.event(), fixture.agentId(), "看看图片");
 
@@ -111,6 +113,29 @@ class AgentChatServiceTest {
 
         verify(fixture.runs()).startRoot(agent, fixture.event(), "你好");
         verify(fixture.messages()).sendAsAgent(eq(agent), eq(group), any());
+    }
+
+    @Test
+    void promptAndToolsCarryTheAgentsOwnPrivateMemory() {
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
+        ChatModel model = model();
+        when(model.call(any(Prompt.class))).thenReturn(reply("已记住"));
+        var fixture = fixture(model, actor, project, group, message, childExecutor);
+        GroupContext groupContext = new GroupContext();
+        groupContext.setConversation(List.of());
+        groupContext.setAgentMemory("# 你负责后端接口");
+        when(fixture.context().buildForGroup(actor, project, group, fixture.agentId(), 30)).thenReturn(groupContext);
+
+        fixture.service().replyToMention(fixture.event(), fixture.agentId(), "记住分工");
+
+        org.mockito.ArgumentCaptor<Prompt> prompts = org.mockito.ArgumentCaptor.forClass(Prompt.class);
+        verify(model).call(prompts.capture());
+        Prompt prompt = prompts.getValue();
+        assertThat(prompt.getInstructions()).anySatisfy(item ->
+                assertThat(item.getText()).contains("# 你负责后端接口"));
+        assertThat(((OpenAiChatOptions) prompt.getOptions()).getToolCallbacks())
+                .extracting(callback -> callback.getToolDefinition().name())
+                .contains("read_agent_memory", "write_agent_memory", "read_project_memory", "propose_project_memory");
     }
 
     @Test
@@ -164,7 +189,7 @@ class AgentChatServiceTest {
 
         assertThat(rootCalls.get()).isEqualTo(3);
         assertThat(childInput.get()).contains("published-skill", "适用于测试任务", "activate_skill", "# 项目约定",
-                "# 群约定").doesNotContain("root-only context");
+                "# 群约定", "# 你的分工").doesNotContain("root-only context");
         assertThat(childToolNames.get()).doesNotContain("start_subagent", "wait_subagent", "get_subagent_result",
                 "message_subagent", "continue_subagent", "stop_subagent", "cancel_agent",
                 "propose_project_memory", "approve_project_memory")
@@ -760,9 +785,9 @@ class AgentChatServiceTest {
         groupContext.setTitle("root-only context");
         groupContext.setConversation(List.of());
         groupContext.setSkills(List.of(new ContextSkill(TestIds.next(), "published-skill", "适用于测试任务")));
-        when(context.buildForGroup(actor, project, group, 30)).thenReturn(groupContext);
-        when(skills.publishedCatalog(actor, project)).thenReturn(groupContext.getSkills());
         Long agentId = TestIds.next();
+        when(context.buildForGroup(actor, project, group, agentId, 30)).thenReturn(groupContext);
+        when(skills.publishedCatalog(actor, project)).thenReturn(groupContext.getSkills());
         AgentRunEntity root = new AgentRunEntity();
         root.setId(TestIds.next());
         root.setProjectId(project);
@@ -804,11 +829,13 @@ class AgentChatServiceTest {
             reply.setGroupId(group.toString());
             return reply;
         });
+        var agentMemories = mock(AgentMemoryService.class);
+        when(agentMemories.view(any(), any(), any())).thenReturn(new AgentMemoryView("# 你的分工", ""));
         var service = new AgentChatService(github, mock(SandboxCommands.class), workspaces,
                 mock(WorkspaceRepositoryService.class), loop, context,
                 skills, history, messages, runs, sessions, codeAccess,
                 attachments, memories, groupMemory, mock(GroupMemoryExtractionService.class), proposals,
-                new ObjectMapper(), childExecutor, maxSubagents);
+                agentMemories, new ObjectMapper(), childExecutor, maxSubagents);
         MessageSentEvent event = new MessageSentEvent(actor, project, group, message, List.of());
         return new Fixture(service, event, agentId, messages, runs, root, workspaces, codeAccess, sessions, context,
                 attachments, proposals, replyMessageId);
