@@ -69,6 +69,8 @@ app:
     max-parallel-tool-calls: ${APP_AGENT_MAX_PARALLEL_TOOL_CALLS:4}
     # 每个根运行同时活跃的子 Agent 数量上限。
     max-subagents: ${APP_AGENT_MAX_SUBAGENTS:8}
+    # 每个项目的 Agent 数量上限，含默认 Agent 与待审批申请；被拒绝的申请不占名额。
+    max-per-project: ${APP_AGENT_MAX_PER_PROJECT:10}
     context:
       # 项目 memory.md 注入 Agent 上下文的字符上限；超过时拒绝提出记忆候选。
       max-memory-chars: ${APP_AGENT_CONTEXT_MAX_MEMORY_CHARS:12000}
