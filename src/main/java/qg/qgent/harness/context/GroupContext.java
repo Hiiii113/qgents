@@ -12,7 +12,7 @@ import java.util.List;
 /**
  * Agent 使用的群聊上下文。
  * <p>
- * 将项目群聊的历史消息、已发布 Skill 目录与项目 memory.md 组装为 Agent 输入上下文，
+ * 将项目群聊的历史消息、已发布 Skill 目录、项目 memory.md 与当前 Agent 的私有记忆组装为 Agent 输入上下文，
  * 供 Agent loop 作为 prompt 输入。
  */
 @Data
@@ -37,5 +37,8 @@ public class GroupContext {
 
     @Schema(description = "项目长期记忆 memory.md 全文")
     private String projectMemory;
+
+    @Schema(description = "当前 Agent 的私有记忆全文；来源群受众不覆盖当前群的部分不会出现")
+    private String agentMemory;
 
 }

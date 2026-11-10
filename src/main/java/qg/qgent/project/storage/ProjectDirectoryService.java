@@ -48,6 +48,11 @@ public class ProjectDirectoryService {
         return create(projectRoot(projectId).resolve("workspaces"));
     }
 
+    /** 单个 Agent 的私有记忆目录；只在写入时创建，不挂载进沙箱。 */
+    public Path agentMemory(Long projectId, Long agentId) {
+        return projectRoot(projectId).resolve("agent-memory").resolve(agentId.toString());
+    }
+
     /** 单个 Workspace 的目录，不存在时创建；directoryName 为 default 或 Workspace ID。 */
     public Path workspace(Long projectId, String directoryName) {
         return create(workspacesRoot(projectId).resolve(directoryName));

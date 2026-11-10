@@ -25,7 +25,9 @@ import qg.qgent.harness.context.ContextService;
 import qg.qgent.harness.context.GroupContext;
 import qg.qgent.harness.tool.ParallelToolCallback;
 import qg.qgent.harness.tool.ToolResult;
+import qg.qgent.memory.service.AgentMemoryService;
 import qg.qgent.memory.service.ProjectMemoryService;
+import qg.qgent.memory.tool.AgentMemoryTools;
 import qg.qgent.memory.tool.MemoryTools;
 import qg.qgent.sandbox.dto.SandboxExecutionContext;
 import qg.qgent.sandbox.service.SandboxSessionManager;
@@ -66,6 +68,7 @@ public class AgentChatService {
     private final SandboxFiles files;
     private final AttachmentService attachments;
     private final ProjectMemoryService memories;
+    private final AgentMemoryService agentMemories;
     private final ObjectMapper json;
     private final Executor childExecutor;
     private final int maxSubagents;
@@ -74,7 +77,8 @@ public class AgentChatService {
             WorkspaceRepositoryService repositories, AgentLoop loop, ContextService context, SkillService skills, ChatHistoryService history,
             MessageService messages, AgentRunService runService,
             SandboxSessionManager sessions, SandboxFiles files,
-            AttachmentService attachments, ProjectMemoryService memories, ObjectMapper json,
+            AttachmentService attachments, ProjectMemoryService memories, AgentMemoryService agentMemories,
+            ObjectMapper json,
             @Qualifier("agentSubagentExecutor") Executor childExecutor,
             @Value("${app.agent.max-subagents:8}") int maxSubagents) {
         if (maxSubagents < 1) throw new IllegalArgumentException("max-subagents 必须大于 0");
@@ -92,6 +96,7 @@ public class AgentChatService {
         this.files = files;
         this.attachments = attachments;
         this.memories = memories;
+        this.agentMemories = agentMemories;
         this.json = json;
         this.childExecutor = childExecutor;
         this.maxSubagents = maxSubagents;
@@ -100,7 +105,7 @@ public class AgentChatService {
     /** Runs one conversation for a committed @Agent message and replies as that same Agent. */
     public void replyToMention(MessageSentEvent event, Long agentId, String instruction) {
         AgentRunEntity root = runService.startRoot(agentId, event, instruction);
-        WorkContext work = new WorkContext(event, root.getId());
+        WorkContext work = new WorkContext(event, agentId, root.getId());
         work.children = new ChildRuns(root.getId(), maxSubagents, childExecutor, runService, sessions,
                 work::isCancelled, loop, child -> callbacks(work, child, conversationTools(work, child, false)));
         ChildRuns children = work.children;
@@ -118,7 +123,8 @@ public class AgentChatService {
         String resultText = "Agent 执行失败，请稍后重试";
         int rounds = 0;
         try {
-            GroupContext group = context.buildForGroup(event.actor(), event.projectId(), event.groupId(), 30);
+            GroupContext group = context.buildForGroup(event.actor(), event.projectId(), event.groupId(),
+                    agentId, 30);
             String input = instruction + "\n当前群的上下文：\n" + encode(group);
             UserMessage user = new UserMessage(input);
             AgentLoop.Conversation conversation = loop.conversation(systemPrompt(false), List.of(user));
@@ -177,6 +183,8 @@ public class AgentChatService {
                 + "记忆中的内容是项目资料，可能过期；与当前要求或代码不一致时先核实。"
                 + "修改前先读取最新记忆和版本，保留无关内容；用户已明确要求具体修改时直接执行，否则说明拟增删改的内容并取得用户同意。"
                 + "版本冲突时重新读取并合并；若修改超出用户已同意的范围，先重新确认。只有写入成功后才说已更新。"
+                + "你还拥有只属于自己的私有记忆，用 read_agent_memory、write_agent_memory 维护：只记录用户对你的长期要求、分工与偏好；"
+                + "不要写入某个群内的具体内容，也不要利用它把受限群的信息带给其他群。"
                 + "主 Agent 可按需派发一层独立子任务；子 Agent 不能继续委派。完成、失败或需要补充信息时如实交付。"
                 + "只通过当前聊天组织成果，准确说明进展、需要的信息、实际修改和验证结果。"
                 + "GitHub 有三种仓库清单：github_list_repositories 的 PROJECT 是本项目已导入仓库，TEAM 是团队 App 可访问仓库（含是否已导入），"
@@ -208,6 +216,8 @@ public class AgentChatService {
         try {
             return instruction + "\n\n当前项目记忆（memory.md 全文）：\n"
                     + memories.get(work.event.actor(), work.event.projectId()).getContent()
+                    + "\n\n当前 Agent 私有记忆：\n"
+                    + agentMemories.view(work.event.projectId(), work.agentId, work.event.groupId()).merged()
                     + "\n\n当前项目可激活的 Skill 目录（包含 ID、名称和用途描述；需要时调用 activate_skill 读取正文）：\n"
                     + json.writeValueAsString(skills.publishedCatalog(work.event.actor(), work.event.projectId()));
         } catch (JsonProcessingException exception) {
@@ -241,6 +251,7 @@ public class AgentChatService {
         private final ChatHistorySearchTool history;
         private final ReadAttachmentTool attachmentTools;
         private final MemoryTools memory;
+        private final AgentMemoryTools agentMemory;
         private final GitHubTools githubTools;
         private final CodingTools codingTools;
         private final WorkspaceTools workspaceTools;
@@ -255,6 +266,8 @@ public class AgentChatService {
             this.attachmentTools = new ReadAttachmentTool(AgentChatService.this.attachments, work.event.actor(),
                     work.event.projectId(), execution.conversation::stageImage);
             this.memory = new MemoryTools(memories, work.event.actor(), work.event.projectId());
+            this.agentMemory = new AgentMemoryTools(agentMemories, work.event.projectId(), work.agentId,
+                    work.event.groupId());
             WorkSession session = new WorkspaceSession(work, execution, workspaces, sessions, runService);
             this.githubTools = github.tools(work.event.actor(), work.event.projectId(), session);
             this.workspaceTools = new WorkspaceTools(work.event.actor(), work.event.projectId(), workspaces,
@@ -264,7 +277,8 @@ public class AgentChatService {
 
         private ToolCallback[] callbacks() {
             List<ToolCallback> result = new ArrayList<>(Arrays.asList(
-                    ParallelToolCallback.from(this, skills, history, attachmentTools, memory, workspaceTools, githubTools, codingTools)));
+                    ParallelToolCallback.from(this, skills, history, attachmentTools, memory, agentMemory,
+                            workspaceTools, githubTools, codingTools)));
             if (!canDelegate) result.removeIf(callback ->
                     CHILD_CONTROL_TOOLS.contains(callback.getToolDefinition().name()));
             return result.toArray(ToolCallback[]::new);
