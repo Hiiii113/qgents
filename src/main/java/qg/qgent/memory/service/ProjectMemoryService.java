@@ -40,7 +40,7 @@ public class ProjectMemoryService {
     private final ProjectDirectoryService directories;
     private final EventService events;
 
-    // 同一实例内的写入串行化；跨实例并发由候选状态与内容版本兜底。
+    // 同一实例内的写入串行化；跨实例由审批方持有的项目行锁与内容版本兜底。
     private final ConcurrentMap<Long, ReentrantLock> locks = new ConcurrentHashMap<>();
     private final int maxMemoryChars;
 

@@ -17,8 +17,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -77,11 +77,12 @@ class ProjectMemoryServiceTest {
         String version = service.get(actor, projectId).getVersion();
         service.applyApproved(projectId, "第一版", version);
 
-        ApiException error = assertThrows(ApiException.class,
-                () -> service.applyApproved(projectId, "第二版", version));
-
-        assertThat(error.status()).isEqualTo(HttpStatus.CONFLICT);
-        assertThat(error.code()).isEqualTo("MEMORY_VERSION_CONFLICT");
+        assertThatExceptionOfType(ApiException.class)
+                .isThrownBy(() -> service.applyApproved(projectId, "第二版", version))
+                .satisfies(error -> {
+                    assertThat(error.status()).isEqualTo(HttpStatus.CONFLICT);
+                    assertThat(error.code()).isEqualTo("MEMORY_VERSION_CONFLICT");
+                });
         assertThat(Files.readString(root.resolve(projectId.toString()).resolve("memory.md"), StandardCharsets.UTF_8))
                 .isEqualTo("第一版");
     }
