@@ -26,6 +26,7 @@ import qg.qgent.harness.context.GroupContext;
 import qg.qgent.harness.tool.ParallelToolCallback;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.memory.service.GroupMemoryExtractionService;
+import qg.qgent.memory.service.GroupMemoryService;
 import qg.qgent.memory.service.ProjectMemoryService;
 import qg.qgent.memory.tool.GroupMemoryTools;
 import qg.qgent.memory.tool.MemoryTools;
@@ -68,7 +69,8 @@ public class AgentChatService {
     private final SandboxFiles files;
     private final AttachmentService attachments;
     private final ProjectMemoryService memories;
-    private final GroupMemoryExtractionService groupMemories;
+    private final GroupMemoryService groupMemory;
+    private final GroupMemoryExtractionService groupMemoryMaintenance;
     private final ObjectMapper json;
     private final Executor childExecutor;
     private final int maxSubagents;
@@ -78,7 +80,7 @@ public class AgentChatService {
             MessageService messages, AgentRunService runService,
             SandboxSessionManager sessions, SandboxFiles files,
             AttachmentService attachments, ProjectMemoryService memories,
-            GroupMemoryExtractionService groupMemories, ObjectMapper json,
+            GroupMemoryService groupMemory, GroupMemoryExtractionService groupMemoryMaintenance, ObjectMapper json,
             @Qualifier("agentSubagentExecutor") Executor childExecutor,
             @Value("${app.agent.max-subagents:8}") int maxSubagents) {
         if (maxSubagents < 1) throw new IllegalArgumentException("max-subagents 必须大于 0");
@@ -96,7 +98,8 @@ public class AgentChatService {
         this.files = files;
         this.attachments = attachments;
         this.memories = memories;
-        this.groupMemories = groupMemories;
+        this.groupMemory = groupMemory;
+        this.groupMemoryMaintenance = groupMemoryMaintenance;
         this.json = json;
         this.childExecutor = childExecutor;
         this.maxSubagents = maxSubagents;
@@ -216,6 +219,8 @@ public class AgentChatService {
         try {
             return instruction + "\n\n当前项目记忆（memory.md 全文）：\n"
                     + memories.get(work.event.actor(), work.event.projectId()).getContent()
+                    + "\n\n当前群记忆（由后台从群消息提炼，是快照）：\n"
+                    + groupMemory.read(work.event.projectId(), work.event.groupId()).getContent()
                     + "\n\n当前项目可激活的 Skill 目录（包含 ID、名称和用途描述；需要时调用 activate_skill 读取正文）：\n"
                     + json.writeValueAsString(skills.publishedCatalog(work.event.actor(), work.event.projectId()));
         } catch (JsonProcessingException exception) {
@@ -249,7 +254,7 @@ public class AgentChatService {
         private final ChatHistorySearchTool history;
         private final ReadAttachmentTool attachmentTools;
         private final MemoryTools memory;
-        private final GroupMemoryTools groupMemory;
+        private final GroupMemoryTools groupMemoryTools;
         private final GitHubTools githubTools;
         private final CodingTools codingTools;
         private final WorkspaceTools workspaceTools;
@@ -264,8 +269,8 @@ public class AgentChatService {
             this.attachmentTools = new ReadAttachmentTool(AgentChatService.this.attachments, work.event.actor(),
                     work.event.projectId(), execution.conversation::stageImage);
             this.memory = new MemoryTools(memories, work.event.actor(), work.event.projectId());
-            this.groupMemory = new GroupMemoryTools(groupMemories, work.event.actor(), work.event.projectId(),
-                    work.event.groupId());
+            this.groupMemoryTools = new GroupMemoryTools(groupMemoryMaintenance, work.event.actor(),
+                    work.event.projectId(), work.event.groupId());
             WorkSession session = new WorkspaceSession(work, execution, workspaces, sessions, runService);
             this.githubTools = github.tools(work.event.actor(), work.event.projectId(), session);
             this.workspaceTools = new WorkspaceTools(work.event.actor(), work.event.projectId(), workspaces,
@@ -275,7 +280,7 @@ public class AgentChatService {
 
         private ToolCallback[] callbacks() {
             List<ToolCallback> result = new ArrayList<>(Arrays.asList(
-                    ParallelToolCallback.from(this, skills, history, attachmentTools, memory, groupMemory, workspaceTools, githubTools, codingTools)));
+                    ParallelToolCallback.from(this, skills, history, attachmentTools, memory, groupMemoryTools, workspaceTools, githubTools, codingTools)));
             if (!canDelegate) result.removeIf(callback ->
                     CHILD_CONTROL_TOOLS.contains(callback.getToolDefinition().name()));
             return result.toArray(ToolCallback[]::new);

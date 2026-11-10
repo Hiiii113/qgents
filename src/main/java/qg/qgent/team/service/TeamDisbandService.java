@@ -15,8 +15,6 @@ import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
-import qg.qgent.memory.entity.GroupMemoryStateEntity;
-import qg.qgent.memory.mapper.GroupMemoryStateMapper;
 import qg.qgent.notification.entity.NotificationEntity;
 import qg.qgent.notification.mapper.NotificationMapper;
 import qg.qgent.project.entity.ProjectEntity;
@@ -43,7 +41,6 @@ public class TeamDisbandService {
     private final EventMapper eventMapper;
     private final ChatGroupMapper chatGroupMapper;
     private final MessageMapper messageMapper;
-    private final GroupMemoryStateMapper groupMemoryStates;
     private final AgentRunMapper agentRuns;
     private final WorkspaceMapper workspaceMapper;
     private final SkillMapper skillMapper;
@@ -120,9 +117,7 @@ public class TeamDisbandService {
         attachmentMapper.delete(Wrappers.<AttachmentEntity>lambdaQuery().eq(AttachmentEntity::getProjectId, projectId));
 
         // chat_groups 引用 project，
-        // 须在 messages/events/notifications/群记忆状态之后删除
-        groupMemoryStates.delete(Wrappers.<GroupMemoryStateEntity>lambdaQuery()
-                .eq(GroupMemoryStateEntity::getProjectId, projectId));
+        // 须在 messages/events/notifications 之后删除；group_memory_state 由外键级联删除
         chatGroupMapper.delete(Wrappers.<ChatGroupEntity>lambdaQuery()
                 .eq(ChatGroupEntity::getProjectId, projectId));
 

@@ -15,14 +15,14 @@ public class ContextService {
     private final GroupService groups;
     private final ChatHistoryService history;
     private final SkillService skills;
-    private final ProjectMemoryService memories;
-    private final GroupMemoryService groupMemories;
+    private final ProjectMemoryService projectMemory;
+    private final GroupMemoryService groupMemory;
 
     public GroupContext buildForGroup(Long actor, Long projectId, Long groupId, Integer limit) {
         var group = groups.requireGroupMember(projectId, groupId, actor);
         return new GroupContext(groupId.toString(), projectId.toString(), group.getName(),
                 history.recentMessages(actor, projectId, groupId, limit),
-                skills.publishedCatalog(actor, projectId), memories.get(actor, projectId).getContent(),
-                groupMemories.read(projectId, groupId).getContent());
+                skills.publishedCatalog(actor, projectId), projectMemory.get(actor, projectId).getContent(),
+                groupMemory.read(projectId, groupId).getContent());
     }
 }

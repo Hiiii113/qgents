@@ -26,7 +26,10 @@ import qg.qgent.github.tool.GitHubCapability;
 import qg.qgent.github.service.GitHubRepositoryService;
 import qg.qgent.harness.context.ContextService;
 import qg.qgent.harness.context.GroupContext;
+import qg.qgent.memory.dto.GroupMemoryResponse;
 import qg.qgent.memory.dto.ProjectMemoryResponse;
+import qg.qgent.memory.service.GroupMemoryExtractionService;
+import qg.qgent.memory.service.GroupMemoryService;
 import qg.qgent.memory.service.ProjectMemoryService;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.sandbox.service.SandboxSessionManager;
@@ -35,6 +38,7 @@ import qg.qgent.skill.dto.ContextSkill;
 import qg.qgent.skill.service.SkillService;
 import qg.qgent.sandbox.service.SandboxFiles;
 import qg.qgent.sandbox.service.SandboxCommands;
+import qg.qgent.workspace.service.WorkspaceRepositoryService;
 import qg.qgent.workspace.service.WorkspaceService;
 import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.sandbox.dto.SandboxExecutionContext;
@@ -144,8 +148,8 @@ class AgentChatServiceTest {
         future.get(5, TimeUnit.SECONDS);
 
         assertThat(rootCalls.get()).isEqualTo(3);
-        assertThat(childInput.get()).contains("published-skill", "适用于测试任务", "activate_skill", "# 项目约定")
-                .doesNotContain("root-only context");
+        assertThat(childInput.get()).contains("published-skill", "适用于测试任务", "activate_skill", "# 项目约定",
+                "# 群约定").doesNotContain("root-only context");
         assertThat(childToolNames.get()).doesNotContain("start_subagent", "wait_subagent", "get_subagent_result",
                 "message_subagent", "continue_subagent", "stop_subagent", "cancel_agent")
                 .contains("read_attachment");
@@ -745,11 +749,12 @@ class AgentChatServiceTest {
         var memories = mock(ProjectMemoryService.class);
         when(memories.get(any(), any())).thenReturn(new ProjectMemoryResponse("1", "# 项目约定", "v1",
                 java.time.LocalDateTime.now()));
-        var groupMemories = mock(qg.qgent.memory.service.GroupMemoryExtractionService.class);
+        var groupMemory = mock(GroupMemoryService.class);
+        when(groupMemory.read(any(), any())).thenReturn(new GroupMemoryResponse("1", "2", "# 群约定", null));
         var service = new AgentChatService(github, mock(SandboxCommands.class), workspaces,
-                mock(qg.qgent.workspace.service.WorkspaceRepositoryService.class), loop, context,
+                mock(WorkspaceRepositoryService.class), loop, context,
                 skills, history, messages, runs, sessions, codeAccess,
-                attachments, memories, groupMemories, new ObjectMapper(),
+                attachments, memories, groupMemory, mock(GroupMemoryExtractionService.class), new ObjectMapper(),
                 childExecutor, maxSubagents);
         MessageSentEvent event = new MessageSentEvent(actor, project, group, message, List.of());
         return new Fixture(service, event, messages, runs, root, workspaces, codeAccess, sessions, context, attachments);

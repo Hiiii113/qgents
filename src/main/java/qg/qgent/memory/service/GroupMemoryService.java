@@ -42,7 +42,7 @@ public class GroupMemoryService {
         return read(projectId, groupId);
     }
 
-    /** 读取群记忆；尚未提炼时返回空正文，不创建文件。 */
+    /** 读取群记忆；尚未提炼时返回空正文。 */
     public GroupMemoryResponse read(Long projectId, Long groupId) {
         Path file = memoryFile(projectId, groupId);
         if (Files.notExists(file)) {
@@ -65,7 +65,6 @@ public class GroupMemoryService {
         }
         Path file = memoryFile(projectId, groupId);
         try {
-            Files.createDirectories(file.getParent());
             // 先写临时文件再原子替换，避免进程中断留下半篇群记忆
             Path temporary = Files.createTempFile(file.getParent(), FILE_NAME, ".tmp");
             Files.writeString(temporary, text, StandardCharsets.UTF_8);
@@ -76,7 +75,7 @@ public class GroupMemoryService {
     }
 
     private Path memoryFile(Long projectId, Long groupId) {
-        return directories.projectRoot(projectId).resolve("groups").resolve(groupId.toString()).resolve(FILE_NAME);
+        return directories.groupRoot(projectId, groupId).resolve(FILE_NAME);
     }
 
     private String id(Long value) {
