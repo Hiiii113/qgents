@@ -3,6 +3,7 @@ package qg.qgent.memory.service;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 
 import qg.qgent.chat.entity.ChatGroupEntity;
@@ -122,13 +123,14 @@ class ProjectMemoryProposalServiceTest {
     void proposeRejectsSecondCandidateForTheSameRun() {
         Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), run = TestIds.next();
         when(groups.selectById(group)).thenReturn(group(group, project, true));
-        when(proposals.countByAgentRunId(run)).thenReturn(1);
+        // 唯一键 uk_memory_proposal_run 是并发下的真正保障，撞键时返回同一提示。
+        when(proposals.insert(any(ProjectMemoryProposalEntity.class)))
+                .thenThrow(new DuplicateKeyException("uk_memory_proposal_run"));
 
         ApiException error = assertThrows(ApiException.class,
                 () -> service.propose(actor, project, group, run, "# 新约定"));
 
         assertThat(error.code()).isEqualTo("MEMORY_PROPOSAL_PENDING");
-        verify(proposals, never()).insert(any(ProjectMemoryProposalEntity.class));
     }
 
     @Test

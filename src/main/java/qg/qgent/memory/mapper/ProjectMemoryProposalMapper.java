@@ -16,13 +16,9 @@ public interface ProjectMemoryProposalMapper extends BaseMapper<ProjectMemoryPro
     @Select("SELECT * FROM project_memory_proposals WHERE message_id = #{messageId}")
     ProjectMemoryProposalEntity selectByMessageId(@Param("messageId") Long messageId);
 
-    /** 一次运行只能提出一个候选，避免同一条回复对应多个待审批内容。 */
-    @Select("SELECT COUNT(*) FROM project_memory_proposals WHERE agent_run_id = #{agentRunId}")
-    int countByAgentRunId(@Param("agentRunId") Long agentRunId);
-
     /** 记忆写入成功后标记完成；只在仍待审批时生效，重复审批得到 0。 */
     @Update("UPDATE project_memory_proposals SET status = 'APPLIED', applied_version = #{version}, "
-            + "approved_by = #{approvedBy}, approved_message_id = #{approvedMessageId}, "
+            + "approved_by = #{approvedBy}, approved_message_id = #{approvalMessageId}, "
             + "approved_at = UTC_TIMESTAMP(6) WHERE id = #{id} AND status = 'PENDING'")
     int markApplied(@Param("id") Long id, @Param("approvedBy") Long approvedBy,
                     @Param("approvalMessageId") Long approvalMessageId, @Param("version") String version);

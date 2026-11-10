@@ -1,5 +1,6 @@
 package qg.qgent.memory.service;
 
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,8 +26,6 @@ import java.time.ZoneOffset;
  */
 @Service
 public class ProjectMemoryProposalService {
-
-    private static final String PENDING = "PENDING";
 
     private final ProjectMemoryProposalMapper proposals;
     private final ProjectMemoryService memories;
@@ -71,20 +70,22 @@ public class ProjectMemoryProposalService {
             throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "MEMORY_PROPOSAL_UNCHANGED",
                     "候选内容与当前项目记忆一致");
         }
-        if (proposals.countByAgentRunId(agentRunId) > 0) {
-            throw new ApiException(HttpStatus.CONFLICT, "MEMORY_PROPOSAL_PENDING",
-                    "本次运行已提出记忆候选，等待管理员审批");
-        }
         ProjectMemoryProposalEntity proposal = new ProjectMemoryProposalEntity();
         proposal.setProjectId(projectId);
         proposal.setGroupId(groupId);
         proposal.setAgentRunId(agentRunId);
         proposal.setContent(text);
         proposal.setBaseVersion(current.getVersion());
-        proposal.setStatus(PENDING);
+        proposal.setStatus("PENDING");
         proposal.setProposedBy(actor);
         proposal.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
-        proposals.insert(proposal);
+        try {
+            proposals.insert(proposal);
+        } catch (DuplicateKeyException e) {
+            // uk_memory_proposal_run 是唯一性的真正保障；并发提出时撞键的调用方拿到同一提示。
+            throw new ApiException(HttpStatus.CONFLICT, "MEMORY_PROPOSAL_PENDING",
+                    "本次运行已提出记忆候选，等待管理员审批");
+        }
         return proposal;
     }
 
@@ -112,7 +113,7 @@ public class ProjectMemoryProposalService {
                 || !groupId.equals(proposal.getGroupId())) {
             throw proposalNotFound();
         }
-        if (!PENDING.equals(proposal.getStatus())) {
+        if (!"PENDING".equals(proposal.getStatus())) {
             throw new ApiException(HttpStatus.CONFLICT, "MEMORY_PROPOSAL_NOT_PENDING",
                     "该候选已审批，不能重复执行");
         }
