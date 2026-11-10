@@ -94,14 +94,25 @@ CREATE TABLE IF NOT EXISTS agents (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '项目内 Agent ID，自增且各项目互不复用',
     project_id BIGINT NOT NULL COMMENT '所属项目ID',
     name VARCHAR(120) NOT NULL COMMENT 'Agent 名称，在群成员与消息发送者中展示',
+    description TEXT NULL COMMENT 'Agent 职责描述；默认 Agent 为空',
+    system_prompt MEDIUMTEXT NULL COMMENT 'Agent 自有系统提示词，追加在内置提示词之后',
+    avatar_url TEXT NULL COMMENT 'Agent 头像URL，可为空',
     default_agent TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否项目默认 Agent；每项目唯一',
+    status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT '状态枚举：PENDING/ACTIVE/REJECTED；只有 ACTIVE 可邀请入群和运行',
+    proposed_by BIGINT NULL COMMENT '提出申请的真实用户ID；默认 Agent 为空',
+    announced_message_id BIGINT NULL COMMENT '公布该申请的 Agent 消息；审批回复必须回复这条消息',
+    approved_by BIGINT NULL COMMENT '审批的管理员用户ID',
+    approved_at DATETIME(6) NULL COMMENT '审批完成时间（UTC）',
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
     -- 生成列只对默认 Agent 取 project_id，其余为 NULL；唯一索引允许多个 NULL，保证每项目只有一个默认 Agent。
     default_slot BIGINT GENERATED ALWAYS AS (IF(default_agent = 1, project_id, NULL)) STORED,
     UNIQUE KEY uk_agent_default (default_slot),
-    KEY idx_agent_project (project_id),
-    CONSTRAINT fk_agent_project FOREIGN KEY (project_id) REFERENCES projects (id)
-) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目内 Agent；每个项目创建自己的默认 Agent';
+    KEY idx_agent_project (project_id, status),
+    CONSTRAINT fk_agent_project FOREIGN KEY (project_id) REFERENCES projects (id),
+    CONSTRAINT fk_agent_proposed_by FOREIGN KEY (proposed_by) REFERENCES users (id),
+    CONSTRAINT fk_agent_approved_by FOREIGN KEY (approved_by) REFERENCES users (id),
+    CONSTRAINT chk_agent_status CHECK (status IN ('PENDING', 'ACTIVE', 'REJECTED'))
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目内 Agent：默认 Agent 与经管理员审批的自定义 Agent';
 
 CREATE TABLE IF NOT EXISTS
     chat_groups (
