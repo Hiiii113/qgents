@@ -137,7 +137,8 @@ class AgentChatServiceTest {
                             assertThat(item.getText()).contains("published-skill", "适用于测试任务"));
                     assertThat(((OpenAiChatOptions) prompt.getOptions()).getToolCallbacks())
                             .extracting(callback -> callback.getToolDefinition().name())
-                            .contains("read_attachment");
+                            .contains("read_attachment", "read_project_memory", "propose_project_memory",
+                                    "approve_project_memory");
                     yield toolCall("start_subagent", "{\"instruction\":\"独立分析接口\"}");
                 }
                 case 2 -> {
@@ -165,10 +166,38 @@ class AgentChatServiceTest {
         assertThat(childInput.get()).contains("published-skill", "适用于测试任务", "activate_skill", "# 项目约定",
                 "# 群约定").doesNotContain("root-only context");
         assertThat(childToolNames.get()).doesNotContain("start_subagent", "wait_subagent", "get_subagent_result",
-                "message_subagent", "continue_subagent", "stop_subagent", "cancel_agent")
+                "message_subagent", "continue_subagent", "stop_subagent", "cancel_agent",
+                "propose_project_memory", "approve_project_memory")
                 .contains("read_attachment");
         verify(fixture.messages()).sendAsAgent(eq(fixture.agentId()), eq(group), argThat(request ->
                 "已汇总子任务结果".equals(request.getContent().get("text"))));
+    }
+
+    @Test
+    void memoryCandidateRaisedInTheRunIsBoundToTheAgentReplyMessage() {
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
+        ChatModel model = model();
+        when(model.call(any(Prompt.class))).thenReturn(reply("候选：新增统一邮箱登录约定，等待管理员审批"));
+        var fixture = fixture(model, actor, project, group, message, childExecutor);
+
+        fixture.service().replyToMention(fixture.event(), fixture.agentId(), "补充一条项目约定");
+
+        verify(fixture.proposals()).bindMessage(fixture.root().getId(), fixture.replyMessageId());
+    }
+
+    @Test
+    void failedRunDoesNotExposeItsMemoryCandidateForApproval() {
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
+        ChatModel model = model();
+        // 空白回复让本次运行失败：失败回复的正文不是候选内容，不能拿来审批。
+        when(model.call(any(Prompt.class))).thenReturn(reply(""));
+        var fixture = fixture(model, actor, project, group, message, childExecutor);
+
+        fixture.service().replyToMention(fixture.event(), fixture.agentId(), "补充一条项目约定");
+
+        verify(fixture.messages()).sendAsAgent(eq(fixture.agentId()), eq(group), argThat(request ->
+                "模型返回了空回复".equals(request.getContent().get("text"))));
+        verify(fixture.proposals(), never()).bindMessage(any(), any());
     }
 
     @Test
@@ -767,13 +796,22 @@ class AgentChatServiceTest {
                 java.time.LocalDateTime.now()));
         var groupMemory = mock(GroupMemoryService.class);
         when(groupMemory.read(any(), any())).thenReturn(new GroupMemoryResponse("1", "2", "# 群约定", null));
+        var proposals = mock(qg.qgent.memory.service.ProjectMemoryProposalService.class);
+        Long replyMessageId = TestIds.next();
+        when(messages.sendAsAgent(anyLong(), anyLong(), any())).thenAnswer(invocation -> {
+            var reply = new qg.qgent.chat.dto.MessageResponse();
+            reply.setId(replyMessageId.toString());
+            reply.setGroupId(group.toString());
+            return reply;
+        });
         var service = new AgentChatService(github, mock(SandboxCommands.class), workspaces,
                 mock(WorkspaceRepositoryService.class), loop, context,
                 skills, history, messages, runs, sessions, codeAccess,
-                attachments, memories, groupMemory, mock(GroupMemoryExtractionService.class), new ObjectMapper(),
-                childExecutor, maxSubagents);
+                attachments, memories, groupMemory, mock(GroupMemoryExtractionService.class), proposals,
+                new ObjectMapper(), childExecutor, maxSubagents);
         MessageSentEvent event = new MessageSentEvent(actor, project, group, message, List.of());
-        return new Fixture(service, event, agentId, messages, runs, root, workspaces, codeAccess, sessions, context, attachments);
+        return new Fixture(service, event, agentId, messages, runs, root, workspaces, codeAccess, sessions, context,
+                attachments, proposals, replyMessageId);
     }
 
     private AgentRunEntity run(AgentRunEntity parent, String instruction) {
@@ -852,5 +890,6 @@ class AgentChatServiceTest {
     private record Fixture(AgentChatService service, MessageSentEvent event, Long agentId, MessageService messages,
                            AgentRunService runs, AgentRunEntity root, WorkspaceService workspaces,
                            SandboxFiles codeAccess, SandboxSessionManager sessions, ContextService context,
-                           AttachmentService attachments) { }
+                           AttachmentService attachments,
+                           qg.qgent.memory.service.ProjectMemoryProposalService proposals, Long replyMessageId) { }
 }

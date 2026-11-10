@@ -70,7 +70,7 @@ app:
     # 每个根运行同时活跃的子 Agent 数量上限。
     max-subagents: ${APP_AGENT_MAX_SUBAGENTS:8}
     context:
-      # 项目 memory.md 注入 Agent 上下文的字符上限；超过时拒绝保存。
+      # 项目 memory.md 注入 Agent 上下文的字符上限；超过时拒绝提出记忆候选。
       max-memory-chars: ${APP_AGENT_CONTEXT_MAX_MEMORY_CHARS:12000}
 # 群记忆后台提炼：新消息数与闲置时长同时达到才触发，失败有限重试；阈值均可在环境覆盖。
   memory:

@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -25,7 +26,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
-/** 项目 memory.md：首次创建、版本检测、字符预算、项目隔离与成员校验。 */
+/** 项目 memory.md：首次创建、审批写入、版本检测、字符预算、项目隔离与成员校验。 */
 class ProjectMemoryServiceTest {
 
     private static final int MAX_CHARS = 100;
@@ -56,12 +57,12 @@ class ProjectMemoryServiceTest {
     }
 
     @Test
-    void saveWritesContentAndReturnsNewVersion() {
+    void approvedContentReplacesMemoryAndReturnsNewVersion() {
         Long projectId = TestIds.next();
         Long actor = TestIds.next();
         String empty = service.get(actor, projectId).getVersion();
 
-        ProjectMemoryResponse saved = service.save(actor, projectId, "# 登录约定\n- 统一邮箱登录", empty);
+        ProjectMemoryResponse saved = service.applyApproved(projectId, "# 登录约定\n- 统一邮箱登录", empty);
 
         assertThat(saved.getContent()).isEqualTo("# 登录约定\n- 统一邮箱登录");
         assertThat(saved.getVersion()).isNotEqualTo(empty);
@@ -70,31 +71,39 @@ class ProjectMemoryServiceTest {
     }
 
     @Test
-    void saveRejectsStaleVersionAndKeepsCurrentContent() throws Exception {
+    void approvedContentRejectsStaleBaseVersionAndKeepsCurrentContent() throws Exception {
         Long projectId = TestIds.next();
         Long actor = TestIds.next();
         String version = service.get(actor, projectId).getVersion();
-        service.save(actor, projectId, "第一版", version);
+        service.applyApproved(projectId, "第一版", version);
 
-        ApiException error = org.junit.jupiter.api.Assertions.assertThrows(ApiException.class,
-                () -> service.save(actor, projectId, "第二版", version));
-
-        assertThat(error.status()).isEqualTo(HttpStatus.CONFLICT);
-        assertThat(error.code()).isEqualTo("MEMORY_VERSION_CONFLICT");
+        assertThatExceptionOfType(ApiException.class)
+                .isThrownBy(() -> service.applyApproved(projectId, "第二版", version))
+                .satisfies(error -> {
+                    assertThat(error.status()).isEqualTo(HttpStatus.CONFLICT);
+                    assertThat(error.code()).isEqualTo("MEMORY_VERSION_CONFLICT");
+                });
         assertThat(Files.readString(root.resolve(projectId.toString()).resolve("memory.md"), StandardCharsets.UTF_8))
                 .isEqualTo("第一版");
     }
 
     @Test
-    void saveRejectsContentOverContextBudget() {
+    void reapplyingTheSameContentIsIdempotentForApprovalRetries() {
         Long projectId = TestIds.next();
         Long actor = TestIds.next();
         String version = service.get(actor, projectId).getVersion();
+        ProjectMemoryResponse first = service.applyApproved(projectId, "同一版", version);
 
-        ApiException error = org.junit.jupiter.api.Assertions.assertThrows(ApiException.class,
-                () -> service.save(actor, projectId, "x".repeat(MAX_CHARS + 1), version));
+        ProjectMemoryResponse again = service.applyApproved(projectId, "同一版", version);
 
-        assertThat(error.code()).isEqualTo("MEMORY_CONTEXT_LIMIT_EXCEEDED");
+        assertThat(again.getVersion()).isEqualTo(first.getVersion());
+    }
+
+    @Test
+    void contentOverContextBudgetIsRejectedBeforeItIsStored() {
+        assertThatThrownBy(() -> service.requireContentBudget("x".repeat(MAX_CHARS + 1)))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("code", "MEMORY_CONTEXT_LIMIT_EXCEEDED");
     }
 
     @Test
@@ -103,19 +112,18 @@ class ProjectMemoryServiceTest {
         Long first = TestIds.next();
         Long second = TestIds.next();
 
-        service.save(actor, first, "项目一", service.get(actor, first).getVersion());
+        service.applyApproved(first, "项目一", service.get(actor, first).getVersion());
 
         assertThat(service.get(actor, second).getContent()).isEmpty();
     }
 
     @Test
-    void saveRequiresProjectMembership() {
+    void readRequiresProjectMembership() {
         Long projectId = TestIds.next();
         Long actor = TestIds.next();
         doThrow(new ApiException(HttpStatus.NOT_FOUND, "PROJECT_NOT_FOUND", "项目不存在或不可见"))
                 .when(access).requireProjectMember(projectId, actor);
 
-        assertThatThrownBy(() -> service.save(actor, projectId, "内容", "any"))
-                .isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> service.get(actor, projectId)).isInstanceOf(ApiException.class);
     }
 }

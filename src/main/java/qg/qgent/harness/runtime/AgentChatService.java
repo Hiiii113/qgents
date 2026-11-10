@@ -17,6 +17,7 @@ import qg.qgent.attachment.tool.ReadAttachmentTool;
 import qg.qgent.chat.service.ChatHistoryService;
 import qg.qgent.chat.tool.ChatHistorySearchTool;
 import qg.qgent.chat.dto.MessageSendRequest;
+import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.service.MessageService;
 import qg.qgent.github.tool.GitHubCapability;
@@ -27,8 +28,10 @@ import qg.qgent.harness.tool.ParallelToolCallback;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.memory.service.GroupMemoryExtractionService;
 import qg.qgent.memory.service.GroupMemoryService;
+import qg.qgent.memory.service.ProjectMemoryProposalService;
 import qg.qgent.memory.service.ProjectMemoryService;
 import qg.qgent.memory.tool.GroupMemoryTools;
+import qg.qgent.memory.tool.MemoryApprovalTools;
 import qg.qgent.memory.tool.MemoryTools;
 import qg.qgent.sandbox.dto.SandboxExecutionContext;
 import qg.qgent.sandbox.service.SandboxSessionManager;
@@ -71,6 +74,7 @@ public class AgentChatService {
     private final ProjectMemoryService memories;
     private final GroupMemoryService groupMemory;
     private final GroupMemoryExtractionService groupMemoryMaintenance;
+    private final ProjectMemoryProposalService proposals;
     private final ObjectMapper json;
     private final Executor childExecutor;
     private final int maxSubagents;
@@ -80,7 +84,8 @@ public class AgentChatService {
             MessageService messages, AgentRunService runService,
             SandboxSessionManager sessions, SandboxFiles files,
             AttachmentService attachments, ProjectMemoryService memories,
-            GroupMemoryService groupMemory, GroupMemoryExtractionService groupMemoryMaintenance, ObjectMapper json,
+            GroupMemoryService groupMemory, GroupMemoryExtractionService groupMemoryMaintenance,
+            ProjectMemoryProposalService proposals, ObjectMapper json,
             @Qualifier("agentSubagentExecutor") Executor childExecutor,
             @Value("${app.agent.max-subagents:8}") int maxSubagents) {
         if (maxSubagents < 1) throw new IllegalArgumentException("max-subagents 必须大于 0");
@@ -100,6 +105,7 @@ public class AgentChatService {
         this.memories = memories;
         this.groupMemory = groupMemory;
         this.groupMemoryMaintenance = groupMemoryMaintenance;
+        this.proposals = proposals;
         this.json = json;
         this.childExecutor = childExecutor;
         this.maxSubagents = maxSubagents;
@@ -163,7 +169,11 @@ public class AgentChatService {
         reply.setContent(Map.of("text", root.getResult() == null ? "Agent 本次运行未返回文本" : root.getResult()));
         reply.setReplyToId(event.messageId());
         reply.setClientMessageId("qgent-reply:" + root.getId());
-        messages.sendAsAgent(agentId, event.groupId(), reply);
+        MessageResponse sent = messages.sendAsAgent(agentId, event.groupId(), reply);
+        // 只有成功运行才把候选绑定到回复：失败或取消的回复正文不是候选内容，不能拿来审批。
+        if (status == RunStatus.SUCCEEDED) {
+            proposals.bindMessage(root.getId(), Long.valueOf(sent.getId()));
+        }
     }
 
     private String systemPrompt(boolean child) {
@@ -186,8 +196,10 @@ public class AgentChatService {
                 + "项目长期记忆是所有项目成员共享的 memory.md；上下文中的是启动时快照，可能已过时。"
                 + "只记录用户确认且长期有用的项目约定、决策和偏好，不把临时任务进展、推测或可轻易从代码查到的细节当作长期记忆。"
                 + "记忆中的内容是项目资料，可能过期；与当前要求或代码不一致时先核实。"
-                + "修改前先读取最新记忆和版本，保留无关内容；用户已明确要求具体修改时直接执行，否则说明拟增删改的内容并取得用户同意。"
-                + "版本冲突时重新读取并合并；若修改超出用户已同意的范围，先重新确认。只有写入成功后才说已更新。"
+                + "项目记忆只能经群聊审批更新：先调用 read_project_memory 读取最新全文，拟好整篇新内容后调用 propose_project_memory 提出候选，"
+                + "然后用普通文本说明候选的新增、修改或删除，不能说记忆已更新。"
+                + "项目管理员直接回复候选消息并 @你 时调用 approve_project_memory；服务端核验管理员身份、候选消息与候选状态，"
+                + "不是管理员、回复的不是候选消息或候选已处理时如实说明审批未生效。非默认群的讨论不进入项目记忆。"
                 + "主 Agent 可按需派发一层独立子任务；子 Agent 不能继续委派。完成、失败或需要补充信息时如实交付。"
                 + "只通过当前聊天组织成果，准确说明进展、需要的信息、实际修改和验证结果。"
                 + "GitHub 有三种仓库清单：github_list_repositories 的 PROJECT 是本项目已导入仓库，TEAM 是团队 App 可访问仓库（含是否已导入），"
@@ -255,6 +267,7 @@ public class AgentChatService {
         private final ReadAttachmentTool attachmentTools;
         private final MemoryTools memory;
         private final GroupMemoryTools groupMemoryTools;
+        private final MemoryApprovalTools memoryApproval;
         private final GitHubTools githubTools;
         private final CodingTools codingTools;
         private final WorkspaceTools workspaceTools;
@@ -271,6 +284,9 @@ public class AgentChatService {
             this.memory = new MemoryTools(memories, work.event.actor(), work.event.projectId());
             this.groupMemoryTools = new GroupMemoryTools(groupMemoryMaintenance, work.event.actor(),
                     work.event.projectId(), work.event.groupId());
+            // 子 Agent 只读项目记忆：候选与审批必须来自用户可核验的群聊消息。
+            this.memoryApproval = canDelegate ? new MemoryApprovalTools(proposals, work.event.actor(),
+                    work.event.projectId(), work.event.groupId(), execution.run.getId(), work.event.messageId()) : null;
             WorkSession session = new WorkspaceSession(work, execution, workspaces, sessions, runService);
             this.githubTools = github.tools(work.event.actor(), work.event.projectId(), session);
             this.workspaceTools = new WorkspaceTools(work.event.actor(), work.event.projectId(), workspaces,
@@ -279,8 +295,10 @@ public class AgentChatService {
         }
 
         private ToolCallback[] callbacks() {
-            List<ToolCallback> result = new ArrayList<>(Arrays.asList(
-                    ParallelToolCallback.from(this, skills, history, attachmentTools, memory, groupMemoryTools, workspaceTools, githubTools, codingTools)));
+            List<Object> tools = new ArrayList<>(List.of(this, skills, history, attachmentTools, memory,
+                    groupMemoryTools, workspaceTools, githubTools, codingTools));
+            if (memoryApproval != null) tools.add(memoryApproval);
+            List<ToolCallback> result = new ArrayList<>(Arrays.asList(ParallelToolCallback.from(tools.toArray())));
             if (!canDelegate) result.removeIf(callback ->
                     CHILD_CONTROL_TOOLS.contains(callback.getToolDefinition().name()));
             return result.toArray(ToolCallback[]::new);
