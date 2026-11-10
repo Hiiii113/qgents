@@ -17,21 +17,20 @@ import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.service.GroupService;
 import qg.qgent.chat.service.MessageService;
+import qg.qgent.memory.config.GroupMemoryProperties;
 import qg.qgent.memory.entity.GroupMemoryStateEntity;
 import qg.qgent.memory.mapper.GroupMemoryStateMapper;
 
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 
 /** 群记忆后台提炼：扫描满足条件的群，用当前运行模型重写群记忆，进度只在写入成功后推进。 */
 @Service
 public class GroupMemoryExtractionService {
     private static final Logger log = LoggerFactory.getLogger(GroupMemoryExtractionService.class);
-    // 单次提炼最多送入的消息条数；剩余消息留到下一次提炼，水位保证不遗漏。
-    private static final int MAX_MESSAGES_PER_RUN = 200;
 
     private final GroupMemoryStateMapper states;
     private final MessageMapper chatMessages;
@@ -40,21 +39,12 @@ public class GroupMemoryExtractionService {
     private final GroupMemoryService memories;
     private final ChatModel model;
     private final Executor executor;
-    private final int minMessages;
-    private final Duration idle;
-    private final Duration retryDelay;
-    private final Duration staleClaim;
-    private final int maxAttempts;
+    private final GroupMemoryProperties properties;
     private final int maxMemoryChars;
 
     public GroupMemoryExtractionService(GroupMemoryStateMapper states, MessageMapper chatMessages, MessageService chat,
             GroupService groups, GroupMemoryService memories, ChatModel model,
-            @Qualifier("agentExecutor") Executor executor,
-            @Value("${app.memory.group.min-messages:20}") int minMessages,
-            @Value("${app.memory.group.idle-minutes:15}") int idleMinutes,
-            @Value("${app.memory.group.retry-delay-minutes:5}") int retryDelayMinutes,
-            @Value("${app.memory.group.stale-claim-minutes:30}") int staleClaimMinutes,
-            @Value("${app.memory.group.max-attempts:3}") int maxAttempts,
+            @Qualifier("groupMemoryExecutor") Executor executor, GroupMemoryProperties properties,
             @Value("${app.agent.context.max-memory-chars:12000}") int maxMemoryChars) {
         this.states = states;
         this.chatMessages = chatMessages;
@@ -63,52 +53,69 @@ public class GroupMemoryExtractionService {
         this.memories = memories;
         this.model = model;
         this.executor = executor;
-        this.minMessages = minMessages;
-        this.idle = Duration.ofMinutes(idleMinutes);
-        this.retryDelay = Duration.ofMinutes(retryDelayMinutes);
-        this.staleClaim = Duration.ofMinutes(staleClaimMinutes);
-        this.maxAttempts = maxAttempts;
+        this.properties = properties;
         this.maxMemoryChars = maxMemoryChars;
-        if (minMessages < 1 || maxAttempts < 1) throw new IllegalArgumentException("群记忆提炼阈值必须大于 0");
     }
 
-    /** 定时扫描；新消息数量和闲置时长同时满足才异步提炼。 */
+    /** 定时扫描；新消息数量和闲置时长同时满足才提交后台提炼。 */
     @Scheduled(fixedDelayString = "${app.memory.group.scan-interval:1m}")
     public void scan() {
         LocalDateTime now = now();
-        LocalDateTime staleBefore = now.minus(staleClaim);
-        for (GroupMemoryStateEntity state : states.selectCandidates(staleBefore)) {
-            if (!due(state, now) || !hasWork(state)) {
-                continue;
+        LocalDateTime staleBefore = now.minusMinutes(properties.getStaleClaimMinutes());
+        for (GroupMemoryStateEntity state : states.selectCandidates(staleBefore, properties.getScanBatch())) {
+            if (due(state, now) && hasWork(state)) {
+                submit(state.getProjectId(), state.getGroupId());
             }
-            // 并发或重复扫描只有一个能领到该群，其余直接放弃。
-            if (states.claim(state.getGroupId(), now, staleBefore) != 1) {
-                continue;
-            }
-            executor.execute(() -> extract(state.getProjectId(), state.getGroupId()));
         }
     }
 
-    /** 后台执行一次提炼：模型结果写入群记忆成功后才推进水位，失败保持原水位并有限重试。 */
+    /** 队列满时跳过本轮，下一轮扫描再试；不能中断其余群的扫描。 */
+    private void submit(Long projectId, Long groupId) {
+        try {
+            executor.execute(() -> extract(projectId, groupId));
+        } catch (RejectedExecutionException exception) {
+            log.warn("群记忆提炼队列已满，跳过本轮, projectId={}, groupId={}", projectId, groupId);
+        }
+    }
+
+    /** 后台提炼一次：领取不到说明其他任务在处理；只有仍持有领取才能写入结果并推进水位。 */
     public void extract(Long projectId, Long groupId) {
+        LocalDateTime claimedAt = now();
+        if (states.claim(groupId, claimedAt, claimedAt.minusMinutes(properties.getStaleClaimMinutes())) != 1) {
+            return;
+        }
         GroupMemoryStateEntity state = states.selectById(groupId);
         if (state == null) {
             return;
         }
-        LocalDateTime now = now();
         try {
             List<MessageEntity> batch = chatMessages.selectAfterSequence(groupId,
-                    state.getLastProcessedSequence(), MAX_MESSAGES_PER_RUN);
-            String updated = askModel(memories.read(projectId, groupId).getContent(), state.getCorrection(), batch);
+                    state.getLastProcessedSequence(), properties.getMaxMessagesPerRun());
+            String current = memories.read(projectId, groupId).getContent();
+            String updated = askModel(current, state.getCorrection(), batch);
+            if (hasCorrection(state) && updated.equals(current)) {
+                // 模型没有按纠错改写：保留纠错并记一次失败，不能静默清除用户反馈
+                throw new IllegalStateException("模型输出未应用群记忆纠错");
+            }
+            if (states.renewClaim(groupId, claimedAt, now()) != 1) {
+                log.warn("群记忆提炼已被新任务接管，丢弃结果, projectId={}, groupId={}", projectId, groupId);
+                return;
+            }
             memories.write(projectId, groupId, updated);
             Long processedThrough = batch.isEmpty() ? state.getLastProcessedSequence()
                     : batch.getLast().getSequenceNo();
-            states.finishSuccess(groupId, processedThrough, now);
+            if (states.finishSuccess(groupId, claimedAt, processedThrough, now()) != 1) {
+                log.warn("群记忆结果已失效，进度未推进, projectId={}, groupId={}", projectId, groupId);
+                return;
+            }
             log.info("群记忆已更新, projectId={}, groupId={}, processedThrough={}", projectId, groupId, processedThrough);
         } catch (RuntimeException exception) {
-            states.recordFailure(groupId, reason(exception), now.plus(retryDelay), now);
+            LocalDateTime now = now();
+            states.recordFailure(groupId, claimedAt, reason(exception),
+                    now.plusMinutes(properties.getRetryDelayMinutes()), now);
             log.warn("群记忆提炼失败, projectId={}, groupId={}, attempt={}, retryAt={}: {}", projectId, groupId,
-                    state.getAttemptCount() + 1, now.plus(retryDelay), exception.toString());
+                    state.getAttemptCount() + 1, now.plusMinutes(properties.getRetryDelayMinutes()),
+                    exception.toString());
         }
     }
 
@@ -120,33 +127,36 @@ public class GroupMemoryExtractionService {
 
     /** 状态已由查询过滤，这里只判断闲置时长、重试次数和重试时间。 */
     private boolean due(GroupMemoryStateEntity state, LocalDateTime now) {
-        if (state.getAttemptCount() != null && state.getAttemptCount() >= maxAttempts) {
+        if (state.getAttemptCount() >= properties.getMaxAttempts()) {
             return false;
         }
         if (state.getNextAttemptAt() != null && state.getNextAttemptAt().isAfter(now)) {
             return false;
         }
-        return state.getLastMessageAt() != null && !state.getLastMessageAt().isAfter(now.minus(idle));
+        return state.getLastMessageAt() != null
+                && !state.getLastMessageAt().isAfter(now.minusMinutes(properties.getIdleMinutes()));
     }
 
     /** 有待应用纠错，或自水位以来的新消息数量达到门槛。 */
     private boolean hasWork(GroupMemoryStateEntity state) {
-        if (state.getCorrection() != null && !state.getCorrection().isBlank()) {
-            return true;
-        }
-        return chatMessages.selectAfterSequence(state.getGroupId(), state.getLastProcessedSequence(), minMessages)
-                .size() >= minMessages;
+        return hasCorrection(state)
+                || chatMessages.selectAfterSequence(state.getGroupId(), state.getLastProcessedSequence(),
+                        properties.getMinMessages()).size() >= properties.getMinMessages();
+    }
+
+    private boolean hasCorrection(GroupMemoryStateEntity state) {
+        return state.getCorrection() != null && !state.getCorrection().isBlank();
     }
 
     private String askModel(String currentMemory, String correction, List<MessageEntity> batch) {
-        String input = "现有群记忆：\n" + (currentMemory == null || currentMemory.isBlank() ? "（空）" : currentMemory)
+        String input = "现有群记忆：\n" + (currentMemory.isBlank() ? "（空）" : currentMemory)
                 + "\n\n用户指出的记忆错误（必须修正）：\n"
                 + (correction == null || correction.isBlank() ? "（无）" : correction)
                 + "\n\n新增群消息（从早到晚）：\n"
                 + conversation(batch);
         ChatResponse response = model.call(new Prompt(List.<Message>of(new SystemMessage(systemPrompt()),
                 new UserMessage(input))));
-        String text = response == null || response.getResult() == null || response.getResult().getOutput() == null
+        String text = response == null || response.getResult() == null
                 ? null : response.getResult().getOutput().getText();
         if (text == null || text.isBlank()) {
             throw new IllegalStateException("模型没有返回群记忆正文");
@@ -167,11 +177,18 @@ public class GroupMemoryExtractionService {
         }
         StringBuilder lines = new StringBuilder();
         for (MessageEntity message : batch) {
-            lines.append("- ").append("AGENT".equals(message.getSenderType()) ? "Qgent"
-                    : "用户 " + message.getAuthorUserId()).append("：")
+            lines.append("- ").append(sender(message)).append("：")
                     .append(chat.agentInstruction(message)).append('\n');
         }
         return lines.toString();
+    }
+
+    private String sender(MessageEntity message) {
+        return switch (message.getSenderType()) {
+            case "AGENT" -> "Qgent";
+            case "SYSTEM" -> "系统";
+            default -> "用户 " + message.getAuthorUserId();
+        };
     }
 
     /** 模型偶尔仍会套代码围栏，写入前去掉，避免群记忆正文被围栏污染。 */

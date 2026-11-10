@@ -22,7 +22,7 @@ class GroupMemoryActivityListenerTest {
         Long projectId = TestIds.next();
         Long groupId = TestIds.next();
 
-        listener.onMessageCreated(new GroupMessageCreatedEvent(projectId, groupId, 12L));
+        listener.onMessageCreated(new GroupMessageCreatedEvent(projectId, groupId));
 
         verify(states).recordActivity(eq(projectId), eq(groupId), any());
     }

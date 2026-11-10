@@ -261,7 +261,7 @@ public class MessageService {
                 Map.of("projectId", id(projectId), "groupId", id(groupId), "messageId", id(message.getId()),
                         "sequence", message.getSequenceNo()));
         // 每条新消息都维护群记忆的活跃状态；与消息同事务，回滚时一起回滚。
-        eventPublisher.publishEvent(new GroupMessageCreatedEvent(projectId, groupId, message.getSequenceNo()));
+        eventPublisher.publishEvent(new GroupMessageCreatedEvent(projectId, groupId));
         // 仅新建用户消息触发提及处理；幂等返回不重复通知或启动 Agent。
         if (authorUserId != null && !mentions.isEmpty()) {
             eventPublisher.publishEvent(new MessageSentEvent(authorUserId, projectId, groupId,

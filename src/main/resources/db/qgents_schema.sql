@@ -375,6 +375,7 @@ CREATE TABLE IF NOT EXISTS
         last_processed_sequence BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '已提炼到的群内消息序号（水位，成功后推进）',
         last_message_at DATETIME(6) NULL COMMENT '最近消息时间（UTC），用于闲置时长判定',
         status VARCHAR(16) NOT NULL DEFAULT 'IDLE' COMMENT 'IDLE/RUNNING，用于互斥并发提炼',
+        claim_token DATETIME(6) NULL COMMENT '当前领取标识；只有持有它的任务能推进进度或写入结果',
         attempt_count INT NOT NULL DEFAULT 0 COMMENT '连续失败次数；新消息清零',
         next_attempt_at DATETIME(6) NULL COMMENT '下次允许重试时间（UTC）',
         correction TEXT NULL COMMENT '用户通过对话提出的待应用纠错内容',

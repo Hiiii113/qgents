@@ -12,8 +12,8 @@ import java.util.List;
 /**
  * Agent 使用的群聊上下文。
  * <p>
- * 将项目群聊的历史消息、已发布 Skill 目录与项目 memory.md 组装为 Agent 输入上下文，
- * 供 Agent loop 作为 prompt 输入。
+ * 将项目群聊的历史消息、已发布 Skill 目录、项目 memory.md 和当前群记忆
+ * 组装为 Agent 输入上下文，供 Agent loop 作为 prompt 输入。
  */
 @Data
 @NoArgsConstructor
