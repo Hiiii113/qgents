@@ -70,3 +70,6 @@ __pycache__/
 
 # 本机密钥目录
 /secrets/
+
+# pi 实施流程的运行时状态（台账/事件流/评审包），仅本机。
+.pi/matt-implement/
