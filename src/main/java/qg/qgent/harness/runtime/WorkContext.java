@@ -13,6 +13,8 @@ final class WorkContext {
     final Long rootRunId;
     final Object environmentLock = new Object();
     final Set<Long> openedWorkspaces = ConcurrentHashMap.newKeySet();
+    // 本次运行实际读到过内容的来源群；回答投递前复核目的群受众用，子 Agent 与根运行共享。
+    final Set<Long> crossGroupSources = ConcurrentHashMap.newKeySet();
     final Map<Long, Object> toolsets = new ConcurrentHashMap<>();
     // 子 Agent 状态机需要根运行的取消标记，因此在两者都创建后挂上。
     ChildRuns children;

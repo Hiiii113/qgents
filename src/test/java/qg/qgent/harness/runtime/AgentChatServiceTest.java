@@ -20,6 +20,8 @@ import qg.qgent.harness.service.AgentRunService;
 import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.chat.dto.ContextMessage;
 import qg.qgent.chat.service.ChatHistoryService;
+import qg.qgent.chat.service.CrossGroupAccessService;
+import qg.qgent.chat.service.GroupService;
 import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.service.MessageService;
 import qg.qgent.github.tool.GitHubCapability;
@@ -223,6 +225,105 @@ class AgentChatServiceTest {
         verify(fixture.messages()).sendAsAgent(eq(fixture.agentId()), eq(group), argThat(request ->
                 "模型返回了空回复".equals(request.getContent().get("text"))));
         verify(fixture.proposals(), never()).bindMessage(any(), any());
+    }
+
+    @Test
+    void otherGroupsAreReadThroughToolsBoundToTheCurrentRun() {
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
+        ChatModel model = model();
+        when(model.call(any(Prompt.class))).thenReturn(reply("已了解"));
+        var fixture = fixture(model, actor, project, group, message, childExecutor);
+
+        fixture.service().replyToMention(fixture.event(), fixture.agentId(), "后端群最近怎么样？");
+
+        org.mockito.ArgumentCaptor<Prompt> prompts = org.mockito.ArgumentCaptor.forClass(Prompt.class);
+        verify(model).call(prompts.capture());
+        assertThat(((OpenAiChatOptions) prompts.getValue().getOptions()).getToolCallbacks())
+                .extracting(callback -> callback.getToolDefinition().name())
+                .contains("list_readable_groups", "read_other_group_memory", "search_other_group_chat_history",
+                        "read_other_group_chat_message");
+    }
+
+    @Test
+    void answersWithAnotherGroupsHistoryWhenThisGroupsMembersAllHaveAccess() {
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
+        Long source = TestIds.next();
+        ChatModel model = model();
+        AtomicInteger calls = new AtomicInteger();
+        AtomicReference<String> toolResult = new AtomicReference<>();
+        when(model.call(any(Prompt.class))).thenAnswer(invocation -> {
+            Prompt prompt = invocation.getArgument(0);
+            if (calls.incrementAndGet() == 1) {
+                return toolCall("search_other_group_chat_history",
+                        "{\"groupId\":\"" + source + "\",\"query\":\"登录\"}");
+            }
+            toolResult.set(((ToolResponseMessage) prompt.getInstructions().getLast()).getResponses().getFirst()
+                    .responseData());
+            return reply("后端群昨天完成登录联调");
+        });
+        var fixture = fixture(model, actor, project, group, message, childExecutor);
+        when(fixture.groups().audienceCoveredBy(project, source, group)).thenReturn(true);
+        when(fixture.groups().groupAgentIds(source)).thenReturn(List.of(fixture.agentId()));
+        when(fixture.history().searchChatHistory(actor, project, source, "登录", null)).thenReturn(List.of(
+                new ContextMessage(1L, "TEXT", "USER", actor.toString(), "昨天完成登录联调")));
+
+        fixture.service().replyToMention(fixture.event(), fixture.agentId(), "后端群最近怎么样？");
+
+        assertThat(toolResult.get()).contains("昨天完成登录联调");
+        verify(fixture.messages()).sendAsAgent(eq(fixture.agentId()), eq(group), argThat(request ->
+                "后端群昨天完成登录联调".equals(request.getContent().get("text"))));
+    }
+
+    @Test
+    void withheldAnswerWhenThisGroupGainedAMemberWithoutAccessToTheSource() {
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
+        Long source = TestIds.next();
+        ChatModel model = model();
+        AtomicInteger calls = new AtomicInteger();
+        when(model.call(any(Prompt.class))).thenAnswer(invocation -> calls.incrementAndGet() == 1
+                ? toolCall("read_other_group_memory", "{\"groupId\":\"" + source + "\"}")
+                : reply("后端群已完成登录"));
+        var fixture = fixture(model, actor, project, group, message, childExecutor);
+        when(fixture.groups().groupAgentIds(source)).thenReturn(List.of(fixture.agentId()));
+        // 读取时受众覆盖本群，投递前新加入的成员无权访问来源群。
+        when(fixture.groups().audienceCoveredBy(project, source, group)).thenReturn(true, false);
+
+        fixture.service().replyToMention(fixture.event(), fixture.agentId(), "后端群最近怎么样？");
+
+        verify(fixture.messages()).sendAsAgent(eq(fixture.agentId()), eq(group), argThat(request ->
+                ((String) request.getContent().get("text")).contains("不在本群披露")));
+        verify(fixture.proposals(), never()).bindMessage(any(), any());
+    }
+
+    @Test
+    void withheldAnswerWhenOnlyAChildRunReadAnotherGroup() throws Exception {
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
+        Long source = TestIds.next();
+        ChatModel model = model();
+        AtomicInteger rootCalls = new AtomicInteger(), childCalls = new AtomicInteger();
+        when(model.call(any(Prompt.class))).thenAnswer(invocation -> {
+            Prompt prompt = invocation.getArgument(0);
+            if (childPrompt(prompt)) {
+                return childCalls.incrementAndGet() == 1
+                        ? toolCall("read_other_group_memory", "{\"groupId\":\"" + source + "\"}")
+                        : reply("后端群已完成登录");
+            }
+            return switch (rootCalls.incrementAndGet()) {
+                case 1 -> toolCall("start_subagent", "{\"instruction\":\"查后端群进展\"}");
+                case 2 -> reply("等待子任务");
+                default -> reply("后端群已完成登录");
+            };
+        });
+        var fixture = fixture(model, actor, project, group, message, childExecutor);
+        when(fixture.groups().groupAgentIds(source)).thenReturn(List.of(fixture.agentId()));
+        // 子任务读取时允许，投递前受众不再覆盖：同一个运行的读取同样被复核。
+        when(fixture.groups().audienceCoveredBy(project, source, group)).thenReturn(true, false);
+
+        rootExecutor.submit(() -> fixture.service().replyToMention(fixture.event(), fixture.agentId(), "查后端群进展"))
+                .get(5, TimeUnit.SECONDS);
+
+        verify(fixture.messages()).sendAsAgent(eq(fixture.agentId()), eq(group), argThat(request ->
+                ((String) request.getContent().get("text")).contains("不在本群披露")));
     }
 
     @Test
@@ -831,14 +932,15 @@ class AgentChatServiceTest {
         });
         var agentMemories = mock(AgentMemoryService.class);
         when(agentMemories.view(any(), any(), any())).thenReturn(new AgentMemoryView("# 你的分工", ""));
+        var groups = mock(GroupService.class);
         var service = new AgentChatService(github, mock(SandboxCommands.class), workspaces,
                 mock(WorkspaceRepositoryService.class), loop, context,
                 skills, history, messages, runs, sessions, codeAccess,
                 attachments, memories, groupMemory, mock(GroupMemoryExtractionService.class), proposals,
-                agentMemories, new ObjectMapper(), childExecutor, maxSubagents);
+                agentMemories, new CrossGroupAccessService(groups), new ObjectMapper(), childExecutor, maxSubagents);
         MessageSentEvent event = new MessageSentEvent(actor, project, group, message, List.of());
         return new Fixture(service, event, agentId, messages, runs, root, workspaces, codeAccess, sessions, context,
-                attachments, proposals, replyMessageId);
+                attachments, proposals, replyMessageId, groups, history);
     }
 
     private AgentRunEntity run(AgentRunEntity parent, String instruction) {
@@ -918,5 +1020,6 @@ class AgentChatServiceTest {
                            AgentRunService runs, AgentRunEntity root, WorkspaceService workspaces,
                            SandboxFiles codeAccess, SandboxSessionManager sessions, ContextService context,
                            AttachmentService attachments,
-                           qg.qgent.memory.service.ProjectMemoryProposalService proposals, Long replyMessageId) { }
+                           qg.qgent.memory.service.ProjectMemoryProposalService proposals, Long replyMessageId,
+                           GroupService groups, ChatHistoryService history) { }
 }
