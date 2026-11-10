@@ -29,6 +29,7 @@ import qg.qgent.support.TestIds;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -331,12 +332,15 @@ class ProjectMemoryProposalServiceTest {
     }
 
     @Test
-    void pendingCandidateIsVisibleToBackgroundDiscovery() {
+    void pendingCandidateIsVisibleToBackgroundDiscoveryOnlyWhileItsBaselineIsCurrent() {
         Long project = TestIds.next(), pending = TestIds.next();
-        when(proposals.selectPendingId(project)).thenReturn(pending);
+        String version = memories.read(project).getVersion();
+        when(proposals.selectPendingBaseVersions(project)).thenReturn(List.of(version));
 
         assertThat(service.hasPending(project)).isTrue();
-        when(proposals.selectPendingId(project)).thenReturn(null);
+
+        // 基线版本已过时的候选再也无法写入，不阻塞后续发现
+        when(proposals.selectPendingBaseVersions(project)).thenReturn(List.of(pending.toString()));
         assertThat(service.hasPending(project)).isFalse();
     }
 

@@ -74,17 +74,17 @@ class ProjectMemoryProposalMapperTest {
     }
 
     @Test
-    void pendingLookupOnlyReturnsCandidatesStillAwaitingApproval() {
-        String sql = statement("selectPendingId").getBoundSql(Map.of("projectId", TestIds.next()))
+    void pendingLookupReturnsBaselineVersionsOfCandidatesStillAwaitingApproval() {
+        String sql = statement("selectPendingBaseVersions").getBoundSql(Map.of("projectId", TestIds.next()))
                 .getSql();
 
-        assertThat(sql).contains("project_id = ?", "status = 'PENDING'");
+        assertThat(sql).contains("base_version", "project_id = ?", "status = 'PENDING'");
     }
 
     @Test
     void everyStatementParameterResolvesToADeclaredMethodParameter() {
         assertParametersResolve("selectByMessageId", Map.of("messageId", TestIds.next()));
-        assertParametersResolve("selectPendingId", Map.of("projectId", TestIds.next()));
+        assertParametersResolve("selectPendingBaseVersions", Map.of("projectId", TestIds.next()));
         assertParametersResolve("markApplied", Map.of("id", TestIds.next(), "approvedBy", TestIds.next(),
                 "approvalMessageId", TestIds.next(), "version", "v2"));
         assertParametersResolve("bindMessage", Map.of("agentRunId", TestIds.next(), "messageId", TestIds.next()));
