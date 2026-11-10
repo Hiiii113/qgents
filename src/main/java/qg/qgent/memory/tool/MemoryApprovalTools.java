@@ -3,7 +3,6 @@ package qg.qgent.memory.tool;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 
-import qg.qgent.common.web.ApiException;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.memory.dto.ProjectMemoryResponse;
 import qg.qgent.memory.entity.ProjectMemoryProposalEntity;
@@ -44,7 +43,7 @@ public class MemoryApprovalTools {
         if (content == null || content.isBlank()) {
             return ToolResult.error("INVALID_ARGUMENT", "content 不能为空");
         }
-        return invoke(() -> {
+        return MemoryToolErrors.call(() -> {
             ProjectMemoryProposalEntity proposal = proposals.propose(actor, projectId, groupId, runId, content);
             ToolResult result = ToolResult.ok();
             result.put("proposalId", proposal.getId().toString());
@@ -58,7 +57,7 @@ public class MemoryApprovalTools {
             + "只在这条回复确实引用了你提出的候选消息时调用；服务端会核验真实发送者的项目管理员身份、"
             + "候选消息与候选状态，失败时如实说明审批未生效。")
     public ToolResult approveProjectMemory() {
-        return invoke(() -> {
+        return MemoryToolErrors.call(() -> {
             ProjectMemoryResponse memory = proposals.approve(actor, projectId, groupId, approvalMessageId);
             ToolResult result = ToolResult.ok();
             result.put("content", memory.getContent());
@@ -66,15 +65,5 @@ public class MemoryApprovalTools {
             result.put("updatedAt", memory.getUpdatedAt().toString());
             return result;
         });
-    }
-
-    private ToolResult invoke(java.util.function.Supplier<ToolResult> action) {
-        try {
-            return action.get();
-        } catch (ApiException e) {
-            return ToolResult.error(e.code(), e.getMessage());
-        } catch (RuntimeException e) {
-            return ToolResult.error("MEMORY_UNAVAILABLE", "项目记忆操作失败: " + e.getClass().getSimpleName());
-        }
     }
 }

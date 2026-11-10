@@ -90,9 +90,9 @@ public class ProjectMemoryService {
 
     /** 候选正文必须与注入 Agent 上下文的记忆预算一致；超限时拒绝提出，而不是等到审批才失败。 */
     public void requireContentBudget(String content) {
-        if (content != null && content.length() > maxMemoryChars) {
+        if (content.length() > maxMemoryChars) {
             throw new ApiException(HttpStatus.CONFLICT, "MEMORY_CONTEXT_LIMIT_EXCEEDED",
-                    "项目记忆超出 Agent 上下文字符预算 " + maxMemoryChars + "，请精简后保存");
+                    "项目记忆超出 Agent 上下文字符预算 " + maxMemoryChars + "，请精简候选后重新提出");
         }
     }
 

@@ -2,7 +2,6 @@ package qg.qgent.memory.tool;
 
 import org.springframework.ai.tool.annotation.Tool;
 
-import qg.qgent.common.web.ApiException;
 import qg.qgent.harness.tool.ParallelTool;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.memory.dto.ProjectMemoryResponse;
@@ -26,17 +25,13 @@ public class MemoryTools {
     @Tool(name = "read_project_memory", description = "读取项目长期记忆 memory.md 最新全文和版本号。"
             + "上下文包含的是启动时快照，准备提出更新或需要确认最新内容时调用。")
     public ToolResult readProjectMemory() {
-        try {
+        return MemoryToolErrors.call(() -> {
             ProjectMemoryResponse memory = memories.get(actor, projectId);
             ToolResult result = ToolResult.ok();
             result.put("content", memory.getContent());
             result.put("version", memory.getVersion());
             result.put("updatedAt", memory.getUpdatedAt().toString());
             return result;
-        } catch (ApiException e) {
-            return ToolResult.error(e.code(), e.getMessage());
-        } catch (RuntimeException e) {
-            return ToolResult.error("MEMORY_UNAVAILABLE", "项目记忆操作失败: " + e.getClass().getSimpleName());
-        }
+        });
     }
 }
