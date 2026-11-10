@@ -76,6 +76,50 @@ class GroupMemoryStateMapperTest {
     }
 
     @Test
+    void discoveryOnlyScansDueProjectDefaultGroupsWithinTheRetryBudget() {
+        String sql = sql("selectDiscoveryCandidates", Map.of("now", LocalDateTime.now(), "maxAttempts", 3,
+                "limit", 10));
+
+        // 受限群的群记忆不是候选来源：连模型都不该看到，所以由 SQL 先排除
+        assertThat(sql).contains("default_group = 1").contains("discovery_next_attempt_at <= ?")
+                .contains("discovery_attempt_count < ?").contains("ORDER BY g.group_id");
+    }
+
+    @Test
+    void groupMemoryUpdateGivesDiscoveryAFreshRetryBudget() {
+        String sql = sql("finishSuccess", successParameters());
+
+        assertThat(sql).contains("discovery_attempt_count = 0");
+    }
+
+    @Test
+    void discoveryClaimOnlyTakesTheDueSlot() {
+        String sql = sql("claimDiscovery", Map.of("groupId", TestIds.next(), "nextSlot", LocalDateTime.now(),
+                "now", LocalDateTime.now()));
+
+        assertThat(sql).contains("discovery_next_attempt_at = ?")
+                .contains("discovery_next_attempt_at IS NULL OR discovery_next_attempt_at <= ?");
+    }
+
+    @Test
+    void discoveryFailureKeepsTheDiscoveredVersionAndSchedulesARetry() {
+        String sql = sql("recordDiscoveryFailure", Map.of("groupId", TestIds.next(), "error", "模型调用超时",
+                "nextAttemptAt", LocalDateTime.now(), "now", LocalDateTime.now()));
+
+        assertThat(sql).doesNotContain("discovered_version")
+                .contains("discovery_attempt_count = discovery_attempt_count + 1")
+                .contains("discovery_next_attempt_at = ?");
+    }
+
+    @Test
+    void discoverySuccessRecordsTheVersionAndClearsTheError() {
+        String sql = sql("finishDiscovery", Map.of("groupId", TestIds.next(), "version", "v2",
+                "nextSlot", LocalDateTime.now(), "now", LocalDateTime.now()));
+
+        assertThat(sql).contains("discovered_version = ?", "discovery_attempt_count = 0", "discovery_error = NULL");
+    }
+
+    @Test
     void firstCandidatePageHasNoCursorCondition() {
         Map<String, Object> parameters = new HashMap<>();
         parameters.put("staleBefore", LocalDateTime.now());

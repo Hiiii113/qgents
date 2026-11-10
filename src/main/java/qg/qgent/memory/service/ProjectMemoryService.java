@@ -16,11 +16,8 @@ import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.HexFormat;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
@@ -96,11 +93,12 @@ public class ProjectMemoryService {
         }
     }
 
-    private ProjectMemoryResponse read(Long projectId) {
+    /** 读取正文与版本；不做权限检查，只给已通过成员校验的调用方和后台发现任务使用。 */
+    ProjectMemoryResponse read(Long projectId) {
         Path file = memoryFile(projectId);
         try {
             String content = Files.readString(file, StandardCharsets.UTF_8);
-            return new ProjectMemoryResponse(projectId.toString(), content, version(content),
+            return new ProjectMemoryResponse(projectId.toString(), content, MemorySupport.version(content),
                     LocalDateTime.ofInstant(Files.getLastModifiedTime(file).toInstant(), ZoneOffset.UTC));
         } catch (IOException e) {
             throw new IllegalStateException("项目记忆读取失败: " + file, e);
@@ -132,14 +130,5 @@ public class ProjectMemoryService {
             }
         }
         return file;
-    }
-
-    private String version(String content) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(content.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 不可用", e);
-        }
     }
 }

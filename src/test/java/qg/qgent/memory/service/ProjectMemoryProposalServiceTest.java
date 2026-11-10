@@ -3,13 +3,19 @@ package qg.qgent.memory.service;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 
+import qg.qgent.agent.entity.AgentEntity;
+import qg.qgent.agent.service.AgentService;
+import qg.qgent.chat.dto.MessageResponse;
+import qg.qgent.chat.dto.MessageSendRequest;
 import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.chat.mapper.MessageMapper;
+import qg.qgent.chat.service.MessageService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.memory.dto.ProjectMemoryResponse;
 import qg.qgent.memory.entity.ProjectMemoryProposalEntity;
@@ -23,10 +29,12 @@ import qg.qgent.support.TestIds;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -48,6 +56,8 @@ class ProjectMemoryProposalServiceTest {
     private final MessageMapper messages = mock(MessageMapper.class);
     private final ProjectMapper projects = mock(ProjectMapper.class);
     private final EventService events = mock(EventService.class);
+    private final MessageService chat = mock(MessageService.class);
+    private final AgentService agents = mock(AgentService.class);
     private ProjectMemoryService memories;
     private ProjectMemoryProposalService service;
 
@@ -55,7 +65,7 @@ class ProjectMemoryProposalServiceTest {
     void setUp() {
         memories = new ProjectMemoryService(access, new ProjectDirectoryService(root.toString(), root.toString()),
                 events, MAX_CHARS);
-        service = new ProjectMemoryProposalService(proposals, memories, access, groups, messages, projects);
+        service = new ProjectMemoryProposalService(proposals, memories, access, groups, messages, projects, chat, agents);
         when(proposals.insert(any(ProjectMemoryProposalEntity.class))).thenAnswer(invocation -> {
             invocation.getArgument(0, ProjectMemoryProposalEntity.class).setId(TestIds.next());
             return 1;
@@ -284,6 +294,68 @@ class ProjectMemoryProposalServiceTest {
         service.bindMessage(run, message);
 
         verify(proposals).bindMessage(run, message);
+    }
+
+    @Test
+    void discoveredCandidateIsPostedByDefaultAgentAndBoundToThatMessage() {
+        Long project = TestIds.next(), group = TestIds.next(), agent = TestIds.next(), message = TestIds.next();
+        when(groups.selectById(group)).thenReturn(group(group, project, true));
+        when(agents.defaultAgent(project)).thenReturn(agent(agent));
+        when(chat.sendAsAgent(any(), any(), any())).thenReturn(message(message, group));
+
+        ProjectMemoryProposalEntity proposal = service.publishDiscovered(project, group,
+                "# 项目记忆\n- 登录方式：邮箱登录", "group-memory-v1");
+
+        assertThat(proposal.getMessageId()).isEqualTo(message);
+        assertThat(proposal.getAgentRunId()).isNull();
+        assertThat(proposal.getProposedBy()).isNull();
+        assertThat(proposal.getBaseVersion()).isEqualTo(memories.read(project).getVersion());
+        assertThat(proposal.getSourceMemoryVersion()).isEqualTo("group-memory-v1");
+        ArgumentCaptor<MessageSendRequest> sent = ArgumentCaptor.forClass(MessageSendRequest.class);
+        verify(chat).sendAsAgent(eq(agent), eq(group), sent.capture());
+        assertThat(sent.getValue().getContent().get("text").toString()).contains("登录方式：邮箱登录");
+        verify(proposals).insert(proposal);
+    }
+
+    @Test
+    void discoveredCandidateFromRestrictedGroupIsRefusedBeforePosting() {
+        Long project = TestIds.next(), group = TestIds.next();
+        when(groups.selectById(group)).thenReturn(group(group, project, false));
+
+        ApiException error = assertThrows(ApiException.class, () -> service.publishDiscovered(project, group,
+                "# 受限群结论", "group-memory-v1"));
+
+        assertThat(error.code()).isEqualTo("MEMORY_SOURCE_GROUP_RESTRICTED");
+        verify(chat, never()).sendAsAgent(any(), any(), any());
+        verify(proposals, never()).insert(any(ProjectMemoryProposalEntity.class));
+        assertThat(memories.read(project).getContent()).isEmpty();
+    }
+
+    @Test
+    void pendingCandidateIsVisibleToBackgroundDiscoveryOnlyWhileItsBaselineIsCurrent() {
+        Long project = TestIds.next(), pending = TestIds.next();
+        String version = memories.read(project).getVersion();
+        when(proposals.selectPendingBaseVersions(project)).thenReturn(List.of(version));
+
+        assertThat(service.hasPending(project)).isTrue();
+
+        // 基线版本已过时的候选再也无法写入，不阻塞后续发现
+        when(proposals.selectPendingBaseVersions(project)).thenReturn(List.of(pending.toString()));
+        assertThat(service.hasPending(project)).isFalse();
+    }
+
+    private MessageResponse message(Long messageId, Long groupId) {
+        MessageResponse message = new MessageResponse();
+        message.setId(messageId.toString());
+        message.setGroupId(groupId.toString());
+        return message;
+    }
+
+    private AgentEntity agent(Long agentId) {
+        AgentEntity agent = new AgentEntity();
+        agent.setId(agentId);
+        agent.setDefaultAgent(true);
+        return agent;
     }
 
     private ProjectMemoryProposalEntity pendingProposal(Long projectId, Long groupId, String content) {

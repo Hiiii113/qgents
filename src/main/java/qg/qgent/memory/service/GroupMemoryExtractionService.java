@@ -22,7 +22,6 @@ import qg.qgent.memory.entity.GroupMemoryStateEntity;
 import qg.qgent.memory.mapper.GroupMemoryStateMapper;
 
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
@@ -60,7 +59,7 @@ public class GroupMemoryExtractionService {
     /** 定时扫描全部群；新消息数量和闲置时长同时满足才提交后台提炼。 */
     @Scheduled(fixedDelayString = "${app.memory.group.scan-interval:1m}")
     public void scan() {
-        LocalDateTime now = now();
+        LocalDateTime now = MemorySupport.now();
         LocalDateTime staleBefore = now.minusMinutes(properties.getStaleClaimMinutes());
         Long afterGroupId = null;
         while (true) {
@@ -90,7 +89,7 @@ public class GroupMemoryExtractionService {
 
     /** 后台提炼一次：领取不到说明其他任务在处理；只有仍持有领取才能写入结果并推进水位。 */
     public void extract(Long projectId, Long groupId) {
-        LocalDateTime claimedAt = now();
+        LocalDateTime claimedAt = MemorySupport.now();
         if (states.claim(groupId, claimedAt, claimedAt.minusMinutes(properties.getStaleClaimMinutes())) != 1) {
             return;
         }
@@ -107,21 +106,21 @@ public class GroupMemoryExtractionService {
                 // 模型没有按纠错改写：保留纠错并记一次失败，不能静默清除用户反馈
                 throw new IllegalStateException("模型输出未应用群记忆纠错");
             }
-            if (states.renewClaim(groupId, claimedAt, now()) != 1) {
+            if (states.renewClaim(groupId, claimedAt, MemorySupport.now()) != 1) {
                 log.warn("群记忆提炼已被新任务接管，丢弃结果, projectId={}, groupId={}", projectId, groupId);
                 return;
             }
             memories.write(projectId, groupId, updated);
             Long processedThrough = batch.isEmpty() ? state.getLastProcessedSequence()
                     : batch.getLast().getSequenceNo();
-            if (states.finishSuccess(groupId, claimedAt, state.getCorrection(), processedThrough, now()) != 1) {
+            if (states.finishSuccess(groupId, claimedAt, state.getCorrection(), processedThrough, MemorySupport.now()) != 1) {
                 log.warn("群记忆结果已失效，进度未推进, projectId={}, groupId={}", projectId, groupId);
                 return;
             }
             log.info("群记忆已更新, projectId={}, groupId={}, processedThrough={}", projectId, groupId, processedThrough);
         } catch (RuntimeException exception) {
-            LocalDateTime now = now();
-            states.recordFailure(groupId, claimedAt, reason(exception),
+            LocalDateTime now = MemorySupport.now();
+            states.recordFailure(groupId, claimedAt, MemorySupport.failure(exception),
                     now.plusMinutes(properties.getRetryDelayMinutes()), now);
             log.warn("群记忆提炼失败, projectId={}, groupId={}, attempt={}, retryAt={}: {}", projectId, groupId,
                     state.getAttemptCount() + 1, now.plusMinutes(properties.getRetryDelayMinutes()),
@@ -132,7 +131,7 @@ public class GroupMemoryExtractionService {
     /** 记录用户提出的记忆纠错，由后台提炼应用；Agent 不能直接写群记忆。 */
     public void requestCorrection(Long actor, Long projectId, Long groupId, String correction) {
         groups.requireGroupMember(projectId, groupId, actor);
-        states.requestCorrection(projectId, groupId, correction.strip(), now());
+        states.requestCorrection(projectId, groupId, correction.strip(), MemorySupport.now());
     }
 
     /** 状态已由查询过滤，这里只判断闲置时长、重试次数和重试时间。 */
@@ -171,7 +170,7 @@ public class GroupMemoryExtractionService {
         if (text == null || text.isBlank()) {
             throw new IllegalStateException("模型没有返回群记忆正文");
         }
-        return withoutCodeFence(text);
+        return MemorySupport.withoutCodeFence(text);
     }
 
     private String systemPrompt() {
@@ -199,27 +198,5 @@ public class GroupMemoryExtractionService {
             case "SYSTEM" -> "系统";
             default -> "用户 " + message.getAuthorUserId();
         };
-    }
-
-    /** 模型偶尔仍会套代码围栏，写入前去掉，避免群记忆正文被围栏污染。 */
-    private String withoutCodeFence(String text) {
-        String trimmed = text.strip();
-        if (!trimmed.startsWith("```")) {
-            return trimmed;
-        }
-        int firstLineEnd = trimmed.indexOf('\n');
-        int lastFence = trimmed.lastIndexOf("```");
-        return firstLineEnd < 0 || lastFence <= firstLineEnd ? trimmed
-                : trimmed.substring(firstLineEnd + 1, lastFence).strip();
-    }
-
-    private String reason(RuntimeException exception) {
-        String message = exception.getMessage();
-        String text = exception.getClass().getSimpleName() + (message == null || message.isBlank() ? "" : ": " + message);
-        return text.length() <= 500 ? text : text.substring(0, 500);
-    }
-
-    private LocalDateTime now() {
-        return LocalDateTime.now(ZoneOffset.UTC);
     }
 }
