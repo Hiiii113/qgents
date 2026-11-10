@@ -74,7 +74,7 @@ app:
     context:
       # 项目 memory.md 注入 Agent 上下文的字符上限；超过时拒绝提出记忆候选。
       max-memory-chars: ${APP_AGENT_CONTEXT_MAX_MEMORY_CHARS:12000}
-# 群记忆后台提炼：新消息数与闲置时长同时达到才触发，失败有限重试；阈值均可在环境覆盖。
+  # 群记忆后台提炼：新消息数与闲置时长同时达到才触发，失败有限重试；阈值均可在环境覆盖。
   memory:
     group:
       # 自上次提炼以来至少新增的消息条数（含 Agent 回复）。
@@ -98,8 +98,9 @@ app:
       scan-interval: ${APP_MEMORY_DISCOVERY_SCAN_INTERVAL:1h}
       # 同一来源群两次发现之间的最短间隔（分钟）。
       interval-minutes: ${APP_MEMORY_DISCOVERY_INTERVAL_MINUTES:1440}
-      # 发现失败后再次尝试的最短间隔（分钟）。
+      # 发现失败后再次尝试的最短间隔（分钟），与最大重试次数一起限制重复失败。
       retry-delay-minutes: ${APP_MEMORY_DISCOVERY_RETRY_DELAY_MINUTES:60}
+      max-attempts: ${APP_MEMORY_DISCOVERY_MAX_ATTEMPTS:3}
       # 单次扫描最多处理的来源群数。
       batch-size: ${APP_MEMORY_DISCOVERY_BATCH_SIZE:10}
   # 项目持久目录根；每个项目一个子目录，存放 memory.md、groups/ 下的群记忆、共享 Git 数据和各 Workspace 工作树。

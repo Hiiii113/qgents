@@ -1,5 +1,6 @@
 package qg.qgent.project.service;
 
+import qg.qgent.agent.service.AgentService;
 import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.support.TestIds;
 
@@ -36,9 +37,10 @@ class ProjectServiceTest {
     private final qg.qgent.workspace.service.WorkspaceService workspaces =
             mock(qg.qgent.workspace.service.WorkspaceService.class);
     private final AvatarStorageService avatarStorage = mock(AvatarStorageService.class);
+    private final AgentService agents = mock(AgentService.class);
     private final ProjectService service = new ProjectService(projects, projectMembers, teams, teamMembers,
             access, mock(ApplicationEventPublisher.class), mock(NotificationService.class), mock(EventService.class),
-            workspaces, avatarStorage, mock(qg.qgent.agent.service.AgentService.class));
+            workspaces, avatarStorage, agents);
 
     @Test
     void projectListReturnsAvatarAndMemberCountWithoutExtraQueries() {
@@ -146,6 +148,31 @@ class ProjectServiceTest {
         verify(events).publishEvent(argThat((Object event) -> event instanceof ProjectCreatedEvent project
                 && project.projectId().toString().equals(created.getId()) && project.creatorUserId().equals(owner)));
     }
+    @Test
+    void newProjectGetsItsOwnDefaultAgent() {
+        Long owner = TestIds.next(), teamId = TestIds.next();
+        TeamEntity team = new TeamEntity();
+        team.setId(teamId);
+        team.setOwnerUserId(owner);
+        team.setStatus("ACTIVE");
+        when(teams.selectByIdForUpdate(teamId)).thenReturn(team);
+        TeamMemberEntity membership = new TeamMemberEntity();
+        membership.setRole("TEAM_OWNER");
+        when(teamMembers.selectByTeamAndUser(teamId, owner)).thenReturn(membership);
+        when(projects.insert(any(ProjectEntity.class))).thenAnswer(invocation -> {
+            ProjectEntity entity = invocation.getArgument(0);
+            entity.setId(TestIds.next());
+            return 1;
+        });
+        ProjectCreateRequest request = new ProjectCreateRequest();
+        request.setName("项目");
+
+        var created = service.create(owner, teamId, request);
+
+        // 默认 Agent 与项目同一事务创建；默认群的成员列表也依赖它。
+        verify(agents).createDefaultAgent(Long.valueOf(created.getId()));
+    }
+
     @Test
     void teamAdminCanCreateProjectAndBecomesProjectAdmin() {
         Long admin = TestIds.next(), owner = TestIds.next(), teamId = TestIds.next();

@@ -1,14 +1,14 @@
 # Qgents
 
-团队协作的云端 Agent 工作台。在项目群聊里 `@Qgent`，它会读取聊天上下文、项目知识与附件，按需拉起 Docker 沙箱读写代码、执行命令，并把分支推回 GitHub。
+团队协作的云端 Agent 工作台。在项目群聊里 `@` 项目内的 Agent（新建项目自带的默认 Agent，或管理员审批通过的自定义 Agent），它会读取聊天上下文、项目知识与附件，按需拉起 Docker 沙箱读写代码、执行命令，并把分支推回 GitHub。
 
 后端是单个 Java 21 / Spring Boot 应用，同时承载 IM、Agent Harness 与 Sandbox 管理，依赖 MySQL 和 Redis；前端位于相邻的 `../qgents-fronted` 仓库（React 19）。
 
 ## 功能
 
-- **项目群聊**：团队 → 项目 → 多个群聊，支持成员、提及、回复、已读与置顶。只有 `@Qgent` 的消息会启动 Agent，普通聊天不调用模型。
+- **项目群聊**：团队 → 项目 → 多个群聊，支持成员、提及、回复、已读与置顶。只有 `@` 已在群内的 Agent 的消息才会启动 Agent，普通聊天不调用模型。
 - **Agent Harness**：自研工具循环，默认最多 30 轮、单步最多 4 个并行工具；可后台派生子 Agent（默认上限 8 个），运行中可取消。
-- **Docker Sandbox**：用户命令在临时容器中执行（默认 2 核 / 4 GiB，空闲 30 分钟或最长 4 小时后回收）。项目数据目录持久保存 `memory.md`、共享 Git 数据与各 Workspace 的 worktree。
+- **Docker Sandbox**：用户命令在临时容器中执行（默认 2 核 / 4 GiB，空闲 30 分钟或最长 4 小时后回收）。项目数据目录持久保存 `memory.md`、群记忆 `groups/<groupId>/memory.md`、Agent 私有记忆 `agent-memory/<agentId>/<groupId>.md`、共享 Git 数据与各 Workspace 的 worktree。
 - **项目知识**：共享 `memory.md`、项目 Skill、群聊历史检索、图片与文本附件（本地磁盘或阿里云 OSS 直传）。
 - **GitHub App**（可选）：团队安装、项目管理员导入仓库；Agent 可读 PR / Issue、拉取代码并推送分支，不自动创建或合并 PR。
 - **实时与通知**：项目事件通过 SSE（可用 `Last-Event-ID` 续传）与 WebSocket 推送，站内通知支持可选的 FCM 移动端推送。
@@ -23,7 +23,7 @@ Spring Boot 应用 ── MySQL 8.4   业务数据、实时事件
    │              └ Redis 7     刷新令牌、验证码、限流
    ├── DeepSeek（OpenAI 兼容协议，Spring AI）
    └── Docker Engine
-         └── Sandbox 容器 ── 项目数据卷：memory.md、.git、workspaces/
+         └── Sandbox 容器 ── 项目数据卷：memory.md、groups/、agent-memory/、.git、workspaces/
 ```
 
 业务端口 `8080`；运维端口默认只监听 `127.0.0.1:8081`，暴露 `health`、`info`、`metrics`、`prometheus`。
@@ -55,10 +55,11 @@ docker-compose.yml          本地依赖、生产部署与可选 profile
 | --- | --- |
 | `auth` / `user` | 邮箱验证码注册、RSA + JWT 登录、资料与头像 |
 | `team` / `project` | 团队与邀请、项目成员与权限、项目目录 |
+| `agent` | 项目内 Agent：默认 Agent、自定义 Agent 申请与群聊审批 |
 | `chat` | 群聊、消息、提及、已读、群内历史检索 |
 | `harness` | Agent 运行、上下文装配、工具循环、子 Agent |
 | `workspace` / `sandbox` | Workspace 与仓库 worktree、容器命令执行与编码工具 |
-| `skill` / `memory` | 项目 Skill 与共享 `memory.md` |
+| `skill` / `memory` | 项目 Skill；项目、群、Agent 三层记忆的后台提炼与群聊审批 |
 | `attachment` / `github` | 附件上传预览、GitHub App 与仓库工具 |
 | `notification` / `realtime` | 站内通知与推送设备、SSE / WebSocket 事件流 |
 | `common` | 统一响应与异常、存储等基础能力 |

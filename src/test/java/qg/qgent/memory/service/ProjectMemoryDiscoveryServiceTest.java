@@ -200,6 +200,7 @@ class ProjectMemoryDiscoveryServiceTest {
         Long project = TestIds.next(), group = TestIds.next();
         groupMemories.write(project, group, "- 受限结论：调整了报价");
         when(chatGroups.selectById(group)).thenReturn(group(group, project, false));
+        when(states.selectById(group)).thenReturn(state(project, group));
         claims(group);
 
         service.discover(project, group);

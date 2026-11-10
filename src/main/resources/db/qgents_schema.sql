@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS agents (
     -- 生成列只对默认 Agent 取 project_id，其余为 NULL；唯一索引允许多个 NULL，保证每项目只有一个默认 Agent。
     default_slot BIGINT GENERATED ALWAYS AS (IF(default_agent = 1, project_id, NULL)) STORED,
     UNIQUE KEY uk_agent_default (default_slot),
+    UNIQUE KEY uk_agent_announced_message (announced_message_id),
     KEY idx_agent_project (project_id, status),
     CONSTRAINT fk_agent_project FOREIGN KEY (project_id) REFERENCES projects (id),
     CONSTRAINT fk_agent_proposed_by FOREIGN KEY (proposed_by) REFERENCES users (id),
@@ -418,23 +419,34 @@ CREATE TABLE IF NOT EXISTS
         discovery_next_attempt_at DATETIME(6) NULL COMMENT '下次允许发现项目记忆候选的时间（UTC）',
         discovery_error VARCHAR(500) NULL COMMENT '最近一次项目记忆发现失败摘要',
         updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',
-        KEY idx_gms_due (status, last_message_at),
         CONSTRAINT fk_gms_group FOREIGN KEY (group_id) REFERENCES chat_groups (id) ON DELETE CASCADE,
         CONSTRAINT fk_gms_project FOREIGN KEY (project_id) REFERENCES projects (id),
         CONSTRAINT chk_gms_status CHECK (status IN ('IDLE', 'RUNNING'))
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '群聊记忆提炼进度与调度状态';
 
--- 已存在的数据卷不会重新建表（README 第 2 步）；升级到带项目记忆发现的版本时手工执行：
--- ALTER TABLE project_memory_proposals
---     MODIFY agent_run_id BIGINT NULL COMMENT '提出候选的 AgentRun；每个运行最多一个候选；后台发现时为空',
---     MODIFY proposed_by BIGINT NULL COMMENT '提出候选的真实用户ID；后台发现时为空',
---     ADD COLUMN source_memory_version VARCHAR(64) NULL
---         COMMENT '后台发现时的来源群记忆内容版本；群聊提出时为空' AFTER base_version;
--- ALTER TABLE group_memory_state
---     ADD COLUMN discovered_version VARCHAR(64) NULL COMMENT '最近一次项目记忆发现所依据的群记忆内容版本',
---     ADD COLUMN discovery_attempt_count INT NOT NULL DEFAULT 0 COMMENT '项目记忆发现连续失败次数；成功后清零',
---     ADD COLUMN discovery_next_attempt_at DATETIME(6) NULL COMMENT '下次允许发现项目记忆候选的时间（UTC）',
---     ADD COLUMN discovery_error VARCHAR(500) NULL COMMENT '最近一次项目记忆发现失败摘要';
+-- 已存在的库不会重建表（README 第 2 步：数据卷初始化过的库不会重跑本脚本）；从上一个版本升级时手工执行：
+-- 1. 先执行本文件中新增的建表语句（CREATE TABLE IF NOT EXISTS，已存在则跳过）：
+--    agents、group_agents、project_memory_proposals、group_memory_state。
+-- 2. 再补已有表上新增的列、索引与约束；重复执行会报 Duplicate column/key，跳过即可：
+-- ALTER TABLE messages
+--     ADD COLUMN sender_agent_id BIGINT NULL COMMENT '发送 Agent ID；AGENT 消息必填，其余为空' AFTER author_user_id,
+--     ADD KEY idx_msg_agent (sender_agent_id),
+--     DROP CHECK chk_message_sender,
+--     ADD CONSTRAINT fk_msg_agent FOREIGN KEY (sender_agent_id) REFERENCES agents (id),
+--     ADD CONSTRAINT chk_message_sender CHECK (
+--         (message_type = 'SYSTEM' AND sender_type = 'SYSTEM'
+--             AND author_user_id IS NULL AND sender_agent_id IS NULL)
+--         OR (message_type <> 'SYSTEM'
+--             AND ((sender_type = 'USER' AND author_user_id IS NOT NULL AND sender_agent_id IS NULL)
+--                 OR (sender_type = 'AGENT' AND author_user_id IS NULL AND sender_agent_id IS NOT NULL))));
+-- -- 旧 agent_runs 行没有 Agent 身份，加列前先清空（MVP 不保留执行历史）：
+-- DELETE FROM agent_runs;
+-- ALTER TABLE agent_runs
+--     ADD COLUMN agent_id BIGINT NOT NULL COMMENT '执行该轮运行的项目内 Agent' AFTER group_id;
+-- -- 群不再有单独的启用开关，Agent 以群成员的身份存在：
+-- ALTER TABLE chat_groups DROP COLUMN qgent_enabled;
+-- 已经在这个分支的早期构建上跑过的库（project_memory_proposals / group_memory_state 缺列）不单独补：
+-- README 第 2 步的 docker compose down -v 重建就是支持路径。
 
 -- 全新整库初始化时上方 users 建表已含该列，此处仅服务已存在的库；已存在该列的库自动跳过。
 CREATE TABLE IF NOT EXISTS
