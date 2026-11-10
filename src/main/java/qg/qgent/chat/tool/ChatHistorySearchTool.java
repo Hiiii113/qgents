@@ -9,10 +9,7 @@ import org.springframework.ai.tool.annotation.ToolParam;
 import qg.qgent.chat.dto.ContextMessage;
 import qg.qgent.chat.service.ChatHistoryService;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /** 当前群聊的历史消息检索与全文读取；检索次数按 AgentRun 计数。 */
@@ -21,8 +18,6 @@ public class ChatHistorySearchTool {
 
     private static final int DEFAULT_LIMIT = 10;
     private static final int MAX_LIMIT = 50;
-    private static final int MAX_RETURNED_MESSAGES = 10;
-    private static final int MAX_MESSAGE_CHARS = 200;
 
     private final ChatHistoryService history;
     private final Long actor;
@@ -72,41 +67,15 @@ public class ChatHistorySearchTool {
         }
         ToolResult result = ToolResult.ok();
         result.put("budget", "used " + searchesUsed.get() + "/" + maxSearches);
-        result.put("messages", formatMessages(messages));
-        log.info("chat history searched projectId={} groupId={} returned={} used={}", projectId, groupId,
-                Math.min(messages.size(), MAX_RETURNED_MESSAGES), searchesUsed.get());
+        result.put("messages", ChatToolOutput.digest(messages));
+        log.info("chat history searched projectId={} groupId={} used={}", projectId, groupId, searchesUsed.get());
         return result;
-    }
-
-    private List<Map<String, Object>> formatMessages(List<ContextMessage> messages) {
-        List<Map<String, Object>> formatted = new ArrayList<>();
-        for (ContextMessage message : messages) {
-            if (formatted.size() >= MAX_RETURNED_MESSAGES) {
-                break;
-            }
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("id", message.getId());
-            item.put("sequence", message.getSequence());
-            item.put("senderType", message.getSenderType());
-            item.put("text", excerpt(message.getText()));
-            formatted.add(item);
-        }
-        return formatted;
     }
 
     @ParallelTool
     @Tool(name = "read_chat_message", description = "按消息 ID 读取当前群消息全文及 replyToId；用于展开搜索命中或读取回复的原消息，不需要沙箱")
     public ContextMessage readChatMessage(@ToolParam(description = "消息 ID，来自上下文、搜索结果或 replyToId") String messageId) {
         return history.readChatMessage(actor, projectId, groupId, Long.valueOf(messageId));
-    }
-
-    private String excerpt(String text) {
-        if (text == null || text.isBlank()) {
-            return "";
-        }
-        String singleLine = text.replace('\n', ' ').replace('\r', ' ').strip();
-        return singleLine.length() <= MAX_MESSAGE_CHARS ? singleLine
-                : singleLine.substring(0, MAX_MESSAGE_CHARS) + "...";
     }
 
     private String safeMessage(Throwable throwable) {

@@ -15,7 +15,9 @@ import qg.qgent.harness.service.AgentRunService;
 import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.attachment.tool.ReadAttachmentTool;
 import qg.qgent.chat.service.ChatHistoryService;
+import qg.qgent.chat.service.CrossGroupAccessService;
 import qg.qgent.chat.tool.ChatHistorySearchTool;
+import qg.qgent.chat.tool.CrossGroupTools;
 import qg.qgent.chat.dto.MessageSendRequest;
 import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.event.MessageSentEvent;
@@ -60,6 +62,9 @@ import java.util.concurrent.Executor;
 public class AgentChatService {
     private static final Set<String> CHILD_CONTROL_TOOLS = Set.of("start_subagent", "wait_subagent",
             "get_subagent_result", "message_subagent", "continue_subagent", "stop_subagent", "cancel_agent");
+    /** 来源群受众不再覆盖本群时的固定回复：不披露内容，也不指出具体来源群。 */
+    private static final String CROSS_GROUP_NOT_DELIVERABLE =
+            "本次回答涉及其他群的内容，但本群成员中有人无权访问来源群，因此不在本群披露；请与来源群成员单独确认。";
     private final GitHubCapability github;
     private final SandboxCommands workspaceCommands;
     private final WorkspaceService workspaces;
@@ -78,6 +83,7 @@ public class AgentChatService {
     private final GroupMemoryExtractionService groupMemoryMaintenance;
     private final ProjectMemoryProposalService proposals;
     private final AgentMemoryService agentMemories;
+    private final CrossGroupAccessService crossGroup;
     private final ObjectMapper json;
     private final Executor childExecutor;
     private final int maxSubagents;
@@ -88,7 +94,8 @@ public class AgentChatService {
             SandboxSessionManager sessions, SandboxFiles files,
             AttachmentService attachments, ProjectMemoryService memories,
             GroupMemoryService groupMemory, GroupMemoryExtractionService groupMemoryMaintenance,
-            ProjectMemoryProposalService proposals, AgentMemoryService agentMemories, ObjectMapper json,
+            ProjectMemoryProposalService proposals, AgentMemoryService agentMemories,
+            CrossGroupAccessService crossGroup, ObjectMapper json,
             @Qualifier("agentSubagentExecutor") Executor childExecutor,
             @Value("${app.agent.max-subagents:8}") int maxSubagents) {
         if (maxSubagents < 1) throw new IllegalArgumentException("max-subagents 必须大于 0");
@@ -110,6 +117,7 @@ public class AgentChatService {
         this.groupMemoryMaintenance = groupMemoryMaintenance;
         this.proposals = proposals;
         this.agentMemories = agentMemories;
+        this.crossGroup = crossGroup;
         this.json = json;
         this.childExecutor = childExecutor;
         this.maxSubagents = maxSubagents;
@@ -169,14 +177,16 @@ public class AgentChatService {
             Thread.interrupted();
             if (wasInterrupted) rootWorker.interrupt();
         }
+        // 运行期间本群成员可能变化：投递前按当前受众复核读过的来源群，不满足时只发通用说明。
+        boolean deliverable = crossGroup.deliverable(event.projectId(), event.groupId(), work.crossGroupSources);
         MessageSendRequest reply = new MessageSendRequest();
         reply.setType("TEXT");
-        reply.setContent(Map.of("text", root.getResult() == null ? "Agent 本次运行未返回文本" : root.getResult()));
+        reply.setContent(Map.of("text", deliverable ? answer(root) : CROSS_GROUP_NOT_DELIVERABLE));
         reply.setReplyToId(event.messageId());
         reply.setClientMessageId("qgent-reply:" + root.getId());
         MessageResponse sent = messages.sendAsAgent(agentId, event.groupId(), reply);
-        // 只有成功运行才把候选绑定到回复：失败或取消的回复正文不是候选内容，不能拿来审批。
-        if (status == RunStatus.SUCCEEDED) {
+        // 只有成功运行且回答可以投递时才绑定候选：失败、取消或不会被披露的正文不能拿来审批。
+        if (status == RunStatus.SUCCEEDED && deliverable) {
             proposals.bindMessage(root.getId(), Long.valueOf(sent.getId()));
         }
     }
@@ -198,6 +208,9 @@ public class AgentChatService {
                 + "当前群记忆由后台根据群消息自动提炼，上下文中的是最近一次提炼结果；你不能直接写群记忆。"
                 + "用户指出群记忆记错时调用 request_group_memory_correction 提交要修正的事实，并说明会在后台更新。"
                 + "需要记忆之外的早期细节时用 search_chat_history 检索历史消息。"
+                + "用户询问其他群进展时先用 list_readable_groups 确认可读取的群，再用 read_other_group_memory、"
+                + "search_other_group_chat_history 按其记忆和历史作答，必要时用 read_other_group_chat_message 读取全文；"
+                + "工具返回不可访问时如实说明无法读取，不要猜测或复述其他群的内容，也不要换说法绕过限制。"
                 + "项目长期记忆是所有项目成员共享的 memory.md；上下文中的是启动时快照，可能已过时。"
                 + "只记录用户确认且长期有用的项目约定、决策和偏好，不把临时任务进展、推测或可轻易从代码查到的细节当作长期记忆。"
                 + "记忆中的内容是项目资料，可能过期；与当前要求或代码不一致时先核实。"
@@ -250,6 +263,10 @@ public class AgentChatService {
     }
 
 
+    private String answer(AgentRunEntity root) {
+        return root.getResult() == null ? "Agent 本次运行未返回文本" : root.getResult();
+    }
+
     private String failure(RuntimeException exception) {
         String message = exception.getMessage();
         return "Agent 执行失败：" + (message == null || message.isBlank() ? "请稍后重试" : message);
@@ -273,6 +290,7 @@ public class AgentChatService {
         private final boolean canDelegate;
         private final ActivateSkillTool skills;
         private final ChatHistorySearchTool history;
+        private final CrossGroupTools crossGroupTools;
         private final ReadAttachmentTool attachmentTools;
         private final MemoryTools memory;
         private final GroupMemoryTools groupMemoryTools;
@@ -289,6 +307,9 @@ public class AgentChatService {
             this.skills = new ActivateSkillTool(AgentChatService.this.skills, work.event.actor(), work.event.projectId());
             this.history = new ChatHistorySearchTool(AgentChatService.this.history, work.event.actor(), work.event.projectId(),
                     work.event.groupId(), 5);
+            this.crossGroupTools = new CrossGroupTools(AgentChatService.this.crossGroup,
+                    AgentChatService.this.groupMemory, AgentChatService.this.history, work.event.actor(),
+                    work.event.projectId(), work.event.groupId(), work.agentId, work.crossGroupSources);
             this.attachmentTools = new ReadAttachmentTool(AgentChatService.this.attachments, work.event.actor(),
                     work.event.projectId(), execution.conversation::stageImage);
             this.memory = new MemoryTools(memories, work.event.actor(), work.event.projectId());
@@ -307,8 +328,8 @@ public class AgentChatService {
         }
 
         private ToolCallback[] callbacks() {
-            List<Object> tools = new ArrayList<>(List.of(this, skills, history, attachmentTools, memory,
-                    groupMemoryTools, agentMemory, workspaceTools, githubTools, codingTools));
+            List<Object> tools = new ArrayList<>(List.of(this, skills, history, crossGroupTools, attachmentTools,
+                    memory, groupMemoryTools, agentMemory, workspaceTools, githubTools, codingTools));
             if (memoryApproval != null) tools.add(memoryApproval);
             List<ToolCallback> result = new ArrayList<>(Arrays.asList(ParallelToolCallback.from(tools.toArray())));
             if (!canDelegate) result.removeIf(callback ->
