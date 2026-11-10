@@ -65,9 +65,18 @@ public class MessageSentListener {
             String instruction = messageService.agentInstruction(message);
             List<Long> groupAgentIds = groupService.groupAgentIds(event.groupId());
             agentIds.stream().filter(groupAgentIds::contains)
-                    .forEach(agentId -> agentChatService.replyToMention(event, agentId, instruction));
+                    .forEach(agentId -> runOne(event, agentId, instruction));
         } catch (RuntimeException e) {
             log.warn("message sent post-processing skipped, messageId={}: {}", messageId, e.getMessage());
+        }
+    }
+
+    /** 一个 Agent 的运行失败不能连坐其余被提及的 Agent，每个提及各自兜住异常。 */
+    private void runOne(MessageSentEvent event, Long agentId, String instruction) {
+        try {
+            agentChatService.replyToMention(event, agentId, instruction);
+        } catch (RuntimeException e) {
+            log.warn("agent run skipped, groupId={}, agentId={}: {}", event.groupId(), agentId, e.getMessage());
         }
     }
 }
