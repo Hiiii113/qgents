@@ -7,4 +7,5 @@ import lombok.Data;
 public class GroupAgentRow {
     private Long agentId;
     private String name;
+    private String avatarUrl;
 }
