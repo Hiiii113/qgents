@@ -39,5 +39,15 @@ public class GroupMemoryStateEntity {
 
     private String lastError;
 
+    // 最近一次项目记忆发现所依据的群记忆内容版本；相同版本不重复发现。
+    private String discoveredVersion;
+
+    // 项目记忆发现连续失败次数；成功后清零。
+    private Integer discoveryAttemptCount;
+
+    private LocalDateTime discoveryNextAttemptAt;
+
+    private String discoveryError;
+
     private LocalDateTime updatedAt;
 }

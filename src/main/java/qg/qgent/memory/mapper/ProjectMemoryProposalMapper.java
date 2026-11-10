@@ -16,6 +16,11 @@ public interface ProjectMemoryProposalMapper extends BaseMapper<ProjectMemoryPro
     @Select("SELECT * FROM project_memory_proposals WHERE message_id = #{messageId}")
     ProjectMemoryProposalEntity selectByMessageId(@Param("messageId") Long messageId);
 
+    /** 项目当前待审批候选 ID；已有候选时后台不再提新候选，避免重复申请。 */
+    @Select("SELECT id FROM project_memory_proposals WHERE project_id = #{projectId} "
+            + "AND status = 'PENDING' LIMIT 1")
+    Long selectPendingId(@Param("projectId") Long projectId);
+
     /** 记忆写入成功后标记完成；只在仍待审批时生效，重复审批得到 0。 */
     @Update("UPDATE project_memory_proposals SET status = 'APPLIED', applied_version = #{version}, "
             + "approved_by = #{approvedBy}, approved_message_id = #{approvalMessageId}, "

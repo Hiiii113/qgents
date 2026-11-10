@@ -27,7 +27,7 @@ public class ProjectMemoryProposalEntity {
     // 提出候选的项目默认群 ID；受限群内容在授权规则明确前不进入项目记忆。
     private Long groupId;
 
-    // 提出候选的 AgentRun ID；每个运行最多一个候选。
+    // 提出候选的 AgentRun ID；每个运行最多一个候选，后台发现时为空。
     private Long agentRunId;
 
     // 候选所在的 Agent 消息 ID；审批回复必须回复该消息。
@@ -39,10 +39,13 @@ public class ProjectMemoryProposalEntity {
     // 提出候选时的 memory.md 内容版本。
     private String baseVersion;
 
+    // 后台发现候选时依据的群记忆内容版本；群聊中提出时为空。
+    private String sourceMemoryVersion;
+
     // 状态枚举：PENDING/APPLIED。
     private String status;
 
-    // 提出候选的真实用户 ID。
+    // 提出候选的真实用户 ID；后台发现时为空。
     private Long proposedBy;
 
     // 审批的管理员用户 ID。
