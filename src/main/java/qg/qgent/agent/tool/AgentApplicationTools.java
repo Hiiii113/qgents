@@ -6,7 +6,7 @@ import org.springframework.ai.tool.annotation.ToolParam;
 import qg.qgent.agent.dto.AgentApplicationRequest;
 import qg.qgent.agent.entity.AgentEntity;
 import qg.qgent.agent.service.AgentApplicationService;
-import qg.qgent.common.web.ApiException;
+import qg.qgent.harness.tool.ToolErrors;
 import qg.qgent.harness.tool.ToolResult;
 
 import java.util.ArrayList;
@@ -45,7 +45,8 @@ public class AgentApplicationTools {
     /** 帮成员起草并向项目管理员提交自定义 Agent 申请；提交后仍待审批，不能使用。 */
     @Tool(name = "submit_agent_application", description = "帮当前用户向项目管理员申请创建自定义 Agent。"
             + "先根据对话整理名称、职责描述和系统提示词，向用户确认后再提交；头像 URL 可省略。"
-            + "提交后申请处于待审批状态，不能邀请入群也不能运行，需要用普通文本告诉用户等待管理员审批。")
+            + "提交后用普通文本把名称、职责和系统提示词摘要告诉用户，说明申请待项目管理员审批，"
+            + "通过后才能邀请入群；管理员可以直接回复这条回复并 @你 审批。")
     public ToolResult submitAgentApplication(
             @ToolParam(description = "Agent 名称，最多 120 字符") String name,
             @ToolParam(description = "Agent 职责描述，可省略", required = false) String description,
@@ -137,13 +138,6 @@ public class AgentApplicationTools {
     }
 
     private ToolResult call(Supplier<ToolResult> action) {
-        try {
-            return action.get();
-        } catch (ApiException e) {
-            return ToolResult.error(e.code(), e.getMessage());
-        } catch (RuntimeException e) {
-            return ToolResult.error("AGENT_APPLICATION_UNAVAILABLE",
-                    "Agent 申请操作失败: " + e.getClass().getSimpleName());
-        }
+        return ToolErrors.call("AGENT_APPLICATION_UNAVAILABLE", "Agent 申请操作失败", action);
     }
 }

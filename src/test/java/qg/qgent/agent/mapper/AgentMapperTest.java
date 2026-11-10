@@ -73,15 +73,16 @@ class AgentMapperTest {
     }
 
     @Test
-    void announcementIsBoundOnceWhileTheApplicationIsStillPending() throws Exception {
-        Long id = TestIds.next(), messageId = TestIds.next();
+    void aLaterAnnouncementMovesTheApprovalTargetToTheNewMessage() throws Exception {
+        Long id = TestIds.next(), secondAnnouncement = TestIds.next();
 
         try (SqlSession session = factory.openSession()) {
-            assertThat(session.getMapper(AgentMapper.class).bindAnnouncement(id, messageId)).isEqualTo(1);
+            assertThat(session.getMapper(AgentMapper.class).bindAnnouncement(id, secondAnnouncement)).isEqualTo(1);
         }
 
-        assertThat(updateSql()).contains("announced_message_id = ?", "announced_message_id IS NULL",
-                "status = 'PENDING'");
+        // 管理员按 Agent 最新一次公布回复，因此更晚的公布覆盖旧的绑定；已处理的申请不再接收公布。
+        assertThat(updateSql()).contains("announced_message_id = ?", "status = 'PENDING'",
+                "announced_message_id < ?");
     }
 
     @Test
@@ -90,8 +91,13 @@ class AgentMapperTest {
                 .contains("status = 'ACTIVE'");
         assertThat(selectSql("selectPendingByProject", Map.of("projectId", TestIds.next())))
                 .contains("status = 'PENDING'");
+    }
+
+    @Test
+    void theLimitCountIsALockingReadSoConcurrentApplicationsSeeCommittedRows() {
+        // 事务内先做了普通读（成员校验）才拿到项目行锁，快照可能落后；计数必须是加锁读才能看到刚提交的申请。
         assertThat(selectSql("countCountedByProject", Map.of("projectId", TestIds.next())))
-                .contains("status <> 'REJECTED'");
+                .contains("status <> 'REJECTED'", "FOR UPDATE");
     }
 
     @Test

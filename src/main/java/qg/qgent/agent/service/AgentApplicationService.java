@@ -58,10 +58,12 @@ public class AgentApplicationService {
         access.requireProjectMember(projectId, actor);
         String name = required(request.getName(), 120, "Agent 申请需要 1～120 字符的名称");
         String systemPrompt = required(request.getSystemPrompt(), 20000, "Agent 申请需要不超过 20000 字符的系统提示词");
+        String description = optional(request.getDescription(), 2000, "Agent 申请的描述不能超过 2000 字符");
+        String avatarUrl = optional(request.getAvatarUrl(), 2048, "Agent 申请的头像地址不能超过 2048 字符");
         if (groupId != null) {
             requireDefaultGroup(projectId, groupId);
         }
-        // 计数与插入同处项目行锁内：并发申请不会同时通过上限检查。
+        // 项目行锁串行化同项目的申请；计数本身是加锁读，才看得到刚提交的申请。
         projects.selectByIdForUpdate(projectId);
         if (agents.countCountedByProject(projectId) >= maxAgentsPerProject) {
             throw new ApiException(HttpStatus.CONFLICT, "AGENT_LIMIT_REACHED",
@@ -70,9 +72,9 @@ public class AgentApplicationService {
         AgentEntity application = new AgentEntity();
         application.setProjectId(projectId);
         application.setName(name);
-        application.setDescription(trimmed(request.getDescription()));
+        application.setDescription(description);
         application.setSystemPrompt(systemPrompt);
-        application.setAvatarUrl(trimmed(request.getAvatarUrl()));
+        application.setAvatarUrl(avatarUrl);
         application.setDefaultAgent(false);
         application.setStatus(AgentEntity.STATUS_PENDING);
         application.setProposedBy(actor);
@@ -123,7 +125,7 @@ public class AgentApplicationService {
         return agents.selectById(application.getId());
     }
 
-    /** 把本次运行公布过的申请绑定到它的 Agent 回复消息；已绑定或已处理的申请不变。 */
+    /** 把本次运行公布过的申请绑定到它的 Agent 回复消息；重复公布时以最新一次为准。 */
     public void bindAnnouncements(Collection<Long> applicationIds, Long messageId) {
         applicationIds.forEach(applicationId -> agents.bindAnnouncement(applicationId, messageId));
     }
@@ -170,13 +172,21 @@ public class AgentApplicationService {
         return text;
     }
 
+    private String optional(String value, int maxLength, String message) {
+        String text = trimmed(value);
+        if (text != null && text.length() > maxLength) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_APPLICATION_INVALID", message);
+        }
+        return text;
+    }
+
     private String trimmed(String value) {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
     private ApiException applicationNotFound() {
         return new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_APPLICATION_NOT_FOUND",
-                "当前回复没有对应的待审批 Agent 申请");
+                "当前回复没有对应的待审批 Agent 申请；重新公布待审批申请后请回复最新一条");
     }
 
     private ApiException notPending() {

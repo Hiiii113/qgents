@@ -91,6 +91,22 @@ class AgentApplicationServiceTest {
     }
 
     @Test
+    void descriptionAndAvatarWithUnreasonableLengthAreRejected() {
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next();
+        when(groups.selectById(group)).thenReturn(group(group, project, true));
+        AgentApplicationRequest tooLongDescription = request("评审助手");
+        tooLongDescription.setDescription("描".repeat(2001));
+        AgentApplicationRequest tooLongAvatar = request("评审助手");
+        tooLongAvatar.setAvatarUrl("https://cdn.example.com/" + "a".repeat(2048));
+
+        assertThat(assertThatApiError(() -> service.apply(actor, project, group, tooLongDescription)).code())
+                .isEqualTo("AGENT_APPLICATION_INVALID");
+        assertThat(assertThatApiError(() -> service.apply(actor, project, group, tooLongAvatar)).code())
+                .isEqualTo("AGENT_APPLICATION_INVALID");
+        verify(agents, never()).insert(any(AgentEntity.class));
+    }
+
+    @Test
     void applicationInARestrictedGroupIsRefused() {
         Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next();
         when(groups.selectById(group)).thenReturn(group(group, project, false));
@@ -161,6 +177,29 @@ class AgentApplicationServiceTest {
         assertThat(service.approve(admin, project, group, application.getId(), approvalMessage)).isSameAs(activated);
         verify(access).requireProjectAdmin(project, admin);
         verify(agents).activate(application.getId(), admin);
+    }
+
+    @Test
+    void approvalFollowsTheLatestAnnouncementOfTheApplication() {
+        Long admin = TestIds.next(), project = TestIds.next(), group = TestIds.next();
+        Long submitReply = TestIds.next(), listingReply = TestIds.next(), approvalMessage = TestIds.next();
+        // 提交时公布的回复先绑定，管理员让 Agent 列出待审批申请时重新绑定到新的公布消息。
+        AgentEntity application = pendingApplication(project, listingReply);
+        AgentEntity activated = agent(application.getId(), project, AgentEntity.STATUS_ACTIVE);
+        when(groups.selectById(group)).thenReturn(group(group, project, true));
+        when(agents.selectById(application.getId())).thenReturn(application, activated);
+        when(agents.activate(application.getId(), admin)).thenReturn(1);
+        when(messages.selectById(approvalMessage))
+                .thenReturn(reply(approvalMessage, group, admin, listingReply));
+
+        assertThat(service.approve(admin, project, group, application.getId(), approvalMessage)).isSameAs(activated);
+
+        AgentEntity stale = pendingApplication(project, listingReply);
+        when(agents.selectById(stale.getId())).thenReturn(stale);
+        when(messages.selectById(approvalMessage)).thenReturn(reply(approvalMessage, group, admin, submitReply));
+        assertThat(assertThatApiError(() ->
+                service.approve(admin, project, group, stale.getId(), approvalMessage)).code())
+                .isEqualTo("AGENT_APPLICATION_NOT_FOUND");
     }
 
     @Test

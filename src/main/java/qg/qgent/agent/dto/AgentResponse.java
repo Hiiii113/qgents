@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 
 import qg.qgent.agent.entity.AgentEntity;
 
-/** 项目内 Agent 视图；成员据此邀请已启用的 Agent 入群，发起人可看到自己申请的审批状态。 */
+/** 项目内 Agent 视图：列表接口只返回已启用的 Agent，提交申请返回新建的待审批申请。 */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -29,7 +29,7 @@ public class AgentResponse {
     @Schema(description = "是否项目默认 Agent")
     private boolean defaultAgent;
 
-    @Schema(description = "状态枚举：PENDING/ACTIVE/REJECTED；只有 ACTIVE 可邀请入群")
+    @Schema(description = "状态枚举：PENDING（刚提交的申请）/ACTIVE（已启用，可邀请入群）；列表接口只返回 ACTIVE")
     private String status;
 
     public static AgentResponse of(AgentEntity agent) {
