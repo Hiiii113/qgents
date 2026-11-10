@@ -27,9 +27,7 @@ public class AvatarService {
     public AvatarCredentialResponse credential(Long userId, String mediaType, Long sizeBytes) {
         AvatarStorageService.AvatarCredential credential =
                 storage.createCredential("avatars", userId, mediaType, sizeBytes);
-        return new AvatarCredentialResponse(credential.objectKey(), credential.credential().getUploadUrl(),
-                credential.credential().getMethod(), credential.credential().getHeaders(),
-                credential.credential().getExpiresAt());
+        return new AvatarCredentialResponse(credential);
     }
 
     /** 确认头像上传：校验对象属于当前用户且已真实上传，写入头像 URL 并在提交后删除旧对象。 */

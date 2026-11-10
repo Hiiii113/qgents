@@ -136,9 +136,7 @@ public class TeamController {
                                                                   HttpServletRequest request) {
         AvatarStorageService.AvatarCredential credential =
                 teams.avatarCredential(actor, teamId, body.getMediaType(), body.getSizeBytes());
-        return ok(new AvatarCredentialResponse(credential.objectKey(),
-                credential.credential().getUploadUrl(), credential.credential().getMethod(),
-                credential.credential().getHeaders(), credential.credential().getExpiresAt()), request);
+        return ok(new AvatarCredentialResponse(credential), request);
     }
 
     /** 确认上传，直接写入团队头像并返回公共读 URL。 */

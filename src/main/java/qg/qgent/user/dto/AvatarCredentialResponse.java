@@ -5,6 +5,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import qg.qgent.common.storage.AvatarStorageService;
+
 import java.time.LocalDateTime;
 import java.util.Map;
 
@@ -13,6 +15,13 @@ import java.util.Map;
 @NoArgsConstructor
 @AllArgsConstructor
 public class AvatarCredentialResponse {
+
+    /** 由存储层签发的凭证组装；凭证字段只在这里赋值一次。 */
+    public AvatarCredentialResponse(AvatarStorageService.AvatarCredential credential) {
+        this(credential.objectKey(), credential.credential().getUploadUrl(),
+                credential.credential().getMethod(), credential.credential().getHeaders(),
+                credential.credential().getExpiresAt());
+    }
 
     // 头像对象键（avatars/{userId}/{uuid}.{ext}），确认时回传。
     @Schema(description = "头像对象键，确认时原样回传")

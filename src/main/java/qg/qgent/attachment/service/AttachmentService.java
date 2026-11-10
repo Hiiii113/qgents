@@ -75,8 +75,7 @@ public class AttachmentService {
         attachmentMapper.updateById(attachment);
 
         UploadCredential credential = storage.createCredential(attachment.getObjectKey(), attachment.getMediaType());
-        return new AttachmentUploadCredentialResponse(attachment.getId().toString(), credential.getUploadUrl(),
-                credential.getMethod(), credential.getExpiresAt(), credential.getHeaders());
+        return new AttachmentUploadCredentialResponse(attachment.getId().toString(), credential);
     }
 
     @Transactional
