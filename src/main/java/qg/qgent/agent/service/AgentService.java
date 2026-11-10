@@ -26,6 +26,7 @@ public class AgentService {
         agent.setProjectId(projectId);
         agent.setName(DEFAULT_AGENT_NAME);
         agent.setDefaultAgent(true);
+        agent.setStatus(AgentEntity.STATUS_ACTIVE);
         agent.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
         agents.insert(agent);
         return agent;
@@ -40,16 +41,29 @@ public class AgentService {
         return agent;
     }
 
-    /** 邀请前校验：每个 Agent 都存在且属于当前项目。 */
+    /** 邀请前校验：每个 Agent 都存在、属于当前项目且已启用；未通过审批的申请不能入群。 */
     public void requireProjectAgents(Long projectId, List<Long> agentIds) {
         if (agentIds.isEmpty()) {
             return;
         }
         List<AgentEntity> found = agents.selectBatchIds(agentIds);
-        boolean allOwned = agentIds.stream().distinct().count() == found.size()
-                && found.stream().allMatch(agent -> projectId.equals(agent.getProjectId()));
-        if (!allOwned) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_GROUP_AGENT", "只能邀请本项目内的 Agent");
+        boolean allAvailable = agentIds.stream().distinct().count() == found.size()
+                && found.stream().allMatch(agent -> projectId.equals(agent.getProjectId())
+                        && AgentEntity.STATUS_ACTIVE.equals(agent.getStatus()));
+        if (!allAvailable) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_GROUP_AGENT",
+                    "只能邀请本项目已启用的 Agent");
         }
+    }
+
+    /** 运行前校验：被提及的 Agent 必须属于本项目且已启用，否则不产生回复。 */
+    public AgentEntity requireActiveProjectAgent(Long projectId, Long agentId) {
+        AgentEntity agent = agents.selectById(agentId);
+        if (agent == null || !projectId.equals(agent.getProjectId())
+                || !AgentEntity.STATUS_ACTIVE.equals(agent.getStatus())) {
+            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_NOT_ACTIVE",
+                    "Agent 未启用或不属于本项目");
+        }
+        return agent;
     }
 }

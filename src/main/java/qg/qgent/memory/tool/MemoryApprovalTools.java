@@ -3,6 +3,7 @@ package qg.qgent.memory.tool;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 
+import qg.qgent.harness.tool.ToolErrors;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.memory.dto.ProjectMemoryResponse;
 import qg.qgent.memory.entity.ProjectMemoryProposalEntity;
@@ -43,7 +44,7 @@ public class MemoryApprovalTools {
         if (content == null || content.isBlank()) {
             return ToolResult.error("INVALID_ARGUMENT", "content 不能为空");
         }
-        return MemoryToolErrors.call(() -> {
+        return ToolErrors.call("MEMORY_UNAVAILABLE", "项目记忆操作失败", () -> {
             ProjectMemoryProposalEntity proposal = proposals.propose(actor, projectId, groupId, runId, content);
             ToolResult result = ToolResult.ok();
             result.put("proposalId", proposal.getId().toString());
@@ -57,7 +58,7 @@ public class MemoryApprovalTools {
             + "只在这条回复确实引用了你提出的候选消息时调用；服务端会核验真实发送者的项目管理员身份、"
             + "候选消息与候选状态，失败时如实说明审批未生效。")
     public ToolResult approveProjectMemory() {
-        return MemoryToolErrors.call(() -> {
+        return ToolErrors.call("MEMORY_UNAVAILABLE", "项目记忆操作失败", () -> {
             ProjectMemoryResponse memory = proposals.approve(actor, projectId, groupId, approvalMessageId);
             ToolResult result = ToolResult.ok();
             result.put("content", memory.getContent());

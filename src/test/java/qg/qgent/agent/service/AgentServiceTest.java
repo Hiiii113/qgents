@@ -39,6 +39,7 @@ class AgentServiceTest {
         assertThat(second.getProjectId()).isEqualTo(secondProject);
         assertThat(first.getName()).isEqualTo(AgentService.DEFAULT_AGENT_NAME);
         assertThat(first.getDefaultAgent()).isTrue();
+        assertThat(first.getStatus()).isEqualTo(AgentEntity.STATUS_ACTIVE);
     }
 
     @Test
@@ -61,6 +62,54 @@ class AgentServiceTest {
         assertThatThrownBy(() -> service.requireProjectAgents(TestIds.next(), List.of(TestIds.next())))
                 .isInstanceOfSatisfying(ApiException.class,
                         error -> assertThat(error.code()).isEqualTo("INVALID_GROUP_AGENT"));
+    }
+
+    @Test
+    void applicationStillWaitingForApprovalCannotBeInvited() {
+        Long project = TestIds.next(), agentId = TestIds.next();
+        AgentEntity pending = agent(agentId, project, AgentEntity.STATUS_PENDING);
+        when(agents.selectBatchIds(List.of(agentId))).thenReturn(List.of(pending));
+
+        assertThatThrownBy(() -> service.requireProjectAgents(project, List.of(agentId)))
+                .isInstanceOfSatisfying(ApiException.class,
+                        error -> assertThat(error.code()).isEqualTo("INVALID_GROUP_AGENT"));
+    }
+
+    @Test
+    void rejectedApplicationCannotBeInvited() {
+        Long project = TestIds.next(), agentId = TestIds.next();
+        AgentEntity rejected = agent(agentId, project, AgentEntity.STATUS_REJECTED);
+        when(agents.selectBatchIds(List.of(agentId))).thenReturn(List.of(rejected));
+
+        assertThatThrownBy(() -> service.requireProjectAgents(project, List.of(agentId)))
+                .isInstanceOfSatisfying(ApiException.class,
+                        error -> assertThat(error.code()).isEqualTo("INVALID_GROUP_AGENT"));
+    }
+
+    @Test
+    void onlyAnActiveAgentOfThisProjectCanRun() {
+        Long project = TestIds.next(), agentId = TestIds.next();
+        AgentEntity active = agent(agentId, project, AgentEntity.STATUS_ACTIVE);
+        when(agents.selectById(agentId)).thenReturn(active);
+
+        assertThat(service.requireActiveProjectAgent(project, agentId)).isSameAs(active);
+        assertThatThrownBy(() -> service.requireActiveProjectAgent(TestIds.next(), agentId))
+                .isInstanceOfSatisfying(ApiException.class,
+                        error -> assertThat(error.code()).isEqualTo("AGENT_NOT_ACTIVE"));
+
+        AgentEntity pending = agent(agentId, project, AgentEntity.STATUS_PENDING);
+        when(agents.selectById(agentId)).thenReturn(pending);
+        assertThatThrownBy(() -> service.requireActiveProjectAgent(project, agentId))
+                .isInstanceOfSatisfying(ApiException.class,
+                        error -> assertThat(error.code()).isEqualTo("AGENT_NOT_ACTIVE"));
+    }
+
+    private AgentEntity agent(Long agentId, Long projectId, String status) {
+        AgentEntity agent = new AgentEntity();
+        agent.setId(agentId);
+        agent.setProjectId(projectId);
+        agent.setStatus(status);
+        return agent;
     }
 
     @Test
