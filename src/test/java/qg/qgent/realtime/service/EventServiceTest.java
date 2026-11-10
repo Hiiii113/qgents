@@ -264,13 +264,19 @@ class EventServiceTest {
     }
 
     @Test
-    void purgeExpiredUsesTheDedicatedMaintenanceQuery() {
+    void purgeExpiredCleansAllThreeEventLogsWithOneCutoff() {
         Fixture fixture = new Fixture();
         when(fixture.events.deleteExpired(any())).thenReturn(3);
+        when(fixture.teams.deleteExpired(any())).thenReturn(2);
+        when(fixture.notifications.deleteExpired(any())).thenReturn(1);
 
         fixture.service().purgeExpired();
 
-        verify(fixture.events).deleteExpired(any());
+        var cutoff = org.mockito.ArgumentCaptor.forClass(java.time.LocalDateTime.class);
+        verify(fixture.events).deleteExpired(cutoff.capture());
+        verify(fixture.teams).deleteExpired(cutoff.capture());
+        verify(fixture.notifications).deleteExpired(cutoff.capture());
+        assertTrue(cutoff.getAllValues().stream().allMatch(cutoff.getValue()::equals));
         verifyNoMoreInteractions(fixture.events);
     }
 

@@ -379,11 +379,13 @@ public class EventService {
         private final List<EventRequest> requests = new ArrayList<>();
     }
 
-    /** 每日清理超过 24 小时的项目事件，与业务事务分开执行。 */
+    /** 每日清理超过保留期的项目、团队与通知事件；三条流使用同一保留期。 */
     @Scheduled(cron = "0 15 3 * * *")
     public void purgeExpired() {
+        LocalDateTime cutoff = LocalDateTime.now(ZoneOffset.UTC).minusHours(RETENTION_HOURS);
         try {
-            int removed = eventMapper.deleteExpired(LocalDateTime.now(ZoneOffset.UTC).minusHours(RETENTION_HOURS));
+            int removed = eventMapper.deleteExpired(cutoff) + teamEventMapper.deleteExpired(cutoff)
+                    + notificationEventMapper.deleteExpired(cutoff);
             if (removed > 0) {
                 log.info("purged {} expired events", removed);
             }

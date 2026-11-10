@@ -1,6 +1,7 @@
 package qg.qgent.team.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -28,7 +29,7 @@ public interface TeamEventMapper extends BaseMapper<TeamEventEntity> {
     List<TeamEventEntity> listAfter(@Param("teamId") Long teamId, @Param("after") long after,
                                     @Param("limit") int limit);
 
-    /** 删除某团队某时间之前的过期事件（保留期兜底）。 */
-    @Select("delete from team_events where team_id=#{teamId} and created_at < #{before}")
-    int deleteBefore(@Param("teamId") Long teamId, @Param("before") LocalDateTime before);
+    /** 删除早于 cutoff 的过期事件，与项目事件同保留期。 */
+    @Delete("delete from team_events where created_at < #{cutoff}")
+    int deleteExpired(@Param("cutoff") LocalDateTime cutoff);
 }
