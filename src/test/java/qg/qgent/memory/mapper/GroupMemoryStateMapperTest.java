@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import qg.qgent.support.TestIds;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -36,9 +37,7 @@ class GroupMemoryStateMapperTest {
 
     @Test
     void resultUpdatesRequireTheClaimTokenStillBeingOwned() {
-        Map<String, Object> success = Map.of("groupId", TestIds.next(), "claimToken", LocalDateTime.now(),
-                "processedThrough", 7L, "now", LocalDateTime.now());
-        String finish = sql("finishSuccess", success);
+        String finish = sql("finishSuccess", successParameters());
         String failure = sql("recordFailure", Map.of("groupId", TestIds.next(), "claimToken", LocalDateTime.now(),
                 "error", "超时", "nextAttemptAt", LocalDateTime.now(), "now", LocalDateTime.now()));
 
@@ -48,10 +47,16 @@ class GroupMemoryStateMapperTest {
 
     @Test
     void successNeverMovesTheWatermarkBackwards() {
-        String sql = sql("finishSuccess", Map.of("groupId", TestIds.next(), "claimToken", LocalDateTime.now(),
-                "processedThrough", 7L, "now", LocalDateTime.now()));
+        String sql = sql("finishSuccess", successParameters());
 
-        assertThat(sql).contains("GREATEST(last_processed_sequence").contains("correction = NULL");
+        assertThat(sql).contains("GREATEST(last_processed_sequence");
+    }
+
+    @Test
+    void successOnlyClearsTheCorrectionItActuallyApplied() {
+        String sql = sql("finishSuccess", successParameters());
+
+        assertThat(sql).contains("CASE WHEN correction = ").contains("ELSE correction END");
     }
 
     @Test
@@ -63,10 +68,26 @@ class GroupMemoryStateMapperTest {
     }
 
     @Test
-    void candidateScanIsBoundedAndOrderedByActivity() {
-        String sql = sql("selectCandidates", Map.of("staleBefore", LocalDateTime.now(), "limit", 20));
+    void candidateScanPagesByGroupIdCursorSoLaterGroupsAreReached() {
+        String sql = sql("selectCandidates", Map.of("staleBefore", LocalDateTime.now(),
+                "afterGroupId", TestIds.next(), "limit", 20));
 
-        assertThat(sql).contains("ORDER BY last_message_at").contains("LIMIT ?");
+        assertThat(sql).contains("group_id > ?").contains("ORDER BY group_id");
+    }
+
+    @Test
+    void firstCandidatePageHasNoCursorCondition() {
+        Map<String, Object> parameters = new HashMap<>();
+        parameters.put("staleBefore", LocalDateTime.now());
+        parameters.put("afterGroupId", null);
+        parameters.put("limit", 20);
+
+        assertThat(sql("selectCandidates", parameters)).doesNotContain("group_id >");
+    }
+
+    private Map<String, Object> successParameters() {
+        return Map.of("groupId", TestIds.next(), "claimToken", LocalDateTime.now(),
+                "appliedCorrection", "结论应为 B", "processedThrough", 7L, "now", LocalDateTime.now());
     }
 
     private String sql(String method, Map<String, Object> parameters) {

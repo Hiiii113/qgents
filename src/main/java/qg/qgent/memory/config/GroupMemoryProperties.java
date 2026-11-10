@@ -21,12 +21,12 @@ public class GroupMemoryProperties {
     private int maxAttempts = 3;
     // 单次提炼最多送入的消息条数
     private int maxMessagesPerRun = 200;
-    // 单次扫描最多处理的群数
-    private int scanBatch = 20;
+    // 单次扫描每页读取的群数
+    private int scanPageSize = 20;
 
     public void validate() {
         if (minMessages < 1 || idleMinutes < 1 || retryDelayMinutes < 1 || staleClaimMinutes < 1
-                || maxAttempts < 1 || maxMessagesPerRun < 1 || scanBatch < 1) {
+                || maxAttempts < 1 || maxMessagesPerRun < 1 || scanPageSize < 1) {
             throw new IllegalArgumentException("群记忆提炼配置要求所有阈值大于 0");
         }
     }
