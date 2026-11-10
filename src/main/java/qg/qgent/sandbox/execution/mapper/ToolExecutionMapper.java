@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
+import qg.qgent.sandbox.execution.entity.ExecutionStatus;
 import qg.qgent.sandbox.execution.entity.ToolExecutionEntity;
 
 import java.time.LocalDateTime;
@@ -46,7 +47,7 @@ public interface ToolExecutionMapper extends BaseMapper<ToolExecutionEntity> {
             WHERE id = #{id} AND owner_instance_id = #{instanceId} AND status = 'RUNNING'
             """)
     int finishIfRunning(@Param("id") Long id, @Param("instanceId") String instanceId,
-                        @Param("status") String status,
+                        @Param("status") ExecutionStatus status,
                         @Param("exitCode") Integer exitCode, @Param("resultJson") String resultJson,
                         @Param("failureCode") String failureCode, @Param("failureReason") String failureReason,
                         @Param("finishedAt") LocalDateTime finishedAt);

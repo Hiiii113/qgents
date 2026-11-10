@@ -15,6 +15,7 @@ import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import qg.qgent.harness.entity.AgentRunEntity;
+import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.service.AgentRunService;
 import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.chat.dto.ContextMessage;
@@ -242,14 +243,14 @@ class AgentChatServiceTest {
         }).when(fixture.runs()).startChild(any(), any(), any());
         org.mockito.Mockito.doAnswer(invocation -> {
             AgentRunEntity run = invocation.getArgument(0);
-            if (run.getParentRunId() != null && "FAILED".equals(invocation.getArgument(1))) {
+            if (run.getParentRunId() != null && invocation.getArgument(1, RunStatus.class) == RunStatus.FAILED) {
                 childFinishStarted.countDown();
                 await(releaseChildFinish);
             }
-            run.setStatus(invocation.getArgument(1));
+            run.setStatus(invocation.getArgument(1, RunStatus.class));
             run.setResult(invocation.getArgument(2));
             return null;
-        }).when(fixture.runs()).finish(any(AgentRunEntity.class), any(String.class), any(String.class),
+        }).when(fixture.runs()).finish(any(AgentRunEntity.class), any(RunStatus.class), any(String.class),
                 org.mockito.ArgumentMatchers.anyInt());
 
         var future = rootExecutor.submit(() -> fixture.service().replyToMention(fixture.event(), "安排并整合"));
@@ -561,7 +562,7 @@ class AgentChatServiceTest {
             releaseCommandAwait.countDown();
         }
         future.get(5, TimeUnit.SECONDS);
-        assertThat(fixture.root().getStatus()).isEqualTo("CANCELLED");
+        assertThat(fixture.root().getStatus()).isEqualTo(RunStatus.CANCELLED);
     }
 
     @Test
@@ -601,8 +602,8 @@ class AgentChatServiceTest {
         }).when(fixture.runs()).startChild(any(), any(), any());
         org.mockito.Mockito.doAnswer(invocation -> {
             AgentRunEntity run = invocation.getArgument(0);
-            String status = invocation.getArgument(1);
-            if (run.getParentRunId() != null && "SUCCEEDED".equals(status)) {
+            RunStatus status = invocation.getArgument(1, RunStatus.class);
+            if (run.getParentRunId() != null && status == RunStatus.SUCCEEDED) {
                 childFinishStarted.countDown();
                 awaitUninterruptibly(releaseChildFinish);
             }
@@ -611,7 +612,7 @@ class AgentChatServiceTest {
             int rounds = invocation.getArgument(3);
             run.setRounds((run.getRounds() == null ? 0 : run.getRounds()) + rounds);
             return null;
-        }).when(fixture.runs()).finish(any(AgentRunEntity.class), any(String.class), any(String.class),
+        }).when(fixture.runs()).finish(any(AgentRunEntity.class), any(RunStatus.class), any(String.class),
                 org.mockito.ArgumentMatchers.anyInt());
         org.mockito.Mockito.doAnswer(invocation -> {
             commandAwaitStarted.countDown();
@@ -631,7 +632,7 @@ class AgentChatServiceTest {
             releaseCommandAwait.countDown();
         }
         future.get(5, TimeUnit.SECONDS);
-        assertThat(childEntity.get().getStatus()).isEqualTo("CANCELLED");
+        assertThat(childEntity.get().getStatus()).isEqualTo(RunStatus.CANCELLED);
         assertThat(childEntity.get().getRounds()).isEqualTo(1);
     }
 
@@ -673,10 +674,10 @@ class AgentChatServiceTest {
         }).when(fixture.runs()).registerCancellationSignal(any(), any());
         org.mockito.Mockito.doAnswer(invocation -> {
             AgentRunEntity run = invocation.getArgument(0);
-            run.setStatus(invocation.getArgument(1));
+            run.setStatus(invocation.getArgument(1, RunStatus.class));
             run.setResult(invocation.getArgument(2));
             return null;
-        }).when(fixture.runs()).finish(any(AgentRunEntity.class), any(String.class), any(String.class),
+        }).when(fixture.runs()).finish(any(AgentRunEntity.class), any(RunStatus.class), any(String.class),
                 org.mockito.ArgumentMatchers.anyInt());
 
         var future = rootExecutor.submit(() -> fixture.service().replyToMention(fixture.event(), "完成子任务后取消"));
@@ -720,24 +721,24 @@ class AgentChatServiceTest {
         root.setGroupId(group);
         root.setTriggerMessageId(message);
         root.setCreatedBy(actor);
-        root.setStatus("RUNNING");
+        root.setStatus(RunStatus.RUNNING);
         when(runs.startRoot(any(), any())).thenReturn(root);
         when(runs.startChild(any(), any(), any())).thenAnswer(invocation -> run(invocation.getArgument(0), invocation.getArgument(1)));
         when(runs.requestChildCancellation(any(), any())).thenReturn(true);
         org.mockito.Mockito.doAnswer(invocation -> {
             AgentRunEntity run = invocation.getArgument(0);
-            run.setStatus(invocation.getArgument(1));
+            run.setStatus(invocation.getArgument(1, RunStatus.class));
             run.setResult(invocation.getArgument(2));
             return null;
-        }).when(runs).finish(any(AgentRunEntity.class), any(String.class), any(String.class), org.mockito.ArgumentMatchers.anyInt());
+        }).when(runs).finish(any(AgentRunEntity.class), any(RunStatus.class), any(String.class), org.mockito.ArgumentMatchers.anyInt());
         org.mockito.Mockito.doAnswer(invocation -> {
             AgentRunEntity run = invocation.getArgument(0);
-            run.setStatus(invocation.getArgument(1));
+            run.setStatus(invocation.getArgument(1, RunStatus.class));
             run.setResult(invocation.getArgument(2));
             int rounds = invocation.getArgument(3);
             run.setRounds((run.getRounds() == null ? 0 : run.getRounds()) + rounds);
             return null;
-        }).when(runs).finishRoot(any(AgentRunEntity.class), any(String.class), any(String.class),
+        }).when(runs).finishRoot(any(AgentRunEntity.class), any(RunStatus.class), any(String.class),
                 org.mockito.ArgumentMatchers.anyInt());
         var projects = mock(ProjectMapper.class);
         var github = new GitHubCapability(mock(SandboxCommands.class), mock(GitHubRepositoryService.class));
@@ -762,7 +763,7 @@ class AgentChatServiceTest {
         child.setParentRunId(parent.getId());
         child.setCreatedBy(parent.getCreatedBy());
         child.setInstruction(instruction);
-        child.setStatus("RUNNING");
+        child.setStatus(RunStatus.RUNNING);
         child.setRounds(0);
         return child;
     }

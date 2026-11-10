@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import qg.qgent.harness.entity.AgentRunEntity;
+import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.service.AgentRunService;
 import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.attachment.tool.ReadAttachmentTool;
@@ -113,7 +114,7 @@ public class AgentChatService {
         });
         Long previousRunId = SandboxExecutionContext.currentAgentRunId();
         SandboxExecutionContext.set(root.getId());
-        String status = "FAILED";
+        RunStatus status = RunStatus.FAILED;
         String resultText = "Agent 执行失败，请稍后重试";
         int rounds = 0;
         try {
@@ -125,22 +126,22 @@ public class AgentChatService {
             ConversationTools rootTools = conversationTools(work, execution, true);
             AgentLoop.Result result = loop.run(conversation, () -> callbacks(work, execution, rootTools),
                     work::isCancelled, children.updates());
-            status = result.success() ? "SUCCEEDED" : "FAILED";
+            status = result.success() ? RunStatus.SUCCEEDED : RunStatus.FAILED;
             resultText = result.text();
             rounds = result.rounds();
         } catch (RuntimeException exception) {
-            status = work.isCancelled() ? "CANCELLED" : "FAILED";
+            status = work.isCancelled() ? RunStatus.CANCELLED : RunStatus.FAILED;
             resultText = failure(exception);
         } finally {
             children.close();
-            if (work.isCancelled() || !"SUCCEEDED".equals(status)) children.cancelAll();
+            if (work.isCancelled() || status != RunStatus.SUCCEEDED) children.cancelAll();
             children.awaitIdle();
-            if (work.isCancelled() || !"SUCCEEDED".equals(status)) {
+            if (work.isCancelled() || status != RunStatus.SUCCEEDED) {
                 sessions.stopExecutionsByAgentRun(root.getId());
             }
             work.openedWorkspaces.forEach(workspaceId -> sessions.release(workspaceId, work.rootRunId));
             if (work.isCancelled()) {
-                status = "CANCELLED";
+                status = RunStatus.CANCELLED;
                 resultText = "Agent 运行已取消";
             }
             runService.finishRoot(root, status, resultText, rounds);

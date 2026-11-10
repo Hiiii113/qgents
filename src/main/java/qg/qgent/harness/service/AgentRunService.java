@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import qg.qgent.harness.entity.AgentRunEntity;
+import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.mapper.AgentRunMapper;
 import qg.qgent.chat.service.MessageService;
 import qg.qgent.chat.event.MessageSentEvent;
@@ -31,7 +32,7 @@ public class AgentRunService {
         run.setTriggerMessageId(event.messageId());
         run.setCreatedBy(event.actor());
         run.setInstruction(instruction);
-        run.setStatus("RUNNING");
+        run.setStatus(RunStatus.RUNNING);
         run.setRounds(0);
         run.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
         runs.insert(run);
@@ -47,7 +48,7 @@ public class AgentRunService {
         run.setWorkspaceId(workspaceId);
         run.setCreatedBy(root.getCreatedBy());
         run.setInstruction(instruction);
-        run.setStatus("RUNNING");
+        run.setStatus(RunStatus.RUNNING);
         run.setRounds(0);
         run.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
         runs.insert(run);
@@ -58,7 +59,7 @@ public class AgentRunService {
         runs.updateById(run);
     }
 
-    public void finish(AgentRunEntity run, String status, String result, int rounds) {
+    public void finish(AgentRunEntity run, RunStatus status, String result, int rounds) {
         run.setStatus(status);
         run.setResult(result);
         run.setRounds((run.getRounds() == null ? 0 : run.getRounds()) + rounds);
@@ -67,7 +68,7 @@ public class AgentRunService {
     }
 
     /** 仅在运行仍为 RUNNING 时结束根运行；已开始的取消优先转为 CANCELLED。 */
-    public void finishRoot(AgentRunEntity run, String status, String result, int rounds) {
+    public void finishRoot(AgentRunEntity run, RunStatus status, String result, int rounds) {
         int totalRounds = (run.getRounds() == null ? 0 : run.getRounds()) + rounds;
         LocalDateTime finishedAt = LocalDateTime.now(ZoneOffset.UTC);
         int updated = runs.update(null, Wrappers.<AgentRunEntity>lambdaUpdate()
@@ -76,7 +77,7 @@ public class AgentRunService {
                 .set(AgentRunEntity::getRounds, totalRounds)
                 .set(AgentRunEntity::getFinishedAt, finishedAt)
                 .eq(AgentRunEntity::getId, run.getId())
-                .eq(AgentRunEntity::getStatus, "RUNNING"));
+                .eq(AgentRunEntity::getStatus, RunStatus.RUNNING));
         if (updated > 0) {
             run.setStatus(status);
             run.setResult(result);
@@ -87,14 +88,14 @@ public class AgentRunService {
 
         String cancellationResult = "Agent 运行已取消";
         int cancelled = runs.update(null, Wrappers.<AgentRunEntity>lambdaUpdate()
-                .set(AgentRunEntity::getStatus, "CANCELLED")
+                .set(AgentRunEntity::getStatus, RunStatus.CANCELLED)
                 .set(AgentRunEntity::getResult, cancellationResult)
                 .set(AgentRunEntity::getRounds, totalRounds)
                 .set(AgentRunEntity::getFinishedAt, finishedAt)
                 .eq(AgentRunEntity::getId, run.getId())
-                .eq(AgentRunEntity::getStatus, "CANCELLING"));
+                .eq(AgentRunEntity::getStatus, RunStatus.CANCELLING));
         if (cancelled > 0) {
-            run.setStatus("CANCELLED");
+            run.setStatus(RunStatus.CANCELLED);
             run.setResult(cancellationResult);
             run.setRounds(totalRounds);
             run.setFinishedAt(finishedAt);
@@ -111,7 +112,7 @@ public class AgentRunService {
     }
 
     public void resume(AgentRunEntity run, String instruction) {
-        run.setStatus("RUNNING");
+        run.setStatus(RunStatus.RUNNING);
         run.setFinishedAt(null);
         if (instruction != null && !instruction.isBlank()) {
             run.setInstruction(run.getInstruction() + "\n\n继续要求：" + instruction);
@@ -130,15 +131,15 @@ public class AgentRunService {
 
     public boolean isCancelled(Long rootRunId) {
         AgentRunEntity root = runs.selectById(rootRunId);
-        return root != null && ("CANCELLING".equals(root.getStatus()) || "CANCELLED".equals(root.getStatus()));
+        return root != null && root.getStatus().cancelled();
     }
 
     public boolean requestChildCancellation(Long rootRunId, Long childRunId) {
         return runs.update(null, Wrappers.<AgentRunEntity>lambdaUpdate()
-                .set(AgentRunEntity::getStatus, "CANCELLING")
+                .set(AgentRunEntity::getStatus, RunStatus.CANCELLING)
                 .eq(AgentRunEntity::getId, childRunId)
                 .eq(AgentRunEntity::getParentRunId, rootRunId)
-                .eq(AgentRunEntity::getStatus, "RUNNING")) > 0;
+                .eq(AgentRunEntity::getStatus, RunStatus.RUNNING)) > 0;
     }
 
     public int cancel(Long actor, Long projectId, Long groupId, Long messageId) {
@@ -149,14 +150,14 @@ public class AgentRunService {
                 .eq(AgentRunEntity::getGroupId, groupId)
                 .eq(AgentRunEntity::getTriggerMessageId, messageId)
                 .isNull(AgentRunEntity::getParentRunId)
-                .eq(AgentRunEntity::getStatus, "RUNNING"));
+                .eq(AgentRunEntity::getStatus, RunStatus.RUNNING));
         int cancelled = runs.update(null, Wrappers.<AgentRunEntity>lambdaUpdate()
-                .set(AgentRunEntity::getStatus, "CANCELLING")
+                .set(AgentRunEntity::getStatus, RunStatus.CANCELLING)
                 .eq(AgentRunEntity::getProjectId, projectId)
                 .eq(AgentRunEntity::getGroupId, groupId)
                 .eq(AgentRunEntity::getTriggerMessageId, messageId)
                 .isNull(AgentRunEntity::getParentRunId)
-                .eq(AgentRunEntity::getStatus, "RUNNING"));
+                .eq(AgentRunEntity::getStatus, RunStatus.RUNNING));
         if (cancelled > 0 && activeRoots != null) {
             activeRoots.stream().map(AgentRunEntity::getId).map(cancellationSignals::get)
                     .filter(java.util.Objects::nonNull).forEach(Runnable::run);

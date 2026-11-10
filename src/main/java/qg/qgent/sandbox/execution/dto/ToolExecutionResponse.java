@@ -4,6 +4,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import qg.qgent.sandbox.execution.entity.ExecutionStatus;
+
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -17,7 +19,7 @@ public class ToolExecutionResponse {
     private String ownerInstanceId;
     private UUID sandboxId;
     private String tool;
-    private String status;
+    private ExecutionStatus status;
     private Integer exitCode;
     private Map<String, Object> result;
     // 稳定失败码，正常结束为 null。

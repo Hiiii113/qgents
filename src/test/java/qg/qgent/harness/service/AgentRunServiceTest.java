@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
 import qg.qgent.harness.entity.AgentRunEntity;
+import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.mapper.AgentRunMapper;
 import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.service.MessageService;
@@ -87,7 +88,7 @@ class AgentRunServiceTest {
 
         ArgumentCaptor<AgentRunEntity> saved = ArgumentCaptor.forClass(AgentRunEntity.class);
         verify(runs).updateById(saved.capture());
-        assertThat(saved.getValue().getStatus()).isEqualTo("RUNNING");
+        assertThat(saved.getValue().getStatus()).isEqualTo(RunStatus.RUNNING);
         assertThat(saved.getValue().getFinishedAt()).isNull();
         assertThat(saved.getValue().getInstruction()).contains("继续实现");
         TableField mapping = AgentRunEntity.class.getDeclaredField("finishedAt").getAnnotation(TableField.class);
@@ -99,9 +100,9 @@ class AgentRunServiceTest {
         AgentRunEntity root = runningRoot();
         when(runs.update(isNull(), any())).thenReturn(1);
 
-        service.finishRoot(root, "SUCCEEDED", "完成", 2);
+        service.finishRoot(root, RunStatus.SUCCEEDED, "完成", 2);
 
-        assertThat(root.getStatus()).isEqualTo("SUCCEEDED");
+        assertThat(root.getStatus()).isEqualTo(RunStatus.SUCCEEDED);
         assertThat(root.getResult()).isEqualTo("完成");
         assertThat(root.getRounds()).isEqualTo(3);
         assertThat(root.getFinishedAt()).isNotNull();
@@ -140,10 +141,10 @@ class AgentRunServiceTest {
             };
         }).when(runs).update(isNull(), any());
 
-        service.finishRoot(root, "SUCCEEDED", "完成", 2);
+        service.finishRoot(root, RunStatus.SUCCEEDED, "完成", 2);
 
         assertThat(persistedStatus.get()).isEqualTo("SUCCEEDED");
-        assertThat(root.getStatus()).isEqualTo("SUCCEEDED");
+        assertThat(root.getStatus()).isEqualTo(RunStatus.SUCCEEDED);
         assertThat(root.getResult()).isEqualTo("完成");
         assertThat(updateCount.get()).isEqualTo(2);
     }
@@ -183,10 +184,10 @@ class AgentRunServiceTest {
             };
         }).when(runs).update(isNull(), any());
 
-        service.finishRoot(root, "SUCCEEDED", "完成", 2);
+        service.finishRoot(root, RunStatus.SUCCEEDED, "完成", 2);
 
         assertThat(persistedStatus.get()).isEqualTo("CANCELLED");
-        assertThat(root.getStatus()).isEqualTo("CANCELLED");
+        assertThat(root.getStatus()).isEqualTo(RunStatus.CANCELLED);
         assertThat(root.getResult()).isEqualTo("Agent 运行已取消");
         assertThat(root.getRounds()).isEqualTo(3);
         assertThat(root.getFinishedAt()).isNotNull();
@@ -206,12 +207,15 @@ class AgentRunServiceTest {
         root.setGroupId(groupId);
         root.setTriggerMessageId(messageId);
         root.setRounds(1);
-        root.setStatus("RUNNING");
+        root.setStatus(RunStatus.RUNNING);
         return root;
     }
 
     private java.util.Collection<Object> updateValues(Wrapper<AgentRunEntity> update) {
+        // 枚举状态按名字参与 SQL 绑定，断言仍用字符串直接比对。
         return ((com.baomidou.mybatisplus.core.conditions.AbstractWrapper<?, ?, ?>) update)
-                .getParamNameValuePairs().values();
+                .getParamNameValuePairs().values().stream()
+                .map(value -> value instanceof Enum<?> constant ? constant.name() : value)
+                .toList();
     }
 }

@@ -149,6 +149,8 @@ qgents:
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
+    # 状态枚举按名字与 VARCHAR 列互转，不依赖 @EnumValue。
+    default-enum-type-handler: org.apache.ibatis.type.EnumTypeHandler
     log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
 
 # 可选 GitHub App 配置；应用 ID、私钥用于生成安装凭证，webhook-secret 用于事件验签。

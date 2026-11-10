@@ -21,7 +21,7 @@ public class AgentRunEntity {
     private Long parentRunId;
     private Long workspaceId;
     private Long createdBy;
-    private String status;
+    private RunStatus status;
     private String instruction;
     private String result;
     private Integer rounds;

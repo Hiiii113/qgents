@@ -3,7 +3,7 @@ package qg.qgent.sandbox.service;
 import org.springframework.stereotype.Service;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.sandbox.execution.dto.ToolExecutionResponse;
-import qg.qgent.sandbox.execution.service.ToolExecutionService;
+import qg.qgent.sandbox.execution.entity.ExecutionStatus;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -48,13 +48,13 @@ public class SandboxCommands {
 
     public ToolResult cancel(Long id, Long executionId) {
         var execution = tools.requireCommand(id, executionId);
-        return result(ToolExecutionService.isTerminal(execution.getStatus()) ? execution : tools.cancel(executionId));
+        return result(execution.getStatus().terminal() ? execution : tools.cancel(executionId));
     }
 
     private ToolExecutionResponse await(Long id, String directory, List<String> command, Map<String, String> environment) {
         var execution = tools.start(id, arguments(directory, command), Duration.ofMinutes(10), environment);
         execution = tools.await(execution.getId(), Duration.ofMinutes(15));
-        if (!ToolExecutionService.isTerminal(execution.getStatus())) throw new IllegalStateException("命令等待超时");
+        if (!execution.getStatus().terminal()) throw new IllegalStateException("命令等待超时");
         return execution;
     }
 
@@ -64,14 +64,14 @@ public class SandboxCommands {
     }
 
     private static ToolResult result(ToolExecutionResponse execution) {
-        boolean terminal = ToolExecutionService.isTerminal(execution.getStatus());
-        boolean failed = terminal && !"SUCCEEDED".equals(execution.getStatus());
+        boolean terminal = execution.getStatus().terminal();
+        boolean failed = terminal && execution.getStatus() != ExecutionStatus.SUCCEEDED;
         ToolResult value = failed
                 ? ToolResult.error(execution.getFailureCode() == null ? "COMMAND_FAILED" : execution.getFailureCode(),
                         execution.getFailureReason() == null ? "命令执行失败" : execution.getFailureReason())
                 : ToolResult.ok();
         value.putAll(execution.getResult());
-        value.put("executionId", execution.getId().toString()); value.put("status", execution.getStatus());
+        value.put("executionId", execution.getId().toString()); value.put("status", execution.getStatus().name());
         value.put("running", !terminal);
         if (execution.getExitCode() != null) value.put("exitCode", execution.getExitCode());
         return value;

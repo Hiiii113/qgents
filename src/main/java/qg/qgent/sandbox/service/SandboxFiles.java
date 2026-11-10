@@ -3,6 +3,7 @@ package qg.qgent.sandbox.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import qg.qgent.harness.tool.ToolResult;
+import qg.qgent.sandbox.execution.entity.ExecutionStatus;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -64,7 +65,7 @@ public class SandboxFiles {
 
     private ToolResult execute(Long id, String tool, Map<String, Object> arguments) {
         var execution = tools.execute(id, tool, arguments, Duration.ofSeconds(30));
-        ToolResult result = "SUCCEEDED".equals(execution.getStatus()) ? ToolResult.ok()
+        ToolResult result = execution.getStatus() == ExecutionStatus.SUCCEEDED ? ToolResult.ok()
                 : ToolResult.error(execution.getFailureCode() == null ? "TOOL_FAILED" : execution.getFailureCode(),
                         execution.getFailureReason() == null ? "文件操作失败" : execution.getFailureReason());
         result.putAll(execution.getResult());

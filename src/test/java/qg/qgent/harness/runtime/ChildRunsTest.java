@@ -4,6 +4,7 @@ import qg.qgent.support.TestIds;
 
 import org.junit.jupiter.api.Test;
 import qg.qgent.harness.entity.AgentRunEntity;
+import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.service.AgentRunService;
 import qg.qgent.sandbox.service.SandboxSessionManager;
 
@@ -50,7 +51,7 @@ class ChildRunsTest {
         assertThat(children.markCommandsCancelled(runId)).isTrue();
         assertThat(children.markCommandsCancelled(runId)).isFalse();
         assertThat(child.beginFinishing()).isTrue();
-        run.setStatus("CANCELLED");
+        run.setStatus(RunStatus.CANCELLED);
         assertThat(children.publishFinish(child)).isTrue();
 
         assertThat(children.reserveContinuation(child)).isTrue();

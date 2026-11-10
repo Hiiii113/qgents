@@ -5,6 +5,7 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.tool.ToolCallback;
 
 import qg.qgent.harness.entity.AgentRunEntity;
+import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.service.AgentRunService;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.sandbox.dto.SandboxExecutionContext;
@@ -70,13 +71,13 @@ final class ChildRuns {
         AgentRunEntity run = runs.startChild(parent, instruction, workspaceId);
         Execution child = new Execution(run, conversation.apply(instruction), workspaceId, directory);
         if (!reserve(child)) {
-            runs.finish(run, "FAILED", "同时运行的子 Agent 已达到上限", 0);
+            runs.finish(run, RunStatus.FAILED, "同时运行的子 Agent 已达到上限", 0);
             return ToolResult.error("SUBAGENT_LIMIT_REACHED", "同时运行的子 Agent 已达到上限，请等待或复用现有子对话");
         }
         try {
             submit(child);
         } catch (RejectedExecutionException exception) {
-            finish(child, "FAILED", "子 Agent 执行队列已满，请稍后重试", 0);
+            finish(child, RunStatus.FAILED, "子 Agent 执行队列已满，请稍后重试", 0);
             return ToolResult.error("SUBAGENT_QUEUE_FULL", "子 Agent 执行队列已满，请稍后重试");
         }
         ToolResult result = ToolResult.ok();
@@ -102,7 +103,7 @@ final class ChildRuns {
             try {
                 submit(child);
             } catch (RejectedExecutionException exception) {
-                finish(child, "FAILED", "子 Agent 执行队列已满，请稍后重试", 0);
+                finish(child, RunStatus.FAILED, "子 Agent 执行队列已满，请稍后重试", 0);
                 return ToolResult.error("SUBAGENT_QUEUE_FULL", "子 Agent 执行队列已满，请稍后重试");
             }
             return accepted(runId, false);
@@ -119,7 +120,7 @@ final class ChildRuns {
         if (!waiting) consumeNotification(child.run.getId());
         ToolResult result = ToolResult.ok();
         result.put("runId", child.run.getId().toString());
-        result.put("status", child.run.getStatus());
+        result.put("status", child.run.getStatus().name());
         result.put("result", child.run.getResult() == null ? "" : child.run.getResult());
         result.put("waiting", waiting);
         return result;
@@ -269,7 +270,7 @@ final class ChildRuns {
 
     private void runChild(Execution child) {
         if (!child.beginWorker()) {
-            finish(child, "CANCELLED", "子 Agent 已停止", 0);
+            finish(child, RunStatus.CANCELLED, "子 Agent 已停止", 0);
             return;
         }
         Long previousRunId = SandboxExecutionContext.currentAgentRunId();
@@ -286,7 +287,7 @@ final class ChildRuns {
                 } catch (RuntimeException exception) {
                     failure = exception;
                 }
-                String finishStatus;
+                RunStatus finishStatus;
                 String finishResult;
                 synchronized (child) {
                     String pending = child.drainMessages().stream()
@@ -296,8 +297,8 @@ final class ChildRuns {
                         runs.resume(child.run, pending);
                         continue;
                     }
-                    finishStatus = rootCancelled.getAsBoolean() || child.isStopRequested() ? "CANCELLED"
-                            : failure == null && result.success() ? "SUCCEEDED" : "FAILED";
+                    finishStatus = rootCancelled.getAsBoolean() || child.isStopRequested() ? RunStatus.CANCELLED
+                            : failure == null && result.success() ? RunStatus.SUCCEEDED : RunStatus.FAILED;
                     finishResult = failure == null ? result.text() : failure(failure);
                     if (!child.beginFinishing()) break;
                 }
@@ -305,29 +306,29 @@ final class ChildRuns {
                 break;
             }
         } catch (RuntimeException exception) {
-            finish(child, rootCancelled.getAsBoolean() || child.isStopRequested() ? "CANCELLED" : "FAILED",
+            finish(child, rootCancelled.getAsBoolean() || child.isStopRequested() ? RunStatus.CANCELLED : RunStatus.FAILED,
                     failure(exception), totalRounds);
         } finally {
             SandboxExecutionContext.set(previousRunId);
         }
     }
 
-    private void finish(Execution child, String status, String result, int rounds) {
+    private void finish(Execution child, RunStatus status, String result, int rounds) {
         synchronized (child) {
             if (!child.beginFinishing()) return;
         }
         finishAfterBegin(child, status, result, rounds);
     }
 
-    private void finishAfterBegin(Execution child, String status, String result, int rounds) {
+    private void finishAfterBegin(Execution child, RunStatus status, String result, int rounds) {
         boolean commandsStopped = false;
         int roundsToPersist = rounds;
         while (true) {
             if (rootCancelled.getAsBoolean() || child.isStopRequested()) {
-                status = "CANCELLED";
+                status = RunStatus.CANCELLED;
                 result = "子 Agent 已停止";
             }
-            if (!"SUCCEEDED".equals(status) && !commandsStopped) {
+            if (status != RunStatus.SUCCEEDED && !commandsStopped) {
                 sessions.stopExecutionsByAgentRun(child.run.getId());
                 commandsStopped = true;
                 continue;
@@ -336,7 +337,7 @@ final class ChildRuns {
             roundsToPersist = 0;
             if (publishFinish(child)) return;
             // 持久化运行状态期间可能收到取消。
-            status = "CANCELLED";
+            status = RunStatus.CANCELLED;
             result = "子 Agent 已停止";
         }
     }
@@ -345,7 +346,7 @@ final class ChildRuns {
         synchronized (child) {
             synchronized (lock) {
                 if ((rootCancelled.getAsBoolean() || child.isStopRequested())
-                        && !"CANCELLED".equals(child.run.getStatus())) {
+                        && child.run.getStatus() != RunStatus.CANCELLED) {
                     return false;
                 }
                 notifications.put(child.run.getId(), new UserMessage("子 Agent " + child.run.getId()

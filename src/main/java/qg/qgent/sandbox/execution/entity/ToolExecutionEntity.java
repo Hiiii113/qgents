@@ -19,7 +19,7 @@ public class ToolExecutionEntity {
     private Long workspaceId;
     private String toolName;
     private String argumentsJson;
-    private String status;
+    private ExecutionStatus status;
     private Integer exitCode;
     private String resultJson;
     private String failureCode;

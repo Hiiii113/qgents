@@ -17,6 +17,7 @@ import qg.qgent.sandbox.execution.dto.ToolExecutionRequest;
 import qg.qgent.sandbox.execution.dto.ToolExecutionResponse;
 import qg.qgent.sandbox.execution.dto.ToolResult;
 import qg.qgent.sandbox.execution.output.CommandOutput;
+import qg.qgent.sandbox.execution.entity.ExecutionStatus;
 import qg.qgent.sandbox.execution.entity.ToolExecutionEntity;
 import qg.qgent.sandbox.execution.entity.ToolExecutionLogEntity;
 import qg.qgent.sandbox.execution.mapper.ToolExecutionLogMapper;
@@ -127,10 +128,6 @@ public class ToolExecutionService {
         }
     }
 
-    public static boolean isTerminal(String status) {
-        return !"QUEUED".equals(status) && !"RUNNING".equals(status);
-    }
-
     /** 先落库取得自增执行编号；异步线程随后按该编号读取已提交记录。 */
     private ToolExecutionEntity prepare(UUID sandboxId, ToolExecutionRequest request) {
         // 参数与执行结果持久化，临时环境变量只用于本次进程
@@ -160,7 +157,7 @@ public class ToolExecutionService {
                 throw new SandboxException(HttpStatus.CONFLICT,
                         "EXECUTION_OWNED_BY_OTHER_INSTANCE", "执行不属于当前 Sandbox");
             }
-            if (isTerminal(current.getStatus())) return response(current);
+            if (current.getStatus().terminal()) return response(current);
             throw new SandboxException(HttpStatus.CONFLICT,
                     "EXECUTION_NOT_CANCELLABLE", "当前执行状态不可取消：" + current.getStatus());
         }
@@ -235,14 +232,14 @@ public class ToolExecutionService {
             return;
         }
         ToolExecutionEntity running = executionMapper.selectById(executionId);
-        if (running == null || !"RUNNING".equals(running.getStatus())) {
+        if (running == null || running.getStatus() != ExecutionStatus.RUNNING) {
             return;
         }
         append(executionId, "SYSTEM", "开始执行工具：" + request.getTool());
         log.info("tool start executionId={} sandboxId={} agentRunId={} tool={}",
                 executionId, sandbox.getId(), request.getAgentRunId(), request.getTool());
 
-        String status;
+        ExecutionStatus status;
         Integer exitCode = null;
         String resultJson = null;
         String failureCode = null;
@@ -258,19 +255,20 @@ public class ToolExecutionService {
             exitCode = result.getExitCode();
             resultJson = json(result.getResult());
             // 命令正常取得退出码即完成执行；非零退出码由模型判断，不冒充基础设施失败。
-            status = "command.run".equals(request.getTool()) || exitCode == null || exitCode == 0 ? "SUCCEEDED" : "FAILED";
-            if ("FAILED".equals(status)) {
+            status = "command.run".equals(request.getTool()) || exitCode == null || exitCode == 0
+                    ? ExecutionStatus.SUCCEEDED : ExecutionStatus.FAILED;
+            if (status == ExecutionStatus.FAILED) {
                 failureCode = PROCESS_EXIT_NONZERO;
                 failureReason = "工具进程以非零退出码结束";
             }
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            status = "TIMED_OUT";
+            status = ExecutionStatus.TIMED_OUT;
             failureCode = TOOL_EXECUTION_TIMED_OUT;
             failureReason = "工具执行超时或被中断";
             log.warn("tool interrupted executionId={} tool={}", executionId, request.getTool());
         } catch (RuntimeException exception) {
-            status = "FAILED";
+            status = ExecutionStatus.FAILED;
             failureCode = failureCode(exception);
             failureReason = failureReason(exception);
             log.error("tool failed executionId={} sandboxId={} agentRunId={} tool={} failureCode={} failureReason={}",
@@ -302,7 +300,7 @@ public class ToolExecutionService {
         entity.setWorkspaceId(request.getWorkspaceId());
         entity.setToolName(request.getTool());
         entity.setArgumentsJson(argumentsJson);
-        entity.setStatus("QUEUED");
+        entity.setStatus(ExecutionStatus.QUEUED);
         entity.setCreatedAt(utc(clock.instant()));
         return entity;
     }

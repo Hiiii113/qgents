@@ -12,6 +12,7 @@ import qg.qgent.sandbox.runtime.SandboxAllocation;
 import qg.qgent.sandbox.service.SandboxService;
 import qg.qgent.sandbox.execution.dto.ToolExecutionRequest;
 import qg.qgent.sandbox.execution.dto.ToolResult;
+import qg.qgent.sandbox.execution.entity.ExecutionStatus;
 import qg.qgent.sandbox.execution.entity.ToolExecutionEntity;
 import qg.qgent.sandbox.execution.entity.ToolExecutionLogEntity;
 import qg.qgent.sandbox.execution.mapper.ToolExecutionLogMapper;
@@ -78,7 +79,7 @@ class ToolExecutionServiceTest {
         });
         try {
             var result = fixture.service().execute(fixture.sandboxId(), fixture.request());
-            assertEquals("SUCCEEDED", result.getStatus());
+            assertEquals(ExecutionStatus.SUCCEEDED, result.getStatus());
             assertEquals(Thread.currentThread(), toolThread.get());
             assertEquals(child, fixture.rows().get(result.getId()).getAgentRunId());
             assertEquals(workspace, fixture.rows().get(result.getId()).getWorkspaceId());
@@ -128,15 +129,15 @@ class ToolExecutionServiceTest {
         fixture.request().setTool("command.run");
         Long executionId = fixture.service().submit(fixture.sandboxId(), fixture.request()).getId();
         try {
-            assertEquals("CANCELLED", fixture.service().cancel(executionId).getStatus());
-            assertEquals("CANCELLED", fixture.service().await(executionId, Duration.ofSeconds(1)).getStatus());
+            assertEquals(ExecutionStatus.CANCELLED, fixture.service().cancel(executionId).getStatus());
+            assertEquals(ExecutionStatus.CANCELLED, fixture.service().await(executionId, Duration.ofSeconds(1)).getStatus());
         } finally {
             release.countDown();
         }
         // 同一个单线程池的后续任务完成，表示先前排队的命令已经走完收尾。
         pool.submit(() -> { }).get(5, TimeUnit.SECONDS);
         verify(fixture.tools(), org.mockito.Mockito.never()).execute(anyString(), any(), any());
-        assertEquals("CANCELLED", fixture.service().find(executionId).getStatus());
+        assertEquals(ExecutionStatus.CANCELLED, fixture.service().find(executionId).getStatus());
     }
 
     @Test
@@ -150,12 +151,12 @@ class ToolExecutionServiceTest {
         });
         Long executionId = fixture.service().submit(fixture.sandboxId(), fixture.request()).getId();
         assertTrue(started.await(5, TimeUnit.SECONDS));
-        assertEquals("RUNNING", fixture.service().await(executionId, Duration.ofMillis(20)).getStatus());
+        assertEquals(ExecutionStatus.RUNNING, fixture.service().await(executionId, Duration.ofMillis(20)).getStatus());
         try (var waiter = Executors.newSingleThreadExecutor()) {
             var result = waiter.submit(() -> fixture.service().await(executionId, Duration.ofSeconds(5)));
-            assertEquals("CANCELLED", fixture.service().cancel(executionId).getStatus());
-            assertEquals("CANCELLED", result.get(5, TimeUnit.SECONDS).getStatus());
-            assertEquals("CANCELLED", fixture.service().cancel(executionId).getStatus());
+            assertEquals(ExecutionStatus.CANCELLED, fixture.service().cancel(executionId).getStatus());
+            assertEquals(ExecutionStatus.CANCELLED, result.get(5, TimeUnit.SECONDS).getStatus());
+            assertEquals(ExecutionStatus.CANCELLED, fixture.service().cancel(executionId).getStatus());
         } finally { release.countDown(); }
     }
 
@@ -275,11 +276,11 @@ class ToolExecutionServiceTest {
         request.setEnvironment(Map.of("GIT_CONFIG_VALUE_0", "temporary-secret"));
 
         Long executionId = service.submit(sandboxId, request).getId();
-        for (int attempt = 0; attempt < 100 && !"SUCCEEDED".equals(rows.get(executionId).getStatus()); attempt++) {
+        for (int attempt = 0; attempt < 100 && rows.get(executionId).getStatus() != ExecutionStatus.SUCCEEDED; attempt++) {
             Thread.sleep(10);
         }
 
-        assertEquals("SUCCEEDED", service.find(executionId).getStatus());
+        assertEquals(ExecutionStatus.SUCCEEDED, service.find(executionId).getStatus());
         assertFalse(rows.get(executionId).getArgumentsJson().contains("temporary-secret"));
         org.mockito.Mockito.verify(tools).execute(anyString(), org.mockito.ArgumentMatchers.argThat(context ->
                 "temporary-secret".equals(context.getEnvironment().get("GIT_CONFIG_VALUE_0"))), any());
@@ -298,7 +299,7 @@ class ToolExecutionServiceTest {
         Long executionId = fixture.service().submit(fixture.sandboxId(), fixture.request()).getId();
         awaitTerminal(fixture.rows(), executionId);
 
-        assertEquals("FAILED", fixture.service().find(executionId).getStatus());
+        assertEquals(ExecutionStatus.FAILED, fixture.service().find(executionId).getStatus());
         assertEquals("FILE_PATCH_FAILED", fixture.service().find(executionId).getFailureCode());
         assertEquals("hunk 声明行数与正文不一致", fixture.service().find(executionId).getFailureReason());
     }
@@ -347,7 +348,7 @@ class ToolExecutionServiceTest {
         when(fixture.tools().execute(anyString(), any(), any())).thenReturn(new ToolResult(7, Map.of("stdout", "diagnostic"), List.of(), List.of()));
         Long executionId = fixture.service().submit(fixture.sandboxId(), fixture.request()).getId();
         awaitTerminal(fixture.rows(), executionId);
-        assertEquals("SUCCEEDED", fixture.service().find(executionId).getStatus());
+        assertEquals(ExecutionStatus.SUCCEEDED, fixture.service().find(executionId).getStatus());
         assertEquals(7, fixture.service().find(executionId).getExitCode());
         assertEquals(null, fixture.service().find(executionId).getFailureCode());
     }
@@ -382,7 +383,7 @@ class ToolExecutionServiceTest {
         Long executionId = fixture.service().submit(fixture.sandboxId(), fixture.request()).getId();
         awaitTerminal(fixture.rows(), executionId);
 
-        assertEquals("TIMED_OUT", fixture.service().find(executionId).getStatus());
+        assertEquals(ExecutionStatus.TIMED_OUT, fixture.service().find(executionId).getStatus());
         assertEquals("TOOL_EXECUTION_TIMED_OUT", fixture.service().find(executionId).getFailureCode());
         assertEquals("工具执行超时或被中断", fixture.service().find(executionId).getFailureReason());
     }
@@ -407,10 +408,10 @@ class ToolExecutionServiceTest {
 
         Long executionId = service.submit(sandboxId, request).getId();
 
-        assertEquals("CANCELLED", service.cancel(executionId).getStatus());
+        assertEquals(ExecutionStatus.CANCELLED, service.cancel(executionId).getStatus());
         assertEquals("EXECUTION_CANCELLED", service.find(executionId).getFailureCode());
         assertEquals("执行已取消", service.find(executionId).getFailureReason());
-        assertEquals("CANCELLED", service.cancel(executionId).getStatus());
+        assertEquals(ExecutionStatus.CANCELLED, service.cancel(executionId).getStatus());
     }
 
     @Test
@@ -422,7 +423,7 @@ class ToolExecutionServiceTest {
 
         fixture.service().markInterruptedExecutions();
 
-        assertEquals("INTERRUPTED", fixture.service().find(executionId).getStatus());
+        assertEquals(ExecutionStatus.INTERRUPTED, fixture.service().find(executionId).getStatus());
         assertEquals("APPLICATION_RESTART_INTERRUPTED", fixture.service().find(executionId).getFailureCode());
         assertEquals("Sandbox 重启，执行状态已中断", fixture.service().find(executionId).getFailureReason());
     }
@@ -447,7 +448,7 @@ class ToolExecutionServiceTest {
 
         assertEquals("EXECUTION_QUEUE_UNAVAILABLE", exception.getCode());
         ToolExecutionEntity rejected = rows.values().iterator().next();
-        assertEquals("FAILED", rejected.getStatus());
+        assertEquals(ExecutionStatus.FAILED, rejected.getStatus());
         assertEquals("EXECUTION_QUEUE_UNAVAILABLE", rejected.getFailureCode());
         assertEquals("命令执行队列不可用", rejected.getFailureReason());
     }
@@ -458,13 +459,13 @@ class ToolExecutionServiceTest {
         when(mapper.selectActiveIdsByAgentRun(any(), anyString())).thenAnswer(invocation -> rows.values().stream()
                 .filter(entity -> invocation.getArgument(0).equals(entity.getAgentRunId()))
                 .filter(entity -> invocation.getArgument(1).equals(entity.getOwnerInstanceId()))
-                .filter(entity -> java.util.List.of("QUEUED", "RUNNING").contains(entity.getStatus()))
+                .filter(entity -> !entity.getStatus().terminal())
                 .map(ToolExecutionEntity::getId).toList());
         when(mapper.markInterrupted(anyString(), any())).thenAnswer(invocation -> {
             int updated = 0;
             for (ToolExecutionEntity entity : rows.values()) {
-                if (java.util.List.of("QUEUED", "RUNNING").contains(entity.getStatus())) {
-                    entity.setStatus("INTERRUPTED");
+                if (!entity.getStatus().terminal()) {
+                    entity.setStatus(ExecutionStatus.INTERRUPTED);
                     entity.setFailureCode("APPLICATION_RESTART_INTERRUPTED");
                     entity.setFailureReason("Sandbox 重启，执行状态已中断");
                     entity.setFinishedAt(invocation.getArgument(1));
@@ -481,16 +482,16 @@ class ToolExecutionServiceTest {
         });
         when(mapper.markRunning(any(), anyString(), any())).thenAnswer(invocation -> {
             ToolExecutionEntity entity = rows.get(invocation.getArgument(0));
-            if (entity == null || !"QUEUED".equals(entity.getStatus())) return 0;
-            entity.setStatus("RUNNING");
+            if (entity == null || entity.getStatus() != ExecutionStatus.QUEUED) return 0;
+            entity.setStatus(ExecutionStatus.RUNNING);
             entity.setStartedAt(invocation.getArgument(2));
             return 1;
         });
-        when(mapper.finishIfRunning(any(), anyString(), anyString(), any(), any(), any(), any(), any()))
+        when(mapper.finishIfRunning(any(), anyString(), any(ExecutionStatus.class), any(), any(), any(), any(), any()))
                 .thenAnswer(invocation -> {
             ToolExecutionEntity entity = rows.get(invocation.getArgument(0));
-            if (entity == null || !"RUNNING".equals(entity.getStatus())) return 0;
-            entity.setStatus(invocation.getArgument(2));
+            if (entity == null || entity.getStatus() != ExecutionStatus.RUNNING) return 0;
+            entity.setStatus(invocation.getArgument(2, ExecutionStatus.class));
             entity.setExitCode(invocation.getArgument(3));
             entity.setResultJson(invocation.getArgument(4));
             entity.setFailureCode(invocation.getArgument(5));
@@ -500,8 +501,8 @@ class ToolExecutionServiceTest {
         });
         when(mapper.markCancelled(any(), anyString(), any())).thenAnswer(invocation -> {
             ToolExecutionEntity entity = rows.get(invocation.getArgument(0));
-            if (entity == null || !java.util.List.of("QUEUED", "RUNNING").contains(entity.getStatus())) return 0;
-            entity.setStatus("CANCELLED");
+            if (entity == null || !!entity.getStatus().terminal()) return 0;
+            entity.setStatus(ExecutionStatus.CANCELLED);
             entity.setFailureCode("EXECUTION_CANCELLED");
             entity.setFailureReason("执行已取消");
             entity.setFinishedAt(invocation.getArgument(2));
@@ -509,8 +510,8 @@ class ToolExecutionServiceTest {
         });
         when(mapper.rejectQueued(any(), anyString(), anyString(), anyString(), any())).thenAnswer(invocation -> {
             ToolExecutionEntity entity = rows.get(invocation.getArgument(0));
-            if (entity == null || !"QUEUED".equals(entity.getStatus())) return 0;
-            entity.setStatus("FAILED");
+            if (entity == null || entity.getStatus() != ExecutionStatus.QUEUED) return 0;
+            entity.setStatus(ExecutionStatus.FAILED);
             entity.setFailureCode(invocation.getArgument(2));
             entity.setFailureReason(invocation.getArgument(3));
             entity.setFinishedAt(invocation.getArgument(4));
@@ -564,7 +565,7 @@ class ToolExecutionServiceTest {
         entity.setOwnerInstanceId("local");
         entity.setSandboxId(sandboxId.toString());
         entity.setToolName("file.read");
-        entity.setStatus("QUEUED");
+        entity.setStatus(ExecutionStatus.QUEUED);
         entity.setCreatedAt(java.time.LocalDateTime.now());
         return entity;
     }
@@ -572,7 +573,7 @@ class ToolExecutionServiceTest {
     private void awaitTerminal(Map<Long, ToolExecutionEntity> rows, Long executionId) throws InterruptedException {
         for (int attempt = 0; attempt < 100; attempt++) {
             ToolExecutionEntity entity = rows.get(executionId);
-            if (entity != null && java.util.List.of("SUCCEEDED", "FAILED", "TIMED_OUT").contains(entity.getStatus())) {
+            if (entity != null && entity.getStatus().terminal()) {
                 return;
             }
             Thread.sleep(10);
