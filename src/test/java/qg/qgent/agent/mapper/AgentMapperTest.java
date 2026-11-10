@@ -94,6 +94,13 @@ class AgentMapperTest {
     }
 
     @Test
+    void theApplicationIsLookedUpByTheMessageThatAnnouncedIt() {
+        // 审批回复只提供引用消息，申请由服务端按公布消息反查，不再由模型参数指定。
+        assertThat(selectSql("selectByAnnouncedMessageId", Map.of("messageId", TestIds.next())))
+                .contains("announced_message_id = ?");
+    }
+
+    @Test
     void theLimitCountIsALockingReadSoConcurrentApplicationsSeeCommittedRows() {
         // 事务内先做了普通读（成员校验）才拿到项目行锁，快照可能落后；计数必须是加锁读才能看到刚提交的申请。
         assertThat(selectSql("countCountedByProject", Map.of("projectId", TestIds.next())))
@@ -105,6 +112,7 @@ class AgentMapperTest {
         assertParametersResolve("selectDefaultAgent", Map.of("projectId", TestIds.next()));
         assertParametersResolve("selectActiveByProject", Map.of("projectId", TestIds.next()));
         assertParametersResolve("selectPendingByProject", Map.of("projectId", TestIds.next()));
+        assertParametersResolve("selectByAnnouncedMessageId", Map.of("messageId", TestIds.next()));
         assertParametersResolve("countCountedByProject", Map.of("projectId", TestIds.next()));
         assertParametersResolve("activate", Map.of("id", TestIds.next(), "approvedBy", TestIds.next()));
         assertParametersResolve("reject", Map.of("id", TestIds.next(), "approvedBy", TestIds.next()));

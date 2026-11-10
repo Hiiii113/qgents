@@ -18,13 +18,13 @@ import qg.qgent.project.service.ProjectAccessService;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.Collection;
 import java.util.List;
 
 /**
  * 自定义 Agent 申请与审批：任一项目成员提交，项目管理员在默认群回复公布消息并 @Agent 后由服务端核验生效。
  * <p>
- * 审批绑定公布该申请的 Agent 消息而不是模型参数；管理员身份、具体申请与申请状态都按真实消息校验。
+ * 审批绑定公布该申请的 Agent 消息而不是模型参数，且一条公布消息只公布一条申请；
+ * 管理员身份、具体申请与申请状态都按真实消息校验。
  * 待审批申请也计入项目 Agent 数量上限，被拒绝的申请释放名额；申请与计数在同一项目行锁内完成。
  */
 @Service
@@ -101,11 +101,10 @@ public class AgentApplicationService {
      * @param approvalMessageId 触发本次 Agent 运行的用户消息；它的回复对象必须是公布该申请的消息
      */
     @Transactional
-    public AgentEntity approve(Long actor, Long projectId, Long groupId, Long applicationId, Long approvalMessageId) {
+    public AgentEntity approve(Long actor, Long projectId, Long groupId, Long approvalMessageId) {
         access.requireProjectAdmin(projectId, actor);
         requireDefaultGroup(projectId, groupId);
-        AgentEntity application = requireAnnouncedApplication(actor, projectId, groupId, applicationId,
-                approvalMessageId);
+        AgentEntity application = requireAnnouncedApplication(actor, projectId, groupId, approvalMessageId);
         if (agents.activate(application.getId(), actor) == 0) {
             throw notPending();
         }
@@ -114,40 +113,37 @@ public class AgentApplicationService {
 
     /** 管理员拒绝申请：被拒绝的申请不能激活，也不再占用数量上限。 */
     @Transactional
-    public AgentEntity reject(Long actor, Long projectId, Long groupId, Long applicationId, Long approvalMessageId) {
+    public AgentEntity reject(Long actor, Long projectId, Long groupId, Long approvalMessageId) {
         access.requireProjectAdmin(projectId, actor);
         requireDefaultGroup(projectId, groupId);
-        AgentEntity application = requireAnnouncedApplication(actor, projectId, groupId, applicationId,
-                approvalMessageId);
+        AgentEntity application = requireAnnouncedApplication(actor, projectId, groupId, approvalMessageId);
         if (agents.reject(application.getId(), actor) == 0) {
             throw notPending();
         }
         return agents.selectById(application.getId());
     }
 
-    /** 把本次运行公布过的申请绑定到它的 Agent 回复消息；重复公布时以最新一次为准。 */
-    public void bindAnnouncements(Collection<Long> applicationIds, Long messageId) {
-        applicationIds.forEach(applicationId -> agents.bindAnnouncement(applicationId, messageId));
+    /** 把本次运行公布的那一条申请绑定到它的 Agent 回复消息；重复公布时以最新一次为准。 */
+    public void bindAnnouncement(Long applicationId, Long messageId) {
+        agents.bindAnnouncement(applicationId, messageId);
     }
 
-    private AgentEntity requireAnnouncedApplication(Long actor, Long projectId, Long groupId, Long applicationId,
+    /**
+     * 按审批回复引用的 Agent 消息定位那条申请；模型因此无法用参数指向另一条申请。
+     */
+    private AgentEntity requireAnnouncedApplication(Long actor, Long projectId, Long groupId,
                                                     Long approvalMessageId) {
         MessageEntity approval = messages.selectById(approvalMessageId);
         if (approval == null || !groupId.equals(approval.getGroupId())
-                || !actor.equals(approval.getAuthorUserId())) {
+                || !actor.equals(approval.getAuthorUserId()) || approval.getReplyToMessageId() == null) {
             throw applicationNotFound();
         }
-        AgentEntity application = agents.selectById(applicationId);
+        AgentEntity application = agents.selectByAnnouncedMessageId(approval.getReplyToMessageId());
         if (application == null || !projectId.equals(application.getProjectId())) {
             throw applicationNotFound();
         }
         if (!AgentEntity.STATUS_PENDING.equals(application.getStatus())) {
             throw notPending();
-        }
-        // 回复对象必须就是公布这条申请的消息，模型伪造的申请 ID 因此无法通过审批。
-        if (application.getAnnouncedMessageId() == null
-                || !application.getAnnouncedMessageId().equals(approval.getReplyToMessageId())) {
-            throw applicationNotFound();
         }
         return application;
     }

@@ -201,8 +201,7 @@ class AgentChatServiceTest {
 
         fixture.service().replyToMention(fixture.event(), fixture.agentId(), "帮我申请一个评审助手");
 
-        verify(fixture.agentApplications()).bindAnnouncements(List.of(application.getId()),
-                fixture.replyMessageId());
+        verify(fixture.agentApplications()).bindAnnouncement(application.getId(), fixture.replyMessageId());
     }
 
     @Test
