@@ -169,12 +169,6 @@ public class ToolExecutionService {
         return cancelled;
     }
 
-    /** 取消指定 Sandbox 中仍处于活动状态的全部工具执行。 */
-    public void cancelBySandbox(UUID sandboxId) {
-        executionMapper.selectActiveIdsBySandbox(sandboxId.toString(), properties.getInstanceId())
-                .forEach(this::cancelIgnoringTerminal);
-    }
-
     /** Cancels commands owned by a Sandbox and waits for their worker bodies to stop using it. */
     public void stopAndAwaitBySandbox(UUID sandboxId) {
         Set<Long> ids = new LinkedHashSet<>(
@@ -351,7 +345,8 @@ public class ToolExecutionService {
         try {
             return objectMapper.readValue(value, MAP_TYPE);
         } catch (Exception exception) {
-            return Map.of("raw", value);
+            // 结果由本服务写入，读不回来说明数据已损坏，不能当空结果交给模型。
+            throw new IllegalStateException("工具执行结果无法解析", exception);
         }
     }
 
