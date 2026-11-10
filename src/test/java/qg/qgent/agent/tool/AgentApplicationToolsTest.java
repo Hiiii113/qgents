@@ -35,7 +35,7 @@ class AgentApplicationToolsTest {
     @Test
     void exposesApplicationAndApprovalTools() {
         assertThat(ToolCallbacks.from(tools)).extracting(callback -> callback.getToolDefinition().name())
-                .containsExactlyInAnyOrder("submit_agent_application", "list_pending_agent_applications",
+                .containsExactlyInAnyOrder("submit_agent_application", "announce_next_agent_application",
                         "approve_agent_application", "reject_agent_application");
     }
 
@@ -65,41 +65,68 @@ class AgentApplicationToolsTest {
     }
 
     @Test
-    void listedApplicationsCanBeApprovedByReplyingToTheirAnnouncement() {
+    void oneApplicationIsAnnouncedPerReplySoTheAdminReplyNamesExactlyOne() {
         AgentEntity first = pending(TestIds.next()), second = pending(TestIds.next());
         when(applications.pendingApplications(actor, projectId, groupId)).thenReturn(List.of(first, second));
 
-        Map<String, Object> listed = tools.listPendingAgentApplications();
+        Map<String, Object> announced = tools.announceNextAgentApplication();
 
-        assertThat(listed).containsEntry("ok", true);
-        assertThat((List<?>) listed.get("applications")).hasSize(2);
+        assertThat(announced).containsEntry("ok", true).containsEntry("remainingCount", "1");
+        assertThat(((Map<?, ?>) announced.get("application")).get("applicationId"))
+                .isEqualTo(first.getId().toString());
         Long replyMessage = TestIds.next();
         tools.bindAnnounced(replyMessage);
-        org.mockito.ArgumentCaptor<java.util.Collection<Long>> bound = org.mockito.ArgumentCaptor.captor();
-        verify(applications).bindAnnouncements(bound.capture(), eq(replyMessage));
-        assertThat(bound.getValue()).containsExactlyInAnyOrder(first.getId(), second.getId());
+        verify(applications).bindAnnouncement(first.getId(), replyMessage);
+        verify(applications, never()).bindAnnouncement(eq(second.getId()), any());
+    }
+
+    @Test
+    void nothingIsAnnouncedWhenTheQueueIsEmpty() {
+        when(applications.pendingApplications(actor, projectId, groupId)).thenReturn(List.of());
+
+        Map<String, Object> announced = tools.announceNextAgentApplication();
+
+        assertThat(announced).containsEntry("ok", true).containsEntry("remainingCount", "0");
+        assertThat(announced).doesNotContainKey("application");
+        tools.bindAnnounced(TestIds.next());
+        verify(applications, never()).bindAnnouncement(any(), any());
+    }
+
+    @Test
+    void theReplyBindsOnlyTheApplicationItLastAnnounced() {
+        AgentEntity submitted = pending(TestIds.next()), next = pending(TestIds.next());
+        when(applications.apply(eq(actor), eq(projectId), eq(groupId), any(AgentApplicationRequest.class)))
+                .thenReturn(submitted);
+        when(applications.pendingApplications(actor, projectId, groupId)).thenReturn(List.of(next));
+
+        tools.submitAgentApplication("评审助手", null, "你负责评审", null);
+        tools.announceNextAgentApplication();
+        tools.bindAnnounced(TestIds.next());
+
+        verify(applications, never()).bindAnnouncement(eq(submitted.getId()), any());
+        verify(applications).bindAnnouncement(eq(next.getId()), any());
     }
 
     @Test
     void approvalUsesTheTriggerMessageAndReturnsTheActivatedAgent() {
         AgentEntity activated = pending(TestIds.next());
         activated.setStatus(AgentEntity.STATUS_ACTIVE);
-        when(applications.approve(actor, projectId, groupId, activated.getId(), approvalMessageId))
-                .thenReturn(activated);
+        when(applications.approve(actor, projectId, groupId, approvalMessageId)).thenReturn(activated);
 
-        Map<String, Object> result = tools.approveAgentApplication(activated.getId().toString());
+        Map<String, Object> result = tools.approveAgentApplication();
 
         assertThat(result).containsEntry("ok", true).containsEntry("status", "ACTIVE")
                 .containsEntry("applicationId", activated.getId().toString());
+        // 审批不接受模型给的申请 ID：服务端只按审批回复引用的消息定位申请。
+        verify(applications).approve(actor, projectId, groupId, approvalMessageId);
     }
 
     @Test
     void approvalRejectionBecomesToolError() {
-        Long applicationId = TestIds.next();
-        when(applications.approve(actor, projectId, groupId, applicationId, approvalMessageId))
+        when(applications.approve(actor, projectId, groupId, approvalMessageId))
                 .thenThrow(new ApiException(HttpStatus.FORBIDDEN, "PROJECT_ADMIN_REQUIRED", "需要项目 Admin 权限"));
 
-        Map<String, Object> result = tools.approveAgentApplication(applicationId.toString());
+        Map<String, Object> result = tools.approveAgentApplication();
 
         assertThat(result).containsEntry("ok", false).containsEntry("errorCode", "PROJECT_ADMIN_REQUIRED");
     }
@@ -108,20 +135,11 @@ class AgentApplicationToolsTest {
     void rejectionMarksTheApplicationAndReportsIt() {
         AgentEntity rejected = pending(TestIds.next());
         rejected.setStatus(AgentEntity.STATUS_REJECTED);
-        when(applications.reject(actor, projectId, groupId, rejected.getId(), approvalMessageId))
-                .thenReturn(rejected);
+        when(applications.reject(actor, projectId, groupId, approvalMessageId)).thenReturn(rejected);
 
-        Map<String, Object> result = tools.rejectAgentApplication(rejected.getId().toString());
+        Map<String, Object> result = tools.rejectAgentApplication();
 
         assertThat(result).containsEntry("ok", true).containsEntry("status", "REJECTED");
-    }
-
-    @Test
-    void nonNumericApplicationIdIsRejectedAsArgumentError() {
-        Map<String, Object> result = tools.approveAgentApplication("not-an-id");
-
-        assertThat(result).containsEntry("ok", false).containsEntry("errorCode", "INVALID_ARGUMENT");
-        verify(applications, never()).approve(any(), any(), any(), any(), any());
     }
 
     private AgentEntity pending(Long agentId) {

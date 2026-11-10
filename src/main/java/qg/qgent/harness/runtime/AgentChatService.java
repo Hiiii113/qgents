@@ -238,8 +238,9 @@ public class AgentChatService {
                 + "不要写入某个群内的具体内容，也不要利用它把受限群的信息带给其他群。"
                 + "项目成员可以申请创建本项目自定义 Agent：与用户确认名称、职责和系统提示词后调用 submit_agent_application，"
                 + "并说明申请待项目管理员审批，未通过前不能邀请入群也不能运行。"
-                + "项目管理员要处理申请时调用 list_pending_agent_applications 并用普通文本公布；管理员直接回复该条消息并 @你 时"
-                + "调用 approve_agent_application 或 reject_agent_application，服务端核验管理员身份、具体申请与申请状态。"
+                + "项目管理员要处理申请时调用 announce_next_agent_application 并用普通文本一次公布一条；"
+                + "管理员直接回复该条消息并 @你 时调用 approve_agent_application 或 reject_agent_application，"
+                + "服务端按回复对象定位具体申请并核验管理员身份与申请状态。"
                 + "非默认群不提出、不公布也不审批 Agent 申请。"
                 + "主 Agent 可按需派发一层独立子任务；子 Agent 不能继续委派。完成、失败或需要补充信息时如实交付。"
                 + "只通过当前聊天组织成果，准确说明进展、需要的信息、实际修改和验证结果。"
@@ -364,7 +365,7 @@ public class AgentChatService {
             this.codingTools = new CodingTools(session, files);
         }
 
-        /** 把本次运行公布过的 Agent 申请绑定到它的回复消息，管理员才能回复该消息审批。 */
+        /** 把本次运行公布的那一条 Agent 申请绑定到它的回复消息，管理员才能回复该消息审批。 */
         private void bindAgentApplications(Long messageId) {
             if (applicationTools != null) applicationTools.bindAnnounced(messageId);
         }
@@ -380,7 +381,7 @@ public class AgentChatService {
             return result.toArray(ToolCallback[]::new);
         }
 
-        @Tool(name = "start_subagent", description = "后台启动一个独立子 Agent 并立即返回 runId。仅主 Qgent 可调用；说明明确任务、修改范围、必要背景和期望结果。")
+        @Tool(name = "start_subagent", description = "后台启动一个独立子 Agent 并立即返回 runId。仅主 Agent 可调用；说明明确任务、修改范围、必要背景和期望结果。")
         public ToolResult startSubagent(
                 @ToolParam(description = "子任务和必要背景") String instruction,
                 @ToolParam(description = "可选初始 Workspace ID；未提供时继承当前选择", required = false) String workspaceId,
@@ -425,7 +426,7 @@ public class AgentChatService {
             return work.children.stop(runId);
         }
 
-        @Tool(name = "cancel_agent", description = "停止指定聊天消息启动的整次 Qgent 根运行；取消会传播给所属子 Agent。")
+        @Tool(name = "cancel_agent", description = "停止指定聊天消息启动的整次根运行；取消会传播给所属子 Agent。")
         public ToolResult cancelAgent(@ToolParam(description = "触发执行的用户消息 ID") String messageId) {
             int cancelled = runService.cancel(work.event.actor(), work.event.projectId(), work.event.groupId(),
                     requiredId(messageId));

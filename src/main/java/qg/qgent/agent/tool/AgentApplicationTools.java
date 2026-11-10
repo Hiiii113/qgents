@@ -9,19 +9,15 @@ import qg.qgent.agent.service.AgentApplicationService;
 import qg.qgent.harness.tool.ToolErrors;
 import qg.qgent.harness.tool.ToolResult;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 
 /**
  * 自定义 Agent 的申请与群聊审批工具，只装配给主 Agent。
  * <p>
- * 申请由当前项目、当前群和触发消息绑定；审批时服务端按「审批回复引用的 Agent 消息」核验具体申请，
- * 模型无法用参数批准没有被公布过的申请。
+ * 申请由当前项目、当前群和触发消息绑定；每次回复只公布一条申请，审批时服务端按「审批回复引用的 Agent 消息」
+ * 定位那条申请，模型既不能选择申请，也不能批准没有被公布过的申请。
  */
 public class AgentApplicationTools {
 
@@ -30,8 +26,9 @@ public class AgentApplicationTools {
     private final Long projectId;
     private final Long groupId;
     private final Long approvalMessageId;
-    // 本次运行公布过的申请；运行结束时把回复消息绑定到它们，管理员才能回复该消息审批。
-    private final Set<Long> announced = ConcurrentHashMap.newKeySet();
+    // 本次运行公布的那一条申请；回复只有一条，运行结束时把它绑定到这条回复，管理员才能回复该消息审批。
+    // 同一次运行既提交又公布时以最新一次为准，否则一条回复会对应多条申请。
+    private Long announcedApplicationId;
 
     public AgentApplicationTools(AgentApplicationService applications, Long actor, Long projectId, Long groupId,
                                  Long approvalMessageId) {
@@ -62,7 +59,7 @@ public class AgentApplicationTools {
             request.setSystemPrompt(systemPrompt);
             request.setAvatarUrl(avatarUrl == null || avatarUrl.isBlank() ? null : avatarUrl);
             AgentEntity application = applications.apply(actor, projectId, groupId, request);
-            announced.add(application.getId());
+            announcedApplicationId = application.getId();
             ToolResult result = ToolResult.ok();
             result.put("applicationId", application.getId().toString());
             result.put("status", application.getStatus());
@@ -70,64 +67,62 @@ public class AgentApplicationTools {
         });
     }
 
-    /** 列出待审批申请并用普通文本向管理员公布；管理员回复这条回复并 @Agent 即可审批。 */
-    @Tool(name = "list_pending_agent_applications", description = "列出本项目待审批的自定义 Agent 申请。"
-            + "用普通文本把每条的申请 ID、名称、职责和系统提示词摘要告诉项目管理员，"
-            + "并说明管理员回复本条消息并 @你 即可审批；不要声称已经生效。")
-    public ToolResult listPendingAgentApplications() {
+    /**
+     * 公布下一条待审批申请并用普通文本请管理员审批。
+     * <p>
+     * 一次只公布一条：回复只有一条，多列一条就会让管理员的一条回复对应多条申请。
+     */
+    @Tool(name = "announce_next_agent_application", description = "公布本项目待审批申请中的下一条自定义 Agent 申请。"
+            + "用普通文本把这条申请的申请 ID、名称、职责和系统提示词摘要告诉项目管理员，"
+            + "并说明管理员回复本条消息并 @你 即可审批；不要声称已经生效。"
+            + "remainingCount 大于 0 表示还有待审批申请，管理员处理完这一条后再调用一次公布下一条。")
+    public ToolResult announceNextAgentApplication() {
         return call(() -> {
-            List<Map<String, String>> rows = new ArrayList<>();
-            for (AgentEntity application : applications.pendingApplications(actor, projectId, groupId)) {
-                announced.add(application.getId());
-                rows.add(summary(application));
-            }
+            List<AgentEntity> pending = applications.pendingApplications(actor, projectId, groupId);
             ToolResult result = ToolResult.ok();
-            result.put("applications", rows);
+            result.put("remainingCount", String.valueOf(pending.size()));
+            if (pending.isEmpty()) {
+                return result;
+            }
+            AgentEntity next = pending.getFirst();
+            announcedApplicationId = next.getId();
+            result.put("application", summary(next));
+            result.put("remainingCount", String.valueOf(pending.size() - 1));
             return result;
         });
     }
 
     /** 管理员回复公布消息并 @Agent 后审批通过；回复对象、管理员身份与申请状态由服务端核验。 */
     @Tool(name = "approve_agent_application", description = "项目管理员回复待审批申请的公布消息并 @你 时审批通过。"
-            + "只在这条回复确实引用了公布该申请的消息时调用；服务端会核验真实发送者的项目管理员身份、"
-            + "具体申请与申请状态，失败时如实说明审批未生效。")
-    public ToolResult approveAgentApplication(
-            @ToolParam(description = "list_pending_agent_applications 返回的申请 ID") String applicationId) {
-        return applicationId(applicationId).map(id -> call(() -> {
-            AgentEntity agent = applications.approve(actor, projectId, groupId, id, approvalMessageId);
+            + "只在这条回复确实引用了公布该申请的消息时调用；服务端按回复对象定位具体申请，"
+            + "并核验真实发送者的项目管理员身份与申请状态，失败时如实说明审批未生效。")
+    public ToolResult approveAgentApplication() {
+        return call(() -> {
+            AgentEntity agent = applications.approve(actor, projectId, groupId, approvalMessageId);
             ToolResult result = ToolResult.ok();
             result.put("applicationId", agent.getId().toString());
             result.put("status", agent.getStatus());
             return result;
-        })).orElseGet(() -> ToolResult.error("INVALID_ARGUMENT", "applicationId 必须是数字 ID"));
+        });
     }
 
     /** 管理员拒绝申请；被拒绝的申请不能激活，也不再占用项目 Agent 数量上限。 */
     @Tool(name = "reject_agent_application", description = "项目管理员回复待审批申请的公布消息并 @你 时拒绝该申请。"
-            + "服务端同样核验真实管理员、具体申请与申请状态。")
-    public ToolResult rejectAgentApplication(
-            @ToolParam(description = "list_pending_agent_applications 返回的申请 ID") String applicationId) {
-        return applicationId(applicationId).map(id -> call(() -> {
-            AgentEntity agent = applications.reject(actor, projectId, groupId, id, approvalMessageId);
+            + "服务端同样按回复对象定位具体申请，并核验真实管理员与申请状态。")
+    public ToolResult rejectAgentApplication() {
+        return call(() -> {
+            AgentEntity agent = applications.reject(actor, projectId, groupId, approvalMessageId);
             ToolResult result = ToolResult.ok();
             result.put("applicationId", agent.getId().toString());
             result.put("status", agent.getStatus());
             return result;
-        })).orElseGet(() -> ToolResult.error("INVALID_ARGUMENT", "applicationId 必须是数字 ID"));
+        });
     }
 
-    /** 把本次运行公布过的申请绑定到它的 Agent 回复消息；没有公布任何申请时什么都不做。 */
+    /** 把本次运行公布的那一条申请绑定到它的 Agent 回复消息；没有公布申请时什么都不做。 */
     public void bindAnnounced(Long messageId) {
-        if (!announced.isEmpty()) {
-            applications.bindAnnouncements(List.copyOf(announced), messageId);
-        }
-    }
-
-    private Optional<Long> applicationId(String value) {
-        try {
-            return Optional.of(Long.valueOf(value == null ? "" : value.trim()));
-        } catch (NumberFormatException notId) {
-            return Optional.empty();
+        if (announcedApplicationId != null) {
+            applications.bindAnnouncement(announcedApplicationId, messageId);
         }
     }
 

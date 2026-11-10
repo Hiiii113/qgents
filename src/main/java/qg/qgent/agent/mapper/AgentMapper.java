@@ -27,6 +27,10 @@ public interface AgentMapper extends BaseMapper<AgentEntity> {
     @Select("SELECT * FROM agents WHERE project_id = #{projectId} AND status = 'PENDING' ORDER BY created_at, id")
     List<AgentEntity> selectPendingByProject(@Param("projectId") Long projectId);
 
+    /** 公布这条消息的待审批申请；uk_agent_announced_message 保证一条公布消息只对应一条申请。 */
+    @Select("SELECT * FROM agents WHERE announced_message_id = #{messageId}")
+    AgentEntity selectByAnnouncedMessageId(@Param("messageId") Long messageId);
+
     /**
      * 计入数量上限的 Agent：待审批申请也算，被拒绝的申请释放名额。
      * <p>

@@ -29,7 +29,7 @@ public class AgentEntity {
     private Boolean defaultAgent;
     private String status;
     private Long proposedBy;
-    // 公布该申请的 Agent 消息；审批回复必须回复它，模型无法用参数指定别的申请。
+    // 公布该申请的 Agent 消息；一条回复只公布一条申请，审批回复必须回复它，模型无法用参数指定别的申请。
     private Long announcedMessageId;
     private Long approvedBy;
     private LocalDateTime approvedAt;
