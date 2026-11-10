@@ -26,7 +26,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantLock;
 
-/** 项目长期记忆：项目目录下的 memory.md 是正文唯一来源，按内容版本检测并发修改。 */
+/**
+ * 项目长期记忆：项目目录下的 memory.md 是正文唯一来源，按内容版本检测并发修改。
+ * <p>
+ * 写入只发生在已审批的项目记忆候选上，不再提供直接保存的入口。
+ */
 @Service
 public class ProjectMemoryService {
 
@@ -36,7 +40,7 @@ public class ProjectMemoryService {
     private final ProjectDirectoryService directories;
     private final EventService events;
 
-    // 同一实例内的写入串行化；跨实例并发由版本检测兜底。
+    // 同一实例内的写入串行化；跨实例并发由候选状态与内容版本兜底。
     private final ConcurrentMap<Long, ReentrantLock> locks = new ConcurrentHashMap<>();
     private final int maxMemoryChars;
 
@@ -55,23 +59,25 @@ public class ProjectMemoryService {
         return read(projectId);
     }
 
-    /** 整篇替换项目记忆；expectedVersion 与当前内容不一致时拒绝，避免静默覆盖他人编辑。 */
-    public ProjectMemoryResponse save(Long actor, Long projectId, String content, String expectedVersion) {
-        access.requireProjectMember(projectId, actor);
-        String text = content == null ? "" : content;
-        if (text.length() > maxMemoryChars) {
-            throw new ApiException(HttpStatus.CONFLICT, "MEMORY_CONTEXT_LIMIT_EXCEEDED",
-                    "项目记忆超出 Agent 上下文字符预算 " + maxMemoryChars + "，请精简后保存");
-        }
+    /**
+     * 审批通过后整篇替换 memory.md。
+     * <p>
+     * baseVersion 与当前内容不一致时拒绝，避免覆盖候选提出后其他人已审批的更新；
+     * 内容与候选相同时直接返回，使审批重试（例如写文件后进程中断）可以幂等完成。
+     */
+    public ProjectMemoryResponse applyApproved(Long projectId, String content, String baseVersion) {
         ReentrantLock lock = locks.computeIfAbsent(projectId, ignored -> new ReentrantLock());
         lock.lock();
         try {
             ProjectMemoryResponse current = read(projectId);
-            if (!current.getVersion().equals(expectedVersion)) {
-                throw new ApiException(HttpStatus.CONFLICT, "MEMORY_VERSION_CONFLICT",
-                        "项目记忆已被修改，请重新读取后再保存");
+            if (current.getContent().equals(content)) {
+                return current;
             }
-            write(projectId, text);
+            if (!current.getVersion().equals(baseVersion)) {
+                throw new ApiException(HttpStatus.CONFLICT, "MEMORY_VERSION_CONFLICT",
+                        "项目记忆在候选提出后已被修改，请重新提出候选");
+            }
+            write(projectId, content);
             ProjectMemoryResponse saved = read(projectId);
             events.publish(projectId, null, "memory.updated", projectId.toString(),
                     Map.of("projectId", projectId.toString(), "version", saved.getVersion(),
@@ -79,6 +85,14 @@ public class ProjectMemoryService {
             return saved;
         } finally {
             lock.unlock();
+        }
+    }
+
+    /** 候选正文必须与注入 Agent 上下文的记忆预算一致；超限时拒绝提出，而不是等到审批才失败。 */
+    public void requireContentBudget(String content) {
+        if (content != null && content.length() > maxMemoryChars) {
+            throw new ApiException(HttpStatus.CONFLICT, "MEMORY_CONTEXT_LIMIT_EXCEEDED",
+                    "项目记忆超出 Agent 上下文字符预算 " + maxMemoryChars + "，请精简后保存");
         }
     }
 

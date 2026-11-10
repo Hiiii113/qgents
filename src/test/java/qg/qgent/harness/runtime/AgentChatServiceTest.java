@@ -119,7 +119,8 @@ class AgentChatServiceTest {
                             assertThat(item.getText()).contains("published-skill", "适用于测试任务"));
                     assertThat(((OpenAiChatOptions) prompt.getOptions()).getToolCallbacks())
                             .extracting(callback -> callback.getToolDefinition().name())
-                            .contains("read_attachment");
+                            .contains("read_attachment", "read_project_memory", "propose_project_memory",
+                                    "approve_project_memory");
                     yield toolCall("start_subagent", "{\"instruction\":\"独立分析接口\"}");
                 }
                 case 2 -> {
@@ -147,10 +148,23 @@ class AgentChatServiceTest {
         assertThat(childInput.get()).contains("published-skill", "适用于测试任务", "activate_skill", "# 项目约定")
                 .doesNotContain("root-only context");
         assertThat(childToolNames.get()).doesNotContain("start_subagent", "wait_subagent", "get_subagent_result",
-                "message_subagent", "continue_subagent", "stop_subagent", "cancel_agent")
+                "message_subagent", "continue_subagent", "stop_subagent", "cancel_agent",
+                "propose_project_memory", "approve_project_memory")
                 .contains("read_attachment");
         verify(fixture.messages()).sendAsAgent(eq(group), argThat(request ->
                 "已汇总子任务结果".equals(request.getContent().get("text"))));
+    }
+
+    @Test
+    void memoryCandidateRaisedInTheRunIsBoundToTheAgentReplyMessage() {
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
+        ChatModel model = model();
+        when(model.call(any(Prompt.class))).thenReturn(reply("候选：新增统一邮箱登录约定，等待管理员审批"));
+        var fixture = fixture(model, actor, project, group, message, childExecutor);
+
+        fixture.service().replyToMention(fixture.event(), "补充一条项目约定");
+
+        verify(fixture.proposals()).bindMessage(fixture.root().getId(), fixture.replyMessageId());
     }
 
     @Test
@@ -745,13 +759,22 @@ class AgentChatServiceTest {
         var memories = mock(ProjectMemoryService.class);
         when(memories.get(any(), any())).thenReturn(new ProjectMemoryResponse("1", "# 项目约定", "v1",
                 java.time.LocalDateTime.now()));
+        var proposals = mock(qg.qgent.memory.service.ProjectMemoryProposalService.class);
+        Long replyMessageId = TestIds.next();
+        when(messages.sendAsAgent(anyLong(), any())).thenAnswer(invocation -> {
+            var reply = new qg.qgent.chat.dto.MessageResponse();
+            reply.setId(replyMessageId.toString());
+            reply.setGroupId(group.toString());
+            return reply;
+        });
         var service = new AgentChatService(github, mock(SandboxCommands.class), workspaces,
                 mock(qg.qgent.workspace.service.WorkspaceRepositoryService.class), loop, context,
                 skills, history, messages, runs, sessions, codeAccess,
-                attachments, memories, new ObjectMapper(),
+                attachments, memories, proposals, new ObjectMapper(),
                 childExecutor, maxSubagents);
         MessageSentEvent event = new MessageSentEvent(actor, project, group, message, List.of());
-        return new Fixture(service, event, messages, runs, root, workspaces, codeAccess, sessions, context, attachments);
+        return new Fixture(service, event, messages, runs, root, workspaces, codeAccess, sessions, context, attachments,
+                proposals, replyMessageId);
     }
 
     private AgentRunEntity run(AgentRunEntity parent, String instruction) {
@@ -830,5 +853,6 @@ class AgentChatServiceTest {
     private record Fixture(AgentChatService service, MessageSentEvent event, MessageService messages,
                            AgentRunService runs, AgentRunEntity root, WorkspaceService workspaces,
                            SandboxFiles codeAccess, SandboxSessionManager sessions, ContextService context,
-                           AttachmentService attachments) { }
+                           AttachmentService attachments,
+                           qg.qgent.memory.service.ProjectMemoryProposalService proposals, Long replyMessageId) { }
 }

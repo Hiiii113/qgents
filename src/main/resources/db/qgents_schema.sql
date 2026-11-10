@@ -216,6 +216,27 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     KEY idx_agent_run_message (trigger_message_id, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent loop 根运行及 subagent 运行';
 
+-- 项目记忆候选：默认群里的普通文本候选与管理员审批回复，服务端绑定候选原文、来源群、运行与审批消息。
+CREATE TABLE IF NOT EXISTS project_memory_proposals (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '候选ID',
+    project_id BIGINT NOT NULL COMMENT '所属项目ID',
+    group_id BIGINT NOT NULL COMMENT '提出候选的项目默认群ID',
+    agent_run_id BIGINT NOT NULL COMMENT '提出候选的 AgentRun；每个运行最多一个候选',
+    message_id BIGINT NULL COMMENT '候选所在的 Agent 回复消息；审批必须回复这条消息',
+    content MEDIUMTEXT NOT NULL COMMENT '候选 memory.md 全文',
+    base_version VARCHAR(64) NOT NULL COMMENT '提出时的 memory.md 内容版本',
+    status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT '状态枚举：PENDING/APPLYING/APPLIED',
+    proposed_by BIGINT NOT NULL COMMENT '提出候选的真实用户ID',
+    approved_by BIGINT NULL COMMENT '审批的管理员用户ID',
+    approved_message_id BIGINT NULL COMMENT '审批回复消息ID',
+    applied_version VARCHAR(64) NULL COMMENT '写入后的 memory.md 内容版本',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
+    approved_at DATETIME(6) NULL COMMENT '审批完成时间（UTC）',
+    UNIQUE KEY uk_memory_proposal_run (agent_run_id),
+    KEY idx_memory_proposal_message (message_id, status),
+    CONSTRAINT fk_memory_proposal_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目记忆候选与群聊审批状态';
+
 CREATE TABLE IF NOT EXISTS workspaces (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, project_id BIGINT NOT NULL,
     is_default TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否项目默认 Workspace；每个项目唯一',

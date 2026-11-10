@@ -2,17 +2,15 @@ package qg.qgent.memory.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import qg.qgent.common.web.ApiResponse;
 import qg.qgent.common.web.RequestIdFilter;
 import qg.qgent.memory.dto.ProjectMemoryResponse;
-import qg.qgent.memory.dto.ProjectMemoryUpdateRequest;
 import qg.qgent.memory.service.ProjectMemoryService;
 
-/** 项目长期记忆接口，正文存放在项目目录的 memory.md。 */
+/** 项目长期记忆读取接口，正文存放在项目目录的 memory.md；更新只在群聊中审批后生效。 */
 @RestController
 @RequestMapping("/api/v1")
 public class MemoryController {
@@ -28,14 +26,6 @@ public class MemoryController {
     public ApiResponse<ProjectMemoryResponse> get(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
                                                   HttpServletRequest request) {
         return ok(memories.get(userId, projectId), request);
-    }
-
-    @Operation(summary = "保存项目长期记忆", description = "整篇替换 memory.md；version 与当前内容不一致时返回 409，避免静默覆盖。")
-    @PutMapping("/projects/{projectId}/memory")
-    public ApiResponse<ProjectMemoryResponse> save(@AuthenticationPrincipal Long userId, @PathVariable Long projectId,
-                                                   @Valid @RequestBody ProjectMemoryUpdateRequest body,
-                                                   HttpServletRequest request) {
-        return ok(memories.save(userId, projectId, body.getContent(), body.getVersion()), request);
     }
 
     private <T> ApiResponse<T> ok(T data, HttpServletRequest request) {
