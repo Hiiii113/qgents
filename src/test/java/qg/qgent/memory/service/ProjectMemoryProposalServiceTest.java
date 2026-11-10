@@ -13,6 +13,7 @@ import qg.qgent.common.web.ApiException;
 import qg.qgent.memory.dto.ProjectMemoryResponse;
 import qg.qgent.memory.entity.ProjectMemoryProposalEntity;
 import qg.qgent.memory.mapper.ProjectMemoryProposalMapper;
+import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.project.storage.ProjectDirectoryService;
 import qg.qgent.realtime.service.EventService;
@@ -26,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -43,6 +45,7 @@ class ProjectMemoryProposalServiceTest {
     private final ProjectAccessService access = mock(ProjectAccessService.class);
     private final ChatGroupMapper groups = mock(ChatGroupMapper.class);
     private final MessageMapper messages = mock(MessageMapper.class);
+    private final ProjectMapper projects = mock(ProjectMapper.class);
     private final EventService events = mock(EventService.class);
     private ProjectMemoryService memories;
     private ProjectMemoryProposalService service;
@@ -51,7 +54,7 @@ class ProjectMemoryProposalServiceTest {
     void setUp() {
         memories = new ProjectMemoryService(access, new ProjectDirectoryService(root.toString(), root.toString()),
                 events, MAX_CHARS);
-        service = new ProjectMemoryProposalService(proposals, memories, access, groups, messages);
+        service = new ProjectMemoryProposalService(proposals, memories, access, groups, messages, projects);
         when(proposals.insert(any(ProjectMemoryProposalEntity.class))).thenAnswer(invocation -> {
             invocation.getArgument(0, ProjectMemoryProposalEntity.class).setId(TestIds.next());
             return 1;
@@ -135,17 +138,21 @@ class ProjectMemoryProposalServiceTest {
         ProjectMemoryProposalEntity proposal = service.propose(member, project, group, TestIds.next(), "# 新约定");
         Long candidateMessage = TestIds.next(), approvalMessage = TestIds.next();
         proposal.setMessageId(candidateMessage);
-        when(proposals.selectPendingByMessageId(candidateMessage)).thenReturn(proposal);
+        when(proposals.selectByMessageId(candidateMessage)).thenReturn(proposal);
         when(messages.selectById(approvalMessage))
                 .thenReturn(approvalReply(approvalMessage, group, admin, candidateMessage));
-        when(proposals.claim(proposal.getId(), admin, approvalMessage)).thenReturn(1);
-        when(proposals.markApplied(any(), any())).thenReturn(1);
+        when(proposals.markApplied(any(), any(), any(), any())).thenReturn(1);
 
         ProjectMemoryResponse saved = service.approve(admin, project, group, approvalMessage);
 
         assertThat(saved.getContent()).isEqualTo("# 新约定");
         assertThat(memories.get(admin, project).getContent()).isEqualTo("# 新约定");
-        verify(proposals).markApplied(proposal.getId(), saved.getVersion());
+        verify(proposals).markApplied(proposal.getId(), admin, approvalMessage, saved.getVersion());
+        // 先锁项目行，再读候选并写记忆：不同候选的并发审批在同一项目内串行。
+        var order = inOrder(projects, messages, proposals);
+        order.verify(projects).selectByIdForUpdate(project);
+        order.verify(messages).selectById(approvalMessage);
+        order.verify(proposals).selectByMessageId(candidateMessage);
     }
 
     @Test
@@ -159,8 +166,8 @@ class ProjectMemoryProposalServiceTest {
 
         assertThat(error.code()).isEqualTo("PROJECT_ADMIN_REQUIRED");
         assertThat(memories.get(member, project).getContent()).isEmpty();
-        verify(proposals, never()).claim(any(), any(), any());
-        verify(proposals, never()).markApplied(any(), any());
+        verify(projects, never()).selectByIdForUpdate(any());
+        verify(proposals, never()).markApplied(any(), any(), any(), any());
     }
 
     @Test
@@ -174,7 +181,7 @@ class ProjectMemoryProposalServiceTest {
 
         assertThat(error.code()).isEqualTo("MEMORY_PROPOSAL_NOT_FOUND");
         assertThat(memories.get(admin, project).getContent()).isEmpty();
-        verify(proposals, never()).claim(any(), any(), any());
+        verify(proposals, never()).markApplied(any(), any(), any(), any());
     }
 
     @Test
@@ -182,27 +189,21 @@ class ProjectMemoryProposalServiceTest {
         Long admin = TestIds.next(), project = TestIds.next(), group = TestIds.next(), approvalMessage = TestIds.next();
         when(messages.selectById(approvalMessage))
                 .thenReturn(approvalReply(approvalMessage, group, admin, TestIds.next()));
-        when(proposals.selectPendingByMessageId(any())).thenReturn(null);
+        when(proposals.selectByMessageId(any())).thenReturn(null);
 
         ApiException error = assertThrows(ApiException.class,
                 () -> service.approve(admin, project, group, approvalMessage));
 
         assertThat(error.code()).isEqualTo("MEMORY_PROPOSAL_NOT_FOUND");
-        verify(proposals, never()).claim(any(), any(), any());
+        verify(proposals, never()).markApplied(any(), any(), any(), any());
     }
 
     @Test
     void candidateFromAnotherGroupCannotBeApprovedHere() {
         Long admin = TestIds.next(), project = TestIds.next(), group = TestIds.next(), otherGroup = TestIds.next();
         Long candidateMessage = TestIds.next(), approvalMessage = TestIds.next();
-        ProjectMemoryProposalEntity proposal = new ProjectMemoryProposalEntity();
-        proposal.setId(TestIds.next());
-        proposal.setProjectId(project);
-        proposal.setGroupId(otherGroup);
-        proposal.setContent("# 别的群的结论");
-        proposal.setBaseVersion("v");
-        proposal.setStatus("PENDING");
-        when(proposals.selectPendingByMessageId(candidateMessage)).thenReturn(proposal);
+        ProjectMemoryProposalEntity proposal = pendingProposal(project, otherGroup, "# 别的群的结论");
+        when(proposals.selectByMessageId(candidateMessage)).thenReturn(proposal);
         when(messages.selectById(approvalMessage))
                 .thenReturn(approvalReply(approvalMessage, group, admin, candidateMessage));
 
@@ -211,27 +212,25 @@ class ProjectMemoryProposalServiceTest {
 
         assertThat(error.code()).isEqualTo("MEMORY_PROPOSAL_NOT_FOUND");
         assertThat(memories.get(admin, project).getContent()).isEmpty();
-        verify(proposals, never()).markApplied(any(), any());
+        verify(proposals, never()).markApplied(any(), any(), any(), any());
     }
 
     @Test
     void repeatedApprovalIsRejectedWithoutSecondWrite() {
-        Long member = TestIds.next(), admin = TestIds.next(), project = TestIds.next(), group = TestIds.next();
-        when(groups.selectById(group)).thenReturn(group(group, project, true));
-        ProjectMemoryProposalEntity proposal = service.propose(member, project, group, TestIds.next(), "# 新约定");
+        Long admin = TestIds.next(), project = TestIds.next(), group = TestIds.next();
         Long candidateMessage = TestIds.next(), approvalMessage = TestIds.next();
-        proposal.setMessageId(candidateMessage);
-        when(proposals.selectPendingByMessageId(candidateMessage)).thenReturn(proposal);
+        ProjectMemoryProposalEntity proposal = pendingProposal(project, group, "# 新约定");
+        proposal.setStatus("APPLIED");
+        when(proposals.selectByMessageId(candidateMessage)).thenReturn(proposal);
         when(messages.selectById(approvalMessage))
                 .thenReturn(approvalReply(approvalMessage, group, admin, candidateMessage));
-        when(proposals.claim(proposal.getId(), admin, approvalMessage)).thenReturn(0);
 
         ApiException error = assertThrows(ApiException.class,
                 () -> service.approve(admin, project, group, approvalMessage));
 
         assertThat(error.code()).isEqualTo("MEMORY_PROPOSAL_NOT_PENDING");
         assertThat(memories.get(admin, project).getContent()).isEmpty();
-        verify(proposals, never()).markApplied(any(), any());
+        verify(proposals, never()).markApplied(any(), any(), any(), any());
     }
 
     @Test
@@ -243,17 +242,16 @@ class ProjectMemoryProposalServiceTest {
         proposal.setMessageId(candidateMessage);
         // 候选提出后另一条已审批的更新先落地：旧候选不能覆盖新内容。
         memories.applyApproved(project, "# 后写入的约定", memories.get(admin, project).getVersion());
-        when(proposals.selectPendingByMessageId(candidateMessage)).thenReturn(proposal);
+        when(proposals.selectByMessageId(candidateMessage)).thenReturn(proposal);
         when(messages.selectById(approvalMessage))
                 .thenReturn(approvalReply(approvalMessage, group, admin, candidateMessage));
-        when(proposals.claim(proposal.getId(), admin, approvalMessage)).thenReturn(1);
 
         ApiException error = assertThrows(ApiException.class,
                 () -> service.approve(admin, project, group, approvalMessage));
 
         assertThat(error.code()).isEqualTo("MEMORY_VERSION_CONFLICT");
         assertThat(memories.get(admin, project).getContent()).isEqualTo("# 后写入的约定");
-        verify(proposals, never()).markApplied(any(), any());
+        verify(proposals, never()).markApplied(any(), any(), any(), any());
     }
 
     @Test
@@ -263,10 +261,9 @@ class ProjectMemoryProposalServiceTest {
         ProjectMemoryProposalEntity proposal = service.propose(member, project, group, TestIds.next(), "# 新约定");
         Long candidateMessage = TestIds.next(), approvalMessage = TestIds.next();
         proposal.setMessageId(candidateMessage);
-        when(proposals.selectPendingByMessageId(candidateMessage)).thenReturn(proposal);
+        when(proposals.selectByMessageId(candidateMessage)).thenReturn(proposal);
         when(messages.selectById(approvalMessage))
                 .thenReturn(approvalReply(approvalMessage, group, admin, candidateMessage));
-        when(proposals.claim(proposal.getId(), admin, approvalMessage)).thenReturn(1);
         Path memoryFile = root.resolve(project.toString()).resolve("memory.md");
         Files.delete(memoryFile);
         Files.createDirectory(memoryFile);
@@ -275,7 +272,7 @@ class ProjectMemoryProposalServiceTest {
                 () -> service.approve(admin, project, group, approvalMessage));
 
         assertThat(error).isInstanceOf(IllegalStateException.class);
-        verify(proposals, never()).markApplied(any(), any());
+        verify(proposals, never()).markApplied(any(), any(), any(), any());
     }
 
     @Test
@@ -285,6 +282,17 @@ class ProjectMemoryProposalServiceTest {
         service.bindMessage(run, message);
 
         verify(proposals).bindMessage(run, message);
+    }
+
+    private ProjectMemoryProposalEntity pendingProposal(Long projectId, Long groupId, String content) {
+        ProjectMemoryProposalEntity proposal = new ProjectMemoryProposalEntity();
+        proposal.setId(TestIds.next());
+        proposal.setProjectId(projectId);
+        proposal.setGroupId(groupId);
+        proposal.setContent(content);
+        proposal.setBaseVersion("v");
+        proposal.setStatus("PENDING");
+        return proposal;
     }
 
     private ChatGroupEntity group(Long groupId, Long projectId, boolean defaultGroup) {

@@ -39,7 +39,7 @@ public class ProjectMemoryProposalEntity {
     // 提出候选时的 memory.md 内容版本。
     private String baseVersion;
 
-    // 状态枚举：PENDING/APPLYING/APPLIED。
+    // 状态枚举：PENDING/APPLIED。
     private String status;
 
     // 提出候选的真实用户 ID。

@@ -70,7 +70,7 @@ app:
     # 每个根运行同时活跃的子 Agent 数量上限。
     max-subagents: ${APP_AGENT_MAX_SUBAGENTS:8}
     context:
-      # 项目 memory.md 注入 Agent 上下文的字符上限；超过时拒绝保存。
+      # 项目 memory.md 注入 Agent 上下文的字符上限；超过时拒绝提出记忆候选。
       max-memory-chars: ${APP_AGENT_CONTEXT_MAX_MEMORY_CHARS:12000}
   # 项目持久目录根；每个项目一个子目录，存放 memory.md、共享 Git 数据和各 Workspace 工作树。
   # docker-host-root 指向同一份数据的宿主机路径，用于创建沙箱 bind mount。

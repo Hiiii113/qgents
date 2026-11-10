@@ -162,8 +162,10 @@ public class AgentChatService {
         reply.setReplyToId(event.messageId());
         reply.setClientMessageId("qgent-reply:" + root.getId());
         MessageResponse sent = messages.sendAsAgent(event.groupId(), reply);
-        // 审批必须引用这条回复消息，候选因此与真实来源消息绑定。
-        proposals.bindMessage(root.getId(), Long.valueOf(sent.getId()));
+        // 只有成功运行才把候选绑定到回复：失败或取消的回复正文不是候选内容，不能拿来审批。
+        if (status == RunStatus.SUCCEEDED) {
+            proposals.bindMessage(root.getId(), Long.valueOf(sent.getId()));
+        }
     }
 
     private String systemPrompt(boolean child) {

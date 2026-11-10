@@ -168,6 +168,21 @@ class AgentChatServiceTest {
     }
 
     @Test
+    void failedRunDoesNotExposeItsMemoryCandidateForApproval() {
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
+        ChatModel model = model();
+        // 空白回复让本次运行失败：失败回复的正文不是候选内容，不能拿来审批。
+        when(model.call(any(Prompt.class))).thenReturn(reply(""));
+        var fixture = fixture(model, actor, project, group, message, childExecutor);
+
+        fixture.service().replyToMention(fixture.event(), "补充一条项目约定");
+
+        verify(fixture.messages()).sendAsAgent(eq(group), argThat(request ->
+                "模型返回了空回复".equals(request.getContent().get("text"))));
+        verify(fixture.proposals(), never()).bindMessage(any(), any());
+    }
+
+    @Test
     void resumesTheSameChildConversationWithItsEarlierMessages() throws Exception {
         Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next(), message = TestIds.next();
         ChatModel model = model();

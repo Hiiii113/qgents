@@ -225,15 +225,15 @@ CREATE TABLE IF NOT EXISTS project_memory_proposals (
     message_id BIGINT NULL COMMENT '候选所在的 Agent 回复消息；审批必须回复这条消息',
     content MEDIUMTEXT NOT NULL COMMENT '候选 memory.md 全文',
     base_version VARCHAR(64) NOT NULL COMMENT '提出时的 memory.md 内容版本',
-    status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT '状态枚举：PENDING/APPLYING/APPLIED',
+    status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT '状态枚举：PENDING/APPLIED',
     proposed_by BIGINT NOT NULL COMMENT '提出候选的真实用户ID',
     approved_by BIGINT NULL COMMENT '审批的管理员用户ID',
     approved_message_id BIGINT NULL COMMENT '审批回复消息ID',
     applied_version VARCHAR(64) NULL COMMENT '写入后的 memory.md 内容版本',
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
-    approved_at DATETIME(6) NULL COMMENT '审批完成时间（UTC）',
+    created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
+    approved_at DATETIME (6) NULL COMMENT '审批完成时间（UTC）',
     UNIQUE KEY uk_memory_proposal_run (agent_run_id),
-    KEY idx_memory_proposal_message (message_id, status),
+    UNIQUE KEY uk_memory_proposal_message (message_id),
     CONSTRAINT fk_memory_proposal_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目记忆候选与群聊审批状态';
 
