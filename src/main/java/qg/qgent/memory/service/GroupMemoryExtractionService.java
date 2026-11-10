@@ -194,7 +194,8 @@ public class GroupMemoryExtractionService {
 
     private String sender(MessageEntity message) {
         return switch (message.getSenderType()) {
-            case "AGENT" -> "Qgent";
+            // 群里有多个 Agent，不能把发言都归给默认 Agent；与用户一样用 ID 标识说话者。
+            case "AGENT" -> "Agent " + message.getSenderAgentId();
             case "SYSTEM" -> "系统";
             default -> "用户 " + message.getAuthorUserId();
         };

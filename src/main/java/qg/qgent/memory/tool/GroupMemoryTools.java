@@ -3,7 +3,7 @@ package qg.qgent.memory.tool;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 
-import qg.qgent.common.web.ApiException;
+import qg.qgent.harness.tool.ToolErrors;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.memory.service.GroupMemoryExtractionService;
 
@@ -30,16 +30,11 @@ public class GroupMemoryTools {
         if (correction == null || correction.isBlank()) {
             return ToolResult.error("INVALID_ARGUMENT", "correction 不能为空");
         }
-        try {
+        return ToolErrors.call("GROUP_MEMORY_UNAVAILABLE", "群记忆纠错提交失败", () -> {
             memories.requestCorrection(actor, projectId, groupId, correction);
             ToolResult result = ToolResult.ok();
             result.put("message", "已提交群记忆纠错，后台提炼会在下一次更新时修正群记忆");
             return result;
-        } catch (ApiException e) {
-            return ToolResult.error(e.code(), e.getMessage());
-        } catch (RuntimeException e) {
-            return ToolResult.error("GROUP_MEMORY_UNAVAILABLE",
-                    "群记忆纠错提交失败: " + e.getClass().getSimpleName());
-        }
+        });
     }
 }

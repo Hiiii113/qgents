@@ -59,6 +59,23 @@ class MessageSentListenerTest {
     }
 
     @Test
+    void oneFailingAgentDoesNotSkipTheRemainingMentions() {
+        Long failingAgent = TestIds.next(), otherAgent = TestIds.next();
+        MessageSentEvent event = event(List.of(mention(failingAgent), mention(otherAgent)));
+        MessageEntity message = new MessageEntity();
+        message.setContent("{\"text\":\"你好\"}");
+        when(messages.selectById(event.messageId())).thenReturn(message);
+        when(messageService.agentInstruction(message)).thenReturn("你好");
+        when(groupService.groupAgentIds(event.groupId())).thenReturn(List.of(failingAgent, otherAgent));
+        doThrow(new IllegalStateException("沙箱不可用")).when(agents).replyToMention(event, failingAgent, "你好");
+
+        listener.onMessageSent(event);
+
+        // 一个 Agent 起不来不能连坐其余被提及的 Agent。
+        verify(agents).replyToMention(event, otherAgent, "你好");
+    }
+
+    @Test
     void agentOutsideTheGroupDoesNotRun() {
         Long groupAgent = TestIds.next(), foreignAgent = TestIds.next();
         MessageSentEvent event = event(List.of(mention(foreignAgent)));

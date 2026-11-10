@@ -55,6 +55,7 @@ class GroupMemoryExtractionServiceTest {
     private static final int RETRY_DELAY_MINUTES = 5;
     private static final int MAX_MESSAGES_PER_RUN = 200;
     private static final int SCAN_PAGE_SIZE = 20;
+    private static final Long AGENT_ID = 4242L;
 
     @TempDir
     Path root;
@@ -101,7 +102,9 @@ class GroupMemoryExtractionServiceTest {
         ArgumentCaptor<Prompt> prompt = ArgumentCaptor.forClass(Prompt.class);
         verify(model).call(prompt.capture());
         assertThat(prompt.getValue().getInstructions()).anySatisfy(instruction ->
-                assertThat(instruction.getText()).contains("先做邮箱登录", "用户 7：同意", "Qgent：结论：邮箱登录"));
+                // 群里有多个 Agent：发言按发送者 ID 标注，不能一律当成默认 Agent。
+                assertThat(instruction.getText()).contains("先做邮箱登录", "用户 7：同意",
+                        "Agent " + AGENT_ID + "：结论：邮箱登录").doesNotContain("Qgent"));
     }
 
     @Test
@@ -513,6 +516,7 @@ class GroupMemoryExtractionServiceTest {
         message.setSequenceNo(sequence);
         message.setAuthorUserId(authorUserId);
         message.setSenderType(authorUserId == null ? "AGENT" : "USER");
+        message.setSenderAgentId(authorUserId == null ? AGENT_ID : null);
         message.setMessageType("TEXT");
         message.setContent(text);
         return message;
