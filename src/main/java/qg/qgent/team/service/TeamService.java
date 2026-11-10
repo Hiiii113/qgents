@@ -92,7 +92,7 @@ public class TeamService {
         List<TeamMembershipView> rows = teamMapper.selectMembershipPage(actor, anchor, pageSize + 1);
         // 转成指定的分页响应，memberCount/description/createdAt 来自列表聚合查询
         return KeysetPagination.keysetPage(rows, pageSize, scope, TeamMembershipView::getId,
-                row -> membershipResponse(row, actor));
+                row -> TeamViews.response(row, actor));
     }
 
     /** 获取团队详情 */
@@ -415,23 +415,8 @@ public class TeamService {
         return team;
     }
 
-    private TeamResponse membershipResponse(TeamMembershipView row, Long actor) {
-        TeamResponse response = new TeamResponse(row.getId().toString(), row.getName(),
-                ProjectAccessService.effectiveTeamRole(row.getOwnerUserId(), actor, row.getRole()));
-        response.setMemberCount(row.getMemberCount());
-        response.setDescription(row.getDescription());
-        response.setAvatarUrl(row.getAvatarUrl());
-        response.setCreatedAt(row.getCreatedAt());
-        return response;
-    }
-
     private TeamResponse team(TeamEntity team, String role) {
-        TeamResponse response = new TeamResponse(team.getId().toString(), team.getName(), role);
-        response.setMemberCount(memberCount(team.getId()));
-        response.setDescription(team.getDescription());
-        response.setAvatarUrl(team.getAvatarUrl());
-        response.setCreatedAt(team.getCreatedAt());
-        return response;
+        return TeamViews.response(team, role, memberCount(team.getId()));
     }
 
     private int memberCount(Long teamId) {

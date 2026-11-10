@@ -4,8 +4,10 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.*;
 
 import qg.qgent.team.entity.TeamMemberEntity;
+import qg.qgent.team.mapper.view.TeamMemberCountRow;
 import qg.qgent.team.mapper.view.TeamMemberView;
 
+import java.util.Collection;
 import java.util.List;
 
 @Mapper
@@ -48,5 +50,13 @@ public interface TeamMemberMapper extends BaseMapper<TeamMemberEntity> {
     @Select("SELECT team_id, user_id, role FROM team_members WHERE user_id = #{userId} ORDER BY team_id")
     @ResultMap("member")
     List<TeamMemberEntity> selectByUserId(Long userId);
+
+    /** 一次取回多个团队的成员数，避免逐团队统计。 */
+    @Select({"<script>",
+            "SELECT team_id, COUNT(*) AS member_count FROM team_members",
+            "WHERE team_id IN <foreach collection='teamIds' item='id' open='(' separator=',' close=')'>#{id}</foreach>",
+            "GROUP BY team_id",
+            "</script>"})
+    List<TeamMemberCountRow> countByTeamIds(@Param("teamIds") Collection<Long> teamIds);
 
 }

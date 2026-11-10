@@ -17,11 +17,14 @@ import qg.qgent.common.web.ApiException;
 import qg.qgent.project.dto.ProjectResponse;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.service.ProjectAccessService;
+import qg.qgent.project.service.ProjectViews;
 import qg.qgent.team.dto.TeamResponse;
 import qg.qgent.team.entity.TeamEntity;
 import qg.qgent.team.entity.TeamMemberEntity;
 import qg.qgent.team.mapper.TeamMapper;
 import qg.qgent.team.mapper.TeamMemberMapper;
+import qg.qgent.team.mapper.view.TeamMemberCountRow;
+import qg.qgent.team.service.TeamViews;
 import qg.qgent.user.dto.CurrentUserResponse;
 import qg.qgent.user.dto.UserResponse;
 import qg.qgent.user.dto.UserUpdateRequest;
@@ -290,34 +293,27 @@ public class AuthService {
                         members.stream().map(TeamMemberEntity::getTeamId).toList()).stream()
                 .filter(team -> "ACTIVE".equals(team.getStatus()))
                 .collect(Collectors.toMap(TeamEntity::getId, Function.identity()));
+        Map<Long, Integer> memberCounts = memberCounts(teams.keySet());
         return members.stream().filter(member -> teams.containsKey(member.getTeamId()))
                 .map(member -> {
                     TeamEntity team = teams.get(member.getTeamId());
                     String role = ProjectAccessService.effectiveTeamRole(team.getOwnerUserId(), userId,
                             member.getRole());
-                    TeamResponse response = new TeamResponse(team.getId().toString(), team.getName(), role);
-                    response.setDescription(team.getDescription());
-                    response.setAvatarUrl(team.getAvatarUrl());
-                    response.setCreatedAt(team.getCreatedAt());
-                    response.setMemberCount(memberCount(team.getId()));
-                    return response;
+                    return TeamViews.response(team, role, memberCounts.getOrDefault(team.getId(), 0));
                 }).toList();
     }
 
-    private int memberCount(Long teamId) {
-        Long count = teamMemberMapper.selectCount(Wrappers.<TeamMemberEntity>lambdaQuery()
-                .eq(TeamMemberEntity::getTeamId, teamId));
-        return count == null ? 0 : count.intValue();
+    /** 一次查询取回所有团队的人数；逐团队 COUNT 会随团队数量线性增长。 */
+    private Map<Long, Integer> memberCounts(Set<Long> teamIds) {
+        if (teamIds.isEmpty()) return Map.of();
+        return teamMemberMapper.countByTeamIds(teamIds).stream()
+                .collect(Collectors.toMap(TeamMemberCountRow::getTeamId, TeamMemberCountRow::getMemberCount));
     }
 
     private List<ProjectResponse> projects(Long userId) {
         // 单次查询合并项目成员权限与 canonical Team Owner 兜底，并由 SQL 去重。
         // memberCount 由项目列表/详情接口补齐，此处不额外统计（前端缺失时隐藏）。
-        return projectMapper.selectAccessibleByUser(userId).stream()
-                .map(project -> new ProjectResponse(project.getId().toString(), project.getTeamId().toString(),
-                        project.getName(), project.getDescription(), project.getRole(), project.getStatus(),
-                        null))
-                .toList();
+        return projectMapper.selectAccessibleByUser(userId).stream().map(ProjectViews::response).toList();
     }
 
     private UserResponse view(UserEntity user) {

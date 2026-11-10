@@ -13,6 +13,7 @@ import qg.qgent.team.entity.TeamEntity;
 import qg.qgent.team.entity.TeamMemberEntity;
 import qg.qgent.team.mapper.TeamMapper;
 import qg.qgent.team.mapper.TeamMemberMapper;
+import qg.qgent.team.mapper.view.TeamMemberCountRow;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
 import java.util.List;
@@ -69,6 +70,20 @@ class AuthServiceCurrentTeamTest {
     }
 
     @Test
+    void countsTeamMembersInOneQuery() {
+        available(firstId, lastId);
+        when(members.countByTeamIds(anyCollection()))
+                .thenReturn(List.of(counted(firstId, 2), counted(lastId, 5)));
+
+        var teams = service.me(userId).getTeams();
+
+        assertEquals(2, teams.getFirst().getMemberCount());
+        assertEquals(5, teams.get(1).getMemberCount());
+        verify(members).countByTeamIds(anyCollection());
+        verify(members, never()).selectCount(any());
+    }
+
+    @Test
     void savesSelectedTeamForMembers() {
         TeamEntity team = team(firstId);
         when(teams.selectById(firstId)).thenReturn(team);
@@ -97,6 +112,14 @@ class AuthServiceCurrentTeamTest {
             return member;
         }).toList());
         when(teams.selectBatchIds(anyCollection())).thenReturn(java.util.Arrays.stream(ids).map(this::team).toList());
+        when(members.countByTeamIds(anyCollection())).thenReturn(List.of());
+    }
+
+    private TeamMemberCountRow counted(Long teamId, int count) {
+        TeamMemberCountRow row = new TeamMemberCountRow();
+        row.setTeamId(teamId);
+        row.setMemberCount(count);
+        return row;
     }
 
     private TeamEntity team(Long id) {

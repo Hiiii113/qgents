@@ -75,7 +75,7 @@ public class ProjectService {
         // 项目创建事务提交后保存事件，供团队最近动态展示。
         eventService.publish(project.getId(), null, "project.created", project.getId().toString(),
                 Map.of("projectId", id(project.getId()), "name", project.getName(), "createdBy", id(actor)));
-        return response(project, "PROJECT_ADMIN");
+        return ProjectViews.response(project, "PROJECT_ADMIN", memberMapper.countMembers(project.getId()));
     }
 
     public PageSlice<ProjectResponse> list(Long actor, Long teamId, String cursor, Integer limit) {
@@ -88,12 +88,13 @@ public class ProjectService {
         List<ProjectMembershipView> rows = projectMapper.selectAccessiblePage(teamId, actor, teamOwner, anchor,
                 size + 1);
         return KeysetPagination.keysetPage(rows, size, scope, ProjectMembershipView::getId,
-                this::response);
+                ProjectViews::response);
     }
 
     public ProjectResponse get(Long actor, Long projectId) {
         ProjectEntity project = requireActiveProject(projectId);
-        return response(project, access.requireAccess(project, actor));
+        return ProjectViews.response(project, access.requireAccess(project, actor),
+                memberMapper.countMembers(project.getId()));
     }
 
     @Transactional
@@ -124,7 +125,7 @@ public class ProjectService {
             avatarStorage.deleteReplacedAfterCommit("projects", projectId, previousAvatar, null);
         }
         projectMapper.updateById(project);
-        return response(project, "PROJECT_ADMIN");
+        return ProjectViews.response(project, "PROJECT_ADMIN", memberMapper.countMembers(project.getId()));
     }
 
     /** 签发项目头像直传凭证；权限与修改项目资料一致。 */
@@ -237,7 +238,7 @@ public class ProjectService {
             project.setStatus(targetStatus);
             projectMapper.updateById(project);
         }
-        return response(project, "PROJECT_ADMIN");
+        return ProjectViews.response(project, "PROJECT_ADMIN", memberMapper.countMembers(project.getId()));
     }
 
     private void insertMember(Long projectId, Long userId, String role) {
@@ -314,21 +315,6 @@ public class ProjectService {
         if (!"ACTIVE".equals(project.getStatus())) {
             throw conflict("PROJECT_ARCHIVED", "归档项目不可执行该操作");
         }
-    }
-
-    private ProjectResponse response(ProjectEntity project, String role) {
-        ProjectResponse r = new ProjectResponse(project.getId().toString(), project.getTeamId().toString(),
-                project.getName(), project.getDescription(), role, project.getStatus(),
-                memberMapper.countMembers(project.getId()));
-        r.setAvatarUrl(project.getAvatarUrl());
-        return r;
-    }
-
-    private ProjectResponse response(ProjectMembershipView row) {
-        ProjectResponse r = new ProjectResponse(row.getId().toString(), row.getTeamId().toString(), row.getName(),
-                row.getDescription(), row.getRole(), row.getStatus(), row.getMemberCount());
-        r.setAvatarUrl(row.getAvatarUrl());
-        return r;
     }
 
     private ApiException invalid(String message) {
