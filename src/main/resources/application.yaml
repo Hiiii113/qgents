@@ -90,6 +90,16 @@ app:
       max-messages-per-run: ${APP_MEMORY_GROUP_MAX_MESSAGES_PER_RUN:200}
       # 扫描按键游标翻页读取，每页群数；每轮覆盖全部群，不会漏掉新活动的群。
       scan-page-size: ${APP_MEMORY_GROUP_SCAN_PAGE_SIZE:20}
+    # 项目记忆候选发现：后台按周期从项目默认群的群记忆里找项目背景和决策，管理员审批后才写入。
+    discovery:
+      # 扫描周期，支持 s/m/h 时长写法。
+      scan-interval: ${APP_MEMORY_DISCOVERY_SCAN_INTERVAL:1h}
+      # 同一来源群两次发现之间的最短间隔（分钟）。
+      interval-minutes: ${APP_MEMORY_DISCOVERY_INTERVAL_MINUTES:1440}
+      # 发现失败后再次尝试的最短间隔（分钟）。
+      retry-delay-minutes: ${APP_MEMORY_DISCOVERY_RETRY_DELAY_MINUTES:60}
+      # 单次扫描最多处理的来源群数。
+      batch-size: ${APP_MEMORY_DISCOVERY_BATCH_SIZE:10}
   # 项目持久目录根；每个项目一个子目录，存放 memory.md、groups/ 下的群记忆、共享 Git 数据和各 Workspace 工作树。
   # docker-host-root 指向同一份数据的宿主机路径，用于创建沙箱 bind mount。
   project:

@@ -9,7 +9,7 @@ import qg.qgent.common.config.MdcTaskDecorator;
 
 /** 群记忆提炼线程池与配置；提炼串行执行且不使用聊天回复线程池。 */
 @Configuration
-@EnableConfigurationProperties(GroupMemoryProperties.class)
+@EnableConfigurationProperties({GroupMemoryProperties.class, ProjectMemoryDiscoveryProperties.class})
 public class GroupMemoryConfiguration {
     private static final int QUEUE_CAPACITY = 200;
 

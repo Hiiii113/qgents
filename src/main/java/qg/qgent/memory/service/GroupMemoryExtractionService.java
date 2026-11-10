@@ -171,7 +171,7 @@ public class GroupMemoryExtractionService {
         if (text == null || text.isBlank()) {
             throw new IllegalStateException("模型没有返回群记忆正文");
         }
-        return withoutCodeFence(text);
+        return MemoryText.withoutCodeFence(text);
     }
 
     private String systemPrompt() {
@@ -199,18 +199,6 @@ public class GroupMemoryExtractionService {
             case "SYSTEM" -> "系统";
             default -> "用户 " + message.getAuthorUserId();
         };
-    }
-
-    /** 模型偶尔仍会套代码围栏，写入前去掉，避免群记忆正文被围栏污染。 */
-    private String withoutCodeFence(String text) {
-        String trimmed = text.strip();
-        if (!trimmed.startsWith("```")) {
-            return trimmed;
-        }
-        int firstLineEnd = trimmed.indexOf('\n');
-        int lastFence = trimmed.lastIndexOf("```");
-        return firstLineEnd < 0 || lastFence <= firstLineEnd ? trimmed
-                : trimmed.substring(firstLineEnd + 1, lastFence).strip();
     }
 
     private String reason(RuntimeException exception) {

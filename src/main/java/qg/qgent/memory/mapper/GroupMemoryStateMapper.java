@@ -83,4 +83,37 @@ public interface GroupMemoryStateMapper extends BaseMapper<GroupMemoryStateEntit
     int recordFailure(@Param("groupId") Long groupId, @Param("claimToken") LocalDateTime claimToken,
                       @Param("error") String error, @Param("nextAttemptAt") LocalDateTime nextAttemptAt,
                       @Param("now") LocalDateTime now);
+
+    /**
+     * 项目记忆发现的到期群：只取项目默认群。受限群内容不进模型、不发候选消息、不写入项目记忆，
+     * 因此这里先用 SQL 排除，不依赖提示词或后续校验。
+     */
+    @Select("SELECT g.* FROM group_memory_state g JOIN chat_groups cg ON cg.id = g.group_id "
+            + "WHERE cg.default_group = 1 "
+            + "AND (g.discovery_next_attempt_at IS NULL OR g.discovery_next_attempt_at <= #{now}) "
+            + "ORDER BY g.group_id LIMIT #{limit}")
+    List<GroupMemoryStateEntity> selectDiscoveryCandidates(@Param("now") LocalDateTime now,
+                                                          @Param("limit") int limit);
+
+    /** 领取一轮项目记忆发现并把下次发现时间推到 nextSlot；返回 0 说明其他任务已领取或未到周期。 */
+    @Update("UPDATE group_memory_state SET discovery_next_attempt_at = #{nextSlot}, updated_at = #{now} "
+            + "WHERE group_id = #{groupId} "
+            + "AND (discovery_next_attempt_at IS NULL OR discovery_next_attempt_at <= #{now})")
+    int claimDiscovery(@Param("groupId") Long groupId, @Param("nextSlot") LocalDateTime nextSlot,
+                       @Param("now") LocalDateTime now);
+
+    /** 发现完成（含“没有候选”）：记录已处理的群记忆版本，清零失败次数；同一版本不再重复发现。 */
+    @Update("UPDATE group_memory_state SET discovered_version = #{version}, discovery_attempt_count = 0, "
+            + "discovery_next_attempt_at = #{nextSlot}, discovery_error = NULL, updated_at = #{now} "
+            + "WHERE group_id = #{groupId}")
+    int finishDiscovery(@Param("groupId") Long groupId, @Param("version") String version,
+                        @Param("nextSlot") LocalDateTime nextSlot, @Param("now") LocalDateTime now);
+
+    /** 发现失败：不推进 discovered_version，记录失败摘要并安排重试。 */
+    @Update("UPDATE group_memory_state SET discovery_attempt_count = discovery_attempt_count + 1, "
+            + "discovery_next_attempt_at = #{nextAttemptAt}, discovery_error = #{error}, updated_at = #{now} "
+            + "WHERE group_id = #{groupId}")
+    int recordDiscoveryFailure(@Param("groupId") Long groupId, @Param("error") String error,
+                               @Param("nextAttemptAt") LocalDateTime nextAttemptAt,
+                               @Param("now") LocalDateTime now);
 }
