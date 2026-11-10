@@ -27,8 +27,13 @@ public interface AgentMapper extends BaseMapper<AgentEntity> {
     @Select("SELECT * FROM agents WHERE project_id = #{projectId} AND status = 'PENDING' ORDER BY created_at, id")
     List<AgentEntity> selectPendingByProject(@Param("projectId") Long projectId);
 
-    /** 计入数量上限的 Agent：待审批申请也算，被拒绝的申请释放名额。 */
-    @Select("SELECT COUNT(*) FROM agents WHERE project_id = #{projectId} AND status <> 'REJECTED'")
+    /**
+     * 计入数量上限的 Agent：待审批申请也算，被拒绝的申请释放名额。
+     * <p>
+     * 加锁读：调用方在项目行锁内计数，但事务此前已做过普通读，快照可能落后于刚提交的申请，
+     * 只有 FOR UPDATE 才能读到最新已提交行并锁住该项目的插入范围。
+     */
+    @Select("SELECT COUNT(*) FROM agents WHERE project_id = #{projectId} AND status <> 'REJECTED' FOR UPDATE")
     int countCountedByProject(@Param("projectId") Long projectId);
 
     /** 审批通过；只在仍待审批时生效，重复审批得到 0。 */
@@ -41,8 +46,13 @@ public interface AgentMapper extends BaseMapper<AgentEntity> {
             + "WHERE id = #{id} AND status = 'PENDING'")
     int reject(@Param("id") Long id, @Param("approvedBy") Long approvedBy);
 
-    /** 把申请绑定到公布它的 Agent 回复消息；审批回复必须指向这条消息。 */
+    /**
+     * 把申请绑定到最近一次公布它的 Agent 回复消息；审批回复必须指向这条最新公布的回复。
+     * <p>
+     * 只接受更晚的消息 ID：并发的旧运行晚结束时不会把绑定退回更早的公布消息。
+     */
     @Update("UPDATE agents SET announced_message_id = #{messageId} "
-            + "WHERE id = #{id} AND status = 'PENDING' AND announced_message_id IS NULL")
+            + "WHERE id = #{id} AND status = 'PENDING' "
+            + "AND (announced_message_id IS NULL OR announced_message_id < #{messageId})")
     int bindAnnouncement(@Param("id") Long id, @Param("messageId") Long messageId);
 }
