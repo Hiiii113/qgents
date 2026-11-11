@@ -30,8 +30,6 @@ import qg.qgent.user.mapper.UserGroupPreferenceMapper;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -40,8 +38,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * 跨群读取其他群的记忆和聊天记录：发起用户与被调用 Agent 都必须属于来源群，
- * 来源群受众还必须覆盖回答所在的目的群；任何一条不满足都只返回不可访问。
+ * 跨群读取其他群的记忆和聊天记录：发起用户与被调用 Agent 都必须属于来源群；
+ * 目的群有哪些成员不影响读取，被拒绝时把是哪一侧不在群里告诉模型。
  */
 class CrossGroupToolsTest {
 
@@ -60,7 +58,6 @@ class CrossGroupToolsTest {
     private ChatHistoryService history;
     private GroupMemoryService groupMemories;
     private CrossGroupAccessService crossGroup;
-    private final Set<Long> disclosed = ConcurrentHashMap.newKeySet();
 
     private final Long projectId = TestIds.next();
     private final Long defaultGroupId = TestIds.next();
@@ -88,7 +85,7 @@ class CrossGroupToolsTest {
     }
 
     @Test
-    void readsAnotherGroupsMemoryAndHistoryWhenThisGroupsMembersAllHaveAccess() {
+    void readsAnotherGroupsMemoryAndHistoryWhenTheAskingUserAndAgentAreBothMembers() {
         groupMemories.write(projectId, defaultGroupId, "# 后端群结论：先做邮箱登录");
         when(messages.searchByQuery(projectId, List.of(defaultGroupId), "登录", 10))
                 .thenReturn(List.of(message(defaultGroupId, "昨天完成登录联调")));
@@ -102,7 +99,6 @@ class CrossGroupToolsTest {
         assertThat((List<?>) found.get("messages")).singleElement().satisfies(item ->
                 assertThat((Map<String, Object>) item).containsEntry("senderType", "USER")
                         .containsEntry("text", "昨天完成登录联调"));
-        assertThat(disclosed).containsExactly(defaultGroupId);
     }
 
     @Test
@@ -113,75 +109,58 @@ class CrossGroupToolsTest {
         stored.setReplyToMessageId(TestIds.next());
         when(messages.selectById(messageId)).thenReturn(stored);
 
-        ContextMessage read = tools(actor, restrictedGroupId, agentId)
+        Map<String, Object> result = tools(actor, restrictedGroupId, agentId)
                 .readOtherGroupChatMessage(defaultGroupId.toString(), messageId.toString());
 
+        assertThat(result).containsEntry("ok", true).containsEntry("group", defaultGroupId.toString());
+        ContextMessage read = (ContextMessage) result.get("message");
         assertThat(read.getId()).isEqualTo(messageId.toString());
         assertThat(read.getText()).isEqualTo("需求：本周完成登录联调");
         assertThat(read.getReplyToId()).isEqualTo(stored.getReplyToMessageId().toString());
-        assertThat(disclosed).containsExactly(defaultGroupId);
     }
 
+    /** 提问者与 Agent 都在受限群时，把它问到成员更多的目的群里也允许；泄露风险由提问者自己负责。 */
     @Test
-    void defaultGroupCannotReadARestrictedGroupEvenWhenBothUserAndAgentAreMembers() {
-        groupMemories.write(projectId, restrictedGroupId, "# 受限群内部计划");
-        CrossGroupTools tools = tools(actor, defaultGroupId, agentId);
-
-        ApiException denied = assertThrows(ApiException.class,
-                () -> tools.readOtherGroupMemory(restrictedGroupId.toString()));
-        ApiException searchDenied = assertThrows(ApiException.class,
-                () -> tools.searchOtherGroupChatHistory(restrictedGroupId.toString(), "计划", null));
-
-        assertThat(denied.code()).isEqualTo("GROUP_NOT_ACCESSIBLE");
-        assertThat(denied.getMessage()).doesNotContain("受限群内部计划");
-        assertThat(searchDenied.code()).isEqualTo("GROUP_NOT_ACCESSIBLE");
-        assertThat(disclosed).isEmpty();
-    }
-
-    @Test
-    void restrictedSourceIsNotReadableIntoAGroupWithMoreMembers() {
-        Long widerGroupId = TestIds.next();
-        group(widerGroupId, projectId, false, "有更多成员的群");
-        when(groupUsers.selectUserIds(widerGroupId)).thenReturn(List.of(actor, outsider));
+    void defaultGroupCanReadARestrictedGroupWhenTheAskingUserAndAgentAreBothMembers() {
         groupMemories.write(projectId, restrictedGroupId, "# 受限群内部计划");
 
-        ApiException denied = assertThrows(ApiException.class, () -> tools(actor, widerGroupId, agentId)
-                .readOtherGroupMemory(restrictedGroupId.toString()));
+        Map<String, Object> result = tools(actor, defaultGroupId, agentId)
+                .readOtherGroupMemory(restrictedGroupId.toString());
 
-        assertThat(denied.code()).isEqualTo("GROUP_NOT_ACCESSIBLE");
-        assertThat(disclosed).isEmpty();
+        assertThat(result).containsEntry("ok", true).containsEntry("memory", "# 受限群内部计划");
     }
 
     @Test
-    void userOutsideTheSourceGroupCannotReadIt() {
+    void userOutsideTheSourceGroupIsToldTheyAreNotInThatGroup() {
         groupMemories.write(projectId, restrictedGroupId, "# 受限群内部计划");
 
-        ApiException denied = assertThrows(ApiException.class, () -> tools(outsider, restrictedGroupId, agentId)
-                .readOtherGroupMemory(restrictedGroupId.toString()));
+        Map<String, Object> result = tools(outsider, restrictedGroupId, agentId)
+                .readOtherGroupMemory(restrictedGroupId.toString());
 
-        assertThat(denied.code()).isEqualTo("GROUP_NOT_ACCESSIBLE");
-        assertThat(disclosed).isEmpty();
+        assertThat(result).containsEntry("ok", false).containsEntry("errorCode", "REQUESTER_NOT_IN_GROUP")
+                .doesNotContainValue("# 受限群内部计划");
+        assertThat((String) result.get("error")).contains("你不在那个群聊");
     }
 
     @Test
-    void agentOutsideTheSourceGroupCannotReadIt() {
-        ApiException denied = assertThrows(ApiException.class, () -> tools(actor, restrictedGroupId, otherAgentId)
-                .readOtherGroupMemory(restrictedGroupId.toString()));
+    void agentOutsideTheSourceGroupIsToldItIsNotInThatGroup() {
+        Map<String, Object> result = tools(actor, restrictedGroupId, otherAgentId)
+                .readOtherGroupMemory(restrictedGroupId.toString());
 
-        assertThat(denied.code()).isEqualTo("GROUP_NOT_ACCESSIBLE");
-        assertThat(disclosed).isEmpty();
+        assertThat(result).containsEntry("ok", false).containsEntry("errorCode", "AGENT_NOT_IN_GROUP");
+        assertThat((String) result.get("error")).contains("我不在那个群");
     }
 
     @Test
-    void groupFromAnotherProjectIsNotAccessible() {
+    void groupFromAnotherProjectIsTreatedAsUserNotInThatGroup() {
         Long foreignProject = TestIds.next();
         Long foreignGroupId = TestIds.next();
         group(foreignGroupId, foreignProject, false, "别的项目的群");
 
-        ApiException denied = assertThrows(ApiException.class, () -> tools(actor, restrictedGroupId, agentId)
-                .readOtherGroupMemory(foreignGroupId.toString()));
+        Map<String, Object> result = tools(actor, restrictedGroupId, agentId)
+                .readOtherGroupMemory(foreignGroupId.toString());
 
-        assertThat(denied.code()).isEqualTo("GROUP_NOT_ACCESSIBLE");
+        assertThat(result).containsEntry("ok", false).containsEntry("errorCode", "REQUESTER_NOT_IN_GROUP");
     }
 
     @Test
@@ -192,9 +171,8 @@ class CrossGroupToolsTest {
 
         when(groupUsers.selectUserIds(restrictedGroupId)).thenReturn(List.of());
 
-        ApiException denied = assertThrows(ApiException.class,
-                () -> tools.readOtherGroupMemory(restrictedGroupId.toString()));
-        assertThat(denied.code()).isEqualTo("GROUP_NOT_ACCESSIBLE");
+        Map<String, Object> result = tools.readOtherGroupMemory(restrictedGroupId.toString());
+        assertThat(result).containsEntry("ok", false).containsEntry("errorCode", "REQUESTER_NOT_IN_GROUP");
     }
 
     @Test
@@ -212,18 +190,40 @@ class CrossGroupToolsTest {
     }
 
     @Test
-    void listShowsOnlyOtherGroupsThisRunCanRead() {
-        Long memberOnlyGroupId = TestIds.next();
-        ChatGroupEntity memberOnlyGroup = group(memberOnlyGroupId, projectId, false, "只加了别人的群");
-        when(groupUsers.selectUserIds(memberOnlyGroupId)).thenReturn(List.of(outsider));
-        when(groupAgents.selectAgentIds(memberOnlyGroupId)).thenReturn(List.of(agentId));
-        when(groupMapper.listByProject(projectId)).thenReturn(List.of(defaultGroup, restrictedGroup, memberOnlyGroup));
+    void listShowsEveryOtherGroupWithWhetherThisRunCanReadIt() {
+        Long agentOnlyGroupId = TestIds.next();
+        ChatGroupEntity agentOnlyGroup = group(agentOnlyGroupId, projectId, false, "只加了 Agent 的群");
+        when(groupAgents.selectGroupIds(agentId))
+                .thenReturn(List.of(defaultGroupId, restrictedGroupId, agentOnlyGroupId));
+        when(groupMapper.listByProject(projectId)).thenReturn(List.of(defaultGroup, restrictedGroup));
 
-        Map<String, Object> result = tools(actor, restrictedGroupId, agentId).listReadableGroups();
+        Map<String, Object> result = tools(outsider, defaultGroupId, agentId).listOtherGroups();
+
+        assertThat((List<?>) result.get("groups")).hasSize(2).satisfies(items -> {
+            assertThat((Map<String, Object>) items.get(0))
+                    .containsEntry("id", restrictedGroupId.toString())
+                    .containsEntry("readable", false)
+                    .containsEntry("reason", "REQUESTER_NOT_IN_GROUP");
+            assertThat((Map<String, Object>) items.get(1))
+                    .containsEntry("id", agentOnlyGroupId.toString())
+                    .containsEntry("title", agentOnlyGroup.getName())
+                    .containsEntry("readable", false)
+                    .containsEntry("reason", "REQUESTER_NOT_IN_GROUP");
+        });
+    }
+
+    @Test
+    void listMarksGroupsTheAskingUserAndAgentAreBothInAsReadable() {
+        when(groupMapper.listByProject(projectId)).thenReturn(List.of(defaultGroup, restrictedGroup));
+        when(groupAgents.selectGroupIds(agentId)).thenReturn(List.of(defaultGroupId));
+
+        Map<String, Object> result = tools(actor, restrictedGroupId, agentId).listOtherGroups();
 
         assertThat((List<?>) result.get("groups")).singleElement().satisfies(item ->
                 assertThat((Map<String, Object>) item).containsEntry("id", defaultGroupId.toString())
-                        .containsEntry("title", "项目群聊"));
+                        .containsEntry("title", "项目群聊")
+                        .containsEntry("readable", true)
+                        .doesNotContainKey("reason"));
     }
 
     @Test
@@ -234,12 +234,10 @@ class CrossGroupToolsTest {
                 .isEqualTo("GROUP_ID_INVALID");
         assertThatThrownBy(() -> tools.searchOtherGroupChatHistory(defaultGroupId.toString(), " ", null))
                 .extracting("code").isEqualTo("CHAT_SEARCH_QUERY_REQUIRED");
-        assertThat(disclosed).isEmpty();
     }
 
     private CrossGroupTools tools(Long actor, Long destinationGroupId, Long agentId) {
-        return new CrossGroupTools(crossGroup, groupMemories, history, actor, projectId, destinationGroupId, agentId,
-                disclosed);
+        return new CrossGroupTools(crossGroup, groupMemories, history, actor, projectId, destinationGroupId, agentId);
     }
 
     private ChatGroupEntity group(Long id, Long projectId, boolean defaultGroup, String name) {

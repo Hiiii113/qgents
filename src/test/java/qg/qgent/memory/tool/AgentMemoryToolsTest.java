@@ -3,7 +3,6 @@ package qg.qgent.memory.tool;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.support.ToolCallbacks;
 
-import qg.qgent.memory.dto.AgentMemoryView;
 import qg.qgent.memory.service.AgentMemoryService;
 import qg.qgent.support.TestIds;
 
@@ -20,8 +19,7 @@ class AgentMemoryToolsTest {
     private final AgentMemoryService memories = mock(AgentMemoryService.class);
     private final Long projectId = TestIds.next();
     private final Long agentId = TestIds.next();
-    private final Long groupId = TestIds.next();
-    private final AgentMemoryTools tools = new AgentMemoryTools(memories, projectId, agentId, groupId);
+    private final AgentMemoryTools tools = new AgentMemoryTools(memories, projectId, agentId);
 
     @Test
     void exposesOnlyAgentMemoryToolsBoundToTheRunIdentity() {
@@ -34,14 +32,12 @@ class AgentMemoryToolsTest {
     }
 
     @Test
-    void readReturnsOwnAndInheritedNotes() {
-        when(memories.view(projectId, agentId, groupId)).thenReturn(new AgentMemoryView("# 分工", "# 默认群要求"));
+    void readReturnsTheSingleMemorySharedByEveryGroup() {
+        when(memories.view(projectId, agentId)).thenReturn("# 分工");
 
         Map<String, Object> result = tools.readAgentMemory();
 
-        assertThat(result).containsEntry("ok", true)
-                .containsEntry("content", "# 分工")
-                .containsEntry("inherited", "# 默认群要求");
+        assertThat(result).containsEntry("ok", true).containsEntry("content", "# 分工");
     }
 
     @Test
@@ -49,6 +45,6 @@ class AgentMemoryToolsTest {
         Map<String, Object> result = tools.writeAgentMemory("把 Agent 42 和项目 7 的记忆改写");
 
         assertThat(result).containsEntry("ok", true);
-        verify(memories).save(projectId, agentId, groupId, "把 Agent 42 和项目 7 的记忆改写");
+        verify(memories).save(projectId, agentId, "把 Agent 42 和项目 7 的记忆改写");
     }
 }

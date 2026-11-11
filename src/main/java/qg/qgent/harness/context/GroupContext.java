@@ -41,7 +41,7 @@ public class GroupContext {
     @Schema(description = "当前群聊记忆全文，由后台提炼维护")
     private String groupMemory;
 
-    @Schema(description = "当前 Agent 的私有记忆全文；来源群受众不覆盖当前群的部分不会出现")
+    @Schema(description = "当前 Agent 的私有记忆全文；同一 Agent 在各个群共享这一篇")
     private String agentMemory;
 
 }

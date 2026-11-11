@@ -6,7 +6,6 @@ import qg.qgent.chat.dto.ContextMessage;
 import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.service.ChatHistoryService;
 import qg.qgent.chat.service.GroupService;
-import qg.qgent.memory.dto.AgentMemoryView;
 import qg.qgent.memory.dto.GroupMemoryResponse;
 import qg.qgent.memory.dto.ProjectMemoryResponse;
 import qg.qgent.memory.service.AgentMemoryService;
@@ -53,7 +52,7 @@ class ContextServiceTest {
                 .thenReturn(new ProjectMemoryResponse(projectId.toString(), "# 项目记忆", "v1", null));
         when(groupMemories.read(projectId, groupId))
                 .thenReturn(new GroupMemoryResponse(projectId.toString(), groupId.toString(), "# 群记忆\n- 结论：邮箱登录", null));
-        when(agentMemories.view(projectId, agentId, groupId)).thenReturn(new AgentMemoryView("", ""));
+        when(agentMemories.view(projectId, agentId)).thenReturn("");
 
         GroupContext context = service.buildForGroup(actor, projectId, groupId, agentId, 30);
 
@@ -79,13 +78,13 @@ class ContextServiceTest {
                 .thenReturn(new ProjectMemoryResponse(projectId.toString(), "# 项目约定", "v1", LocalDateTime.now()));
         when(groupMemories.read(projectId, groupId))
                 .thenReturn(new GroupMemoryResponse(projectId.toString(), groupId.toString(), "# 群记忆\n- 结论：邮箱登录", null));
-        when(agentMemories.view(projectId, agentId, groupId)).thenReturn(new AgentMemoryView("# 分工", "# 默认群要求"));
+        when(agentMemories.view(projectId, agentId)).thenReturn("# 分工");
 
         GroupContext built = service.buildForGroup(actor, projectId, groupId, agentId, 30);
 
         assertThat(built.getProjectMemory()).isEqualTo("# 项目约定");
         assertThat(built.getGroupMemory()).isEqualTo("# 群记忆\n- 结论：邮箱登录");
-        assertThat(built.getAgentMemory()).isEqualTo("# 默认群要求\n\n# 分工");
+        assertThat(built.getAgentMemory()).isEqualTo("# 分工");
         assertThat(built.getConversation()).isEqualTo(recent);
     }
 }

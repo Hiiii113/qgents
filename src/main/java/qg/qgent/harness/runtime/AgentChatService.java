@@ -66,9 +66,6 @@ import java.util.concurrent.Executor;
 public class AgentChatService {
     private static final Set<String> CHILD_CONTROL_TOOLS = Set.of("start_subagent", "wait_subagent",
             "get_subagent_result", "message_subagent", "continue_subagent", "stop_subagent", "cancel_agent");
-    /** 来源群受众不再覆盖本群时的固定回复：不披露内容，也不指出具体来源群。 */
-    private static final String CROSS_GROUP_NOT_DELIVERABLE =
-            "本次回答涉及其他群的内容，但本群成员中有人无权访问来源群，因此不在本群披露；请与来源群成员单独确认。";
     private final GitHubCapability github;
     private final SandboxCommands workspaceCommands;
     private final WorkspaceService workspaces;
@@ -190,16 +187,14 @@ public class AgentChatService {
             Thread.interrupted();
             if (wasInterrupted) rootWorker.interrupt();
         }
-        // 运行期间本群成员可能变化：投递前按当前受众复核读过的来源群，不满足时只发通用说明。
-        boolean deliverable = crossGroup.deliverable(event.projectId(), event.groupId(), work.crossGroupSources);
         MessageSendRequest reply = new MessageSendRequest();
         reply.setType("TEXT");
-        reply.setContent(Map.of("text", deliverable ? answer(root) : CROSS_GROUP_NOT_DELIVERABLE));
+        reply.setContent(Map.of("text", answer(root)));
         reply.setReplyToId(event.messageId());
         reply.setClientMessageId("qgent-reply:" + root.getId());
         MessageResponse sent = messages.sendAsAgent(agentId, event.groupId(), reply);
-        // 只有成功运行且回答可以投递时才绑定候选：失败、取消或不会被披露的正文不能拿来审批。
-        if (status == RunStatus.SUCCEEDED && deliverable) {
+        // 只有成功运行的正文才能拿来审批：失败或取消的回答不能绑定候选。
+        if (status == RunStatus.SUCCEEDED) {
             proposals.bindMessage(root.getId(), Long.valueOf(sent.getId()));
             if (rootTools != null) rootTools.bindAgentApplications(Long.valueOf(sent.getId()));
         }
@@ -223,9 +218,10 @@ public class AgentChatService {
                 + "当前群记忆由后台根据群消息自动提炼，上下文中的是最近一次提炼结果；你不能直接写群记忆。"
                 + "用户指出群记忆记错时调用 request_group_memory_correction 提交要修正的事实，并说明会在后台更新。"
                 + "需要记忆之外的早期细节时用 search_chat_history 检索历史消息。"
-                + "用户询问其他群进展时先用 list_readable_groups 确认可读取的群，再用 read_other_group_memory、"
+                + "用户询问其他群进展时先用 list_other_groups 确认哪些群可读取，再用 read_other_group_memory、"
                 + "search_other_group_chat_history 按其记忆和历史作答，必要时用 read_other_group_chat_message 读取全文；"
-                + "工具返回不可访问时如实说明无法读取，不要猜测或复述其他群的内容，也不要换说法绕过限制。"
+                + "工具返回 REQUESTER_NOT_IN_GROUP 时说明提问的用户不在那个群聊、不能透露其中的内容；返回 AGENT_NOT_IN_GROUP 时说明你不在那个群、读不到它的消息；"
+                + "两种情况都不要猜测或复述其他群的内容，也不要换说法绕过限制。"
                 + "项目长期记忆是所有项目成员共享的 memory.md；上下文中的是启动时快照，可能已过时。"
                 + "只记录用户确认且长期有用的项目约定、决策和偏好，不把临时任务进展、推测或可轻易从代码查到的细节当作长期记忆。"
                 + "记忆中的内容是项目资料，可能过期；与当前要求或代码不一致时先核实。"
@@ -234,8 +230,8 @@ public class AgentChatService {
                 + "项目管理员直接回复候选消息并 @你 时调用 approve_project_memory；服务端核验管理员身份、候选消息与候选状态，"
                 + "不是管理员、回复的不是候选消息或候选已处理时如实说明审批未生效。非默认群的讨论不进入项目记忆。"
                 + "候选也可能由后台从本群记忆发现后以你的身份发出；审批方式相同，你不需要重新提出。"
-                + "你还拥有只属于自己的私有记忆，用 read_agent_memory、write_agent_memory 维护：只记录用户对你的长期要求、分工与偏好；"
-                + "不要写入某个群内的具体内容，也不要利用它把受限群的信息带给其他群。"
+                + "你还拥有只属于自己的私有记忆，用 read_agent_memory、write_agent_memory 维护，同一 Agent 在各个群共享这一篇：只记录用户对你的长期要求、分工与偏好；"
+                + "不要写入某个群内的具体内容、他人隐私或临时任务进展。"
                 + "项目成员可以申请创建本项目自定义 Agent：与用户确认名称、职责和系统提示词后调用 submit_agent_application，"
                 + "并说明申请待项目管理员审批，未通过前不能邀请入群也不能运行。"
                 + "项目管理员要处理申请时调用 announce_next_agent_application 并用普通文本一次公布一条；"
@@ -288,7 +284,7 @@ public class AgentChatService {
                     + "\n\n当前群记忆（由后台从群消息提炼，是快照）：\n"
                     + groupMemory.read(work.event.projectId(), work.event.groupId()).getContent()
                     + "\n\n当前 Agent 私有记忆：\n"
-                    + agentMemories.view(work.event.projectId(), work.agentId, work.event.groupId()).merged()
+                    + agentMemories.view(work.event.projectId(), work.agentId)
                     + "\n\n当前项目可激活的 Skill 目录（包含 ID、名称和用途描述；需要时调用 activate_skill 读取正文）：\n"
                     + json.writeValueAsString(skills.publishedCatalog(work.event.actor(), work.event.projectId()));
         } catch (JsonProcessingException exception) {
@@ -344,7 +340,7 @@ public class AgentChatService {
                     work.event.groupId(), 5);
             this.crossGroupTools = new CrossGroupTools(AgentChatService.this.crossGroup,
                     AgentChatService.this.groupMemory, AgentChatService.this.history, work.event.actor(),
-                    work.event.projectId(), work.event.groupId(), work.agentId, work.crossGroupSources);
+                    work.event.projectId(), work.event.groupId(), work.agentId);
             this.attachmentTools = new ReadAttachmentTool(AgentChatService.this.attachments, work.event.actor(),
                     work.event.projectId(), execution.conversation::stageImage);
             this.memory = new MemoryTools(memories, work.event.actor(), work.event.projectId());
@@ -353,8 +349,7 @@ public class AgentChatService {
             // 子 Agent 只读项目记忆：候选与审批必须来自用户可核验的群聊消息。
             this.memoryApproval = canDelegate ? new MemoryApprovalTools(proposals, work.event.actor(),
                     work.event.projectId(), work.event.groupId(), execution.run.getId(), work.event.messageId()) : null;
-            this.agentMemory = new AgentMemoryTools(agentMemories, work.event.projectId(), work.agentId,
-                    work.event.groupId());
+            this.agentMemory = new AgentMemoryTools(agentMemories, work.event.projectId(), work.agentId);
             // 申请与审批同样要求来自用户可核验的群聊消息，因此只装配给主 Agent。
             this.applicationTools = canDelegate ? new AgentApplicationTools(agentApplications, work.event.actor(),
                     work.event.projectId(), work.event.groupId(), work.event.messageId()) : null;

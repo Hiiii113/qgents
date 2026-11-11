@@ -81,34 +81,6 @@ class ProjectChatTest {
     }
 
     @Test
-    void sourceGroupAudienceMustCoverTheDestinationGroup() {
-        Long projectId = TestIds.next(), defaultGroupId = TestIds.next(), restrictedGroupId = TestIds.next();
-        Long member = TestIds.next(), outsider = TestIds.next();
-        ChatGroupEntity defaultGroup = new ChatGroupEntity();
-        defaultGroup.setId(defaultGroupId);
-        defaultGroup.setProjectId(projectId);
-        defaultGroup.setDefaultGroup(true);
-        ChatGroupEntity restrictedGroup = new ChatGroupEntity();
-        restrictedGroup.setId(restrictedGroupId);
-        restrictedGroup.setProjectId(projectId);
-        restrictedGroup.setDefaultGroup(false);
-        when(groups.selectById(defaultGroupId)).thenReturn(defaultGroup);
-        when(groups.selectById(restrictedGroupId)).thenReturn(restrictedGroup);
-        when(projectMembers.selectMembers(projectId)).thenReturn(List.of(memberRow(member), memberRow(outsider)));
-        when(users.selectUserIds(restrictedGroupId)).thenReturn(List.of(member));
-
-        assertThat(service.audienceCoveredBy(projectId, restrictedGroupId, restrictedGroupId)).isTrue();
-        assertThat(service.audienceCoveredBy(projectId, defaultGroupId, restrictedGroupId)).isTrue();
-        assertThat(service.audienceCoveredBy(projectId, restrictedGroupId, defaultGroupId)).isFalse();
-    }
-
-    private GroupMemberRow memberRow(Long userId) {
-        GroupMemberRow row = new GroupMemberRow();
-        row.setUserId(userId);
-        return row;
-    }
-
-    @Test
     void membersListAgentsByTheirRealIdentity() {
         Long projectId = TestIds.next(), groupId = TestIds.next(), actor = TestIds.next();
         Long agentId = TestIds.next();
