@@ -1,21 +1,20 @@
 package qg.qgent.chat.service;
 
-import qg.qgent.support.TestIds;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.common.web.ApiException;
-
-
-import static org.assertj.core.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import qg.qgent.support.TestIds;
 
 class ChatHistoryServiceTest {
     private final MessageMapper messages = mock(MessageMapper.class);
     private final GroupService groups = mock(GroupService.class);
-    private final ChatHistoryService service = new ChatHistoryService(messages, groups, new ObjectMapper());
+    private final ChatHistoryService service =
+            new ChatHistoryService(messages, groups, new ObjectMapper());
 
     @Test
     void codeAndAttachmentsUseTheirStructuredContent() {
@@ -26,14 +25,21 @@ class ChatHistoryServiceTest {
         message.setMessageType("CODE");
         message.setContent("{\"language\":\"java\",\"code\":\"return 42;\"}");
         when(messages.selectById(message.getId())).thenReturn(message);
-        assertThat(service.readChatMessage(TestIds.next(), TestIds.next(), group, message.getId()).getText())
+        assertThat(
+                        service.readChatMessage(
+                                        TestIds.next(), TestIds.next(), group, message.getId())
+                                .getText())
                 .isEqualTo("return 42;");
 
         String attachmentId = Long.toString(TestIds.next());
         message.setMessageType("IMAGE");
-        message.setContent("{\"attachmentId\":\"" + attachmentId + "\",\"name\":\"photo.png\","
-                + "\"mediaType\":\"image/png\",\"size\":2048}");
-        var context = service.readChatMessage(TestIds.next(), TestIds.next(), group, message.getId());
+        message.setContent(
+                "{\"attachmentId\":\""
+                        + attachmentId
+                        + "\",\"name\":\"photo.png\","
+                        + "\"mediaType\":\"image/png\",\"size\":2048}");
+        var context =
+                service.readChatMessage(TestIds.next(), TestIds.next(), group, message.getId());
         assertThat(context.getAttachmentId()).isEqualTo(attachmentId);
         assertThat(context.getFileName()).isEqualTo("photo.png");
         assertThat(context.getMediaType()).isEqualTo("image/png");
@@ -71,7 +77,8 @@ class ChatHistoryServiceTest {
         message.setContent("{\"text\":\"好的\"}");
         when(messages.selectById(message.getId())).thenReturn(message);
 
-        var context = service.readChatMessage(TestIds.next(), TestIds.next(), group, message.getId());
+        var context =
+                service.readChatMessage(TestIds.next(), TestIds.next(), group, message.getId());
 
         assertThat(context.getSenderType()).isEqualTo("AGENT");
         assertThat(context.getSenderId()).isEqualTo(agentId.toString());
@@ -87,7 +94,9 @@ class ChatHistoryServiceTest {
         message.setContent("{not json");
         when(messages.selectById(id)).thenReturn(message);
 
-        assertThatThrownBy(() -> service.readChatMessage(TestIds.next(), TestIds.next(), message.getGroupId(), id))
+        assertThatThrownBy(() ->
+                        service.readChatMessage(
+                                TestIds.next(), TestIds.next(), message.getGroupId(), id))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining(id.toString())
                 .hasCauseInstanceOf(Exception.class);
@@ -99,7 +108,8 @@ class ChatHistoryServiceTest {
         MessageEntity message = new MessageEntity();
         message.setGroupId(TestIds.next());
         when(messages.selectById(id)).thenReturn(message);
-        assertThatThrownBy(() -> service.readChatMessage(TestIds.next(), TestIds.next(), TestIds.next(), id))
+        assertThatThrownBy(() ->
+                        service.readChatMessage(TestIds.next(), TestIds.next(), TestIds.next(), id))
                 .isInstanceOf(ApiException.class);
     }
 }

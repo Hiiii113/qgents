@@ -1,7 +1,8 @@
 package qg.qgent.chat.event;
 
-import qg.qgent.support.TestIds;
+import static org.mockito.Mockito.*;
 
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import qg.qgent.chat.dto.Mention;
 import qg.qgent.chat.entity.ChatGroupEntity;
@@ -9,10 +10,7 @@ import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.service.MessageService;
-
-import java.util.List;
-
-import static org.mockito.Mockito.*;
+import qg.qgent.support.TestIds;
 
 class UserMentionListenerTest {
     private final MessageMapper messages = mock(MessageMapper.class);
@@ -22,7 +20,8 @@ class UserMentionListenerTest {
 
     @Test
     void userAndQgentMentionStillNotifiesUsersWithChatContext() {
-        var event = event(List.of(mention("USER", TestIds.next()), mention("AGENT", TestIds.next())));
+        var event =
+                event(List.of(mention("USER", TestIds.next()), mention("AGENT", TestIds.next())));
         var message = new MessageEntity();
         var group = new ChatGroupEntity();
         group.setName("项目讨论");
@@ -50,6 +49,7 @@ class UserMentionListenerTest {
     }
 
     private MessageSentEvent event(List<Mention> mentions) {
-        return new MessageSentEvent(TestIds.next(), TestIds.next(), TestIds.next(), TestIds.next(), mentions);
+        return new MessageSentEvent(
+                TestIds.next(), TestIds.next(), TestIds.next(), TestIds.next(), mentions);
     }
 }

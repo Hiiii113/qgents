@@ -1,16 +1,15 @@
 package qg.qgent.auth.service;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.stereotype.Component;
-
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.util.HexFormat;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.stereotype.Component;
 
 /** 按请求指纹和时间窗口限流；Redis 不可用时使用本地计数。 */
 @Component
@@ -37,8 +36,7 @@ public class RateLimiter {
         try {
             Long value = redis.opsForValue().increment(key);
             // 如果是第一次请求，设置过期时间为窗口时间
-            if (value != null && value == 1)
-                redis.expire(key, window);
+            if (value != null && value == 1) redis.expire(key, window);
             return value == null || value <= limit;
         } catch (RuntimeException e) {
             log.warn("Redis rate limiter unavailable; using local fallback for scope={}", scope);
@@ -49,13 +47,17 @@ public class RateLimiter {
     // 使用本地内存作为 Redis 不可用时的回退限流机制
     private boolean allowLocal(String key, int limit, Duration window) {
         long now = System.currentTimeMillis();
-        LocalWindow current = fallback.compute(key, (ignored, old) -> {
-            // 如果是第一次或者过期，就重置计数器
-            if (old == null || old.expiresAt < now)
-                return new LocalWindow(new AtomicInteger(1), now + window.toMillis());
-            old.count.incrementAndGet();
-            return old;
-        });
+        LocalWindow current =
+                fallback.compute(
+                        key,
+                        (ignored, old) -> {
+                            // 如果是第一次或者过期，就重置计数器
+                            if (old == null || old.expiresAt < now)
+                                return new LocalWindow(
+                                        new AtomicInteger(1), now + window.toMillis());
+                            old.count.incrementAndGet();
+                            return old;
+                        });
         // 计数窗口过多时清理已过期记录。
         if (fallback.size() > 10_000)
             fallback.entrySet().removeIf(e -> e.getValue().expiresAt < now);
@@ -66,13 +68,14 @@ public class RateLimiter {
     private String fingerprintHash(String value) {
         try {
             return HexFormat.of()
-                    .formatHex(MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8)));
+                    .formatHex(
+                            MessageDigest.getInstance("SHA-256")
+                                    .digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
     }
 
     // Redis 不可用时使用的内存计数窗口。
-        private record LocalWindow(AtomicInteger count, long expiresAt) {
-    }
+    private record LocalWindow(AtomicInteger count, long expiresAt) {}
 }

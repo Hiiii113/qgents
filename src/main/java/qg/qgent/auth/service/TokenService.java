@@ -3,9 +3,6 @@ package qg.qgent.auth.service;
 import com.auth0.jwt.JWT;
 import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.exceptions.JWTVerificationException;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -14,6 +11,8 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
 
 /** 签发和校验 JWT 访问令牌，生成刷新令牌及令牌摘要。 */
 @Component
@@ -24,10 +23,11 @@ public class TokenService {
     private final Duration resetTtl;
     private final SecureRandom random = new SecureRandom();
 
-    public TokenService(@Value("${app.jwt-secret}") String secret,
-                        @Value("${app.access-token-minutes:15}") long accessMinutes,
-                        @Value("${app.refresh-token-days:30}") long refreshDays,
-                        @Value("${app.reset-token-minutes:30}") long resetMinutes) {
+    public TokenService(
+            @Value("${app.jwt-secret}") String secret,
+            @Value("${app.access-token-minutes:15}") long accessMinutes,
+            @Value("${app.refresh-token-days:30}") long refreshDays,
+            @Value("${app.reset-token-minutes:30}") long resetMinutes) {
         if (secret.getBytes(StandardCharsets.UTF_8).length < 32)
             throw new IllegalStateException("JWT_SECRET至少需要32字节");
         algorithm = Algorithm.HMAC256(secret);
@@ -57,7 +57,8 @@ public class TokenService {
                             .withIssuer("qgents")
                             .withAudience("qgents-api")
                             .build()
-                            .verify(token).getSubject());
+                            .verify(token)
+                            .getSubject());
         } catch (JWTVerificationException | IllegalArgumentException e) {
             return null;
         }
@@ -77,7 +78,8 @@ public class TokenService {
 
     public byte[] hash(String token) {
         try {
-            return MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8));
+            return MessageDigest.getInstance("SHA-256")
+                    .digest(token.getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }

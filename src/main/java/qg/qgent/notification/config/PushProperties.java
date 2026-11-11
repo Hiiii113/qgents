@@ -20,8 +20,11 @@ public class PushProperties {
 
     /** 是否具备真实投递所需配置。 */
     public boolean deliveryConfigured() {
-        return enabled && hasText(fcmEndpoint) && hasText(fcmProjectId)
-                && hasText(fcmServiceAccountJsonBase64) && hasText(tokenEncryptionKey);
+        return enabled
+                && hasText(fcmEndpoint)
+                && hasText(fcmProjectId)
+                && hasText(fcmServiceAccountJsonBase64)
+                && hasText(tokenEncryptionKey);
     }
 
     private boolean hasText(String value) {

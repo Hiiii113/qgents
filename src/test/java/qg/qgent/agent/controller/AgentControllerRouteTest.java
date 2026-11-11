@@ -1,16 +1,15 @@
 package qg.qgent.agent.controller;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+import java.lang.reflect.Method;
+import java.util.HashSet;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
-
-import java.lang.reflect.Method;
-import java.util.HashSet;
-import java.util.Set;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class AgentControllerRouteTest {
     @Test
@@ -28,8 +27,10 @@ class AgentControllerRouteTest {
             }
         }
 
-        assertEquals(Set.of(
-                "GET /projects/{projectId}/agents",
-                "POST /projects/{projectId}/agents/applications"), routes);
+        assertEquals(
+                Set.of(
+                        "GET /projects/{projectId}/agents",
+                        "POST /projects/{projectId}/agents/applications"),
+                routes);
     }
 }

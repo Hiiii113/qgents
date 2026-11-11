@@ -3,9 +3,8 @@ package qg.qgent.sandbox.execution.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
-
 import java.time.LocalDateTime;
+import lombok.Data;
 
 /** 映射 tool_executions 表的工具执行持久化实体。 */
 @Data
@@ -13,6 +12,7 @@ import java.time.LocalDateTime;
 public class ToolExecutionEntity {
     @TableId(type = IdType.AUTO)
     private Long id;
+
     private String ownerInstanceId;
     private String sandboxId;
     private Long agentRunId;

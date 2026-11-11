@@ -3,9 +3,8 @@ package qg.qgent.memory.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
-
 import java.time.LocalDateTime;
+import lombok.Data;
 
 /**
  * 项目记忆候选，对应表 project_memory_proposals。

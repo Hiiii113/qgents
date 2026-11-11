@@ -1,8 +1,5 @@
 package qg.qgent.project.storage;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -10,6 +7,8 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.stream.Stream;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
 
 /**
  * 项目持久目录：一个项目一个目录，按项目 ID 命名。
@@ -22,8 +21,9 @@ public class ProjectDirectoryService {
     private final Path root;
     private final Path dockerHostRoot;
 
-    public ProjectDirectoryService(@Value("${app.project.root}") String root,
-                                   @Value("${app.project.docker-host-root}") String dockerHostRoot) {
+    public ProjectDirectoryService(
+            @Value("${app.project.root}") String root,
+            @Value("${app.project.docker-host-root}") String dockerHostRoot) {
         this.root = Path.of(root).toAbsolutePath().normalize();
         this.dockerHostRoot = Path.of(dockerHostRoot).toAbsolutePath().normalize();
     }
@@ -70,8 +70,11 @@ public class ProjectDirectoryService {
 
     /** 受管理仓库的准备记录；位于项目 Git 目录内，不参与 worktree。 */
     public Path repositoryState(Long projectId, String directoryName, Long providerRepositoryId) {
-        return gitRoot(projectId).resolve("qgents").resolve("workspaces")
-                .resolve(directoryName).resolve(providerRepositoryId + ".json");
+        return gitRoot(projectId)
+                .resolve("qgents")
+                .resolve("workspaces")
+                .resolve(directoryName)
+                .resolve(providerRepositoryId + ".json");
     }
 
     /** Docker daemon 所在宿主机上同一项目目录的路径，用于创建 bind mount。 */
@@ -83,13 +86,14 @@ public class ProjectDirectoryService {
     public void delete(Long projectId) {
         Path directory = root.resolve(projectId.toString());
         try (Stream<Path> paths = Files.walk(directory)) {
-            paths.sorted(Comparator.reverseOrder()).forEach(path -> {
-                try {
-                    Files.delete(path);
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
+            paths.sorted(Comparator.reverseOrder())
+                    .forEach(path -> {
+                        try {
+                            Files.delete(path);
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    });
         } catch (NoSuchFileException ignored) {
             // 项目从未写过文件，目录不存在
         } catch (IOException e) {

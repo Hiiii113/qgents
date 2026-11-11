@@ -11,9 +11,11 @@ public class LoginRequest {
     @Email
     @Size(max = 320)
     private String email;
+
     @NotBlank
     @Size(max = 128)
     private String passwordKeyId;
+
     @NotBlank
     @Size(max = 4096)
     private String password;

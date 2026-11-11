@@ -1,8 +1,8 @@
 package qg.qgent.attachment.config;
 
-import org.springframework.boot.context.properties.ConfigurationProperties;
 import lombok.Getter;
 import lombok.Setter;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /** 附件和各业务头像共用的 OSS 配置。 */
 @Getter
@@ -25,7 +25,9 @@ public class AliyunOssProperties {
     private String publicBaseUrl = "";
 
     public boolean configured() {
-        return !endpoint.isBlank() && !bucketName.isBlank() && !accessKeyId.isBlank() && !accessKeySecret.isBlank();
+        return !endpoint.isBlank()
+                && !bucketName.isBlank()
+                && !accessKeyId.isBlank()
+                && !accessKeySecret.isBlank();
     }
-
 }

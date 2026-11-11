@@ -3,9 +3,8 @@ package qg.qgent.notification.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
-
 import java.time.LocalDateTime;
+import lombok.Data;
 
 /** 按用户持久化的通知，包含消息提及、团队邀请及项目成员变更。 */
 @Data

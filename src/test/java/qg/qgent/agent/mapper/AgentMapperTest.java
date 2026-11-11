@@ -1,7 +1,18 @@
 package qg.qgent.agent.mapper;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.MybatisSqlSessionFactoryBuilder;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.util.Map;
+import javax.sql.DataSource;
 import org.apache.ibatis.mapping.Environment;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -9,20 +20,7 @@ import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-
 import qg.qgent.support.TestIds;
-
-import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.util.Map;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 /**
  * Agent 申请 SQL 在真实 MyBatis 参数绑定下执行，只把 JDBC 连接换成替身：
@@ -45,7 +43,8 @@ class AgentMapperTest {
         when(statement.getUpdateCount()).thenReturn(1);
         configuration = new MybatisConfiguration();
         configuration.addMapper(AgentMapper.class);
-        configuration.setEnvironment(new Environment("test", new JdbcTransactionFactory(), dataSource));
+        configuration.setEnvironment(
+                new Environment("test", new JdbcTransactionFactory(), dataSource));
         factory = new MybatisSqlSessionFactoryBuilder().build(configuration);
     }
 
@@ -57,7 +56,9 @@ class AgentMapperTest {
             assertThat(session.getMapper(AgentMapper.class).activate(id, approver)).isEqualTo(1);
         }
 
-        assertThat(updateSql()).contains("SET status = 'ACTIVE'", "approved_by = ?", "id = ?", "status = 'PENDING'")
+        assertThat(updateSql())
+                .contains(
+                        "SET status = 'ACTIVE'", "approved_by = ?", "id = ?", "status = 'PENDING'")
                 .contains("approved_at = UTC_TIMESTAMP(6)");
     }
 
@@ -69,7 +70,8 @@ class AgentMapperTest {
             assertThat(session.getMapper(AgentMapper.class).reject(id, approver)).isEqualTo(1);
         }
 
-        assertThat(updateSql()).contains("SET status = 'REJECTED'", "approved_by = ?", "status = 'PENDING'");
+        assertThat(updateSql())
+                .contains("SET status = 'REJECTED'", "approved_by = ?", "status = 'PENDING'");
     }
 
     @Test
@@ -77,12 +79,18 @@ class AgentMapperTest {
         Long id = TestIds.next(), secondAnnouncement = TestIds.next();
 
         try (SqlSession session = factory.openSession()) {
-            assertThat(session.getMapper(AgentMapper.class).bindAnnouncement(id, secondAnnouncement)).isEqualTo(1);
+            assertThat(
+                            session.getMapper(AgentMapper.class)
+                                    .bindAnnouncement(id, secondAnnouncement))
+                    .isEqualTo(1);
         }
 
         // 管理员按 Agent 最新一次公布回复，因此更晚的公布覆盖旧的绑定；已处理的申请不再接收公布。
-        assertThat(updateSql()).contains("announced_message_id = ?", "status = 'PENDING'",
-                "announced_message_id < ?");
+        assertThat(updateSql())
+                .contains(
+                        "announced_message_id = ?",
+                        "status = 'PENDING'",
+                        "announced_message_id < ?");
     }
 
     @Test
@@ -114,16 +122,22 @@ class AgentMapperTest {
         assertParametersResolve("selectPendingByProject", Map.of("projectId", TestIds.next()));
         assertParametersResolve("selectByAnnouncedMessageId", Map.of("messageId", TestIds.next()));
         assertParametersResolve("countCountedByProject", Map.of("projectId", TestIds.next()));
-        assertParametersResolve("activate", Map.of("id", TestIds.next(), "approvedBy", TestIds.next()));
-        assertParametersResolve("reject", Map.of("id", TestIds.next(), "approvedBy", TestIds.next()));
-        assertParametersResolve("bindAnnouncement", Map.of("id", TestIds.next(), "messageId", TestIds.next()));
+        assertParametersResolve(
+                "activate", Map.of("id", TestIds.next(), "approvedBy", TestIds.next()));
+        assertParametersResolve(
+                "reject", Map.of("id", TestIds.next(), "approvedBy", TestIds.next()));
+        assertParametersResolve(
+                "bindAnnouncement", Map.of("id", TestIds.next(), "messageId", TestIds.next()));
     }
 
     private void assertParametersResolve(String method, Map<String, Object> declaredParameters) {
         var boundSql = statement(method).getBoundSql(declaredParameters);
-        assertThat(boundSql.getParameterMappings()).isNotEmpty().allSatisfy(mapping ->
-                assertThat(declaredParameters).as("参数 %s 必须对应方法上的 @Param", mapping.getProperty())
-                        .containsKey(mapping.getProperty()));
+        assertThat(boundSql.getParameterMappings())
+                .isNotEmpty()
+                .allSatisfy(mapping ->
+                        assertThat(declaredParameters)
+                                .as("参数 %s 必须对应方法上的 @Param", mapping.getProperty())
+                                .containsKey(mapping.getProperty()));
     }
 
     private String selectSql(String method, Map<String, Object> declaredParameters) {

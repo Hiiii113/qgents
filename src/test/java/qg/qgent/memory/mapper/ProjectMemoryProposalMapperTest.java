@@ -1,7 +1,18 @@
 package qg.qgent.memory.mapper;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.MybatisSqlSessionFactoryBuilder;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.util.Map;
+import javax.sql.DataSource;
 import org.apache.ibatis.mapping.Environment;
 import org.apache.ibatis.session.SqlSession;
 import org.apache.ibatis.session.SqlSessionFactory;
@@ -9,20 +20,7 @@ import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-
 import qg.qgent.support.TestIds;
-
-import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.util.Map;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 /**
  * 项目记忆候选 SQL 在真实 MyBatis 参数绑定下执行，只把 JDBC 连接换成替身：
@@ -45,7 +43,8 @@ class ProjectMemoryProposalMapperTest {
         when(statement.getUpdateCount()).thenReturn(1);
         configuration = new MybatisConfiguration();
         configuration.addMapper(ProjectMemoryProposalMapper.class);
-        configuration.setEnvironment(new Environment("test", new JdbcTransactionFactory(), dataSource));
+        configuration.setEnvironment(
+                new Environment("test", new JdbcTransactionFactory(), dataSource));
         factory = new MybatisSqlSessionFactoryBuilder().build(configuration);
     }
 
@@ -54,11 +53,14 @@ class ProjectMemoryProposalMapperTest {
         Long id = TestIds.next(), approvedBy = TestIds.next(), approvalMessage = TestIds.next();
 
         try (SqlSession session = factory.openSession()) {
-            assertThat(session.getMapper(ProjectMemoryProposalMapper.class)
-                    .markApplied(id, approvedBy, approvalMessage, "v2")).isEqualTo(1);
+            assertThat(
+                            session.getMapper(ProjectMemoryProposalMapper.class)
+                                    .markApplied(id, approvedBy, approvalMessage, "v2"))
+                    .isEqualTo(1);
         }
 
-        assertThat(updateSql()).contains("status = 'PENDING'", "applied_version = ?", "approved_message_id = ?")
+        assertThat(updateSql())
+                .contains("status = 'PENDING'", "applied_version = ?", "approved_message_id = ?")
                 .contains("approved_at = UTC_TIMESTAMP(6)");
     }
 
@@ -67,39 +69,64 @@ class ProjectMemoryProposalMapperTest {
         Long runId = TestIds.next(), messageId = TestIds.next();
 
         try (SqlSession session = factory.openSession()) {
-            assertThat(session.getMapper(ProjectMemoryProposalMapper.class).bindMessage(runId, messageId)).isEqualTo(1);
+            assertThat(
+                            session.getMapper(ProjectMemoryProposalMapper.class)
+                                    .bindMessage(runId, messageId))
+                    .isEqualTo(1);
         }
 
-        assertThat(updateSql()).contains("message_id = ?", "agent_run_id = ?", "status = 'PENDING'");
+        assertThat(updateSql())
+                .contains("message_id = ?", "agent_run_id = ?", "status = 'PENDING'");
     }
 
     @Test
     void pendingLookupReturnsBaselineVersionsOfCandidatesStillAwaitingApproval() {
-        String sql = statement("selectPendingBaseVersions").getBoundSql(Map.of("projectId", TestIds.next()))
-                .getSql();
+        String sql =
+                statement("selectPendingBaseVersions")
+                        .getBoundSql(Map.of("projectId", TestIds.next()))
+                        .getSql();
 
         // 没有回复消息的候选（运行失败/取消/不披露）永远不会被审批，不能算待审批阻塞后台发现。
-        assertThat(sql).contains("base_version", "project_id = ?", "status = 'PENDING'", "message_id IS NOT NULL");
+        assertThat(sql)
+                .contains(
+                        "base_version",
+                        "project_id = ?",
+                        "status = 'PENDING'",
+                        "message_id IS NOT NULL");
     }
 
     @Test
     void everyStatementParameterResolvesToADeclaredMethodParameter() {
         assertParametersResolve("selectByMessageId", Map.of("messageId", TestIds.next()));
         assertParametersResolve("selectPendingBaseVersions", Map.of("projectId", TestIds.next()));
-        assertParametersResolve("markApplied", Map.of("id", TestIds.next(), "approvedBy", TestIds.next(),
-                "approvalMessageId", TestIds.next(), "version", "v2"));
-        assertParametersResolve("bindMessage", Map.of("agentRunId", TestIds.next(), "messageId", TestIds.next()));
+        assertParametersResolve(
+                "markApplied",
+                Map.of(
+                        "id",
+                        TestIds.next(),
+                        "approvedBy",
+                        TestIds.next(),
+                        "approvalMessageId",
+                        TestIds.next(),
+                        "version",
+                        "v2"));
+        assertParametersResolve(
+                "bindMessage", Map.of("agentRunId", TestIds.next(), "messageId", TestIds.next()));
     }
 
     private void assertParametersResolve(String method, Map<String, Object> declaredParameters) {
         var boundSql = statement(method).getBoundSql(declaredParameters);
-        assertThat(boundSql.getParameterMappings()).isNotEmpty().allSatisfy(mapping ->
-                assertThat(declaredParameters).as("参数 %s 必须对应方法上的 @Param", mapping.getProperty())
-                        .containsKey(mapping.getProperty()));
+        assertThat(boundSql.getParameterMappings())
+                .isNotEmpty()
+                .allSatisfy(mapping ->
+                        assertThat(declaredParameters)
+                                .as("参数 %s 必须对应方法上的 @Param", mapping.getProperty())
+                                .containsKey(mapping.getProperty()));
     }
 
     private org.apache.ibatis.mapping.MappedStatement statement(String method) {
-        return configuration.getMappedStatement(ProjectMemoryProposalMapper.class.getName() + "." + method);
+        return configuration.getMappedStatement(
+                ProjectMemoryProposalMapper.class.getName() + "." + method);
     }
 
     private String updateSql() throws Exception {

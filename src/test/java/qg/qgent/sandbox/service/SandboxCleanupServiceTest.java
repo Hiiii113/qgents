@@ -1,15 +1,8 @@
 package qg.qgent.sandbox.service;
 
-import qg.qgent.support.TestIds;
-
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
-import qg.qgent.sandbox.config.SandboxProperties;
-import qg.qgent.sandbox.dto.CreateSandboxRequest;
-import qg.qgent.sandbox.runtime.FakeContainerRuntime;
-import qg.qgent.sandbox.execution.service.ToolExecutionService;
-import qg.qgent.workspace.service.WorkspaceOperationLock;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.*;
 
 import java.nio.file.Path;
 import java.time.Clock;
@@ -19,14 +12,17 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.mockito.Mockito.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import qg.qgent.sandbox.config.SandboxProperties;
+import qg.qgent.sandbox.dto.CreateSandboxRequest;
+import qg.qgent.sandbox.execution.service.ToolExecutionService;
+import qg.qgent.sandbox.runtime.FakeContainerRuntime;
+import qg.qgent.support.TestIds;
+import qg.qgent.workspace.service.WorkspaceOperationLock;
 
 class SandboxCleanupServiceTest {
-    @TempDir
-    Path temporaryDirectory;
+    @TempDir Path temporaryDirectory;
 
     @Test
     void cleanupCancelsToolsAndDestroysExpiredSandbox() {
@@ -34,13 +30,16 @@ class SandboxCleanupServiceTest {
         properties.setWorkspaceMetadataRoot(temporaryDirectory.resolve("metadata").toString());
         FakeContainerRuntime runtime = new FakeContainerRuntime();
         Clock clock = Clock.fixed(Instant.parse("2026-08-12T00:00:00Z"), ZoneOffset.UTC);
-        SandboxService sandboxes = new SandboxService(runtime, properties, clock,
-                new WorkspaceOperationLock(properties));
+        SandboxService sandboxes =
+                new SandboxService(
+                        runtime, properties, clock, new WorkspaceOperationLock(properties));
         ToolExecutionService executions = mock(ToolExecutionService.class);
         SandboxCleanupService cleanup = new SandboxCleanupService(sandboxes, executions);
         CreateSandboxRequest request = request();
         sandboxes.create(request);
-        runtime.find(request.getSandboxId()).orElseThrow().setExpiresAt(clock.instant().minusSeconds(1));
+        runtime.find(request.getSandboxId())
+                .orElseThrow()
+                .setExpiresAt(clock.instant().minusSeconds(1));
 
         cleanup.cleanupExpiredSandboxes();
 
@@ -55,11 +54,14 @@ class SandboxCleanupServiceTest {
         java.util.UUID sandboxId = java.util.UUID.randomUUID();
         when(sandboxes.expiredSandboxIds()).thenReturn(List.of(sandboxId));
         CountDownLatch stopping = new CountDownLatch(1), exited = new CountDownLatch(1);
-        doAnswer(invocation -> {
-            stopping.countDown();
-            assertTrue(exited.await(5, TimeUnit.SECONDS));
-            return null;
-        }).when(executions).stopAndAwaitBySandbox(sandboxId);
+        doAnswer(
+                        invocation -> {
+                            stopping.countDown();
+                            assertTrue(exited.await(5, TimeUnit.SECONDS));
+                            return null;
+                        })
+                .when(executions)
+                .stopAndAwaitBySandbox(sandboxId);
         SandboxCleanupService cleanup = new SandboxCleanupService(sandboxes, executions);
 
         try (var pool = Executors.newSingleThreadExecutor()) {

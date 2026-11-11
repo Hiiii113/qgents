@@ -3,9 +3,8 @@ package qg.qgent.attachment.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
-
 import java.time.LocalDateTime;
+import lombok.Data;
 
 /** attachments 表的上传记录；消息通过 content 中的 attachmentId 引用附件。 */
 @Data

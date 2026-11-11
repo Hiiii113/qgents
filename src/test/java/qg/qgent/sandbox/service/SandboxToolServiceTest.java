@@ -1,23 +1,24 @@
 package qg.qgent.sandbox.service;
 
-import qg.qgent.support.TestIds;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
 
+import java.time.Duration;
+import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import qg.qgent.sandbox.dto.SandboxExecutionContext;
 import qg.qgent.sandbox.execution.dto.ToolExecutionRequest;
 import qg.qgent.sandbox.execution.service.ToolExecutionService;
-
-import java.time.Duration;
-import java.util.Map;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.*;
+import qg.qgent.support.TestIds;
 
 class SandboxToolServiceTest {
-    @AfterEach void clearContext() { SandboxExecutionContext.set(null); }
+    @AfterEach
+    void clearContext() {
+        SandboxExecutionContext.set(null);
+    }
 
     @Test
     void childRunAndActualWorkspaceArePassedDirectlyToExecution() {
@@ -25,10 +26,16 @@ class SandboxToolServiceTest {
         java.util.UUID sandbox = java.util.UUID.randomUUID();
         SandboxSessionManager sessions = mock(SandboxSessionManager.class);
         ToolExecutionService executions = mock(ToolExecutionService.class);
-        when(sessions.require(workspace)).thenReturn(new SandboxSession(root, workspace, sandbox, "key"));
+        when(sessions.require(workspace))
+                .thenReturn(new SandboxSession(root, workspace, sandbox, "key"));
         SandboxExecutionContext.set(child);
 
-        new SandboxToolService(sessions, executions).execute(workspace, "file.read", Map.of("path", "README.md"), Duration.ofSeconds(30));
+        new SandboxToolService(sessions, executions)
+                .execute(
+                        workspace,
+                        "file.read",
+                        Map.of("path", "README.md"),
+                        Duration.ofSeconds(30));
 
         var request = ArgumentCaptor.forClass(ToolExecutionRequest.class);
         verify(executions).execute(eq(sandbox), request.capture());

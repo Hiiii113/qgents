@@ -1,12 +1,14 @@
 package qg.qgent.notification.service;
 
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.config.PushProperties;
 import qg.qgent.notification.dto.PushDeviceRegistrationRequest;
@@ -17,10 +19,6 @@ import qg.qgent.notification.entity.PushDeviceEntity;
 import qg.qgent.notification.mapper.NotificationMapper;
 import qg.qgent.notification.mapper.PushDeliveryMapper;
 import qg.qgent.notification.mapper.PushDeviceMapper;
-
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.util.List;
 
 /** 手机设备注册和推送队列调度；设备凭证加密保存，发送失败按配置重试。 */
 @Service
@@ -37,7 +35,8 @@ public class PushNotificationService {
     @Transactional
     public PushDeviceResponse register(Long userId, PushDeviceRegistrationRequest request) {
         if (!properties.deliveryConfigured()) {
-            throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "PUSH_NOT_CONFIGURED", "离线推送服务尚未配置");
+            throw new ApiException(
+                    HttpStatus.SERVICE_UNAVAILABLE, "PUSH_NOT_CONFIGURED", "离线推送服务尚未配置");
         }
         String installationId = request.getInstallationId().trim();
         String token = request.getToken().trim();
@@ -78,7 +77,8 @@ public class PushNotificationService {
     /** 通知落库后创建每台活动设备一条推送记录（同一通知和设备只保留一条）。 */
     @Transactional
     public void enqueue(NotificationEntity notification) {
-        for (PushDeviceEntity device : deviceMapper.selectActiveByUser(notification.getRecipientUserId())) {
+        for (PushDeviceEntity device :
+                deviceMapper.selectActiveByUser(notification.getRecipientUserId())) {
             PushDeliveryEntity delivery = new PushDeliveryEntity();
             delivery.setNotificationId(notification.getId());
             delivery.setDeviceId(device.getId());
@@ -104,31 +104,51 @@ public class PushNotificationService {
         for (PushDeliveryEntity candidate : due) {
             if (deliveryMapper.claim(candidate.getId(), now) == 0) continue;
             PushDeliveryEntity delivery = deliveryMapper.selectById(candidate.getId());
-            PushDeviceEntity device = delivery == null ? null : deviceMapper.selectById(delivery.getDeviceId());
-            NotificationEntity notification = delivery == null ? null : notificationMapper.selectById(delivery.getNotificationId());
-            if (delivery == null || device == null || notification == null || !Boolean.TRUE.equals(device.getActive())) {
-                deliveryMapper.markFailed(candidate.getId(), "PUSH_TARGET_NOT_FOUND", now.plusDays(3650), now);
+            PushDeviceEntity device =
+                    delivery == null ? null : deviceMapper.selectById(delivery.getDeviceId());
+            NotificationEntity notification =
+                    delivery == null
+                            ? null
+                            : notificationMapper.selectById(delivery.getNotificationId());
+            if (delivery == null
+                    || device == null
+                    || notification == null
+                    || !Boolean.TRUE.equals(device.getActive())) {
+                deliveryMapper.markFailed(
+                        candidate.getId(), "PUSH_TARGET_NOT_FOUND", now.plusDays(3650), now);
                 continue;
             }
             try {
-                PushSendResult result = gateway.send(tokenCipher.decrypt(device.getTokenCiphertext()), notification);
+                PushSendResult result =
+                        gateway.send(
+                                tokenCipher.decrypt(device.getTokenCiphertext()), notification);
                 deliveryMapper.markSent(delivery.getId(), result.getProviderMessageId(), now);
             } catch (PushGatewayException e) {
                 if (e.isInvalidToken()) {
                     device.setActive(false);
                     deviceMapper.updateById(device);
                 }
-                int attempt = Math.max(1, delivery.getAttemptCount() == null ? 1 : delivery.getAttemptCount());
+                int attempt =
+                        Math.max(
+                                1,
+                                delivery.getAttemptCount() == null
+                                        ? 1
+                                        : delivery.getAttemptCount());
                 long backoffSeconds = Math.min(300, 1L << Math.min(attempt, 8));
-                deliveryMapper.markFailed(delivery.getId(), e.getCode(), now.plusSeconds(backoffSeconds), now);
+                deliveryMapper.markFailed(
+                        delivery.getId(), e.getCode(), now.plusSeconds(backoffSeconds), now);
             } catch (RuntimeException e) {
-                deliveryMapper.markFailed(delivery.getId(), "PUSH_DELIVERY_FAILED", now.plusMinutes(5), now);
+                deliveryMapper.markFailed(
+                        delivery.getId(), "PUSH_DELIVERY_FAILED", now.plusMinutes(5), now);
             }
         }
     }
 
     private PushDeviceResponse view(PushDeviceEntity entity) {
-        return new PushDeviceResponse(entity.getId().toString(), entity.getInstallationId(), entity.getPlatform(),
+        return new PushDeviceResponse(
+                entity.getId().toString(),
+                entity.getInstallationId(),
+                entity.getPlatform(),
                 Boolean.TRUE.equals(entity.getActive()));
     }
 }

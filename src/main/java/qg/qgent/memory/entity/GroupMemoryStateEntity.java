@@ -3,9 +3,8 @@ package qg.qgent.memory.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
-
 import java.time.LocalDateTime;
+import lombok.Data;
 
 /** 群记忆后台提炼的调度与进度状态，对应表 group_memory_state（一 group 一行）。 */
 @Data

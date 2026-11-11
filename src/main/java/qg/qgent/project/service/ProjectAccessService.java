@@ -3,7 +3,6 @@ package qg.qgent.project.service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.entity.ProjectMemberEntity;
@@ -13,7 +12,6 @@ import qg.qgent.team.entity.TeamEntity;
 import qg.qgent.team.entity.TeamMemberEntity;
 import qg.qgent.team.mapper.TeamMapper;
 import qg.qgent.team.mapper.TeamMemberMapper;
-
 
 /** 服务端团队与项目访问边界，不信任客户端提交的角色或用户标识。 */
 @Service
@@ -43,7 +41,8 @@ public class ProjectAccessService {
         if ("TEAM_OWNER".equals(teamRole(project.getTeamId(), userId))) {
             return "PROJECT_ADMIN";
         }
-        ProjectMemberEntity member = projectMemberMapper.selectByProjectAndUser(project.getId(), userId);
+        ProjectMemberEntity member =
+                projectMemberMapper.selectByProjectAndUser(project.getId(), userId);
         if (member == null) {
             throw notFound();
         }
@@ -54,7 +53,8 @@ public class ProjectAccessService {
         if ("TEAM_OWNER".equals(teamRole(project.getTeamId(), userId))) {
             return;
         }
-        ProjectMemberEntity member = projectMemberMapper.selectByProjectAndUser(project.getId(), userId);
+        ProjectMemberEntity member =
+                projectMemberMapper.selectByProjectAndUser(project.getId(), userId);
         if (member != null && "PROJECT_ADMIN".equals(member.getRole())) {
             return;
         }
@@ -75,7 +75,9 @@ public class ProjectAccessService {
     /** 已读入团队行时的生效角色；非成员返回 null。 */
     public String teamRole(TeamEntity team, Long userId) {
         TeamMemberEntity member = teamMemberMapper.selectByTeamAndUser(team.getId(), userId);
-        return member == null ? null : effectiveTeamRole(team.getOwnerUserId(), userId, member.getRole());
+        return member == null
+                ? null
+                : effectiveTeamRole(team.getOwnerUserId(), userId, member.getRole());
     }
 
     public String teamRole(Long teamId, Long userId) {

@@ -1,15 +1,5 @@
 package qg.qgent.agent.service;
 
-import qg.qgent.support.TestIds;
-
-import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import qg.qgent.agent.entity.AgentEntity;
-import qg.qgent.agent.mapper.AgentMapper;
-import qg.qgent.common.web.ApiException;
-
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -18,6 +8,14 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import qg.qgent.agent.entity.AgentEntity;
+import qg.qgent.agent.mapper.AgentMapper;
+import qg.qgent.common.web.ApiException;
+import qg.qgent.support.TestIds;
+
 /** 每个项目拥有自己的默认 Agent；Agent 只属于创建它的项目。 */
 class AgentServiceTest {
     private final AgentMapper agents = mock(AgentMapper.class);
@@ -25,10 +23,11 @@ class AgentServiceTest {
 
     @Test
     void everyProjectGetsItsOwnDefaultAgent() {
-        when(agents.insert(any(AgentEntity.class))).thenAnswer(call -> {
-            call.getArgument(0, AgentEntity.class).setId(TestIds.next());
-            return 1;
-        });
+        when(agents.insert(any(AgentEntity.class)))
+                .thenAnswer(call -> {
+                    call.getArgument(0, AgentEntity.class).setId(TestIds.next());
+                    return 1;
+                });
         Long firstProject = TestIds.next(), secondProject = TestIds.next();
 
         AgentEntity first = service.createDefaultAgent(firstProject);
@@ -51,7 +50,8 @@ class AgentServiceTest {
         when(agents.selectBatchIds(List.of(agentId))).thenReturn(List.of(foreign));
 
         assertThatThrownBy(() -> service.requireProjectAgents(ownProject, List.of(agentId)))
-                .isInstanceOfSatisfying(ApiException.class,
+                .isInstanceOfSatisfying(
+                        ApiException.class,
                         error -> assertThat(error.code()).isEqualTo("INVALID_GROUP_AGENT"));
     }
 
@@ -59,8 +59,10 @@ class AgentServiceTest {
     void unknownAgentIsRejectedBeforeInvitesAreWritten() {
         when(agents.selectBatchIds(any())).thenReturn(List.of());
 
-        assertThatThrownBy(() -> service.requireProjectAgents(TestIds.next(), List.of(TestIds.next())))
-                .isInstanceOfSatisfying(ApiException.class,
+        assertThatThrownBy(
+                        () -> service.requireProjectAgents(TestIds.next(), List.of(TestIds.next())))
+                .isInstanceOfSatisfying(
+                        ApiException.class,
                         error -> assertThat(error.code()).isEqualTo("INVALID_GROUP_AGENT"));
     }
 
@@ -71,7 +73,8 @@ class AgentServiceTest {
         when(agents.selectBatchIds(List.of(agentId))).thenReturn(List.of(pending));
 
         assertThatThrownBy(() -> service.requireProjectAgents(project, List.of(agentId)))
-                .isInstanceOfSatisfying(ApiException.class,
+                .isInstanceOfSatisfying(
+                        ApiException.class,
                         error -> assertThat(error.code()).isEqualTo("INVALID_GROUP_AGENT"));
     }
 
@@ -82,7 +85,8 @@ class AgentServiceTest {
         when(agents.selectBatchIds(List.of(agentId))).thenReturn(List.of(rejected));
 
         assertThatThrownBy(() -> service.requireProjectAgents(project, List.of(agentId)))
-                .isInstanceOfSatisfying(ApiException.class,
+                .isInstanceOfSatisfying(
+                        ApiException.class,
                         error -> assertThat(error.code()).isEqualTo("INVALID_GROUP_AGENT"));
     }
 
@@ -94,13 +98,15 @@ class AgentServiceTest {
 
         assertThat(service.requireActiveProjectAgent(project, agentId)).isSameAs(active);
         assertThatThrownBy(() -> service.requireActiveProjectAgent(TestIds.next(), agentId))
-                .isInstanceOfSatisfying(ApiException.class,
+                .isInstanceOfSatisfying(
+                        ApiException.class,
                         error -> assertThat(error.code()).isEqualTo("AGENT_NOT_ACTIVE"));
 
         AgentEntity pending = agent(agentId, project, AgentEntity.STATUS_PENDING);
         when(agents.selectById(agentId)).thenReturn(pending);
         assertThatThrownBy(() -> service.requireActiveProjectAgent(project, agentId))
-                .isInstanceOfSatisfying(ApiException.class,
+                .isInstanceOfSatisfying(
+                        ApiException.class,
                         error -> assertThat(error.code()).isEqualTo("AGENT_NOT_ACTIVE"));
     }
 
@@ -128,7 +134,8 @@ class AgentServiceTest {
         Long projectId = TestIds.next();
         when(agents.selectDefaultAgent(projectId)).thenReturn(null);
 
-        assertThatThrownBy(() -> service.defaultAgent(projectId)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> service.defaultAgent(projectId))
+                .isInstanceOf(IllegalStateException.class);
         ArgumentCaptor<Long> captor = ArgumentCaptor.forClass(Long.class);
         verify(agents).selectDefaultAgent(captor.capture());
         assertThat(captor.getValue()).isEqualTo(projectId);

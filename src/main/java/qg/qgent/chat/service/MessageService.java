@@ -3,6 +3,11 @@ package qg.qgent.chat.service;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -10,16 +15,15 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
 import qg.qgent.chat.dto.Mention;
 import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.dto.MessageSendRequest;
-import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.entity.ChatGroupEntity;
+import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.event.GroupMessageCreatedEvent;
 import qg.qgent.chat.event.MessageSentEvent;
-import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.mapper.ChatGroupMapper;
+import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.common.dto.KeysetPagination;
 import qg.qgent.common.dto.PageInfo;
 import qg.qgent.common.dto.PageSlice;
@@ -28,12 +32,6 @@ import qg.qgent.notification.service.NotificationService;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
-
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.util.*;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 /** 群消息业务：发送、clientMessageId 去重、消息序号分配、历史分页与断线补拉。 */
 @Service
@@ -51,12 +49,16 @@ public class MessageService {
     private final MessageViews views;
     private final ApplicationEventPublisher eventPublisher;
 
-    public MessageService(MessageMapper messageMapper, ChatGroupMapper groupMapper,
-                          UserMapper userMapper,
-                          GroupService groupService,
-                          ObjectMapper mapper,
-                          EventService eventService, NotificationService notificationService,
-                          MessageViews views, ApplicationEventPublisher eventPublisher) {
+    public MessageService(
+            MessageMapper messageMapper,
+            ChatGroupMapper groupMapper,
+            UserMapper userMapper,
+            GroupService groupService,
+            ObjectMapper mapper,
+            EventService eventService,
+            NotificationService notificationService,
+            MessageViews views,
+            ApplicationEventPublisher eventPublisher) {
         this.messageMapper = messageMapper;
         this.groupMapper = groupMapper;
         this.userMapper = userMapper;
@@ -87,7 +89,8 @@ public class MessageService {
         if (group == null || !group.getProjectId().equals(projectId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
         }
-        for (Mention mention : body.getMentions() == null ? List.<Mention>of() : body.getMentions()) {
+        for (Mention mention :
+                body.getMentions() == null ? List.<Mention>of() : body.getMentions()) {
             if ("AGENT".equals(mention.getType())) {
                 groupService.requireGroupAgent(groupId, mention.getId());
             }
@@ -104,32 +107,50 @@ public class MessageService {
      * @param groupName  来源群名（已查好，避免再查一次）
      * @param textPreview 消息文本摘要（由监听器从已落库消息提取；为空则通知不含摘要）
      */
-    public void notifyMentionedUsersAfterCommit(MessageSentEvent event, String groupName, String textPreview) {
+    public void notifyMentionedUsersAfterCommit(
+            MessageSentEvent event, String groupName, String textPreview) {
         List<Mention> mentions = event.mentions();
         if (mentions == null || mentions.isEmpty()) {
             return;
         }
         try {
-            List<Long> users = mentions.stream()
-                    .filter(m -> "USER".equals(m.getType()))
-                    .filter(m -> m.getId() != null && !m.getId().equals(event.actor()))
-                    .map(Mention::getId)
-                    .distinct()
-                    .toList();
+            List<Long> users =
+                    mentions.stream()
+                            .filter(m -> "USER".equals(m.getType()))
+                            .filter(m -> m.getId() != null && !m.getId().equals(event.actor()))
+                            .map(Mention::getId)
+                            .distinct()
+                            .toList();
             if (users.isEmpty()) {
                 return;
             }
             String senderName = senderDisplayName(event.actor());
             String title = "有人在群聊中提到了你";
-            String description = senderName + " 在群「" + groupName + "」中提到了你"
-                    + (textPreview == null || textPreview.isBlank() ? "" : "：" + textPreview);
+            String description =
+                    senderName
+                            + " 在群「"
+                            + groupName
+                            + "」中提到了你"
+                            + (textPreview == null || textPreview.isBlank()
+                                    ? ""
+                                    : "：" + textPreview);
             for (Long userId : users) {
-                notificationService.notify(userId, event.projectId(), event.groupId(), "MESSAGE_MENTION",
-                        title, description, event.messageId() == null ? null : event.messageId().toString());
+                notificationService.notify(
+                        userId,
+                        event.projectId(),
+                        event.groupId(),
+                        "MESSAGE_MENTION",
+                        title,
+                        description,
+                        event.messageId() == null ? null : event.messageId().toString());
             }
         } catch (RuntimeException e) {
-            log.warn("mention notification skipped, projectId={}, groupId={}, actor={}: {}",
-                    event.projectId(), event.groupId(), event.actor(), e.getMessage());
+            log.warn(
+                    "mention notification skipped, projectId={}, groupId={}, actor={}: {}",
+                    event.projectId(),
+                    event.groupId(),
+                    event.actor(),
+                    e.getMessage());
         }
     }
 
@@ -137,8 +158,11 @@ public class MessageService {
     private String senderDisplayName(Long actor) {
         try {
             UserEntity sender = userMapper.selectById(actor);
-            return sender == null || sender.getDisplayName() == null || sender.getDisplayName().isBlank()
-                    ? "成员" : sender.getDisplayName();
+            return sender == null
+                            || sender.getDisplayName() == null
+                            || sender.getDisplayName().isBlank()
+                    ? "成员"
+                    : sender.getDisplayName();
         } catch (RuntimeException e) {
             return "成员";
         }
@@ -158,7 +182,8 @@ public class MessageService {
 
     /** Agent 接收完整正文，避免把消息协议对象当成任务标题或需求。 */
     public String agentInstruction(MessageEntity message) {
-        Map<String, Object> content = readJson(message.getContent(), new TypeReference<Map<String, Object>>() { });
+        Map<String, Object> content =
+                readJson(message.getContent(), new TypeReference<Map<String, Object>>() {});
         Object text = content.get("text");
         return text instanceof String value ? value : message.getContent();
     }
@@ -175,12 +200,14 @@ public class MessageService {
             return "";
         }
         try {
-            Map<String, Object> content = readJson(message.getContent(),
-                    new TypeReference<Map<String, Object>>() {
-                    });
+            Map<String, Object> content =
+                    readJson(message.getContent(), new TypeReference<Map<String, Object>>() {});
             return messageText(content);
         } catch (RuntimeException e) {
-            log.warn("message text preview extract failed, messageId={}: {}", message.getId(), e.getMessage());
+            log.warn(
+                    "message text preview extract failed, messageId={}: {}",
+                    message.getId(),
+                    e.getMessage());
             return "";
         }
     }
@@ -201,13 +228,18 @@ public class MessageService {
     }
 
     private ChatGroupEntity lockGroup(Long groupId) {
-        return groupMapper.selectOne(Wrappers.<ChatGroupEntity>lambdaQuery()
-                .eq(ChatGroupEntity::getId, groupId)
-                .last("FOR UPDATE"));
+        return groupMapper.selectOne(
+                Wrappers.<ChatGroupEntity>lambdaQuery()
+                        .eq(ChatGroupEntity::getId, groupId)
+                        .last("FOR UPDATE"));
     }
 
-    private MessageResponse doSend(Long projectId, Long groupId, Long authorUserId, Long senderAgentId,
-                                   MessageSendRequest body) {
+    private MessageResponse doSend(
+            Long projectId,
+            Long groupId,
+            Long authorUserId,
+            Long senderAgentId,
+            MessageSendRequest body) {
         String type = normalizeType(body.getType());
         validateContent(type, body.getContent());
         List<Mention> mentions = body.getMentions() == null ? List.of() : body.getMentions();
@@ -223,8 +255,8 @@ public class MessageService {
         if (body.getReplyToId() != null) {
             MessageEntity reply = messageMapper.selectById(body.getReplyToId());
             if (reply == null || !reply.getGroupId().equals(groupId)) {
-                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "REPLY_MESSAGE_NOT_FOUND",
-                        "被回复的消息不存在");
+                throw new ApiException(
+                        HttpStatus.UNPROCESSABLE_ENTITY, "REPLY_MESSAGE_NOT_FOUND", "被回复的消息不存在");
             }
         }
 
@@ -253,19 +285,33 @@ public class MessageService {
             }
             throw new ApiException(HttpStatus.CONFLICT, "MESSAGE_SEND_CONFLICT", "消息发送冲突，请重试");
         }
-        groupMapper.update(null, Wrappers.<ChatGroupEntity>lambdaUpdate()
-                .set(ChatGroupEntity::getLastMessageAt, LocalDateTime.now(ZoneOffset.UTC))
-                .eq(ChatGroupEntity::getId, groupId));
+        groupMapper.update(
+                null,
+                Wrappers.<ChatGroupEntity>lambdaUpdate()
+                        .set(ChatGroupEntity::getLastMessageAt, LocalDateTime.now(ZoneOffset.UTC))
+                        .eq(ChatGroupEntity::getId, groupId));
         // 项目级 SSE：新消息信号（REST 存真相，前端收到后刷新消息列表）
-        eventService.publish(projectId, groupId, "message.created", id(message.getId()),
-                Map.of("projectId", id(projectId), "groupId", id(groupId), "messageId", id(message.getId()),
-                        "sequence", message.getSequenceNo()));
+        eventService.publish(
+                projectId,
+                groupId,
+                "message.created",
+                id(message.getId()),
+                Map.of(
+                        "projectId",
+                        id(projectId),
+                        "groupId",
+                        id(groupId),
+                        "messageId",
+                        id(message.getId()),
+                        "sequence",
+                        message.getSequenceNo()));
         // 每条新消息都维护群记忆的活跃状态；与消息同事务，回滚时一起回滚。
         eventPublisher.publishEvent(new GroupMessageCreatedEvent(projectId, groupId));
         // 仅新建用户消息触发提及处理；幂等返回不重复通知或启动 Agent。
         if (authorUserId != null && !mentions.isEmpty()) {
-            eventPublisher.publishEvent(new MessageSentEvent(authorUserId, projectId, groupId,
-                    message.getId(), mentions));
+            eventPublisher.publishEvent(
+                    new MessageSentEvent(
+                            authorUserId, projectId, groupId, message.getId(), mentions));
         }
         return views.assemble(List.of(message), projectId).getFirst();
     }
@@ -283,20 +329,30 @@ public class MessageService {
      * @param limit     每页数量（自动收敛到 1..100）
      * @return 消息分页结果
      */
-    public PageSlice<MessageResponse> list(Long actor, Long projectId, Long groupId, String cursor, int limit) {
+    public PageSlice<MessageResponse> list(
+            Long actor, Long projectId, Long groupId, String cursor, int limit) {
         // 默认群对项目成员开放，新建群要求受邀成员身份。
         groupService.requireGroupMember(projectId, groupId, actor);
         int pageSize = KeysetPagination.pageSize(limit);
         String scope = "group-messages:" + groupId;
         Long before = KeysetPagination.decodeCursor(cursor, scope);
-        List<MessageEntity> rows = messageMapper.selectList(Wrappers.<MessageEntity>lambdaQuery()
-                .eq(MessageEntity::getGroupId, groupId)
-                .lt(before != null, MessageEntity::getSequenceNo, before)
-                .orderByDesc(MessageEntity::getSequenceNo)
-                .last("limit " + (pageSize + 1)));
-        Map<Long, MessageResponse> bySequence = views.assemble(rows, projectId).stream()
-                .collect(Collectors.toMap(MessageResponse::getSequence, Function.identity()));
-        return KeysetPagination.keysetPage(rows, pageSize, scope, MessageEntity::getSequenceNo,
+        List<MessageEntity> rows =
+                messageMapper.selectList(
+                        Wrappers.<MessageEntity>lambdaQuery()
+                                .eq(MessageEntity::getGroupId, groupId)
+                                .lt(before != null, MessageEntity::getSequenceNo, before)
+                                .orderByDesc(MessageEntity::getSequenceNo)
+                                .last("limit " + (pageSize + 1)));
+        Map<Long, MessageResponse> bySequence =
+                views.assemble(rows, projectId).stream()
+                        .collect(
+                                Collectors.toMap(
+                                        MessageResponse::getSequence, Function.identity()));
+        return KeysetPagination.keysetPage(
+                rows,
+                pageSize,
+                scope,
+                MessageEntity::getSequenceNo,
                 row -> bySequence.get(row.getSequenceNo()));
     }
 
@@ -304,16 +360,19 @@ public class MessageService {
      * 拉取指定序号之后的新消息，供实时连接恢复时补齐聊天窗口。
      * 返回结果严格按 sequence 升序；服务端不接受客户端伪造的消息 ID 作为游标。
      */
-    public PageSlice<MessageResponse> listAfterSequence(Long actor, Long projectId, Long groupId,
-                                                         long afterSequence, int limit) {
+    public PageSlice<MessageResponse> listAfterSequence(
+            Long actor, Long projectId, Long groupId, long afterSequence, int limit) {
         groupService.requireGroupMember(projectId, groupId, actor);
         if (afterSequence < 0) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_MESSAGE_CURSOR", "afterSequence 必须为非负数");
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST, "INVALID_MESSAGE_CURSOR", "afterSequence 必须为非负数");
         }
         int pageSize = KeysetPagination.pageSize(limit);
-        List<MessageEntity> rows = messageMapper.selectAfterSequence(groupId, afterSequence, pageSize + 1);
+        List<MessageEntity> rows =
+                messageMapper.selectAfterSequence(groupId, afterSequence, pageSize + 1);
         boolean hasMore = rows.size() > pageSize;
-        List<MessageResponse> page = views.assemble(rows.stream().limit(pageSize).toList(), projectId);
+        List<MessageResponse> page =
+                views.assemble(rows.stream().limit(pageSize).toList(), projectId);
         // 增量补拉的续读参数是消息序号，不使用游标
         String nextCursor = hasMore ? String.valueOf(page.getLast().getSequence()) : null;
         return new PageSlice<>(page, new PageInfo(nextCursor, hasMore));
@@ -341,25 +400,29 @@ public class MessageService {
     }
 
     private MessageEntity findByClientMessageId(Long groupId, String clientMessageId) {
-        return messageMapper.selectOne(Wrappers.<MessageEntity>lambdaQuery()
-                .eq(MessageEntity::getGroupId, groupId)
-                .eq(MessageEntity::getClientMessageId, clientMessageId));
+        return messageMapper.selectOne(
+                Wrappers.<MessageEntity>lambdaQuery()
+                        .eq(MessageEntity::getGroupId, groupId)
+                        .eq(MessageEntity::getClientMessageId, clientMessageId));
     }
 
     private String normalizeType(String type) {
         if (type == null) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "MESSAGE_TYPE_INVALID", "不支持的消息类型");
+            throw new ApiException(
+                    HttpStatus.UNPROCESSABLE_ENTITY, "MESSAGE_TYPE_INVALID", "不支持的消息类型");
         }
         String normalized = type.trim().toUpperCase(Locale.ROOT);
         if (!PUBLIC_TYPES.contains(normalized)) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "MESSAGE_TYPE_INVALID", "不支持的消息类型");
+            throw new ApiException(
+                    HttpStatus.UNPROCESSABLE_ENTITY, "MESSAGE_TYPE_INVALID", "不支持的消息类型");
         }
         return normalized;
     }
 
     private void validateContent(String type, Map<String, Object> content) {
         if (content == null || content.isEmpty()) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "MESSAGE_CONTENT_INVALID", "消息内容不能为空");
+            throw new ApiException(
+                    HttpStatus.UNPROCESSABLE_ENTITY, "MESSAGE_CONTENT_INVALID", "消息内容不能为空");
         }
         switch (type) {
             case "TEXT" -> {
@@ -369,16 +432,19 @@ public class MessageService {
                 requireField(content, "language", "代码消息缺少 language 字段");
                 requireField(content, "code", "代码消息缺少 code 字段");
             }
-            case "IMAGE", "FILE" -> requireField(content, "attachmentId", type + " 消息缺少 attachmentId 字段");
-            default -> throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "MESSAGE_TYPE_INVALID",
-                    "不支持的消息类型");
+            case "IMAGE", "FILE" ->
+                    requireField(content, "attachmentId", type + " 消息缺少 attachmentId 字段");
+            default ->
+                    throw new ApiException(
+                            HttpStatus.UNPROCESSABLE_ENTITY, "MESSAGE_TYPE_INVALID", "不支持的消息类型");
         }
     }
 
     private void requireField(Map<String, Object> content, String field, String message) {
         Object value = content.get(field);
         if (!(value instanceof String s) || s.isBlank()) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "MESSAGE_CONTENT_INVALID", message);
+            throw new ApiException(
+                    HttpStatus.UNPROCESSABLE_ENTITY, "MESSAGE_CONTENT_INVALID", message);
         }
     }
 
@@ -401,5 +467,4 @@ public class MessageService {
     private String trimmed(String value) {
         return value == null ? null : value.trim();
     }
-
 }

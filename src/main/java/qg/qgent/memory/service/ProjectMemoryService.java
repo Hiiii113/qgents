@@ -1,15 +1,5 @@
 package qg.qgent.memory.service;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-
-import qg.qgent.common.web.ApiException;
-import qg.qgent.memory.dto.ProjectMemoryResponse;
-import qg.qgent.project.service.ProjectAccessService;
-import qg.qgent.realtime.service.EventService;
-import qg.qgent.project.storage.ProjectDirectoryService;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileAlreadyExistsException;
@@ -22,6 +12,14 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.locks.ReentrantLock;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import qg.qgent.common.web.ApiException;
+import qg.qgent.memory.dto.ProjectMemoryResponse;
+import qg.qgent.project.service.ProjectAccessService;
+import qg.qgent.project.storage.ProjectDirectoryService;
+import qg.qgent.realtime.service.EventService;
 
 /**
  * 项目长期记忆：项目目录下的 memory.md 是正文唯一来源，按内容版本检测并发修改。
@@ -41,9 +39,11 @@ public class ProjectMemoryService {
     private final ConcurrentMap<Long, ReentrantLock> locks = new ConcurrentHashMap<>();
     private final int maxMemoryChars;
 
-    public ProjectMemoryService(ProjectAccessService access, ProjectDirectoryService directories,
-                                EventService events,
-                                @Value("${app.agent.context.max-memory-chars:12000}") int maxMemoryChars) {
+    public ProjectMemoryService(
+            ProjectAccessService access,
+            ProjectDirectoryService directories,
+            EventService events,
+            @Value("${app.agent.context.max-memory-chars:12000}") int maxMemoryChars) {
         this.access = access;
         this.directories = directories;
         this.events = events;
@@ -71,14 +71,23 @@ public class ProjectMemoryService {
                 return current;
             }
             if (!current.getVersion().equals(baseVersion)) {
-                throw new ApiException(HttpStatus.CONFLICT, "MEMORY_VERSION_CONFLICT",
-                        "项目记忆在候选提出后已被修改，请重新提出候选");
+                throw new ApiException(
+                        HttpStatus.CONFLICT, "MEMORY_VERSION_CONFLICT", "项目记忆在候选提出后已被修改，请重新提出候选");
             }
             write(projectId, content);
             ProjectMemoryResponse saved = read(projectId);
-            events.publish(projectId, null, "memory.updated", projectId.toString(),
-                    Map.of("projectId", projectId.toString(), "version", saved.getVersion(),
-                            "updatedAt", saved.getUpdatedAt().toString()));
+            events.publish(
+                    projectId,
+                    null,
+                    "memory.updated",
+                    projectId.toString(),
+                    Map.of(
+                            "projectId",
+                            projectId.toString(),
+                            "version",
+                            saved.getVersion(),
+                            "updatedAt",
+                            saved.getUpdatedAt().toString()));
             return saved;
         } finally {
             lock.unlock();
@@ -88,7 +97,9 @@ public class ProjectMemoryService {
     /** 候选正文必须与注入 Agent 上下文的记忆预算一致；超限时拒绝提出，而不是等到审批才失败。 */
     public void requireContentBudget(String content) {
         if (content.length() > maxMemoryChars) {
-            throw new ApiException(HttpStatus.CONFLICT, "MEMORY_CONTEXT_LIMIT_EXCEEDED",
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "MEMORY_CONTEXT_LIMIT_EXCEEDED",
                     "项目记忆超出 Agent 上下文字符预算 " + maxMemoryChars + "，请精简候选后重新提出");
         }
     }
@@ -98,8 +109,12 @@ public class ProjectMemoryService {
         Path file = memoryFile(projectId);
         try {
             String content = Files.readString(file, StandardCharsets.UTF_8);
-            return new ProjectMemoryResponse(projectId.toString(), content, MemorySupport.version(content),
-                    LocalDateTime.ofInstant(Files.getLastModifiedTime(file).toInstant(), ZoneOffset.UTC));
+            return new ProjectMemoryResponse(
+                    projectId.toString(),
+                    content,
+                    MemorySupport.version(content),
+                    LocalDateTime.ofInstant(
+                            Files.getLastModifiedTime(file).toInstant(), ZoneOffset.UTC));
         } catch (IOException e) {
             throw new IllegalStateException("项目记忆读取失败: " + file, e);
         }
@@ -111,7 +126,11 @@ public class ProjectMemoryService {
             // 先写临时文件再原子替换，避免进程中断留下半篇记忆。
             Path temporary = Files.createTempFile(file.getParent(), FILE_NAME, ".tmp");
             Files.writeString(temporary, content, StandardCharsets.UTF_8);
-            Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            Files.move(
+                    temporary,
+                    file,
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
             throw new IllegalStateException("项目记忆写入失败: " + file, e);
         }

@@ -9,16 +9,59 @@ import java.util.Set;
  * 媒体类型与扩展名到类型的判定也只在这里，新增类型时不需要在其它模块补判断。
  */
 public enum AttachmentKind {
-    IMAGE, PDF, TEXT, CODE, UNSUPPORTED;
+    IMAGE,
+    PDF,
+    TEXT,
+    CODE,
+    UNSUPPORTED;
 
-    private static final Set<String> CODE_MEDIA_TYPES = Set.of(
-            "application/json", "application/xml", "application/javascript", "application/x-javascript",
-            "application/x-yaml", "application/x-sh", "application/x-python");
+    private static final Set<String> CODE_MEDIA_TYPES =
+            Set.of(
+                    "application/json",
+                    "application/xml",
+                    "application/javascript",
+                    "application/x-javascript",
+                    "application/x-yaml",
+                    "application/x-sh",
+                    "application/x-python");
 
-    private static final Set<String> CODE_EXTENSIONS = Set.of(
-            "java", "kt", "ts", "tsx", "js", "jsx", "py", "go", "rs", "c", "cpp", "cc", "h", "hpp",
-            "sql", "sh", "bash", "zsh", "json", "yaml", "yml", "xml", "md", "markdown", "properties",
-            "css", "scss", "html", "htm", "vue", "gradle", "toml", "ini", "cfg", "conf");
+    private static final Set<String> CODE_EXTENSIONS =
+            Set.of(
+                    "java",
+                    "kt",
+                    "ts",
+                    "tsx",
+                    "js",
+                    "jsx",
+                    "py",
+                    "go",
+                    "rs",
+                    "c",
+                    "cpp",
+                    "cc",
+                    "h",
+                    "hpp",
+                    "sql",
+                    "sh",
+                    "bash",
+                    "zsh",
+                    "json",
+                    "yaml",
+                    "yml",
+                    "xml",
+                    "md",
+                    "markdown",
+                    "properties",
+                    "css",
+                    "scss",
+                    "html",
+                    "htm",
+                    "vue",
+                    "gradle",
+                    "toml",
+                    "ini",
+                    "cfg",
+                    "conf");
 
     private static final Set<String> TEXT_EXTENSIONS = Set.of("txt", "log");
 

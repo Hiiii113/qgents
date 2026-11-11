@@ -1,24 +1,20 @@
 package qg.qgent.attachment.storage;
 
-import qg.qgent.support.TestIds;
-
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
-import qg.qgent.attachment.dto.UploadCredential;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import qg.qgent.attachment.dto.UploadCredential;
+import qg.qgent.support.TestIds;
 
 /** 本地磁盘附件存储单测：凭证代理路径、字节落盘/回读/存在性、对象键路径逃逸防护。 */
 class LocalAttachmentStorageTest {
 
-    @TempDir
-    Path root;
+    @TempDir Path root;
 
     private LocalAttachmentStorage storage() {
         return new LocalAttachmentStorage(root.toString(), 900);
@@ -62,7 +58,9 @@ class LocalAttachmentStorageTest {
     @Test
     void rejectsPathTraversalObjectKey() {
         LocalAttachmentStorage storage = storage();
-        assertThatThrownBy(() -> storage.storeBytes("../evil.txt", new ByteArrayInputStream(new byte[0]), 0, 1024))
+        assertThatThrownBy(() ->
+                        storage.storeBytes(
+                                "../evil.txt", new ByteArrayInputStream(new byte[0]), 0, 1024))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> storage.loadContent("../../etc/passwd", null, null))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -88,16 +86,23 @@ class LocalAttachmentStorageTest {
     void failedUploadsNeverPublishPartialFiles() throws Exception {
         LocalAttachmentStorage storage = storage();
         String key = "projects/" + TestIds.next() + "/attachments/" + TestIds.next();
-        assertThatThrownBy(() -> storage.storeBytes(key, new ByteArrayInputStream(new byte[5]), 6, 10))
+        assertThatThrownBy(
+                        () -> storage.storeBytes(key, new ByteArrayInputStream(new byte[5]), 6, 10))
                 .isInstanceOf(qg.qgent.common.web.ApiException.class);
         assertThat(storage.objectSize(key)).isEmpty();
-        assertThatThrownBy(() -> storage.storeBytes(key, new ByteArrayInputStream(new byte[11]), 11, 10))
+        assertThatThrownBy(() ->
+                        storage.storeBytes(key, new ByteArrayInputStream(new byte[11]), 11, 10))
                 .isInstanceOf(qg.qgent.common.web.ApiException.class);
         assertThat(storage.objectSize(key)).isEmpty();
-        java.io.InputStream broken = new java.io.InputStream() {
-            @Override public int read() throws java.io.IOException { throw new java.io.IOException("interrupted"); }
-        };
-        assertThatThrownBy(() -> storage.storeBytes(key, broken, 6, 10)).isInstanceOf(IllegalStateException.class);
+        java.io.InputStream broken =
+                new java.io.InputStream() {
+                    @Override
+                    public int read() throws java.io.IOException {
+                        throw new java.io.IOException("interrupted");
+                    }
+                };
+        assertThatThrownBy(() -> storage.storeBytes(key, broken, 6, 10))
+                .isInstanceOf(IllegalStateException.class);
         assertThat(storage.objectSize(key)).isEmpty();
         try (var files = java.nio.file.Files.walk(root)) {
             assertThat(files.filter(java.nio.file.Files::isRegularFile).toList()).isEmpty();

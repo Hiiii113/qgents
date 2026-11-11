@@ -1,22 +1,19 @@
 package qg.qgent.harness.integration;
 
-import qg.qgent.chat.event.MessageSentEvent;
-
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
-
-import qg.qgent.harness.runtime.AgentChatService;
 import qg.qgent.chat.dto.Mention;
 import qg.qgent.chat.entity.MessageEntity;
+import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.service.GroupService;
 import qg.qgent.chat.service.MessageService;
-
-import java.util.List;
+import qg.qgent.harness.runtime.AgentChatService;
 
 /** 将已提交的 Agent 提及适配为 Harness 运行；普通聊天和用户提及不调用模型。 */
 @Component
@@ -28,8 +25,11 @@ public class MessageSentListener {
     private final MessageService messageService;
     private final GroupService groupService;
 
-    public MessageSentListener(MessageMapper messageMapper, AgentChatService agentChatService,
-                               MessageService messageService, GroupService groupService) {
+    public MessageSentListener(
+            MessageMapper messageMapper,
+            AgentChatService agentChatService,
+            MessageService messageService,
+            GroupService groupService) {
         this.messageMapper = messageMapper;
         this.agentChatService = agentChatService;
         this.messageService = messageService;
@@ -49,11 +49,12 @@ public class MessageSentListener {
         if (mentions == null || mentions.isEmpty()) {
             return;
         }
-        List<Long> agentIds = mentions.stream()
-                .filter(mention -> "AGENT".equals(mention.getType()))
-                .map(Mention::getId)
-                .distinct()
-                .toList();
+        List<Long> agentIds =
+                mentions.stream()
+                        .filter(mention -> "AGENT".equals(mention.getType()))
+                        .map(Mention::getId)
+                        .distinct()
+                        .toList();
         if (agentIds.isEmpty()) {
             return;
         }
@@ -64,10 +65,14 @@ public class MessageSentListener {
             }
             String instruction = messageService.agentInstruction(message);
             List<Long> groupAgentIds = groupService.groupAgentIds(event.groupId());
-            agentIds.stream().filter(groupAgentIds::contains)
+            agentIds.stream()
+                    .filter(groupAgentIds::contains)
                     .forEach(agentId -> runOne(event, agentId, instruction));
         } catch (RuntimeException e) {
-            log.warn("message sent post-processing skipped, messageId={}: {}", messageId, e.getMessage());
+            log.warn(
+                    "message sent post-processing skipped, messageId={}: {}",
+                    messageId,
+                    e.getMessage());
         }
     }
 
@@ -76,7 +81,11 @@ public class MessageSentListener {
         try {
             agentChatService.replyToMention(event, agentId, instruction);
         } catch (RuntimeException e) {
-            log.warn("agent run skipped, groupId={}, agentId={}: {}", event.groupId(), agentId, e.getMessage());
+            log.warn(
+                    "agent run skipped, groupId={}, agentId={}: {}",
+                    event.groupId(),
+                    agentId,
+                    e.getMessage());
         }
     }
 }

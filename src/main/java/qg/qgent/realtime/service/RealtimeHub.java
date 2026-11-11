@@ -2,18 +2,16 @@ package qg.qgent.realtime.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
-
 import qg.qgent.realtime.websocket.RealtimeFrame;
-
-import java.io.IOException;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
 
 /** 保存每个用户的在线连接并推送事件；断线后由客户端重新查询数据。 */
 @Service
@@ -21,7 +19,8 @@ public class RealtimeHub {
     private static final Logger log = LoggerFactory.getLogger(RealtimeHub.class);
 
     private final ObjectMapper mapper;
-    private final ConcurrentHashMap<Long, Set<WebSocketSession>> sessionsByUser = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, Set<WebSocketSession>> sessionsByUser =
+            new ConcurrentHashMap<>();
 
     public RealtimeHub(ObjectMapper mapper) {
         this.mapper = mapper;
@@ -52,7 +51,10 @@ public class RealtimeHub {
         try {
             json = mapper.writeValueAsString(frame);
         } catch (JsonProcessingException e) {
-            log.warn("realtime frame serialization failed, type={}: {}", frame.type(), e.getMessage());
+            log.warn(
+                    "realtime frame serialization failed, type={}: {}",
+                    frame.type(),
+                    e.getMessage());
             return;
         }
         TextMessage message = new TextMessage(json);
@@ -81,12 +83,14 @@ public class RealtimeHub {
 
     /** 遍历当前所有在线连接（供心跳/统计使用，不修改注册表）。 */
     public void forEachSession(Consumer<WebSocketSession> visitor) {
-        sessionsByUser.values().forEach(
-                sessions -> sessions.forEach(session -> {
-                    if (session.isOpen()) {
-                        visitor.accept(session);
-                    }
-                }));
+        sessionsByUser
+                .values()
+                .forEach(sessions ->
+                        sessions.forEach(session -> {
+                            if (session.isOpen()) {
+                                visitor.accept(session);
+                            }
+                        }));
     }
 
     private void closeQuietly(WebSocketSession session) {

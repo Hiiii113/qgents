@@ -22,15 +22,29 @@ public interface CommandExecutor {
             SandboxAllocation sandbox,
             String workingDirectory,
             List<String> command,
-            Duration timeout) throws InterruptedException;
-    default CommandExecutionResult execute(SandboxAllocation sandbox,String directory,List<String> command,
-                                           Duration timeout,java.util.Map<String,String> environment) throws InterruptedException {
+            Duration timeout)
+            throws InterruptedException;
+
+    default CommandExecutionResult execute(
+            SandboxAllocation sandbox,
+            String directory,
+            List<String> command,
+            Duration timeout,
+            java.util.Map<String, String> environment)
+            throws InterruptedException {
         if (!environment.isEmpty()) throw new IllegalStateException("此命令运行器不支持凭证环境");
-        return execute(sandbox,directory,command,timeout);
+        return execute(sandbox, directory, command, timeout);
     }
+
     /** 保存完整输出，供长执行查询；不支持流式输出的运行器在结束后保存。 */
-    default CommandExecutionResult execute(SandboxAllocation sandbox, String directory, List<String> command,
-            Duration timeout, java.util.Map<String, String> environment, java.nio.file.Path outputDirectory) throws InterruptedException {
+    default CommandExecutionResult execute(
+            SandboxAllocation sandbox,
+            String directory,
+            List<String> command,
+            Duration timeout,
+            java.util.Map<String, String> environment,
+            java.nio.file.Path outputDirectory)
+            throws InterruptedException {
         CommandExecutionResult result = execute(sandbox, directory, command, timeout, environment);
         CommandOutput.save(outputDirectory, result, environment);
         return result;

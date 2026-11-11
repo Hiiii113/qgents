@@ -1,25 +1,26 @@
 package qg.qgent.team.mail;
 
-import jakarta.mail.internet.MimeMessage;
-import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.springframework.mail.javamail.JavaMailSender;
-
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import jakarta.mail.internet.MimeMessage;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.springframework.mail.javamail.JavaMailSender;
+
 class TeamInvitationMailerTest {
     @Test
     void mailContainsCopyButtonDomainAndPlainToken() throws Exception {
         JavaMailSender sender = mock(JavaMailSender.class);
-        MimeMessage message = new jakarta.mail.internet.MimeMessage(
-                jakarta.mail.Session.getInstance(new java.util.Properties()));
+        MimeMessage message =
+                new jakarta.mail.internet.MimeMessage(
+                        jakarta.mail.Session.getInstance(new java.util.Properties()));
         when(sender.createMimeMessage()).thenReturn(message);
-        TeamInvitationMailer mailer = new TeamInvitationMailer(sender, "noreply@example.com",
-                "https://app.example.com");
+        TeamInvitationMailer mailer =
+                new TeamInvitationMailer(sender, "noreply@example.com", "https://app.example.com");
 
         mailer.send("member@example.com", "opaque-token");
 
@@ -31,7 +32,9 @@ class TeamInvitationMailerTest {
         assertTrue(html.contains(">opaque-token<"));
         assertTrue(html.contains("user-select:all"));
         assertTrue(html.contains("href=\"https://app.example.com\""));
-        assertFalse(html.contains("https://app.example.com/team-invitations/accept?token=opaque-token"));
+        assertFalse(
+                html.contains(
+                        "https://app.example.com/team-invitations/accept?token=opaque-token"));
         assertFalse(html.contains("https://app.example.com/register"));
         assertFalse(html.contains("<script"));
     }

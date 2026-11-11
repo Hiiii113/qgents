@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-
 import qg.qgent.sandbox.execution.service.ToolExecutionService;
 
 /** 定期取消过期执行并回收沙箱，作为控制层主动销毁之外的安全兜底。 */
@@ -22,10 +21,12 @@ public class SandboxCleanupService {
      */
     @Scheduled(fixedDelayString = "${sandbox.cleanup-interval:30s}")
     public void cleanupExpiredSandboxes() {
-        sandboxes.expiredSandboxIds().forEach(sandboxId -> {
-            executions.stopAndAwaitBySandbox(sandboxId);
-            sandboxes.destroy(sandboxId);
-            log.info("sandbox reclaimed by scheduled cleanup sandboxId={}", sandboxId);
-        });
+        sandboxes
+                .expiredSandboxIds()
+                .forEach(sandboxId -> {
+                    executions.stopAndAwaitBySandbox(sandboxId);
+                    sandboxes.destroy(sandboxId);
+                    log.info("sandbox reclaimed by scheduled cleanup sandboxId={}", sandboxId);
+                });
     }
 }

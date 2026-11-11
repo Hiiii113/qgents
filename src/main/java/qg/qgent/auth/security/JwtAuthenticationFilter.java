@@ -5,19 +5,17 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
-
 import qg.qgent.auth.service.TokenService;
 import qg.qgent.common.web.RequestIdFilter;
-
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Map;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -38,13 +36,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)
+    protected void doFilterInternal(
+            HttpServletRequest req, HttpServletResponse res, FilterChain chain)
             throws ServletException, IOException {
         // 预览供 img/iframe 直接访问，仅统一内容 GET 路径允许 query token；Bearer 优先。
         String header = req.getHeader("Authorization");
         String token = header != null && header.startsWith("Bearer ") ? header.substring(7) : null;
-        if (token == null && "GET".equals(req.getMethod())
-                && req.getRequestURI().substring(req.getContextPath().length())
+        if (token == null
+                && "GET".equals(req.getMethod())
+                && req.getRequestURI()
+                        .substring(req.getContextPath().length())
                         .matches("/api/v1/projects/[^/]+/attachments/[^/]+/content")) {
             token = req.getParameter("token");
         }
@@ -55,7 +56,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 return;
             }
             SecurityContextHolder.getContext()
-                    .setAuthentication(new UsernamePasswordAuthenticationToken(userId, null, List.of()));
+                    .setAuthentication(
+                            new UsernamePasswordAuthenticationToken(userId, null, List.of()));
         }
         chain.doFilter(req, res);
     }
@@ -69,9 +71,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         res.setStatus(401);
         res.setCharacterEncoding(StandardCharsets.UTF_8.name());
         res.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        mapper.writeValue(res.getWriter(),
-                Map.of("error",
-                        Map.of("code", "INVALID_ACCESS_TOKEN", "message", "access token无效或已过期", "details", List.of()),
-                        "requestId", String.valueOf(req.getAttribute(RequestIdFilter.ATTRIBUTE))));
+        mapper.writeValue(
+                res.getWriter(),
+                Map.of(
+                        "error",
+                        Map.of(
+                                "code",
+                                "INVALID_ACCESS_TOKEN",
+                                "message",
+                                "access token无效或已过期",
+                                "details",
+                                List.of()),
+                        "requestId",
+                        String.valueOf(req.getAttribute(RequestIdFilter.ATTRIBUTE))));
     }
 }

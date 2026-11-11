@@ -12,7 +12,9 @@ public class AvatarConfirmRequest {
     // 头像对象键（avatars/{userId}/{uuid}.{ext}），服务端签发，客户端仅原样回传。
     @NotBlank
     @Size(max = 512)
-    @Schema(description = "头像对象键（直传凭证签发），客户端上传后原样回传", maxLength = 512,
+    @Schema(
+            description = "头像对象键（直传凭证签发），客户端上传后原样回传",
+            maxLength = 512,
             requiredMode = Schema.RequiredMode.REQUIRED)
     private String objectKey;
 }

@@ -5,15 +5,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.user.dto.AvatarConfirmRequest;
 import qg.qgent.user.dto.AvatarConfirmResponse;
 import qg.qgent.user.dto.AvatarCredentialResponse;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
-import qg.qgent.common.storage.AvatarStorageService;
-
 
 /** 用户头像：签发凭证、确认上传后写入头像 URL 并删除被替换的旧对象。 */
 @Service
@@ -39,9 +37,11 @@ public class AvatarService {
             throw new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "用户不存在");
         }
         String publicUrl = storage.confirm("avatars", userId, objectKey);
-        userMapper.update(null, Wrappers.<UserEntity>lambdaUpdate()
-                .set(UserEntity::getAvatarUrl, publicUrl)
-                .eq(UserEntity::getId, userId));
+        userMapper.update(
+                null,
+                Wrappers.<UserEntity>lambdaUpdate()
+                        .set(UserEntity::getAvatarUrl, publicUrl)
+                        .eq(UserEntity::getId, userId));
         storage.deleteReplacedAfterCommit("avatars", userId, user.getAvatarUrl(), objectKey);
         return new AvatarConfirmResponse(publicUrl);
     }

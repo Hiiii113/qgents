@@ -1,14 +1,12 @@
 package qg.qgent.agent.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
-
 import qg.qgent.agent.entity.AgentEntity;
-
-import java.util.List;
 
 /** 项目内 Agent 数据访问；申请状态只在服务端按真实审批消息推进。 */
 @Mapper
@@ -19,12 +17,14 @@ public interface AgentMapper extends BaseMapper<AgentEntity> {
     AgentEntity selectDefaultAgent(@Param("projectId") Long projectId);
 
     /** 项目内已启用的 Agent：只有它们能邀请入群和运行。 */
-    @Select("SELECT * FROM agents WHERE project_id = #{projectId} AND status = 'ACTIVE' "
-            + "ORDER BY default_agent DESC, name")
+    @Select(
+            "SELECT * FROM agents WHERE project_id = #{projectId} AND status = 'ACTIVE' "
+                    + "ORDER BY default_agent DESC, name")
     List<AgentEntity> selectActiveByProject(@Param("projectId") Long projectId);
 
     /** 项目内待审批的申请。 */
-    @Select("SELECT * FROM agents WHERE project_id = #{projectId} AND status = 'PENDING' ORDER BY created_at, id")
+    @Select(
+            "SELECT * FROM agents WHERE project_id = #{projectId} AND status = 'PENDING' ORDER BY created_at, id")
     List<AgentEntity> selectPendingByProject(@Param("projectId") Long projectId);
 
     /** 公布这条消息的待审批申请；uk_agent_announced_message 保证一条公布消息只对应一条申请。 */
@@ -37,17 +37,20 @@ public interface AgentMapper extends BaseMapper<AgentEntity> {
      * 加锁读：调用方在项目行锁内计数，但事务此前已做过普通读，快照可能落后于刚提交的申请，
      * 只有 FOR UPDATE 才能读到最新已提交行并锁住该项目的插入范围。
      */
-    @Select("SELECT COUNT(*) FROM agents WHERE project_id = #{projectId} AND status <> 'REJECTED' FOR UPDATE")
+    @Select(
+            "SELECT COUNT(*) FROM agents WHERE project_id = #{projectId} AND status <> 'REJECTED' FOR UPDATE")
     int countCountedByProject(@Param("projectId") Long projectId);
 
     /** 审批通过；只在仍待审批时生效，重复审批得到 0。 */
-    @Update("UPDATE agents SET status = 'ACTIVE', approved_by = #{approvedBy}, approved_at = UTC_TIMESTAMP(6) "
-            + "WHERE id = #{id} AND status = 'PENDING'")
+    @Update(
+            "UPDATE agents SET status = 'ACTIVE', approved_by = #{approvedBy}, approved_at = UTC_TIMESTAMP(6) "
+                    + "WHERE id = #{id} AND status = 'PENDING'")
     int activate(@Param("id") Long id, @Param("approvedBy") Long approvedBy);
 
     /** 管理员拒绝申请；被拒绝的申请不能激活，也不再占用数量上限。 */
-    @Update("UPDATE agents SET status = 'REJECTED', approved_by = #{approvedBy}, approved_at = UTC_TIMESTAMP(6) "
-            + "WHERE id = #{id} AND status = 'PENDING'")
+    @Update(
+            "UPDATE agents SET status = 'REJECTED', approved_by = #{approvedBy}, approved_at = UTC_TIMESTAMP(6) "
+                    + "WHERE id = #{id} AND status = 'PENDING'")
     int reject(@Param("id") Long id, @Param("approvedBy") Long approvedBy);
 
     /**
@@ -55,8 +58,9 @@ public interface AgentMapper extends BaseMapper<AgentEntity> {
      * <p>
      * 只接受更晚的消息 ID：并发的旧运行晚结束时不会把绑定退回更早的公布消息。
      */
-    @Update("UPDATE agents SET announced_message_id = #{messageId} "
-            + "WHERE id = #{id} AND status = 'PENDING' "
-            + "AND (announced_message_id IS NULL OR announced_message_id < #{messageId})")
+    @Update(
+            "UPDATE agents SET announced_message_id = #{messageId} "
+                    + "WHERE id = #{id} AND status = 'PENDING' "
+                    + "AND (announced_message_id IS NULL OR announced_message_id < #{messageId})")
     int bindAnnouncement(@Param("id") Long id, @Param("messageId") Long messageId);
 }

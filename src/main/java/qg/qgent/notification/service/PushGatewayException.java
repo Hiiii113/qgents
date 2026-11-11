@@ -11,6 +11,11 @@ public class PushGatewayException extends RuntimeException {
         this.invalidToken = invalidToken;
     }
 
-    public String getCode() { return code; }
-    public boolean isInvalidToken() { return invalidToken; }
+    public String getCode() {
+        return code;
+    }
+
+    public boolean isInvalidToken() {
+        return invalidToken;
+    }
 }

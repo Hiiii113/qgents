@@ -9,6 +9,7 @@ import lombok.Data;
 public class ProjectRepositoryEntity {
     @TableId(type = IdType.AUTO)
     private Long id;
+
     private Long projectId;
     private Long installationId;
     private Long providerRepositoryId;

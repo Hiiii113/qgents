@@ -1,9 +1,8 @@
 package qg.qgent.team.dto;
 
+import java.time.LocalDateTime;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import java.time.LocalDateTime;
 
 /** 团队资料和当前用户的团队角色。 */
 @Data
@@ -20,7 +19,6 @@ public class TeamResponse {
     private String avatarUrl;
     // 创建时间（UTC）。
     private LocalDateTime createdAt;
-
 
     public TeamResponse(String id, String name, String role) {
         this.id = id;

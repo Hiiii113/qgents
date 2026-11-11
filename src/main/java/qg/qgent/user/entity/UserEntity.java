@@ -3,15 +3,15 @@ package qg.qgent.user.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
-
 import java.time.LocalDateTime;
+import lombok.Data;
 
 @Data
 @TableName("users")
 public class UserEntity {
     @TableId(type = IdType.AUTO)
     private Long id;
+
     private String email;
     private String displayName;
     private String avatarUrl;

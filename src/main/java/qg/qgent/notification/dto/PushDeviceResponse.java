@@ -10,10 +10,13 @@ import lombok.Data;
 public class PushDeviceResponse {
     @Schema(description = "设备注册 ID")
     private String id;
+
     @Schema(description = "App 安装实例 ID")
     private String installationId;
+
     @Schema(description = "ANDROID 或 IOS")
     private String platform;
+
     @Schema(description = "是否启用推送")
     private boolean active;
 }

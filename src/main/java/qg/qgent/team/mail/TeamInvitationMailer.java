@@ -18,8 +18,10 @@ public class TeamInvitationMailer {
     private final String from;
     private final String frontendUrl;
 
-    public TeamInvitationMailer(JavaMailSender sender, @Value("${spring.mail.username}") String from,
-                                @Value("${app.frontend-url}") String frontendUrl) {
+    public TeamInvitationMailer(
+            JavaMailSender sender,
+            @Value("${spring.mail.username}") String from,
+            @Value("${app.frontend-url}") String frontendUrl) {
         this.sender = sender;
         this.from = from;
         this.frontendUrl = frontendUrl;
@@ -28,7 +30,8 @@ public class TeamInvitationMailer {
     public void send(String email, String token) {
         String safeUrl = HtmlUtils.htmlEscape(frontendUrl);
         String safeToken = HtmlUtils.htmlEscape(token);
-        String html = """
+        String html =
+                """
                 <!DOCTYPE html>
                 <html lang="zh-CN">
                 <body style="margin:0;padding:0;background-color:#f4f6f9;font-family:'Segoe UI','PingFang SC','Microsoft YaHei',Arial,sans-serif;">
@@ -58,7 +61,8 @@ public class TeamInvitationMailer {
                   </table>
                 </body>
                 </html>
-                """.formatted(safeToken, safeUrl);
+                """
+                        .formatted(safeToken, safeUrl);
         try {
             MimeMessage message = sender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, false, "UTF-8");

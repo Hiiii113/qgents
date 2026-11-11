@@ -1,27 +1,24 @@
 package qg.qgent.user.service;
 
-import qg.qgent.support.TestIds;
-
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
-import qg.qgent.attachment.dto.UploadCredential;
-import qg.qgent.user.dto.AvatarConfirmRequest;
-import qg.qgent.user.dto.AvatarConfirmResponse;
-import qg.qgent.user.dto.AvatarCredentialResponse;
-import qg.qgent.user.entity.UserEntity;
-import qg.qgent.user.mapper.UserMapper;
-import qg.qgent.common.storage.AvatarStorageService;
-
-import java.time.LocalDateTime;
-import java.util.Map;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import java.time.LocalDateTime;
+import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import qg.qgent.attachment.dto.UploadCredential;
+import qg.qgent.common.storage.AvatarStorageService;
+import qg.qgent.support.TestIds;
+import qg.qgent.user.dto.AvatarConfirmRequest;
+import qg.qgent.user.dto.AvatarConfirmResponse;
+import qg.qgent.user.dto.AvatarCredentialResponse;
+import qg.qgent.user.entity.UserEntity;
+import qg.qgent.user.mapper.UserMapper;
 
 /** AvatarService 头像上传业务测试：凭证透传、确认写入头像 URL 并清理被替换的旧对象。 */
 class AvatarServiceTest {
@@ -44,8 +41,11 @@ class AvatarServiceTest {
     void credentialPassesThroughStorageResult() {
         String objectKey = "avatars/" + userId + "/abc.png";
         when(storage.createCredential(eq("avatars"), eq(userId), eq("image/png"), eq(1024L)))
-                .thenReturn(new AvatarStorageService.AvatarCredential(objectKey,
-                        new UploadCredential("https://put-url", "PUT", Map.of(), LocalDateTime.now())));
+                .thenReturn(
+                        new AvatarStorageService.AvatarCredential(
+                                objectKey,
+                                new UploadCredential(
+                                        "https://put-url", "PUT", Map.of(), LocalDateTime.now())));
 
         AvatarCredentialResponse response = service.credential(userId, "image/png", 1024L);
 
@@ -65,7 +65,8 @@ class AvatarServiceTest {
         assertThat(response.getAvatarUrl()).isEqualTo("https://public/" + newKey);
         verify(userMapper).update(any(), any());
         // 只按旧 URL 定位旧对象，不再依赖 avatar_object_key 列
-        verify(storage).deleteReplacedAfterCommit("avatars", userId,
-                "https://bucket/avatars/" + userId + "/old.jpg", newKey);
+        verify(storage)
+                .deleteReplacedAfterCommit(
+                        "avatars", userId, "https://bucket/avatars/" + userId + "/old.jpg", newKey);
     }
 }

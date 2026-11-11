@@ -1,7 +1,6 @@
 package qg.qgent.memory.tool;
 
 import org.springframework.ai.tool.annotation.Tool;
-
 import qg.qgent.harness.tool.ParallelTool;
 import qg.qgent.harness.tool.ToolErrors;
 import qg.qgent.harness.tool.ToolResult;
@@ -23,16 +22,20 @@ public class MemoryTools {
 
     /** 读取整篇项目记忆和版本号；提出候选时据此保留无关内容。 */
     @ParallelTool
-    @Tool(name = "read_project_memory", description = "读取项目长期记忆 memory.md 最新全文和版本号。"
-            + "上下文包含的是启动时快照，准备提出更新或需要确认最新内容时调用。")
+    @Tool(
+            name = "read_project_memory",
+            description = "读取项目长期记忆 memory.md 最新全文和版本号。" + "上下文包含的是启动时快照，准备提出更新或需要确认最新内容时调用。")
     public ToolResult readProjectMemory() {
-        return ToolErrors.call("MEMORY_UNAVAILABLE", "项目记忆操作失败", () -> {
-            ProjectMemoryResponse memory = memories.get(actor, projectId);
-            ToolResult result = ToolResult.ok();
-            result.put("content", memory.getContent());
-            result.put("version", memory.getVersion());
-            result.put("updatedAt", memory.getUpdatedAt().toString());
-            return result;
-        });
+        return ToolErrors.call(
+                "MEMORY_UNAVAILABLE",
+                "项目记忆操作失败",
+                () -> {
+                    ProjectMemoryResponse memory = memories.get(actor, projectId);
+                    ToolResult result = ToolResult.ok();
+                    result.put("content", memory.getContent());
+                    result.put("version", memory.getVersion());
+                    result.put("updatedAt", memory.getUpdatedAt().toString());
+                    return result;
+                });
     }
 }

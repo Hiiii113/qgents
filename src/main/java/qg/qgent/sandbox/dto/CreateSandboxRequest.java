@@ -5,9 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
-import lombok.Data;
-
 import java.util.UUID;
+import lombok.Data;
 
 /**
  * 控制层申请创建沙箱时提交的请求。
@@ -17,12 +16,10 @@ import java.util.UUID;
 public class CreateSandboxRequest {
 
     // 控制层生成的沙箱编号；同编号且规格相同的创建请求可幂等重试。
-    @NotNull
-    private UUID sandboxId;
+    @NotNull private UUID sandboxId;
 
     // Sandbox 所属 AgentRun 编号。
-    @NotNull
-    private Long agentRunId;
+    @NotNull private Long agentRunId;
 
     // Workspace 的不透明存储键，由 Sandbox 解析为受控根目录下的实际路径。
     @NotBlank
@@ -36,7 +33,5 @@ public class CreateSandboxRequest {
     private String imageProfile;
 
     // 可选的资源限制；Sandbox 会再次按本地上限收紧。
-    @Valid
-    private ResourceLimitsRequest limits;
-
+    @Valid private ResourceLimitsRequest limits;
 }

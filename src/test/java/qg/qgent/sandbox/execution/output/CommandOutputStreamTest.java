@@ -1,16 +1,18 @@
 package qg.qgent.sandbox.execution.output;
 
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import static org.assertj.core.api.Assertions.*;
+
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.charset.StandardCharsets;
-import static org.assertj.core.api.Assertions.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class CommandOutputStreamTest {
     @TempDir Path root;
 
-    @Test void preservesFullOutputOnDiskWhileBoundingMemory() throws Exception {
+    @Test
+    void preservesFullOutputOnDiskWhileBoundingMemory() throws Exception {
         Path file = root.resolve("stdout");
         var stream = new CommandOutput.LimitedOutputStream(8, file);
         try (stream) {

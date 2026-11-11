@@ -1,9 +1,14 @@
 package qg.qgent.github.service;
 
-import qg.qgent.support.TestIds;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,13 +20,7 @@ import qg.qgent.github.mapper.*;
 import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.service.ProjectAccessService;
-
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.util.List;
-import static org.assertj.core.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
+import qg.qgent.support.TestIds;
 
 class GitHubRepositoryServiceTest {
     private final Long actor = TestIds.next();
@@ -34,16 +33,22 @@ class GitHubRepositoryServiceTest {
     private final ProjectAccessService access = mock(ProjectAccessService.class);
     private final GitHubAppClient app = mock(GitHubAppClient.class);
     private final GitHubAppProperties properties = new GitHubAppProperties();
-    private final TokenService tokens = new TokenService("01234567890123456789012345678901", 15, 30, 30);
-    private final GitHubRepositoryService service = new GitHubRepositoryService(installations, states,
-            repositories, projects, access, app, properties, tokens);
+    private final TokenService tokens =
+            new TokenService("01234567890123456789012345678901", 15, 30, 30);
+    private final GitHubRepositoryService service =
+            new GitHubRepositoryService(
+                    installations, states, repositories, projects, access, app, properties, tokens);
 
     @BeforeEach
     void setup() {
-        for (Class<?> type : List.of(GitHubInstallationEntity.class, GitHubInstallationStateEntity.class,
-                ProjectRepositoryEntity.class)) {
+        for (Class<?> type :
+                List.of(
+                        GitHubInstallationEntity.class,
+                        GitHubInstallationStateEntity.class,
+                        ProjectRepositoryEntity.class)) {
             if (TableInfoHelper.getTableInfo(type) == null)
-                TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), "github"), type);
+                TableInfoHelper.initTableInfo(
+                        new MapperBuilderAssistant(new MybatisConfiguration(), "github"), type);
         }
         when(access.isCanonicalTeamOwner(team, actor)).thenReturn(true);
         var entity = new ProjectEntity();
@@ -57,7 +62,8 @@ class GitHubRepositoryServiceTest {
     @Test
     void installationStartsWithExpiringOpaqueStateAndRequiresOwner() {
         var result = service.createInstallationUrl(actor, team, "MOBILE");
-        assertThat(result.installationUrl()).startsWith("https://github.com/apps/qgents/installations/new?")
+        assertThat(result.installationUrl())
+                .startsWith("https://github.com/apps/qgents/installations/new?")
                 .contains("state=", "redirect_uri=");
         var state = org.mockito.ArgumentCaptor.forClass(GitHubInstallationStateEntity.class);
         verify(states).insert(state.capture());
@@ -66,20 +72,23 @@ class GitHubRepositoryServiceTest {
         assertThat(state.getValue().getClient()).isEqualTo("MOBILE");
         assertThat(result.expiresAt()).isAfter(LocalDateTime.now(ZoneOffset.UTC));
         when(access.isCanonicalTeamOwner(team, actor)).thenReturn(false);
-        assertThatThrownBy(() -> service.createInstallationUrl(actor, team, "WEB")).hasMessage("需要团队所有者权限");
+        assertThatThrownBy(() -> service.createInstallationUrl(actor, team, "WEB"))
+                .hasMessage("需要团队所有者权限");
     }
 
     @Test
     void callbackConsumesStateAndRepeatedCallbackDoesNotRelink() {
         var state = state();
         when(states.selectOne(any())).thenReturn(state);
-        when(app.installation(12L)).thenReturn(new GitHubAppClient.Installation(12L, "owner", "Organization", false));
+        when(app.installation(12L))
+                .thenReturn(new GitHubAppClient.Installation(12L, "owner", "Organization", false));
         var result = service.callback(12L, "state", null);
         assertThat(result.teamId()).isEqualTo(team);
         assertThat(result.client()).isEqualTo("MOBILE");
         assertThat(state.getUsedAt()).isNotNull();
         verify(installations).insert(any(GitHubInstallationEntity.class));
-        assertThatThrownBy(() -> service.callback(12L, "state", null)).hasMessageContaining("已使用或过期");
+        assertThatThrownBy(() -> service.callback(12L, "state", null))
+                .hasMessageContaining("已使用或过期");
         verify(app).installation(12L);
     }
 
@@ -108,7 +117,8 @@ class GitHubRepositoryServiceTest {
         assertThat(imported.getDefaultBranch()).isEqualTo("main");
         assertThat(imported.getProjectId()).isEqualTo(project);
         when(repositories.selectOne(any())).thenReturn(imported);
-        assertThat(service.importRepository(actor, project, installation.getId(), 34L)).isSameAs(imported);
+        assertThat(service.importRepository(actor, project, installation.getId(), 34L))
+                .isSameAs(imported);
         verify(repositories).insert(any(ProjectRepositoryEntity.class));
         verify(access, times(2)).requireProjectAdmin(project, actor);
     }
@@ -118,12 +128,14 @@ class GitHubRepositoryServiceTest {
         var installation = installation();
         installation.setTeamId(TestIds.next());
         when(installations.selectById(installation.getId())).thenReturn(installation);
-        assertThatThrownBy(() -> service.importRepository(actor, project, installation.getId(), 34L))
+        assertThatThrownBy(
+                        () -> service.importRepository(actor, project, installation.getId(), 34L))
                 .hasMessageContaining("不属于团队");
         verifyNoInteractions(app);
         installation.setTeamId(team);
         when(app.repositories(12L)).thenReturn(List.of());
-        assertThatThrownBy(() -> service.importRepository(actor, project, installation.getId(), 34L))
+        assertThatThrownBy(
+                        () -> service.importRepository(actor, project, installation.getId(), 34L))
                 .hasMessageContaining("授权范围");
         verify(repositories, never()).insert(any(ProjectRepositoryEntity.class));
     }
@@ -140,7 +152,8 @@ class GitHubRepositoryServiceTest {
         var first = service.repositoryToken(actor, project, "owner/repo");
         assertThat(first.token()).isEqualTo("first");
         assertThat(first.providerRepositoryId()).isEqualTo(34L);
-        assertThat(service.repositoryToken(actor, project, "owner/repo").token()).isEqualTo("renewed");
+        assertThat(service.repositoryToken(actor, project, "owner/repo").token())
+                .isEqualTo("renewed");
         when(repositories.selectOne(any())).thenReturn(null);
         assertThatThrownBy(() -> service.repositoryToken(actor, project, "owner/other"))
                 .hasMessageContaining("先将目标仓库导入");
@@ -151,7 +164,8 @@ class GitHubRepositoryServiceTest {
     void syncingUpdatesRenamedRepositoryAndRemovesRevokedImport() {
         var installation = installation();
         when(installations.selectById(installation.getId())).thenReturn(installation);
-        when(app.installation(12L)).thenReturn(new GitHubAppClient.Installation(12L, "owner", "Organization", false));
+        when(app.installation(12L))
+                .thenReturn(new GitHubAppClient.Installation(12L, "owner", "Organization", false));
         when(app.repositories(12L)).thenReturn(List.of(remote()));
         var keep = new ProjectRepositoryEntity();
         keep.setId(TestIds.next());
@@ -184,7 +198,8 @@ class GitHubRepositoryServiceTest {
         var catalog = service.catalog(actor, project, false);
 
         assertThat(catalog.connectionStatus()).isEqualTo("ACTIVE");
-        assertThat(catalog.items()).extracting(GitHubRepositoryService.CatalogRepository::providerRepositoryId)
+        assertThat(catalog.items())
+                .extracting(GitHubRepositoryService.CatalogRepository::providerRepositoryId)
                 .containsExactly(34L, 35L);
         assertThat(catalog.items()).allMatch(GitHubRepositoryService.CatalogRepository::imported);
         verify(access).requireProjectMember(project, actor);
@@ -199,12 +214,31 @@ class GitHubRepositoryServiceTest {
         second.setId(TestIds.next());
         second.setProviderInstallationId(13L);
         when(installations.selectList(any())).thenReturn(List.of(active, second));
-        when(app.repositories(12L)).thenReturn(List.of(
-                new GitHubAppClient.Repository(35L, "owner/shared", "main", "https://github.com/owner/shared", false),
-                remote()));
-        when(app.repositories(13L)).thenReturn(List.of(
-                new GitHubAppClient.Repository(35L, "owner/shared", "main", "https://github.com/owner/shared", false),
-                new GitHubAppClient.Repository(36L, "owner/only-second", "dev", "https://github.com/owner/only-second", true)));
+        when(app.repositories(12L))
+                .thenReturn(
+                        List.of(
+                                new GitHubAppClient.Repository(
+                                        35L,
+                                        "owner/shared",
+                                        "main",
+                                        "https://github.com/owner/shared",
+                                        false),
+                                remote()));
+        when(app.repositories(13L))
+                .thenReturn(
+                        List.of(
+                                new GitHubAppClient.Repository(
+                                        35L,
+                                        "owner/shared",
+                                        "main",
+                                        "https://github.com/owner/shared",
+                                        false),
+                                new GitHubAppClient.Repository(
+                                        36L,
+                                        "owner/only-second",
+                                        "dev",
+                                        "https://github.com/owner/only-second",
+                                        true)));
         var imported = new ProjectRepositoryEntity();
         imported.setProviderRepositoryId(34L);
         when(repositories.selectList(any())).thenReturn(List.of(imported));
@@ -212,12 +246,17 @@ class GitHubRepositoryServiceTest {
         var catalog = service.catalog(actor, project, true);
 
         assertThat(catalog.connectionStatus()).isEqualTo("ACTIVE");
-        assertThat(catalog.items()).extracting(GitHubRepositoryService.CatalogRepository::providerRepositoryId)
+        assertThat(catalog.items())
+                .extracting(GitHubRepositoryService.CatalogRepository::providerRepositoryId)
                 .containsExactly(34L, 35L, 36L);
-        assertThat(catalog.items()).filteredOn(item -> item.providerRepositoryId() == 34L)
-                .singleElement().satisfies(item -> assertThat(item.imported()).isTrue());
-        assertThat(catalog.items()).filteredOn(item -> item.providerRepositoryId() == 35L)
-                .singleElement().satisfies(item -> assertThat(item.imported()).isFalse());
+        assertThat(catalog.items())
+                .filteredOn(item -> item.providerRepositoryId() == 34L)
+                .singleElement()
+                .satisfies(item -> assertThat(item.imported()).isTrue());
+        assertThat(catalog.items())
+                .filteredOn(item -> item.providerRepositoryId() == 35L)
+                .singleElement()
+                .satisfies(item -> assertThat(item.imported()).isFalse());
         verify(access).requireTeamMember(team, actor);
     }
 
@@ -244,10 +283,12 @@ class GitHubRepositoryServiceTest {
         when(installations.selectList(any())).thenReturn(List.of(active, suspended));
         when(app.repositories(12L)).thenReturn(List.of(remote()));
         when(repositories.selectList(any())).thenReturn(List.of());
-        assertThat(service.catalog(actor, project, true).connectionStatus()).isEqualTo("PARTIALLY_SUSPENDED");
+        assertThat(service.catalog(actor, project, true).connectionStatus())
+                .isEqualTo("PARTIALLY_SUSPENDED");
 
         when(installations.selectList(any())).thenReturn(List.of());
-        assertThat(service.catalog(actor, project, true).connectionStatus()).isEqualTo("NOT_CONNECTED");
+        assertThat(service.catalog(actor, project, true).connectionStatus())
+                .isEqualTo("NOT_CONNECTED");
     }
 
     @Test
@@ -258,7 +299,8 @@ class GitHubRepositoryServiceTest {
         second.setProviderInstallationId(13L);
         when(installations.selectList(any())).thenReturn(List.of(active, second));
         when(app.repositories(12L)).thenReturn(List.of(remote()));
-        when(app.repositories(13L)).thenThrow(new qg.qgent.github.client.GitHubApiException(502, null, false));
+        when(app.repositories(13L))
+                .thenThrow(new qg.qgent.github.client.GitHubApiException(502, null, false));
 
         assertThatThrownBy(() -> service.catalog(actor, project, true))
                 .isInstanceOf(qg.qgent.github.client.GitHubApiException.class);
@@ -268,7 +310,8 @@ class GitHubRepositoryServiceTest {
     void tokenErrorsUseStableCodes() {
         when(repositories.selectOne(any())).thenReturn(null);
         assertThatThrownBy(() -> service.repositoryToken(actor, project, "owner/repo"))
-                .isInstanceOfSatisfying(qg.qgent.common.web.ApiException.class,
+                .isInstanceOfSatisfying(
+                        qg.qgent.common.web.ApiException.class,
                         error -> assertThat(error.code()).isEqualTo("REPOSITORY_NOT_IMPORTED"));
         var installation = installation();
         installation.setSuspended(true);
@@ -277,7 +320,8 @@ class GitHubRepositoryServiceTest {
         when(repositories.selectOne(any())).thenReturn(imported);
         when(installations.selectById(installation.getId())).thenReturn(installation);
         assertThatThrownBy(() -> service.repositoryToken(actor, project, "owner/repo"))
-                .isInstanceOfSatisfying(qg.qgent.common.web.ApiException.class,
+                .isInstanceOfSatisfying(
+                        qg.qgent.common.web.ApiException.class,
                         error -> assertThat(error.code()).isEqualTo("INSTALLATION_SUSPENDED"));
         verify(app, never()).installationToken(any(Long.class), any());
     }
@@ -302,6 +346,7 @@ class GitHubRepositoryServiceTest {
     }
 
     private GitHubAppClient.Repository remote() {
-        return new GitHubAppClient.Repository(34L, "owner/repo", "main", "https://github.com/owner/repo", true);
+        return new GitHubAppClient.Repository(
+                34L, "owner/repo", "main", "https://github.com/owner/repo", true);
     }
 }

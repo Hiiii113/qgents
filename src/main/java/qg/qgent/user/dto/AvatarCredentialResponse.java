@@ -1,14 +1,12 @@
 package qg.qgent.user.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.time.LocalDateTime;
+import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
 import qg.qgent.common.storage.AvatarStorageService;
-
-import java.time.LocalDateTime;
-import java.util.Map;
 
 /** 头像直传凭证响应：客户端用它先直传 OSS（uploadUrl），再携带 objectKey 调确认接口。 */
 @Data
@@ -18,8 +16,11 @@ public class AvatarCredentialResponse {
 
     /** 由存储层签发的凭证组装；凭证字段只在这里赋值一次。 */
     public AvatarCredentialResponse(AvatarStorageService.AvatarCredential credential) {
-        this(credential.objectKey(), credential.credential().getUploadUrl(),
-                credential.credential().getMethod(), credential.credential().getHeaders(),
+        this(
+                credential.objectKey(),
+                credential.credential().getUploadUrl(),
+                credential.credential().getMethod(),
+                credential.credential().getHeaders(),
                 credential.credential().getExpiresAt());
     }
 

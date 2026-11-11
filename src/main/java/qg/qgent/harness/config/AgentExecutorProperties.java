@@ -18,7 +18,8 @@ public class AgentExecutorProperties {
 
     public void validate() {
         if (coreSize < 1 || maxSize < coreSize || queueCapacity < 0) {
-            throw new IllegalArgumentException("Agent 执行器要求 coreSize>=1、maxSize>=coreSize、queueCapacity>=0");
+            throw new IllegalArgumentException(
+                    "Agent 执行器要求 coreSize>=1、maxSize>=coreSize、queueCapacity>=0");
         }
     }
 }

@@ -1,13 +1,11 @@
 package qg.qgent.chat.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import java.util.List;
 import org.apache.ibatis.annotations.*;
-
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.mapper.view.GroupLatestMessageRow;
 import qg.qgent.chat.mapper.view.GroupUnreadRow;
-
-import java.util.List;
 
 /** 群消息数据访问。 */
 @Mapper
@@ -27,53 +25,57 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
      * 按群内消息序号拉取增量消息，返回严格升序结果。
      * 调用方必须先完成项目群聊成员权限校验；sequence_no 是服务端分配的可靠游标。
      */
-    @Select("SELECT id, group_id, sequence_no, author_user_id, sender_type, sender_agent_id, client_message_id, "
-            + "message_type, content, mentions, reply_to_message_id, created_at "
-            + "FROM messages WHERE group_id = #{groupId} AND sequence_no > #{afterSequence} "
-            + "ORDER BY sequence_no ASC LIMIT #{limit}")
+    @Select(
+            "SELECT id, group_id, sequence_no, author_user_id, sender_type, sender_agent_id, client_message_id, "
+                    + "message_type, content, mentions, reply_to_message_id, created_at "
+                    + "FROM messages WHERE group_id = #{groupId} AND sequence_no > #{afterSequence} "
+                    + "ORDER BY sequence_no ASC LIMIT #{limit}")
     @Results({
-            @Result(column = "id", property = "id"),
-            @Result(column = "group_id", property = "groupId"),
-            @Result(column = "author_user_id", property = "authorUserId"),
-            @Result(column = "sender_type", property = "senderType"),
-            @Result(column = "sender_agent_id", property = "senderAgentId"),
-            @Result(column = "reply_to_message_id", property = "replyToMessageId"),
-            @Result(column = "message_type", property = "messageType"),
-            @Result(column = "content", property = "content"),
-            @Result(column = "mentions", property = "mentions")
+        @Result(column = "id", property = "id"),
+        @Result(column = "group_id", property = "groupId"),
+        @Result(column = "author_user_id", property = "authorUserId"),
+        @Result(column = "sender_type", property = "senderType"),
+        @Result(column = "sender_agent_id", property = "senderAgentId"),
+        @Result(column = "reply_to_message_id", property = "replyToMessageId"),
+        @Result(column = "message_type", property = "messageType"),
+        @Result(column = "content", property = "content"),
+        @Result(column = "mentions", property = "mentions")
     })
-    List<MessageEntity> selectAfterSequence(@Param("groupId") Long groupId,
-                                             @Param("afterSequence") long afterSequence,
-                                             @Param("limit") int limit);
+    List<MessageEntity> selectAfterSequence(
+            @Param("groupId") Long groupId,
+            @Param("afterSequence") long afterSequence,
+            @Param("limit") int limit);
 
     /**
      * 批量查询指定群的最新一条消息摘要。调用方必须先完成项目与群成员权限校验。
      * @param groupIds 已确认可见的群 ID
      * @return 每个有消息群的最新消息摘要
      */
-    @Select({"<script>",
-            "SELECT m.group_id, ",
-            "CASE WHEN m.sender_type = 'AGENT' THEN a.name ELSE u.display_name END AS sender_name, ",
-            "JSON_UNQUOTE(JSON_EXTRACT(m.content, '$.text')) AS text, ",
-            "m.message_type, m.created_at ",
-            "FROM messages m ",
-            "LEFT JOIN users u ON u.id = m.author_user_id ",
-            "LEFT JOIN agents a ON a.id = m.sender_agent_id ",
-            "INNER JOIN (SELECT group_id, MAX(sequence_no) AS max_seq ",
-            "            FROM messages ",
-            "            WHERE group_id IN ",
-            "            (<foreach collection='groupIds' item='groupId' separator=','>#{groupId}</foreach>) ",
-            "            GROUP BY group_id) t ",
-            "ON t.group_id = m.group_id AND t.max_seq = m.sequence_no ",
-            "WHERE m.group_id IN ",
-            "(<foreach collection='groupIds' item='groupId' separator=','>#{groupId}</foreach>)",
-            "</script>"})
+    @Select({
+        "<script>",
+        "SELECT m.group_id, ",
+        "CASE WHEN m.sender_type = 'AGENT' THEN a.name ELSE u.display_name END AS sender_name, ",
+        "JSON_UNQUOTE(JSON_EXTRACT(m.content, '$.text')) AS text, ",
+        "m.message_type, m.created_at ",
+        "FROM messages m ",
+        "LEFT JOIN users u ON u.id = m.author_user_id ",
+        "LEFT JOIN agents a ON a.id = m.sender_agent_id ",
+        "INNER JOIN (SELECT group_id, MAX(sequence_no) AS max_seq ",
+        "            FROM messages ",
+        "            WHERE group_id IN ",
+        "            (<foreach collection='groupIds' item='groupId' separator=','>#{groupId}</foreach>) ",
+        "            GROUP BY group_id) t ",
+        "ON t.group_id = m.group_id AND t.max_seq = m.sequence_no ",
+        "WHERE m.group_id IN ",
+        "(<foreach collection='groupIds' item='groupId' separator=','>#{groupId}</foreach>)",
+        "</script>"
+    })
     @Results({
-            @Result(column = "group_id", property = "groupId"),
-            @Result(column = "sender_name", property = "senderName"),
-            @Result(column = "text", property = "text"),
-            @Result(column = "message_type", property = "messageType"),
-            @Result(column = "created_at", property = "createdAt")
+        @Result(column = "group_id", property = "groupId"),
+        @Result(column = "sender_name", property = "senderName"),
+        @Result(column = "text", property = "text"),
+        @Result(column = "message_type", property = "messageType"),
+        @Result(column = "created_at", property = "createdAt")
     })
     List<GroupLatestMessageRow> selectLatestByGroupIds(@Param("groupIds") List<Long> groupIds);
 
@@ -88,29 +90,34 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
      * @param limit     返回条数上限
      * @return 匹配的消息实体列表，新的在前
      */
-    @Select({"<script>",
-            "SELECT m.id, m.group_id, m.sequence_no, m.author_user_id, m.sender_type, m.sender_agent_id, ",
-            "m.client_message_id, m.message_type, m.content, m.mentions, m.reply_to_message_id, m.created_at ",
-            "FROM messages m ",
-            "INNER JOIN chat_groups rg ON rg.id = m.group_id ",
-            "WHERE rg.project_id = #{projectId} ",
-            "AND m.group_id IN ",
-            "(<foreach collection='groupIds' item='groupId' separator=','>#{groupId}</foreach>) ",
-            "AND JSON_UNQUOTE(JSON_EXTRACT(m.content, '$.text')) LIKE CONCAT('%', #{q}, '%') ",
-            "ORDER BY m.sequence_no DESC LIMIT #{limit}",
-            "</script>"})
-    @Results({
-            @Result(column = "id", property = "id"),
-            @Result(column = "group_id", property = "groupId"),
-            @Result(column = "author_user_id", property = "authorUserId"),
-            @Result(column = "sender_type", property = "senderType"),
-            @Result(column = "sender_agent_id", property = "senderAgentId"),
-            @Result(column = "reply_to_message_id", property = "replyToMessageId"),
-            @Result(column = "message_type", property = "messageType"),
-            @Result(column = "content", property = "content")
+    @Select({
+        "<script>",
+        "SELECT m.id, m.group_id, m.sequence_no, m.author_user_id, m.sender_type, m.sender_agent_id, ",
+        "m.client_message_id, m.message_type, m.content, m.mentions, m.reply_to_message_id, m.created_at ",
+        "FROM messages m ",
+        "INNER JOIN chat_groups rg ON rg.id = m.group_id ",
+        "WHERE rg.project_id = #{projectId} ",
+        "AND m.group_id IN ",
+        "(<foreach collection='groupIds' item='groupId' separator=','>#{groupId}</foreach>) ",
+        "AND JSON_UNQUOTE(JSON_EXTRACT(m.content, '$.text')) LIKE CONCAT('%', #{q}, '%') ",
+        "ORDER BY m.sequence_no DESC LIMIT #{limit}",
+        "</script>"
     })
-    List<MessageEntity> searchByQuery(@Param("projectId") Long projectId, @Param("groupIds") List<Long> groupIds,
-                                      @Param("q") String q, @Param("limit") int limit);
+    @Results({
+        @Result(column = "id", property = "id"),
+        @Result(column = "group_id", property = "groupId"),
+        @Result(column = "author_user_id", property = "authorUserId"),
+        @Result(column = "sender_type", property = "senderType"),
+        @Result(column = "sender_agent_id", property = "senderAgentId"),
+        @Result(column = "reply_to_message_id", property = "replyToMessageId"),
+        @Result(column = "message_type", property = "messageType"),
+        @Result(column = "content", property = "content")
+    })
+    List<MessageEntity> searchByQuery(
+            @Param("projectId") Long projectId,
+            @Param("groupIds") List<Long> groupIds,
+            @Param("q") String q,
+            @Param("limit") int limit);
 
     /**
      * 批量计算指定可见群的未读消息数（排除本人消息）。
@@ -119,23 +126,25 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
      * @param userId 当前用户 ID
      * @return 群 ID → 未读数，仅返回未读数大于 0 的群
      */
-    @Select({"<script>",
-            "SELECT m.group_id, COUNT(*) AS unread ",
-            "FROM messages m ",
-            "LEFT JOIN group_read_state r ON r.user_id = #{userId} ",
-            "AND r.group_id = m.group_id ",
-            "WHERE m.group_id IN ",
-            "(<foreach collection='groupIds' item='groupId' separator=','>#{groupId}</foreach>) ",
-            "AND m.sequence_no &gt; COALESCE(r.last_read_sequence_no, 0) ",
-            "AND (m.author_user_id IS NULL OR m.author_user_id &lt;&gt; #{userId}) ",
-            "GROUP BY m.group_id",
-            "</script>"})
-    @Results({
-            @Result(column = "group_id", property = "groupId"),
-            @Result(column = "unread", property = "unread")
+    @Select({
+        "<script>",
+        "SELECT m.group_id, COUNT(*) AS unread ",
+        "FROM messages m ",
+        "LEFT JOIN group_read_state r ON r.user_id = #{userId} ",
+        "AND r.group_id = m.group_id ",
+        "WHERE m.group_id IN ",
+        "(<foreach collection='groupIds' item='groupId' separator=','>#{groupId}</foreach>) ",
+        "AND m.sequence_no &gt; COALESCE(r.last_read_sequence_no, 0) ",
+        "AND (m.author_user_id IS NULL OR m.author_user_id &lt;&gt; #{userId}) ",
+        "GROUP BY m.group_id",
+        "</script>"
     })
-    List<GroupUnreadRow> countUnreadByGroupIds(@Param("groupIds") List<Long> groupIds,
-                                               @Param("userId") Long userId);
+    @Results({
+        @Result(column = "group_id", property = "groupId"),
+        @Result(column = "unread", property = "unread")
+    })
+    List<GroupUnreadRow> countUnreadByGroupIds(
+            @Param("groupIds") List<Long> groupIds, @Param("userId") Long userId);
 
     /**
      * 统计当前用户在指定可见群中「@ 我」的未读消息数（排除本人消息）。
@@ -149,25 +158,28 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
      * @param userIdText 当前用户 ID 的字符串形式（JSON 匹配用）
      * @return 群 ID → @ 我的未读消息数
      */
-    @Select({"<script>",
-            "SELECT m.group_id, COUNT(*) AS unread ",
-            "FROM messages m ",
-            "LEFT JOIN group_read_state r ON r.user_id = #{userId} ",
-            "AND r.group_id = m.group_id ",
-            "WHERE m.group_id IN ",
-            "(<foreach collection='groupIds' item='groupId' separator=','>#{groupId}</foreach>) ",
-            "AND m.sequence_no &gt; COALESCE(r.last_read_sequence_no, 0) ",
-            "AND (m.author_user_id IS NULL OR m.author_user_id &lt;&gt; #{userId}) ",
-            "AND JSON_CONTAINS(m.mentions, JSON_OBJECT('type', 'USER', 'id', #{userIdText})) ",
-            "GROUP BY m.group_id",
-            "</script>"})
-    @Results({
-            @Result(column = "group_id", property = "groupId"),
-            @Result(column = "unread", property = "unread")
+    @Select({
+        "<script>",
+        "SELECT m.group_id, COUNT(*) AS unread ",
+        "FROM messages m ",
+        "LEFT JOIN group_read_state r ON r.user_id = #{userId} ",
+        "AND r.group_id = m.group_id ",
+        "WHERE m.group_id IN ",
+        "(<foreach collection='groupIds' item='groupId' separator=','>#{groupId}</foreach>) ",
+        "AND m.sequence_no &gt; COALESCE(r.last_read_sequence_no, 0) ",
+        "AND (m.author_user_id IS NULL OR m.author_user_id &lt;&gt; #{userId}) ",
+        "AND JSON_CONTAINS(m.mentions, JSON_OBJECT('type', 'USER', 'id', #{userIdText})) ",
+        "GROUP BY m.group_id",
+        "</script>"
     })
-    List<GroupUnreadRow> countMentionUnreadByGroupIds(@Param("groupIds") List<Long> groupIds,
-                                                      @Param("userId") Long userId,
-                                                      @Param("userIdText") String userIdText);
+    @Results({
+        @Result(column = "group_id", property = "groupId"),
+        @Result(column = "unread", property = "unread")
+    })
+    List<GroupUnreadRow> countMentionUnreadByGroupIds(
+            @Param("groupIds") List<Long> groupIds,
+            @Param("userId") Long userId,
+            @Param("userIdText") String userIdText);
 
     /**
      * 解散团队时按群范围逐层删除不再被任何消息引用的叶子消息。
@@ -182,14 +194,16 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
      * @param groupIds 待删除消息所属的项目群聊 ID 集合（非空）
      * @return 本次实际删除的行数；为 0 表示已无满足条件的消息
      */
-    @Delete({"<script>",
-            "delete from messages ",
-            "where group_id in ",
-            "<foreach collection='groupIds' item='gid' open='(' separator=',' close=')'>#{gid}</foreach> ",
-            "and id not in (select rid from (select reply_to_message_id as rid from messages ",
-            "where group_id in ",
-            "<foreach collection='groupIds' item='rid' open='(' separator=',' close=')'>#{rid}</foreach> ",
-            "and reply_to_message_id is not null) as tmp)",
-            "</script>"})
+    @Delete({
+        "<script>",
+        "delete from messages ",
+        "where group_id in ",
+        "<foreach collection='groupIds' item='gid' open='(' separator=',' close=')'>#{gid}</foreach> ",
+        "and id not in (select rid from (select reply_to_message_id as rid from messages ",
+        "where group_id in ",
+        "<foreach collection='groupIds' item='rid' open='(' separator=',' close=')'>#{rid}</foreach> ",
+        "and reply_to_message_id is not null) as tmp)",
+        "</script>"
+    })
     int deleteUnreferencedMessages(@Param("groupIds") List<Long> groupIds);
 }

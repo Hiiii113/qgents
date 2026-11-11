@@ -1,14 +1,18 @@
 package qg.qgent.auth.service;
 
-import qg.qgent.common.storage.AvatarStorageService;
-import qg.qgent.support.TestIds;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import qg.qgent.auth.mail.VerificationCodeMailer;
+import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.mapper.ProjectMapper;
+import qg.qgent.support.TestIds;
 import qg.qgent.team.entity.TeamEntity;
 import qg.qgent.team.entity.TeamMemberEntity;
 import qg.qgent.team.mapper.TeamMapper;
@@ -16,10 +20,6 @@ import qg.qgent.team.mapper.TeamMemberMapper;
 import qg.qgent.team.mapper.view.TeamMemberCountRow;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
-import java.util.List;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
 
 class AuthServiceCurrentTeamTest {
     private final UserMapper users = mock(UserMapper.class);
@@ -34,11 +34,20 @@ class AuthServiceCurrentTeamTest {
     @BeforeEach
     void setUp() {
         PasswordEncoder passwords = mock(PasswordEncoder.class);
-        service = new AuthService(users, mock(RefreshTokenStore.class), mock(VerificationCodeStore.class),
-                teams, members, mock(ProjectMapper.class),
-                mock(RsaPasswordDecryptor.class), passwords, mock(TokenService.class),
-                mock(VerificationCodeMailer.class), mock(RateLimiter.class),
-                mock(AvatarStorageService.class));
+        service =
+                new AuthService(
+                        users,
+                        mock(RefreshTokenStore.class),
+                        mock(VerificationCodeStore.class),
+                        teams,
+                        members,
+                        mock(ProjectMapper.class),
+                        mock(RsaPasswordDecryptor.class),
+                        passwords,
+                        mock(TokenService.class),
+                        mock(VerificationCodeMailer.class),
+                        mock(RateLimiter.class),
+                        mock(AvatarStorageService.class));
         user.setId(userId);
         when(users.selectById(userId)).thenReturn(user);
     }
@@ -49,7 +58,8 @@ class AuthServiceCurrentTeamTest {
         user.setLastTeamId(lastId);
         var response = service.me(userId);
         assertEquals(lastId.toString(), response.getCurrentTeamId());
-        assertEquals("https://example.test/avatar.png", response.getTeams().getFirst().getAvatarUrl());
+        assertEquals(
+                "https://example.test/avatar.png", response.getTeams().getFirst().getAvatarUrl());
         verify(users, never()).updateLastTeam(any(), any());
     }
 
@@ -104,14 +114,19 @@ class AuthServiceCurrentTeamTest {
     }
 
     private void available(Long... ids) {
-        when(members.selectByUserId(userId)).thenReturn(java.util.Arrays.stream(ids).map(id -> {
-            TeamMemberEntity member = new TeamMemberEntity();
-            member.setTeamId(id);
-            member.setUserId(userId);
-            member.setRole("TEAM_MEMBER");
-            return member;
-        }).toList());
-        when(teams.selectBatchIds(anyCollection())).thenReturn(java.util.Arrays.stream(ids).map(this::team).toList());
+        when(members.selectByUserId(userId))
+                .thenReturn(
+                        java.util.Arrays.stream(ids)
+                                .map(id -> {
+                                    TeamMemberEntity member = new TeamMemberEntity();
+                                    member.setTeamId(id);
+                                    member.setUserId(userId);
+                                    member.setRole("TEAM_MEMBER");
+                                    return member;
+                                })
+                                .toList());
+        when(teams.selectBatchIds(anyCollection()))
+                .thenReturn(java.util.Arrays.stream(ids).map(this::team).toList());
         when(members.countByTeamIds(anyCollection())).thenReturn(List.of());
     }
 

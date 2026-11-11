@@ -1,43 +1,5 @@
 package qg.qgent.realtime.service;
 
-import qg.qgent.support.TestIds;
-
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.dao.DeadlockLoserDataAccessException;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionDefinition;
-import org.springframework.transaction.TransactionStatus;
-import org.springframework.transaction.support.SimpleTransactionStatus;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-
-import qg.qgent.chat.entity.ChatGroupEntity;
-import qg.qgent.chat.mapper.ChatGroupMapper;
-import qg.qgent.common.config.PerformanceMetrics;
-import qg.qgent.common.web.ApiException;
-import qg.qgent.notification.entity.NotificationEventEntity;
-import qg.qgent.notification.mapper.NotificationEventMapper;
-import qg.qgent.project.mapper.ProjectMapper;
-import qg.qgent.project.mapper.ProjectMemberMapper;
-import qg.qgent.project.service.ProjectAccessService;
-import qg.qgent.realtime.entity.EventEntity;
-import qg.qgent.realtime.mapper.EventMapper;
-import qg.qgent.realtime.transport.SseEventTransport;
-import qg.qgent.realtime.websocket.RealtimeFrame;
-import qg.qgent.team.entity.TeamEventEntity;
-import qg.qgent.team.mapper.TeamEventMapper;
-import qg.qgent.team.mapper.TeamMapper;
-import qg.qgent.team.mapper.TeamMemberMapper;
-import qg.qgent.user.mapper.UserMapper;
-
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.function.LongFunction;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -54,6 +16,41 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.LongFunction;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.dao.DeadlockLoserDataAccessException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.SimpleTransactionStatus;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import qg.qgent.chat.entity.ChatGroupEntity;
+import qg.qgent.chat.mapper.ChatGroupMapper;
+import qg.qgent.common.config.PerformanceMetrics;
+import qg.qgent.common.web.ApiException;
+import qg.qgent.notification.entity.NotificationEventEntity;
+import qg.qgent.notification.mapper.NotificationEventMapper;
+import qg.qgent.project.mapper.ProjectMapper;
+import qg.qgent.project.mapper.ProjectMemberMapper;
+import qg.qgent.project.service.ProjectAccessService;
+import qg.qgent.realtime.entity.EventEntity;
+import qg.qgent.realtime.mapper.EventMapper;
+import qg.qgent.realtime.transport.SseEventTransport;
+import qg.qgent.realtime.websocket.RealtimeFrame;
+import qg.qgent.support.TestIds;
+import qg.qgent.team.entity.TeamEventEntity;
+import qg.qgent.team.mapper.TeamEventMapper;
+import qg.qgent.team.mapper.TeamMapper;
+import qg.qgent.team.mapper.TeamMemberMapper;
+import qg.qgent.user.mapper.UserMapper;
 
 /** Publishing and subscription behavior at the realtime domain boundary. */
 class EventServiceTest {
@@ -72,7 +69,12 @@ class EventServiceTest {
         when(fixture.groups.selectUserIds(groupId)).thenReturn(List.of(invitedUser));
 
         EventService publisher = fixture.publisher();
-        publisher.publish(projectId, groupId, "group.created", groupId.toString(), Map.of("name", "planning"));
+        publisher.publish(
+                projectId,
+                groupId,
+                "group.created",
+                groupId.toString(),
+                Map.of("name", "planning"));
 
         verify(fixture.projects).selectByIdForUpdate(projectId);
         verify(fixture.events, never()).maxSequence(any());
@@ -105,7 +107,8 @@ class EventServiceTest {
         try {
             EventService publisher = fixture.publisher();
             publisher.publish(projectId, null, "project.updated", "project-1", Map.of("name", "A"));
-            publisher.publish(projectId, null, "project.member.added", "member-1", Map.of("userId", "u1"));
+            publisher.publish(
+                    projectId, null, "project.member.added", "member-1", Map.of("userId", "u1"));
 
             verify(fixture.events, never()).insert(any(EventEntity.class));
             verifyNoInteractions(fixture.realtime);
@@ -115,11 +118,14 @@ class EventServiceTest {
 
             var persisted = org.mockito.ArgumentCaptor.forClass(EventEntity.class);
             verify(fixture.events, org.mockito.Mockito.times(2)).insert(persisted.capture());
-            assertEquals(List.of("project.updated", "project.member.added"),
+            assertEquals(
+                    List.of("project.updated", "project.member.added"),
                     persisted.getAllValues().stream().map(EventEntity::getEventType).toList());
             var frames = org.mockito.ArgumentCaptor.forClass(RealtimeFrame.class);
-            verify(fixture.realtime, org.mockito.Mockito.times(2)).broadcastToUsers(any(), frames.capture());
-            assertEquals(List.of("project.updated", "project.member.added"),
+            verify(fixture.realtime, org.mockito.Mockito.times(2))
+                    .broadcastToUsers(any(), frames.capture());
+            assertEquals(
+                    List.of("project.updated", "project.member.added"),
                     frames.getAllValues().stream().map(RealtimeFrame::type).toList());
         } finally {
             fixture.clearBusinessTransaction();
@@ -137,7 +143,8 @@ class EventServiceTest {
         groupEvent.setSequenceNo(4L);
         groupEvent.setGroupId(groupId);
         groupEvent.setEventType("message.created");
-        when(fixture.events.listAfter(eq(projectId), anyLong(), anyInt())).thenReturn(List.of(groupEvent));
+        when(fixture.events.listAfter(eq(projectId), anyLong(), anyInt()))
+                .thenReturn(List.of(groupEvent));
         ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setDefaultGroup(false);
@@ -167,11 +174,13 @@ class EventServiceTest {
         EventService service = fixture.service();
         Long ownerId = TestIds.next();
         Long userId = TestIds.next();
-        java.util.function.Function<Long, SseEmitter> connect = cursor -> switch (scope) {
-            case "project" -> service.stream(ownerId, userId, cursor);
-            case "team" -> service.teamStream(ownerId, userId, cursor);
-            default -> service.notificationStream(userId, cursor);
-        };
+        java.util.function.Function<Long, SseEmitter> connect =
+                cursor ->
+                        switch (scope) {
+                            case "project" -> service.stream(ownerId, userId, cursor);
+                            case "team" -> service.teamStream(ownerId, userId, cursor);
+                            default -> service.notificationStream(userId, cursor);
+                        };
 
         ApiException negative = assertThrows(ApiException.class, () -> connect.apply(-1L));
         assertEquals("INVALID_EVENT_CURSOR", negative.code());
@@ -191,15 +200,18 @@ class EventServiceTest {
         NotificationEventEntity removed = new NotificationEventEntity();
         removed.setSequenceNo(3L);
         removed.setKind("notification.removed");
-        when(fixture.notifications.listAfter(eq(userId), eq(1L), anyInt())).thenReturn(List.of(legacy, removed));
+        when(fixture.notifications.listAfter(eq(userId), eq(1L), anyInt()))
+                .thenReturn(List.of(legacy, removed));
 
         fixture.service().notificationStream(userId, 1L);
 
         var loader = org.mockito.ArgumentCaptor.forClass(LongFunction.class);
-        verify(fixture.sse).open(eq("notification"), eq(userId), eq(1L), loader.capture(), eq(false));
+        verify(fixture.sse)
+                .open(eq("notification"), eq(userId), eq(1L), loader.capture(), eq(false));
         @SuppressWarnings("unchecked")
         LongFunction<List<SseEventTransport.SseEvent>> loadEvents = loader.getValue();
-        assertEquals(List.of("notification.created", "notification.removed"),
+        assertEquals(
+                List.of("notification.created", "notification.removed"),
                 loadEvents.apply(1L).stream().map(SseEventTransport.SseEvent::type).toList());
     }
 
@@ -214,8 +226,10 @@ class EventServiceTest {
         fixture.startBusinessTransaction();
         try {
             EventService publisher = fixture.publisher();
-            publisher.publishNotification(userId, notificationId, "notification.created", Map.of("title", "Hello"));
-            publisher.publishTeamEvent(teamId, "activity.created", "resource-1", Map.of("ok", true));
+            publisher.publishNotification(
+                    userId, notificationId, "notification.created", Map.of("title", "Hello"));
+            publisher.publishTeamEvent(
+                    teamId, "activity.created", "resource-1", Map.of("ok", true));
 
             verify(fixture.users).selectByIdForUpdate(userId);
             verify(fixture.teamRows).selectByIdForUpdate(teamId);
@@ -231,9 +245,11 @@ class EventServiceTest {
 
             var recipients = org.mockito.ArgumentCaptor.forClass(Set.class);
             var frames = org.mockito.ArgumentCaptor.forClass(RealtimeFrame.class);
-            verify(fixture.realtime, org.mockito.Mockito.times(2)).broadcastToUsers(recipients.capture(), frames.capture());
+            verify(fixture.realtime, org.mockito.Mockito.times(2))
+                    .broadcastToUsers(recipients.capture(), frames.capture());
             assertEquals(List.of(Set.of(userId), Set.of()), recipients.getAllValues());
-            assertEquals(List.of("notification", "team"),
+            assertEquals(
+                    List.of("notification", "team"),
                     frames.getAllValues().stream().map(RealtimeFrame::scope).toList());
             assertEquals(userId.toString(), frames.getAllValues().getFirst().recipientUserId());
             assertEquals(teamId.toString(), frames.getAllValues().get(1).teamId());
@@ -252,12 +268,17 @@ class EventServiceTest {
                 .thenReturn(1);
         when(fixture.events.nextSequence(projectId)).thenReturn(1L);
 
-        fixture.publisher().publish(projectId, null, "agent-run.updated", "run-1", Map.of("status", "FAILED"));
+        fixture.publisher()
+                .publish(projectId, null, "agent-run.updated", "run-1", Map.of("status", "FAILED"));
 
         var definitions = org.mockito.ArgumentCaptor.forClass(TransactionDefinition.class);
-        verify(fixture.transactions, org.mockito.Mockito.times(3)).getTransaction(definitions.capture());
-        assertTrue(definitions.getAllValues().stream().allMatch(definition ->
-                definition.getPropagationBehavior() == TransactionDefinition.PROPAGATION_REQUIRES_NEW));
+        verify(fixture.transactions, org.mockito.Mockito.times(3))
+                .getTransaction(definitions.capture());
+        assertTrue(
+                definitions.getAllValues().stream()
+                        .allMatch(definition ->
+                                definition.getPropagationBehavior()
+                                        == TransactionDefinition.PROPAGATION_REQUIRES_NEW));
         verify(fixture.events, org.mockito.Mockito.times(3)).insert(any(EventEntity.class));
         verify(fixture.projects, org.mockito.Mockito.times(3)).selectByIdForUpdate(projectId);
         verify(fixture.transactions).commit(any(TransactionStatus.class));
@@ -301,9 +322,21 @@ class EventServiceTest {
         }
 
         private EventService service() {
-            return new EventService(events, access, notifications, teams, realtime, sse,
-                    projectMembers, teamMembers, groups, projects, users, teamRows,
-                    transactions, mock(PerformanceMetrics.class));
+            return new EventService(
+                    events,
+                    access,
+                    notifications,
+                    teams,
+                    realtime,
+                    sse,
+                    projectMembers,
+                    teamMembers,
+                    groups,
+                    projects,
+                    users,
+                    teamRows,
+                    transactions,
+                    mock(PerformanceMetrics.class));
         }
 
         private EventService publisher() {
@@ -316,15 +349,19 @@ class EventServiceTest {
         }
 
         private void commitBusinessTransaction() {
-            List<TransactionSynchronization> synchronizations = TransactionSynchronizationManager.getSynchronizations();
+            List<TransactionSynchronization> synchronizations =
+                    TransactionSynchronizationManager.getSynchronizations();
             synchronizations.forEach(TransactionSynchronization::afterCommit);
-            synchronizations.forEach(sync -> sync.afterCompletion(TransactionSynchronization.STATUS_COMMITTED));
+            synchronizations.forEach(
+                    sync -> sync.afterCompletion(TransactionSynchronization.STATUS_COMMITTED));
         }
 
         private void clearBusinessTransaction() {
             if (TransactionSynchronizationManager.isSynchronizationActive()) {
-                TransactionSynchronizationManager.getSynchronizations().forEach(
-                        sync -> sync.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK));
+                TransactionSynchronizationManager.getSynchronizations()
+                        .forEach(sync ->
+                                sync.afterCompletion(
+                                        TransactionSynchronization.STATUS_ROLLED_BACK));
                 TransactionSynchronizationManager.clearSynchronization();
             }
             TransactionSynchronizationManager.setActualTransactionActive(false);

@@ -1,12 +1,11 @@
 package qg.qgent.chat.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.List;
+import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import java.util.List;
-import java.util.Map;
 
 /** 群消息视图，供聊天列表与单条消息定位使用。 */
 @Data

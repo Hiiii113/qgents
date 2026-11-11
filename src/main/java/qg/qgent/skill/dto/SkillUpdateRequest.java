@@ -1,9 +1,8 @@
 package qg.qgent.skill.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import lombok.Data;
-
 import java.util.List;
+import lombok.Data;
 
 /** 修改 Skill 内容，未传字段不修改。 */
 @Data

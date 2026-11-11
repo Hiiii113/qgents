@@ -1,45 +1,5 @@
 package qg.qgent.team.service;
 
-import qg.qgent.support.TestIds;
-
-import com.baomidou.mybatisplus.core.MybatisConfiguration;
-import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
-import org.apache.ibatis.builder.MapperBuilderAssistant;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
-import qg.qgent.harness.entity.AgentRunEntity;
-import qg.qgent.harness.mapper.AgentRunMapper;
-import qg.qgent.attachment.entity.AttachmentEntity;
-import qg.qgent.attachment.mapper.AttachmentMapper;
-import qg.qgent.chat.entity.MessageEntity;
-import qg.qgent.chat.entity.ChatGroupEntity;
-import qg.qgent.chat.mapper.MessageMapper;
-import qg.qgent.chat.mapper.ChatGroupMapper;
-import qg.qgent.notification.entity.NotificationEntity;
-import qg.qgent.notification.mapper.NotificationMapper;
-import qg.qgent.project.entity.ProjectEntity;
-import qg.qgent.project.mapper.ProjectMapper;
-import qg.qgent.project.storage.ProjectDirectoryService;
-import qg.qgent.sandbox.service.SandboxService;
-import qg.qgent.realtime.entity.EventEntity;
-import qg.qgent.realtime.mapper.EventMapper;
-import qg.qgent.skill.entity.SkillEntity;
-import qg.qgent.skill.mapper.SkillMapper;
-import qg.qgent.team.mapper.TeamMapper;
-import qg.qgent.workspace.entity.WorkspaceEntity;
-import qg.qgent.workspace.mapper.WorkspaceMapper;
-
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
-
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -48,6 +8,42 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import qg.qgent.attachment.entity.AttachmentEntity;
+import qg.qgent.attachment.mapper.AttachmentMapper;
+import qg.qgent.chat.entity.ChatGroupEntity;
+import qg.qgent.chat.entity.MessageEntity;
+import qg.qgent.chat.mapper.ChatGroupMapper;
+import qg.qgent.chat.mapper.MessageMapper;
+import qg.qgent.harness.entity.AgentRunEntity;
+import qg.qgent.harness.mapper.AgentRunMapper;
+import qg.qgent.notification.entity.NotificationEntity;
+import qg.qgent.notification.mapper.NotificationMapper;
+import qg.qgent.project.entity.ProjectEntity;
+import qg.qgent.project.mapper.ProjectMapper;
+import qg.qgent.project.storage.ProjectDirectoryService;
+import qg.qgent.realtime.entity.EventEntity;
+import qg.qgent.realtime.mapper.EventMapper;
+import qg.qgent.sandbox.service.SandboxService;
+import qg.qgent.skill.entity.SkillEntity;
+import qg.qgent.skill.mapper.SkillMapper;
+import qg.qgent.support.TestIds;
+import qg.qgent.team.mapper.TeamMapper;
+import qg.qgent.workspace.entity.WorkspaceEntity;
+import qg.qgent.workspace.mapper.WorkspaceMapper;
 
 class TeamDisbandServiceTest {
 
@@ -60,13 +56,19 @@ class TeamDisbandServiceTest {
     static void initTableInfo() {
         MybatisConfiguration configuration = new MybatisConfiguration();
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(configuration, "");
-        for (Class<?> entity : List.of(ProjectEntity.class, NotificationEntity.class, EventEntity.class,
-                ChatGroupEntity.class, MessageEntity.class,
-                AgentRunEntity.class,
-                qg.qgent.agent.entity.AgentEntity.class,
-                WorkspaceEntity.class,
-                SkillEntity.class, AttachmentEntity.class,
-                ChatGroupEntity.class)) {
+        for (Class<?> entity :
+                List.of(
+                        ProjectEntity.class,
+                        NotificationEntity.class,
+                        EventEntity.class,
+                        ChatGroupEntity.class,
+                        MessageEntity.class,
+                        AgentRunEntity.class,
+                        qg.qgent.agent.entity.AgentEntity.class,
+                        WorkspaceEntity.class,
+                        SkillEntity.class,
+                        AttachmentEntity.class,
+                        ChatGroupEntity.class)) {
             TableInfoHelper.initTableInfo(assistant, entity);
         }
     }
@@ -77,26 +79,37 @@ class TeamDisbandServiceTest {
     private final ChatGroupMapper chatGroupMapper = mock(ChatGroupMapper.class);
     private final MessageMapper messageMapper = mock(MessageMapper.class);
     private final AgentRunMapper agentRuns = mock(AgentRunMapper.class);
-    private final qg.qgent.agent.mapper.AgentMapper agentMapper = mock(qg.qgent.agent.mapper.AgentMapper.class);
+    private final qg.qgent.agent.mapper.AgentMapper agentMapper =
+            mock(qg.qgent.agent.mapper.AgentMapper.class);
     private final WorkspaceMapper workspaceMapper = mock(WorkspaceMapper.class);
     private final SkillMapper skillMapper = mock(SkillMapper.class);
     private final AttachmentMapper attachmentMapper = mock(AttachmentMapper.class);
     private final TeamMapper teamMapper = mock(TeamMapper.class);
     private final SandboxService sandboxes = mock(SandboxService.class);
 
-    @TempDir
-    Path projectDataRoot;
+    @TempDir Path projectDataRoot;
 
     private TeamDisbandService service;
 
     @BeforeEach
     void setUp() {
-        service = new TeamDisbandService(projectMapper, notificationMapper,
-                eventMapper, chatGroupMapper, messageMapper,
-                agentRuns, agentMapper,
-                workspaceMapper, skillMapper, attachmentMapper,
-                teamMapper, new ProjectDirectoryService(projectDataRoot.toString(), projectDataRoot.toString()),
-                sandboxes, mock(qg.qgent.common.storage.AvatarStorageService.class));
+        service =
+                new TeamDisbandService(
+                        projectMapper,
+                        notificationMapper,
+                        eventMapper,
+                        chatGroupMapper,
+                        messageMapper,
+                        agentRuns,
+                        agentMapper,
+                        workspaceMapper,
+                        skillMapper,
+                        attachmentMapper,
+                        teamMapper,
+                        new ProjectDirectoryService(
+                                projectDataRoot.toString(), projectDataRoot.toString()),
+                        sandboxes,
+                        mock(qg.qgent.common.storage.AvatarStorageService.class));
     }
 
     @Test
@@ -153,10 +166,20 @@ class TeamDisbandServiceTest {
         assertThat(projectDirectory).doesNotExist();
 
         // 关键依赖顺序：子表先于父表，引用行先于被引用行；agents 在项目级引用清理后最后删除。
-        var order = inOrder(notificationMapper, eventMapper, messageMapper,
-                agentRuns, agentMapper,
-                workspaceMapper, skillMapper, attachmentMapper, chatGroupMapper, agentMapper, projectMapper,
-                teamMapper);
+        var order =
+                inOrder(
+                        notificationMapper,
+                        eventMapper,
+                        messageMapper,
+                        agentRuns,
+                        agentMapper,
+                        workspaceMapper,
+                        skillMapper,
+                        attachmentMapper,
+                        chatGroupMapper,
+                        agentMapper,
+                        projectMapper,
+                        teamMapper);
         order.verify(notificationMapper).delete(any());
         order.verify(eventMapper).delete(any());
         order.verify(agentRuns).delete(any());
@@ -169,5 +192,4 @@ class TeamDisbandServiceTest {
         order.verify(projectMapper).deleteById(projectId);
         order.verify(teamMapper).deleteById(teamId);
     }
-
 }

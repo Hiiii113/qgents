@@ -1,11 +1,10 @@
 package qg.qgent.harness.runtime;
 
-import qg.qgent.agent.entity.AgentEntity;
-import qg.qgent.chat.event.MessageSentEvent;
-
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import qg.qgent.agent.entity.AgentEntity;
+import qg.qgent.chat.event.MessageSentEvent;
 
 /** 根运行自己的执行资源：Agent 身份、取消标记、工作区环境与工具集。子 Agent 由 {@link ChildRuns} 管理。 */
 final class WorkContext {

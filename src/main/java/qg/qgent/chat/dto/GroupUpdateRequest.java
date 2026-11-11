@@ -12,5 +12,4 @@ public class GroupUpdateRequest {
     @Size(max = 255)
     @Schema(description = "新群标题，null 表示不修改", maxLength = 255)
     private String title;
-
 }

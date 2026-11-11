@@ -1,15 +1,13 @@
 package qg.qgent.sandbox.runtime;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
-
-import qg.qgent.sandbox.dto.CreateSandboxRequest;
-
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
+import qg.qgent.sandbox.dto.CreateSandboxRequest;
 
 /** 模拟沙箱生命周期，供不使用 Docker 的本地联调和测试使用。 */
 @Component

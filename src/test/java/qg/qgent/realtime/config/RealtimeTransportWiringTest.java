@@ -1,11 +1,14 @@
 package qg.qgent.realtime.config;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.Mockito.mock;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.time.Clock;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.transaction.PlatformTransactionManager;
-
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.config.PerformanceMetrics;
 import qg.qgent.notification.mapper.NotificationEventMapper;
@@ -16,22 +19,18 @@ import qg.qgent.realtime.mapper.EventMapper;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.realtime.service.RealtimeHub;
 import qg.qgent.realtime.transport.SseEventTransport;
+import qg.qgent.realtime.websocket.WebSocketRealtimeHandler;
 import qg.qgent.team.mapper.TeamEventMapper;
 import qg.qgent.team.mapper.TeamMapper;
 import qg.qgent.team.mapper.TeamMemberMapper;
 import qg.qgent.user.mapper.UserMapper;
-import qg.qgent.realtime.websocket.WebSocketRealtimeHandler;
-
-import java.time.Clock;
-
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.mockito.Mockito.mock;
 
 class RealtimeTransportWiringTest {
 
     @Test
     void publishesThroughTheHubWithoutCouplingTheSsePumpToTheWebSocketHandler() {
-        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+        try (AnnotationConfigApplicationContext context =
+                new AnnotationConfigApplicationContext()) {
             context.registerBean(SimpleMeterRegistry.class, SimpleMeterRegistry::new);
             context.registerBean(ObjectMapper.class, () -> new ObjectMapper());
             context.registerBean(Clock.class, Clock::systemUTC);
@@ -46,8 +45,12 @@ class RealtimeTransportWiringTest {
             registerMock(context, UserMapper.class);
             registerMock(context, TeamMapper.class);
             registerMock(context, PlatformTransactionManager.class);
-            context.register(PerformanceMetrics.class, SseTransportConfiguration.class,
-                    RealtimeHub.class, WebSocketRealtimeHandler.class, EventService.class,
+            context.register(
+                    PerformanceMetrics.class,
+                    SseTransportConfiguration.class,
+                    RealtimeHub.class,
+                    WebSocketRealtimeHandler.class,
+                    EventService.class,
                     SseEventTransport.class);
             context.refresh();
 
@@ -58,7 +61,8 @@ class RealtimeTransportWiringTest {
         }
     }
 
-    private static <T> void registerMock(AnnotationConfigApplicationContext context, Class<T> type) {
+    private static <T> void registerMock(
+            AnnotationConfigApplicationContext context, Class<T> type) {
         context.registerBean(type, () -> mock(type));
     }
 }

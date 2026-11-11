@@ -1,11 +1,11 @@
 package qg.qgent.user.mapper;
 
-import qg.qgent.support.TestIds;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
-import org.junit.jupiter.api.Test;
 import java.util.HashMap;
-import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
+import qg.qgent.support.TestIds;
 
 class UserMapperTest {
     @Test
@@ -15,11 +15,17 @@ class UserMapperTest {
         var parameters = new HashMap<String, Object>();
         parameters.put("userId", TestIds.next());
         parameters.put("teamId", null);
-        var sql = configuration.getMappedStatement(UserMapper.class.getName() + ".updateLastTeam")
-                .getBoundSql(parameters);
+        var sql =
+                configuration
+                        .getMappedStatement(UserMapper.class.getName() + ".updateLastTeam")
+                        .getBoundSql(parameters);
         assertThat(sql.getSql()).contains("SET last_team_id = ? WHERE id = ?");
-        var mappings = configuration.getMappedStatement(UserMapper.class.getName() + ".selectByIdForUpdate")
-                .getResultMaps().getFirst().getResultMappings();
+        var mappings =
+                configuration
+                        .getMappedStatement(UserMapper.class.getName() + ".selectByIdForUpdate")
+                        .getResultMaps()
+                        .getFirst()
+                        .getResultMappings();
         assertThat(mappings).anyMatch(field -> "lastTeamId".equals(field.getProperty()));
     }
 }

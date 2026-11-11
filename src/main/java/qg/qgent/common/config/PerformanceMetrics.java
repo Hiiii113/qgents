@@ -24,11 +24,12 @@ public class PerformanceMetrics {
 
     public void stop(Timer.Sample sample, String metric, String operation, String outcome) {
         if (sample != null) {
-            sample.stop(Timer.builder(metric)
-                    .tag("operation", operation)
-                    .tag("outcome", outcome)
-                    .publishPercentiles(0.5, 0.95, 0.99)
-                    .register(registry));
+            sample.stop(
+                    Timer.builder(metric)
+                            .tag("operation", operation)
+                            .tag("outcome", outcome)
+                            .publishPercentiles(0.5, 0.95, 0.99)
+                            .register(registry));
         }
     }
 

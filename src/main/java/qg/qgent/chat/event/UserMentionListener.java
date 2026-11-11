@@ -22,14 +22,20 @@ public class UserMentionListener {
     @Async("agentExecutor")
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onMessageSent(MessageSentEvent event) {
-        if (event.mentions() == null || event.mentions().stream().noneMatch(m -> "USER".equals(m.getType()))) return;
+        if (event.mentions() == null
+                || event.mentions().stream().noneMatch(m -> "USER".equals(m.getType()))) return;
         try {
             var message = messages.selectById(event.messageId());
             var group = groups.selectById(event.groupId());
-            service.notifyMentionedUsersAfterCommit(event, group == null ? "群聊" : group.getName(),
+            service.notifyMentionedUsersAfterCommit(
+                    event,
+                    group == null ? "群聊" : group.getName(),
                     service.extractTextPreview(message));
         } catch (RuntimeException exception) {
-            log.warn("user mention post-processing skipped, messageId={}: {}", event.messageId(), exception.getMessage());
+            log.warn(
+                    "user mention post-processing skipped, messageId={}: {}",
+                    event.messageId(),
+                    exception.getMessage());
         }
     }
 }

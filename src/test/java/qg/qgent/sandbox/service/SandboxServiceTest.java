@@ -1,31 +1,26 @@
 package qg.qgent.sandbox.service;
 
-import qg.qgent.support.TestIds;
-
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
-import qg.qgent.sandbox.exception.SandboxException;
-import qg.qgent.sandbox.config.SandboxProperties;
-import qg.qgent.sandbox.dto.CreateSandboxRequest;
-import qg.qgent.sandbox.dto.ResourceLimitsRequest;
-import qg.qgent.sandbox.dto.SandboxResponse;
-import qg.qgent.sandbox.runtime.FakeContainerRuntime;
-import qg.qgent.workspace.service.WorkspaceOperationLock;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import qg.qgent.sandbox.config.SandboxProperties;
+import qg.qgent.sandbox.dto.CreateSandboxRequest;
+import qg.qgent.sandbox.dto.ResourceLimitsRequest;
+import qg.qgent.sandbox.dto.SandboxResponse;
+import qg.qgent.sandbox.runtime.FakeContainerRuntime;
+import qg.qgent.support.TestIds;
+import qg.qgent.workspace.service.WorkspaceOperationLock;
 
 class SandboxServiceTest {
-    @TempDir
-    Path temporaryDirectory;
+    @TempDir Path temporaryDirectory;
 
     private final Instant now = Instant.parse("2026-08-12T00:00:00Z");
     private final FakeContainerRuntime runtime = new FakeContainerRuntime();
@@ -56,10 +51,6 @@ class SandboxServiceTest {
 
         assertTrue(service.expiredSandboxIds().contains(request.getSandboxId()));
     }
-
-
-
-
 
     @Test
     void sameSandboxIdSameSpecIsIdempotent() {
@@ -94,8 +85,10 @@ class SandboxServiceTest {
         conflict.setSandboxId(request.getSandboxId());
         conflict.setAgentRunId(TestIds.next());
 
-        var exception = assertThrows(qg.qgent.sandbox.exception.SandboxException.class,
-                () -> service.create(conflict));
+        var exception =
+                assertThrows(
+                        qg.qgent.sandbox.exception.SandboxException.class,
+                        () -> service.create(conflict));
 
         assertEquals("SANDBOX_ID_CONFLICT", exception.getCode());
     }
@@ -120,7 +113,10 @@ class SandboxServiceTest {
 
     private SandboxService service() {
         SandboxProperties properties = properties();
-        return new SandboxService(runtime, properties, Clock.fixed(now, ZoneOffset.UTC),
+        return new SandboxService(
+                runtime,
+                properties,
+                Clock.fixed(now, ZoneOffset.UTC),
                 new WorkspaceOperationLock(properties));
     }
 }

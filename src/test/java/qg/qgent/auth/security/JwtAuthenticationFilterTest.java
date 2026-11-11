@@ -1,20 +1,18 @@
 package qg.qgent.auth.security;
 
-import qg.qgent.support.TestIds;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.*;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.core.context.SecurityContextHolder;
-
 import qg.qgent.auth.service.TokenService;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.*;
+import qg.qgent.support.TestIds;
 
 class JwtAuthenticationFilterTest {
 
@@ -31,18 +29,29 @@ class JwtAuthenticationFilterTest {
         var request = new MockHttpServletRequest("GET", "/api/v1/projects/p/attachments/a/content");
         request.setParameter("token", "content-token");
         var chain = mock(jakarta.servlet.FilterChain.class);
-        new JwtAuthenticationFilter(tokens, new ObjectMapper()).doFilter(request, new MockHttpServletResponse(), chain);
-        assertThat(SecurityContextHolder.getContext().getAuthentication().getPrincipal()).isEqualTo(actor);
+        new JwtAuthenticationFilter(tokens, new ObjectMapper())
+                .doFilter(request, new MockHttpServletResponse(), chain);
+        assertThat(SecurityContextHolder.getContext().getAuthentication().getPrincipal())
+                .isEqualTo(actor);
         verify(chain).doFilter(any(), any());
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"/api/v1/projects/p/attachments/a", "/api/v1/projects/p/attachments/a/preview", "/api/v1/projects"})
+    @ValueSource(
+            strings = {
+                "/api/v1/projects/p/attachments/a",
+                "/api/v1/projects/p/attachments/a/preview",
+                "/api/v1/projects"
+            })
     void ignoresQueryTokenOutsideContent(String path) throws Exception {
         TokenService tokens = mock(TokenService.class);
         var request = new MockHttpServletRequest("GET", path);
         request.setParameter("token", "content-token");
-        new JwtAuthenticationFilter(tokens, new ObjectMapper()).doFilter(request, new MockHttpServletResponse(), mock(jakarta.servlet.FilterChain.class));
+        new JwtAuthenticationFilter(tokens, new ObjectMapper())
+                .doFilter(
+                        request,
+                        new MockHttpServletResponse(),
+                        mock(jakarta.servlet.FilterChain.class));
         verifyNoInteractions(tokens);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
@@ -66,18 +75,22 @@ class JwtAuthenticationFilterTest {
         var request = new MockHttpServletRequest("GET", "/api/v1/projects/p/attachments/a/content");
         request.setParameter("token", tokens.access(TestIds.next()));
         var response = new MockHttpServletResponse();
-        new JwtAuthenticationFilter(tokens, new ObjectMapper()).doFilter(request, response,
-                mock(jakarta.servlet.FilterChain.class));
+        new JwtAuthenticationFilter(tokens, new ObjectMapper())
+                .doFilter(request, response, mock(jakarta.servlet.FilterChain.class));
         assertThat(response.getStatus()).isEqualTo(401);
     }
 
     @Test
     void doesNotAcceptQueryTokenForContentPost() throws Exception {
         TokenService tokens = mock(TokenService.class);
-        var request = new MockHttpServletRequest("POST", "/api/v1/projects/p/attachments/a/content");
+        var request =
+                new MockHttpServletRequest("POST", "/api/v1/projects/p/attachments/a/content");
         request.setParameter("token", "content-token");
-        new JwtAuthenticationFilter(tokens, new ObjectMapper()).doFilter(request,
-                new MockHttpServletResponse(), mock(jakarta.servlet.FilterChain.class));
+        new JwtAuthenticationFilter(tokens, new ObjectMapper())
+                .doFilter(
+                        request,
+                        new MockHttpServletResponse(),
+                        mock(jakarta.servlet.FilterChain.class));
         verifyNoInteractions(tokens);
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
     }
@@ -90,7 +103,8 @@ class JwtAuthenticationFilterTest {
         request.addHeader("Authorization", "Bearer invalid");
         request.setParameter("token", "valid");
         var response = new MockHttpServletResponse();
-        new JwtAuthenticationFilter(tokens, new ObjectMapper()).doFilter(request, response, mock(jakarta.servlet.FilterChain.class));
+        new JwtAuthenticationFilter(tokens, new ObjectMapper())
+                .doFilter(request, response, mock(jakarta.servlet.FilterChain.class));
         assertThat(response.getStatus()).isEqualTo(401);
         verify(tokens).verifyAccess("invalid");
         verifyNoMoreInteractions(tokens);

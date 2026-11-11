@@ -1,19 +1,5 @@
 package qg.qgent.realtime.websocket;
 
-import qg.qgent.support.TestIds;
-
-import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.server.ServerHttpRequest;
-import org.springframework.http.server.ServerHttpResponse;
-import org.springframework.web.socket.WebSocketHandler;
-
-import qg.qgent.auth.service.TokenService;
-
-import java.net.URI;
-import java.util.HashMap;
-import java.util.Map;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -21,6 +7,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+
+import java.net.URI;
+import java.util.HashMap;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.server.ServerHttpRequest;
+import org.springframework.http.server.ServerHttpResponse;
+import org.springframework.web.socket.WebSocketHandler;
+import qg.qgent.auth.service.TokenService;
+import qg.qgent.support.TestIds;
 
 /** WebSocket 握手鉴权：query token 校验与 userId 会话属性注入测试。 */
 class RealtimeAuthInterceptorTest {
@@ -42,8 +39,12 @@ class RealtimeAuthInterceptorTest {
         RealtimeAuthInterceptor interceptor = new RealtimeAuthInterceptor(tokens);
 
         Map<String, Object> attributes = new HashMap<>();
-        boolean ok = interceptor.beforeHandshake(request("ws://h/api/v1/ws/realtime?token=abc"),
-                mock(ServerHttpResponse.class), handler, attributes);
+        boolean ok =
+                interceptor.beforeHandshake(
+                        request("ws://h/api/v1/ws/realtime?token=abc"),
+                        mock(ServerHttpResponse.class),
+                        handler,
+                        attributes);
 
         assertTrue(ok);
         assertEquals(userId, attributes.get(RealtimeAuthInterceptor.USER_ID_ATTR));
@@ -58,8 +59,12 @@ class RealtimeAuthInterceptorTest {
 
         ServerHttpResponse response = mock(ServerHttpResponse.class);
         Map<String, Object> attributes = new HashMap<>();
-        boolean ok = interceptor.beforeHandshake(request("ws://h/api/v1/ws/realtime?token=bad"),
-                response, handler, attributes);
+        boolean ok =
+                interceptor.beforeHandshake(
+                        request("ws://h/api/v1/ws/realtime?token=bad"),
+                        response,
+                        handler,
+                        attributes);
 
         assertFalse(ok);
         verify(response).setStatusCode(HttpStatus.UNAUTHORIZED);
@@ -73,8 +78,9 @@ class RealtimeAuthInterceptorTest {
         RealtimeAuthInterceptor interceptor = new RealtimeAuthInterceptor(tokens);
 
         ServerHttpResponse response = mock(ServerHttpResponse.class);
-        boolean ok = interceptor.beforeHandshake(request("ws://h/api/v1/ws/realtime"),
-                response, handler, new HashMap<>());
+        boolean ok =
+                interceptor.beforeHandshake(
+                        request("ws://h/api/v1/ws/realtime"), response, handler, new HashMap<>());
 
         assertFalse(ok);
         verify(response).setStatusCode(HttpStatus.UNAUTHORIZED);

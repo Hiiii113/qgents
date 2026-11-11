@@ -23,8 +23,14 @@ public class ProjectResponse {
     @Schema(description = "项目头像 URL")
     private String avatarUrl;
 
-    public ProjectResponse(String id, String teamId, String name, String description, String role, String status,
-                           Long memberCount) {
+    public ProjectResponse(
+            String id,
+            String teamId,
+            String name,
+            String description,
+            String role,
+            String status,
+            Long memberCount) {
         this.id = id;
         this.teamId = teamId;
         this.name = name;

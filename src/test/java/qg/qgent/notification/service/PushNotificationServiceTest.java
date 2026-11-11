@@ -1,13 +1,19 @@
 package qg.qgent.notification.service;
 
-import qg.qgent.support.TestIds;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DuplicateKeyException;
-
 import qg.qgent.notification.config.PushProperties;
 import qg.qgent.notification.dto.PushDeviceRegistrationRequest;
 import qg.qgent.notification.dto.PushDeviceResponse;
@@ -17,16 +23,7 @@ import qg.qgent.notification.entity.PushDeviceEntity;
 import qg.qgent.notification.mapper.NotificationMapper;
 import qg.qgent.notification.mapper.PushDeliveryMapper;
 import qg.qgent.notification.mapper.PushDeviceMapper;
-
-import java.util.List;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import qg.qgent.support.TestIds;
 
 /** 验证设备注册、推送入队去重和配置关闭时的行为。 */
 class PushNotificationServiceTest {
@@ -50,17 +47,24 @@ class PushNotificationServiceTest {
         if (!newDevice) {
             when(devices.selectInstallation(userId, "installation")).thenReturn(existing);
         }
-        when(devices.insert(any(PushDeviceEntity.class))).thenAnswer(invocation -> {
-            PushDeviceEntity entity = invocation.getArgument(0);
-            entity.setId(TestIds.next());
-            return 1;
-        });
+        when(devices.insert(any(PushDeviceEntity.class)))
+                .thenAnswer(invocation -> {
+                    PushDeviceEntity entity = invocation.getArgument(0);
+                    entity.setId(TestIds.next());
+                    return 1;
+                });
         PushDeviceRegistrationRequest request = new PushDeviceRegistrationRequest();
         request.setInstallationId(" installation ");
         request.setPlatform("ANDROID");
         request.setToken(" token ");
-        PushNotificationService service = new PushNotificationService(devices, mock(PushDeliveryMapper.class),
-                mock(NotificationMapper.class), cipher, mock(FcmPushGateway.class), properties);
+        PushNotificationService service =
+                new PushNotificationService(
+                        devices,
+                        mock(PushDeliveryMapper.class),
+                        mock(NotificationMapper.class),
+                        cipher,
+                        mock(FcmPushGateway.class),
+                        properties);
 
         PushDeviceResponse response = service.register(userId, request);
 
@@ -91,8 +95,10 @@ class PushNotificationServiceTest {
         NotificationEntity notification = notification();
         PushDeviceEntity device = new PushDeviceEntity();
         device.setId(TestIds.next());
-        when(devices.selectActiveByUser(notification.getRecipientUserId())).thenReturn(List.of(device));
-        when(deliveries.insert(any(PushDeliveryEntity.class))).thenThrow(new DuplicateKeyException("duplicate"));
+        when(devices.selectActiveByUser(notification.getRecipientUserId()))
+                .thenReturn(List.of(device));
+        when(deliveries.insert(any(PushDeliveryEntity.class)))
+                .thenThrow(new DuplicateKeyException("duplicate"));
         PushNotificationService service = service(devices, deliveries, mock(FcmPushGateway.class));
 
         service.enqueue(notification);
@@ -104,18 +110,29 @@ class PushNotificationServiceTest {
     void disabledProviderDoesNotClaimOutboxRows() {
         PushDeliveryMapper deliveries = mock(PushDeliveryMapper.class);
         PushProperties properties = new PushProperties();
-        PushNotificationService service = new PushNotificationService(mock(PushDeviceMapper.class), deliveries,
-                mock(NotificationMapper.class), mock(PushTokenCipher.class), mock(FcmPushGateway.class), properties);
+        PushNotificationService service =
+                new PushNotificationService(
+                        mock(PushDeviceMapper.class),
+                        deliveries,
+                        mock(NotificationMapper.class),
+                        mock(PushTokenCipher.class),
+                        mock(FcmPushGateway.class),
+                        properties);
 
         service.dispatchDue();
 
         verify(deliveries, never()).selectDue(any(), anyInt(), anyInt());
     }
 
-    private PushNotificationService service(PushDeviceMapper devices, PushDeliveryMapper deliveries,
-                                            FcmPushGateway gateway) {
-        return new PushNotificationService(devices, deliveries, mock(NotificationMapper.class),
-                mock(PushTokenCipher.class), gateway, new PushProperties());
+    private PushNotificationService service(
+            PushDeviceMapper devices, PushDeliveryMapper deliveries, FcmPushGateway gateway) {
+        return new PushNotificationService(
+                devices,
+                deliveries,
+                mock(NotificationMapper.class),
+                mock(PushTokenCipher.class),
+                gateway,
+                new PushProperties());
     }
 
     private NotificationEntity notification() {

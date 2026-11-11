@@ -9,6 +9,7 @@ import lombok.Data;
 public class GitHubInstallationEntity {
     @TableId(type = IdType.AUTO)
     private Long id;
+
     private Long teamId;
     private Long providerInstallationId;
     private String accountLogin;

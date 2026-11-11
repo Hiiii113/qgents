@@ -1,14 +1,5 @@
 package qg.qgent.workspace.service;
 
-import qg.qgent.support.TestIds;
-
-import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpStatus;
-
-import qg.qgent.common.web.ApiException;
-import qg.qgent.workspace.mapper.WorkspaceMapper;
-
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -18,6 +9,12 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import qg.qgent.common.web.ApiException;
+import qg.qgent.support.TestIds;
+import qg.qgent.workspace.mapper.WorkspaceMapper;
+
 /** 持久化 Workspace 写租约的 CAS 语义测试，不启动数据库。 */
 class WorkspaceWriteLeaseServiceTest {
 
@@ -25,7 +22,8 @@ class WorkspaceWriteLeaseServiceTest {
     void acquireReturnsOpaqueTokenOnlyAfterDatabaseCasWins() {
         WorkspaceMapper mapper = mock(WorkspaceMapper.class);
         Long projectId = TestIds.next(), workspaceId = TestIds.next(), agentRunId = TestIds.next();
-        when(mapper.claimWriteLease(eq(projectId), eq(workspaceId), eq(agentRunId), any())).thenReturn(1);
+        when(mapper.claimWriteLease(eq(projectId), eq(workspaceId), eq(agentRunId), any()))
+                .thenReturn(1);
 
         WorkspaceWriteLeaseService service = new WorkspaceWriteLeaseService(mapper);
         WorkspaceWriteLease lease = service.acquire(projectId, workspaceId, agentRunId);
@@ -41,8 +39,12 @@ class WorkspaceWriteLeaseServiceTest {
         WorkspaceMapper mapper = mock(WorkspaceMapper.class);
         when(mapper.claimWriteLease(any(), any(), any(), any())).thenReturn(0);
 
-        ApiException error = assertThrows(ApiException.class, () -> new WorkspaceWriteLeaseService(mapper)
-                .acquire(TestIds.next(), TestIds.next(), TestIds.next()));
+        ApiException error =
+                assertThrows(
+                        ApiException.class,
+                        () ->
+                                new WorkspaceWriteLeaseService(mapper)
+                                        .acquire(TestIds.next(), TestIds.next(), TestIds.next()));
 
         assertEquals(HttpStatus.CONFLICT, error.status());
         assertEquals("WORKSPACE_WRITE_LEASE_HELD", error.code());
@@ -52,8 +54,10 @@ class WorkspaceWriteLeaseServiceTest {
     void renewalOrReleaseCanOnlyUseTheOwningToken() {
         WorkspaceMapper mapper = mock(WorkspaceMapper.class);
         Long projectId = TestIds.next(), workspaceId = TestIds.next(), agentRunId = TestIds.next();
-        WorkspaceWriteLease lease = new WorkspaceWriteLease(projectId, workspaceId, agentRunId, "lease-token");
-        when(mapper.renewWriteLease(projectId, workspaceId, agentRunId, "lease-token")).thenReturn(0);
+        WorkspaceWriteLease lease =
+                new WorkspaceWriteLease(projectId, workspaceId, agentRunId, "lease-token");
+        when(mapper.renewWriteLease(projectId, workspaceId, agentRunId, "lease-token"))
+                .thenReturn(0);
         WorkspaceWriteLeaseService service = new WorkspaceWriteLeaseService(mapper);
 
         ApiException error = assertThrows(ApiException.class, () -> service.renew(lease));

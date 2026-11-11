@@ -10,9 +10,11 @@ public class ResourceLimitsRequest {
     @Min(1)
     @Max(86400)
     private Long idleTtlSeconds;
+
     @Min(1)
     @Max(86400)
     private Long maxLifetimeSeconds;
+
     @Min(1)
     @Max(86400)
     private Long executionTimeoutSeconds;

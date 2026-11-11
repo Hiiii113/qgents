@@ -1,13 +1,12 @@
 package qg.qgent.harness.context;
 
-import qg.qgent.chat.dto.ContextMessage;
-import qg.qgent.skill.dto.ContextSkill;
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import java.util.List;
+import qg.qgent.chat.dto.ContextMessage;
+import qg.qgent.skill.dto.ContextSkill;
 
 /**
  * Agent 使用的群聊上下文。
@@ -43,5 +42,4 @@ public class GroupContext {
 
     @Schema(description = "当前 Agent 的私有记忆全文；同一 Agent 在各个群共享这一篇")
     private String agentMemory;
-
 }

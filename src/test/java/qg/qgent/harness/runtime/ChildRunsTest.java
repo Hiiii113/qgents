@@ -1,23 +1,21 @@
 package qg.qgent.harness.runtime;
 
-import qg.qgent.support.TestIds;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import qg.qgent.harness.entity.AgentRunEntity;
 import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.service.AgentRunService;
 import qg.qgent.sandbox.service.SandboxSessionManager;
-
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
+import qg.qgent.support.TestIds;
 
 class ChildRunsTest {
     @Test
     void bindingTheLazyDefaultWorkspacePreservesTheAgentDirectory() {
-        ChildRuns.Execution execution = new ChildRuns.Execution(
-                new AgentRunEntity(), null, null, ".");
+        ChildRuns.Execution execution =
+                new ChildRuns.Execution(new AgentRunEntity(), null, null, ".");
         Long workspace = TestIds.next();
         execution.workspace.setDirectory("src/runtime");
 
@@ -29,8 +27,8 @@ class ChildRunsTest {
 
     @Test
     void explicitlySelectingAnotherWorkspaceResetsTheAgentDirectory() {
-        ChildRuns.Execution execution = new ChildRuns.Execution(
-                new AgentRunEntity(), null, TestIds.next(), "src/runtime");
+        ChildRuns.Execution execution =
+                new ChildRuns.Execution(new AgentRunEntity(), null, TestIds.next(), "src/runtime");
 
         execution.workspace.select(TestIds.next());
 
@@ -42,8 +40,16 @@ class ChildRunsTest {
         Long runId = TestIds.next();
         AgentRunEntity run = new AgentRunEntity();
         run.setId(runId);
-        ChildRuns children = new ChildRuns(TestIds.next(), 1, Runnable::run, mock(AgentRunService.class),
-                mock(SandboxSessionManager.class), () -> false, mock(AgentLoop.class), child -> List.of());
+        ChildRuns children =
+                new ChildRuns(
+                        TestIds.next(),
+                        1,
+                        Runnable::run,
+                        mock(AgentRunService.class),
+                        mock(SandboxSessionManager.class),
+                        () -> false,
+                        mock(AgentLoop.class),
+                        child -> List.of());
         ChildRuns.Execution child = new ChildRuns.Execution(run, null, null, ".");
         assertThat(children.reserve(child)).isTrue();
         child.schedule();

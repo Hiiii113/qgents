@@ -1,12 +1,6 @@
 package qg.qgent.sandbox.execution.handler;
 
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
-
-import qg.qgent.sandbox.exception.SandboxException;
-import qg.qgent.sandbox.execution.dto.ToolArguments;
-import qg.qgent.sandbox.execution.dto.ToolContext;
-import qg.qgent.sandbox.execution.dto.ToolResult;
+import static org.springframework.http.HttpStatus.CONFLICT;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -22,8 +16,12 @@ import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.Map;
 import java.util.Set;
-
-import static org.springframework.http.HttpStatus.CONFLICT;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+import qg.qgent.sandbox.exception.SandboxException;
+import qg.qgent.sandbox.execution.dto.ToolArguments;
+import qg.qgent.sandbox.execution.dto.ToolContext;
+import qg.qgent.sandbox.execution.dto.ToolResult;
 
 /** 使用旧内容哈希校验和原子替换写入 UTF-8 文本文件。 */
 @Component
@@ -31,11 +29,12 @@ import static org.springframework.http.HttpStatus.CONFLICT;
 public class FileWriteTool implements SandboxTool {
     private static final int SANDBOX_UID = 10001;
     private static final int SANDBOX_GID = 10001;
-    private static final Set<PosixFilePermission> DEFAULT_FILE_PERMISSIONS = Set.of(
-            PosixFilePermission.OWNER_READ,
-            PosixFilePermission.OWNER_WRITE,
-            PosixFilePermission.GROUP_READ,
-            PosixFilePermission.OTHERS_READ);
+    private static final Set<PosixFilePermission> DEFAULT_FILE_PERMISSIONS =
+            Set.of(
+                    PosixFilePermission.OWNER_READ,
+                    PosixFilePermission.OWNER_WRITE,
+                    PosixFilePermission.GROUP_READ,
+                    PosixFilePermission.OTHERS_READ);
 
     private final RepositoryFileResolver files;
 
@@ -44,23 +43,28 @@ public class FileWriteTool implements SandboxTool {
         return "file.write";
     }
 
-
     @Override
     public ToolResult execute(ToolContext context, Map<String, Object> arguments) {
         String relativePath = ToolArguments.string(arguments, "path", 1024);
         String expectedHash = ToolArguments.string(arguments, "expectedHash", 64);
         String mode = ToolArguments.string(arguments, "mode", 16);
-        if (!java.util.Set.of("create", "replace").contains(mode)) throw new IllegalArgumentException("mode 必须为 create 或 replace");
+        if (!java.util.Set.of("create", "replace").contains(mode))
+            throw new IllegalArgumentException("mode 必须为 create 或 replace");
         String content = ToolArguments.optionalString(arguments, "content", "", 2 * 1024 * 1024);
         Path target = files.resolveForWrite(context.getLocalWorkspace(), relativePath);
         try {
             boolean existed = Files.exists(target);
-            if ("create".equals(mode) && existed) throw new SandboxException(CONFLICT, "FILE_ALREADY_EXISTS", "文件已存在，请先读取再修改");
-            if ("replace".equals(mode) && !existed) throw new SandboxException(CONFLICT, "FILE_NOT_FOUND", "文件不存在，请使用新建写入");
-            if (existed && (Files.isSymbolicLink(target)
-                    || !Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS))) {
-                throw new SandboxException(org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
-                        "TOOL_PATH_INVALID", "目标必须是已有的普通文本文件");
+            if ("create".equals(mode) && existed)
+                throw new SandboxException(CONFLICT, "FILE_ALREADY_EXISTS", "文件已存在，请先读取再修改");
+            if ("replace".equals(mode) && !existed)
+                throw new SandboxException(CONFLICT, "FILE_NOT_FOUND", "文件不存在，请使用新建写入");
+            if (existed
+                    && (Files.isSymbolicLink(target)
+                            || !Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS))) {
+                throw new SandboxException(
+                        org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
+                        "TOOL_PATH_INVALID",
+                        "目标必须是已有的普通文本文件");
             }
             byte[] previous = existed ? Files.readAllBytes(target) : new byte[0];
             if (existed) {
@@ -74,8 +78,16 @@ public class FileWriteTool implements SandboxTool {
             // 新建空文件时 previous 与 next 都为空字节数组，内容相等但存在性已变化，必须记为变更
             boolean changed = !existed || !java.util.Arrays.equals(previous, next);
             atomicReplace(target, next);
-            return ToolResult.value(Map.of("path", relativePath, "sha256", FileReadTool.sha256(next),
-                    "bytes", next.length, "changed", changed));
+            return ToolResult.value(
+                    Map.of(
+                            "path",
+                            relativePath,
+                            "sha256",
+                            FileReadTool.sha256(next),
+                            "bytes",
+                            next.length,
+                            "changed",
+                            changed));
         } catch (SandboxException exception) {
             throw exception;
         } catch (Exception exception) {
@@ -84,11 +96,14 @@ public class FileWriteTool implements SandboxTool {
     }
 
     private static void decodeUtf8(byte[] bytes) throws CharacterCodingException {
-        CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT);
+        CharsetDecoder decoder =
+                StandardCharsets.UTF_8
+                        .newDecoder()
+                        .onMalformedInput(CodingErrorAction.REPORT)
+                        .onUnmappableCharacter(CodingErrorAction.REPORT);
         decoder.decode(ByteBuffer.wrap(bytes));
     }
+
     /**
      * 通过临时文件 + 原子替换写入目标，并保留/修复目标文件的 POSIX 权限与沙箱用户属主；
      * 任一步骤失败都保证目标文件要么保持原样，要么已被完整替换（不会出现部分写入）。
@@ -99,7 +114,11 @@ public class FileWriteTool implements SandboxTool {
         Path temporary = Files.createTempFile(target.getParent(), ".qgents-", ".tmp");
         try {
             Files.write(temporary, next);
-            Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            Files.move(
+                    temporary,
+                    target,
+                    StandardCopyOption.ATOMIC_MOVE,
+                    StandardCopyOption.REPLACE_EXISTING);
             grantSandboxOwnership(target, permissions);
         } finally {
             Files.deleteIfExists(temporary);
@@ -114,15 +133,17 @@ public class FileWriteTool implements SandboxTool {
         }
     }
 
-    private static void grantSandboxOwnership(Path target, Set<PosixFilePermission> permissions) throws IOException {
+    private static void grantSandboxOwnership(Path target, Set<PosixFilePermission> permissions)
+            throws IOException {
         // 先设置权限（保证 group/others 可读），即使后续 chown 失败，沙箱进程仍能读取文件。
         try {
             Files.setPosixFilePermissions(target, permissions);
         } catch (UnsupportedOperationException e) {
             // 非 POSIX 文件系统（如 Windows 挂载）不支持权限设置，跳过。
         }
-        PosixFileAttributeView view = Files.getFileAttributeView(target, PosixFileAttributeView.class,
-                LinkOption.NOFOLLOW_LINKS);
+        PosixFileAttributeView view =
+                Files.getFileAttributeView(
+                        target, PosixFileAttributeView.class, LinkOption.NOFOLLOW_LINKS);
         if (view == null) {
             return;
         }

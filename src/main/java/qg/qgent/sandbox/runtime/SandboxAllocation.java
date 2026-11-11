@@ -1,11 +1,10 @@
 package qg.qgent.sandbox.runtime;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import lombok.AllArgsConstructor;
+import lombok.Data;
 
 /**
  * 运行时维护的沙箱分配状态。
@@ -38,5 +37,4 @@ public class SandboxAllocation {
     private Duration executionTimeout;
     // 底层运行时资源句柄；Docker 实现中为容器编号。
     private String runtimeHandle;
-
 }

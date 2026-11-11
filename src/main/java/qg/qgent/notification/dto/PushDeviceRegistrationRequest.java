@@ -16,7 +16,9 @@ public class PushDeviceRegistrationRequest {
 
     @NotBlank
     @Pattern(regexp = "ANDROID|IOS")
-    @Schema(description = "客户端平台", allowableValues = {"ANDROID", "IOS"})
+    @Schema(
+            description = "客户端平台",
+            allowableValues = {"ANDROID", "IOS"})
     private String platform;
 
     @NotBlank

@@ -1,16 +1,14 @@
 package qg.qgent.sandbox.filesystem.service;
 
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
-
-import qg.qgent.project.storage.ProjectDirectoryService;
-import qg.qgent.sandbox.exception.SandboxException;
+import static org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY;
 
 import java.nio.file.Path;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
-import static org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+import qg.qgent.project.storage.ProjectDirectoryService;
+import qg.qgent.sandbox.exception.SandboxException;
 
 /**
  * 将 Workspace 存储标识解析为项目目录内的路径。
@@ -21,7 +19,8 @@ import static org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY;
 @Component
 @RequiredArgsConstructor
 public class WorkspacePathResolver {
-    private static final Pattern STORAGE_KEY = Pattern.compile("(\\d{1,19})/workspaces/(default|\\d{1,19})");
+    private static final Pattern STORAGE_KEY =
+            Pattern.compile("(\\d{1,19})/workspaces/(default|\\d{1,19})");
 
     private final ProjectDirectoryService projects;
 
@@ -39,7 +38,9 @@ public class WorkspacePathResolver {
     /** 同一 Workspace 目录在 Docker 宿主机上的路径。 */
     public Path resolveDockerHost(String storageKey) {
         Match match = parse(storageKey);
-        return projects.dockerHostProjectRoot(match.projectId()).resolve("workspaces").resolve(match.directory());
+        return projects.dockerHostProjectRoot(match.projectId())
+                .resolve("workspaces")
+                .resolve(match.directory());
     }
 
     /** 项目共享 Git 数据在 Docker 宿主机上的路径。 */
@@ -55,11 +56,11 @@ public class WorkspacePathResolver {
     private Match parse(String storageKey) {
         Matcher matcher = STORAGE_KEY.matcher(storageKey == null ? "" : storageKey);
         if (!matcher.matches()) {
-            throw new SandboxException(UNPROCESSABLE_ENTITY, "WORKSPACE_PATH_INVALID", "Workspace 存储标识不合法");
+            throw new SandboxException(
+                    UNPROCESSABLE_ENTITY, "WORKSPACE_PATH_INVALID", "Workspace 存储标识不合法");
         }
         return new Match(Long.valueOf(matcher.group(1)), matcher.group(2));
     }
 
-    private record Match(Long projectId, String directory) {
-    }
+    private record Match(Long projectId, String directory) {}
 }

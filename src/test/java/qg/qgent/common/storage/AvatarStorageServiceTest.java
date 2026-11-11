@@ -1,24 +1,21 @@
 package qg.qgent.common.storage;
 
-import qg.qgent.support.TestIds;
-
-import com.aliyun.oss.OSS;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.http.HttpStatus;
-
-import qg.qgent.attachment.config.AliyunOssProperties;
-import qg.qgent.common.web.ApiException;
-
-import java.net.URL;
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+
+import com.aliyun.oss.OSS;
+import java.net.URL;
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.HttpStatus;
+import qg.qgent.attachment.config.AliyunOssProperties;
+import qg.qgent.common.web.ApiException;
+import qg.qgent.support.TestIds;
 
 /** 共用头像存储测试：OSS 未启用 501、媒体类型/大小校验、三种对象键前缀、跨主体拒绝、确认与公共读 URL。 */
 class AvatarStorageServiceTest {
@@ -57,7 +54,8 @@ class AvatarStorageServiceTest {
 
     @Test
     void credentialThrows501WhenOssDisabled() {
-        assertThatThrownBy(() -> disabled().createCredential("avatars", TestIds.next(), "image/png", 1000L))
+        assertThatThrownBy(() ->
+                        disabled().createCredential("avatars", TestIds.next(), "image/png", 1000L))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> {
                     ApiException ex = (ApiException) e;
@@ -68,22 +66,33 @@ class AvatarStorageServiceTest {
 
     @Test
     void credentialRejectsNonImageMediaType() {
-        assertThatThrownBy(() -> enabled().createCredential("avatars", TestIds.next(), "text/plain", 1000L))
+        assertThatThrownBy(() ->
+                        enabled().createCredential("avatars", TestIds.next(), "text/plain", 1000L))
                 .isInstanceOf(ApiException.class)
-                .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("AVATAR_MEDIA_TYPE_REJECTED"));
+                .satisfies(e ->
+                        assertThat(((ApiException) e).code())
+                                .isEqualTo("AVATAR_MEDIA_TYPE_REJECTED"));
     }
 
     @Test
     void credentialRejectsOversized() {
-        assertThatThrownBy(() -> enabled().createCredential("avatars", TestIds.next(), "image/png",
-                AvatarStorageService.MAX_SIZE_BYTES + 1))
+        assertThatThrownBy(() ->
+                        enabled()
+                                .createCredential(
+                                        "avatars",
+                                        TestIds.next(),
+                                        "image/png",
+                                        AvatarStorageService.MAX_SIZE_BYTES + 1))
                 .isInstanceOf(ApiException.class)
-                .satisfies(e -> assertThat(((ApiException) e).status()).isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE));
+                .satisfies(e ->
+                        assertThat(((ApiException) e).status())
+                                .isEqualTo(HttpStatus.PAYLOAD_TOO_LARGE));
     }
 
     @Test
     void credentialGeneratesServerSideObjectKeyPerScope() throws Exception {
-        when(oss.generatePresignedUrl(eq("my-bucket"), any(String.class), any(java.util.Date.class), any()))
+        when(oss.generatePresignedUrl(
+                        eq("my-bucket"), any(String.class), any(java.util.Date.class), any()))
                 .thenReturn(new URL("https://put-url"));
         AvatarStorageService storage = enabled();
 
@@ -92,7 +101,9 @@ class AvatarStorageServiceTest {
             AvatarStorageService.AvatarCredential credential =
                     storage.createCredential(scope, ownerId, "image/jpeg", 1000L);
 
-            assertThat(credential.objectKey()).startsWith(scope + "/" + ownerId + "/").endsWith(".jpg");
+            assertThat(credential.objectKey())
+                    .startsWith(scope + "/" + ownerId + "/")
+                    .endsWith(".jpg");
             assertThat(credential.credential().getUploadUrl()).isEqualTo("https://put-url");
         }
     }
@@ -114,8 +125,11 @@ class AvatarStorageServiceTest {
         Long ownerId = TestIds.next();
         AvatarStorageService storage = enabled();
 
-        for (String foreignKey : List.of("teams/" + ownerId + "/x.png",
-                "avatars/" + TestIds.next() + "/x.png", "projects/" + ownerId + "/x.png")) {
+        for (String foreignKey :
+                List.of(
+                        "teams/" + ownerId + "/x.png",
+                        "avatars/" + TestIds.next() + "/x.png",
+                        "projects/" + ownerId + "/x.png")) {
             assertThatThrownBy(() -> storage.confirm("avatars", ownerId, foreignKey))
                     .isInstanceOf(ApiException.class)
                     .satisfies(e -> {
@@ -128,8 +142,9 @@ class AvatarStorageServiceTest {
 
     @Test
     void credentialThrows501WhenPublicBaseUrlMissing() {
-        assertThatThrownBy(() -> enabledWithoutPublicUrl()
-                .createCredential("teams", TestIds.next(), "image/png", 1000L))
+        assertThatThrownBy(() ->
+                        enabledWithoutPublicUrl()
+                                .createCredential("teams", TestIds.next(), "image/png", 1000L))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> {
                     ApiException ex = (ApiException) e;
@@ -141,9 +156,12 @@ class AvatarStorageServiceTest {
     @Test
     void confirmThrows501WhenPublicBaseUrlMissing() {
         when(oss.doesObjectExist("my-bucket", "projects/1/x.png")).thenReturn(true);
-        assertThatThrownBy(() -> enabledWithoutPublicUrl().confirm("projects", 1L, "projects/1/x.png"))
+        assertThatThrownBy(
+                        () -> enabledWithoutPublicUrl().confirm("projects", 1L, "projects/1/x.png"))
                 .isInstanceOf(ApiException.class)
-                .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("AVATAR_PUBLIC_URL_NOT_CONFIGURED"));
+                .satisfies(e ->
+                        assertThat(((ApiException) e).code())
+                                .isEqualTo("AVATAR_PUBLIC_URL_NOT_CONFIGURED"));
     }
 
     @Test
@@ -153,11 +171,15 @@ class AvatarStorageServiceTest {
         // 公共地址带尾斜杠、URL 带查询参数时仍能还原对象键
         assertThat(storage.objectKey("avatars", 7L, "https://cdn.example.com/avatars/7/a.png?v=1"))
                 .isEqualTo("avatars/7/a.png");
-        assertThat(storage.objectKey("avatars", 7L, "https://cdn.example.com/avatars/7/a.png")).isEqualTo("avatars/7/a.png");
+        assertThat(storage.objectKey("avatars", 7L, "https://cdn.example.com/avatars/7/a.png"))
+                .isEqualTo("avatars/7/a.png");
         // 外链、其他 bucket、其他主体前缀都不处理
-        assertThat(storage.objectKey("avatars", 7L, "https://other.example.com/avatars/7/a.png")).isNull();
-        assertThat(storage.objectKey("avatars", 7L, "https://cdn.example.com/avatars/8/a.png")).isNull();
-        assertThat(storage.objectKey("avatars", 7L, "https://cdn.example.com/teams/7/a.png")).isNull();
+        assertThat(storage.objectKey("avatars", 7L, "https://other.example.com/avatars/7/a.png"))
+                .isNull();
+        assertThat(storage.objectKey("avatars", 7L, "https://cdn.example.com/avatars/8/a.png"))
+                .isNull();
+        assertThat(storage.objectKey("avatars", 7L, "https://cdn.example.com/teams/7/a.png"))
+                .isNull();
         assertThat(storage.objectKey("avatars", 7L, null)).isNull();
     }
 

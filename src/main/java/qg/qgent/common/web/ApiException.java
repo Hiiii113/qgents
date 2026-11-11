@@ -1,8 +1,7 @@
 package qg.qgent.common.web;
 
-import org.springframework.http.HttpStatus;
-
 import java.util.List;
+import org.springframework.http.HttpStatus;
 
 /** 业务异常，携带 HTTP 状态、错误码和简明提示。 */
 public class ApiException extends RuntimeException {

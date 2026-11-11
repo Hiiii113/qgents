@@ -4,7 +4,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
 import qg.qgent.agent.entity.AgentEntity;
 
 /** 项目内 Agent 视图：列表接口只返回已启用的 Agent，提交申请返回新建的待审批申请。 */
@@ -33,7 +32,12 @@ public class AgentResponse {
     private String status;
 
     public static AgentResponse of(AgentEntity agent) {
-        return new AgentResponse(agent.getId().toString(), agent.getName(), agent.getDescription(),
-                agent.getAvatarUrl(), Boolean.TRUE.equals(agent.getDefaultAgent()), agent.getStatus());
+        return new AgentResponse(
+                agent.getId().toString(),
+                agent.getName(),
+                agent.getDescription(),
+                agent.getAvatarUrl(),
+                Boolean.TRUE.equals(agent.getDefaultAgent()),
+                agent.getStatus());
     }
 }

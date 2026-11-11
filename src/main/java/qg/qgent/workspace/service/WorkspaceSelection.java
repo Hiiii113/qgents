@@ -14,8 +14,13 @@ public final class WorkspaceSelection {
         this.directory = resolveDirectory(".", directory);
     }
 
-    public synchronized Long workspaceId() { return workspaceId; }
-    public synchronized String directory() { return directory; }
+    public synchronized Long workspaceId() {
+        return workspaceId;
+    }
+
+    public synchronized String directory() {
+        return directory;
+    }
 
     public synchronized void bindDefault(Long workspaceId) {
         if (this.workspaceId == null) this.workspaceId = workspaceId;
@@ -31,7 +36,10 @@ public final class WorkspaceSelection {
     }
 
     public static String resolveDirectory(String base, String directory) {
-        String input = directory == null || directory.isBlank() ? "." : directory.trim().replace('\\', '/');
+        String input =
+                directory == null || directory.isBlank()
+                        ? "."
+                        : directory.trim().replace('\\', '/');
         if (input.startsWith("/") || input.matches("^[A-Za-z]:/.*") || input.indexOf('\0') >= 0)
             throw new IllegalArgumentException("工作目录必须位于 Workspace 内");
         List<String> parts = new ArrayList<>();

@@ -1,9 +1,8 @@
 package qg.qgent.auth.service;
 
+import java.util.Set;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
-
-import java.util.Set;
 
 /**
  * Redis 保存 refresh token：auth:refresh:&lt;摘要&gt; → 用户 ID，并按用户维护摘要集合以支持撤销全部设备。

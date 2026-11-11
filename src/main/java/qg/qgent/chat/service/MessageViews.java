@@ -2,9 +2,15 @@ package qg.qgent.chat.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-
 import qg.qgent.agent.entity.AgentEntity;
 import qg.qgent.agent.mapper.AgentMapper;
 import qg.qgent.attachment.service.AttachmentService;
@@ -13,14 +19,6 @@ import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
-
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * 群消息实体到响应的组装。
@@ -40,14 +38,16 @@ public class MessageViews {
     public List<MessageResponse> assemble(List<MessageEntity> rows, Long projectId) {
         Map<Long, String> names = userNames(rows);
         Map<Long, String> agentNames = agentNames(rows);
-        List<MessageResponse> responses = rows.stream()
-                .map(row -> response(row, senderName(row, names, agentNames)))
-                .toList();
+        List<MessageResponse> responses =
+                rows.stream()
+                        .map(row -> response(row, senderName(row, names, agentNames)))
+                        .toList();
         enrichPreviews(responses, projectId);
         return responses;
     }
 
-    private String senderName(MessageEntity row, Map<Long, String> names, Map<Long, String> agentNames) {
+    private String senderName(
+            MessageEntity row, Map<Long, String> names, Map<Long, String> agentNames) {
         if (row.getSenderAgentId() != null) {
             return agentNames.get(row.getSenderAgentId());
         }
@@ -58,11 +58,14 @@ public class MessageViews {
         if (projectId == null) {
             return;
         }
-        Set<String> attachmentIds = responses.stream()
-                .filter(response -> "IMAGE".equals(response.getType()) || "FILE".equals(response.getType()))
-                .map(response -> stringField(response.getContent(), "attachmentId"))
-                .filter(Objects::nonNull)
-                .collect(Collectors.toSet());
+        Set<String> attachmentIds =
+                responses.stream()
+                        .filter(response ->
+                                "IMAGE".equals(response.getType())
+                                        || "FILE".equals(response.getType()))
+                        .map(response -> stringField(response.getContent(), "attachmentId"))
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet());
         if (attachmentIds.isEmpty()) {
             return;
         }
@@ -81,8 +84,11 @@ public class MessageViews {
     }
 
     private Map<Long, String> agentNames(List<MessageEntity> rows) {
-        Set<Long> agentIds = rows.stream().map(MessageEntity::getSenderAgentId).filter(Objects::nonNull)
-                .collect(Collectors.toSet());
+        Set<Long> agentIds =
+                rows.stream()
+                        .map(MessageEntity::getSenderAgentId)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet());
         if (agentIds.isEmpty()) {
             return Map.of();
         }
@@ -91,8 +97,11 @@ public class MessageViews {
     }
 
     private Map<Long, String> userNames(List<MessageEntity> rows) {
-        Set<Long> userIds = rows.stream().map(MessageEntity::getAuthorUserId).filter(Objects::nonNull)
-                .collect(Collectors.toSet());
+        Set<Long> userIds =
+                rows.stream()
+                        .map(MessageEntity::getAuthorUserId)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet());
         if (userIds.isEmpty()) {
             return Map.of();
         }
@@ -101,17 +110,18 @@ public class MessageViews {
     }
 
     private static String displayName(UserEntity user) {
-        return user.getDisplayName() == null || user.getDisplayName().isBlank() ? "已注销用户"
+        return user.getDisplayName() == null || user.getDisplayName().isBlank()
+                ? "已注销用户"
                 : user.getDisplayName();
     }
 
     private MessageResponse response(MessageEntity message, String senderName) {
-        Map<String, Object> content = readJson(message.getContent(), new TypeReference<Map<String, Object>>() {
-        });
-        List<Mention> mentions = message.getMentions() == null || message.getMentions().isBlank()
-                ? List.of()
-                : readJson(message.getMentions(), new TypeReference<List<Mention>>() {
-        });
+        Map<String, Object> content =
+                readJson(message.getContent(), new TypeReference<Map<String, Object>>() {});
+        List<Mention> mentions =
+                message.getMentions() == null || message.getMentions().isBlank()
+                        ? List.of()
+                        : readJson(message.getMentions(), new TypeReference<List<Mention>>() {});
         String senderType;
         String senderId;
         if ("AGENT".equals(message.getSenderType())) {
@@ -126,9 +136,19 @@ public class MessageViews {
             senderId = null;
             senderName = null;
         }
-        return new MessageResponse(message.getId().toString(), message.getGroupId().toString(),
-                message.getSequenceNo(), message.getMessageType(), content, senderId, senderType, senderName,
-                message.getReplyToMessageId() == null ? null : message.getReplyToMessageId().toString(), mentions,
+        return new MessageResponse(
+                message.getId().toString(),
+                message.getGroupId().toString(),
+                message.getSequenceNo(),
+                message.getMessageType(),
+                content,
+                senderId,
+                senderType,
+                senderName,
+                message.getReplyToMessageId() == null
+                        ? null
+                        : message.getReplyToMessageId().toString(),
+                mentions,
                 iso(message.getCreatedAt()));
     }
 

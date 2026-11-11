@@ -1,10 +1,12 @@
 package qg.qgent.memory.service;
 
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.Map;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
 import qg.qgent.agent.service.AgentService;
 import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.dto.MessageSendRequest;
@@ -19,10 +21,6 @@ import qg.qgent.memory.entity.ProjectMemoryProposalEntity;
 import qg.qgent.memory.mapper.ProjectMemoryProposalMapper;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.service.ProjectAccessService;
-
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.util.Map;
 
 /**
  * 项目记忆更新走群聊审批：成员或后台发现的候选发在项目默认群，管理员回复候选消息并 @Agent 后由服务端核验生效。
@@ -41,9 +39,15 @@ public class ProjectMemoryProposalService {
     private final MessageService chat;
     private final AgentService agents;
 
-    public ProjectMemoryProposalService(ProjectMemoryProposalMapper proposals, ProjectMemoryService memories,
-                                        ProjectAccessService access, ChatGroupMapper groups, MessageMapper messages,
-                                        ProjectMapper projects, MessageService chat, AgentService agents) {
+    public ProjectMemoryProposalService(
+            ProjectMemoryProposalMapper proposals,
+            ProjectMemoryService memories,
+            ProjectAccessService access,
+            ChatGroupMapper groups,
+            MessageMapper messages,
+            ProjectMapper projects,
+            MessageService chat,
+            AgentService agents) {
         this.proposals = proposals;
         this.memories = memories;
         this.access = access;
@@ -62,12 +66,16 @@ public class ProjectMemoryProposalService {
      * @return 待审批候选
      */
     @Transactional
-    public ProjectMemoryProposalEntity propose(Long actor, Long projectId, Long groupId, Long agentRunId,
-                                               String content) {
+    public ProjectMemoryProposalEntity propose(
+            Long actor, Long projectId, Long groupId, Long agentRunId, String content) {
         // 先按真实用户校验项目成员身份，同时得到候选的基线版本
         ProjectMemoryResponse current = memories.get(actor, projectId);
-        ProjectMemoryProposalEntity proposal = newProposal(projectId, groupId,
-                requirePublishable(projectId, groupId, content, current), current);
+        ProjectMemoryProposalEntity proposal =
+                newProposal(
+                        projectId,
+                        groupId,
+                        requirePublishable(projectId, groupId, content, current),
+                        current);
         proposal.setAgentRunId(agentRunId);
         proposal.setProposedBy(actor);
         return insert(proposal);
@@ -81,20 +89,29 @@ public class ProjectMemoryProposalService {
      * @return 待审批候选
      */
     @Transactional
-    public ProjectMemoryProposalEntity publishDiscovered(Long projectId, Long groupId, String content,
-                                                         String sourceVersion) {
+    public ProjectMemoryProposalEntity publishDiscovered(
+            Long projectId, Long groupId, String content, String sourceVersion) {
         ProjectMemoryResponse current = memories.read(projectId);
-        ProjectMemoryProposalEntity proposal = newProposal(projectId, groupId,
-                requirePublishable(projectId, groupId, content, current), current);
+        ProjectMemoryProposalEntity proposal =
+                newProposal(
+                        projectId,
+                        groupId,
+                        requirePublishable(projectId, groupId, content, current),
+                        current);
         proposal.setSourceMemoryVersion(sourceVersion);
         // shortcut: 候选消息本身也进入群消息，下次提炼可能把它当成讨论内容；提炼提示只保留议题与结论，
         // 若出现明显噪音再按消息来源过滤
         MessageSendRequest message = new MessageSendRequest();
         message.setType("TEXT");
-        message.setContent(Map.of("text", "从本群记忆中发现可以写入项目记忆的内容，请项目管理员回复本条消息并 @我 批准；"
-                + "未批准不会写入。\n\n" + proposal.getContent()));
+        message.setContent(
+                Map.of(
+                        "text",
+                        "从本群记忆中发现可以写入项目记忆的内容，请项目管理员回复本条消息并 @我 批准；"
+                                + "未批准不会写入。\n\n"
+                                + proposal.getContent()));
         // 消息与候选同事务：发送或插入失败时一起回滚，不会留下可回复却无法审批的候选消息
-        MessageResponse sent = chat.sendAsAgent(agents.defaultAgent(projectId).getId(), groupId, message);
+        MessageResponse sent =
+                chat.sendAsAgent(agents.defaultAgent(projectId).getId(), groupId, message);
         proposal.setMessageId(Long.valueOf(sent.getId()));
         return insert(proposal);
     }
@@ -121,29 +138,36 @@ public class ProjectMemoryProposalService {
      * @return 写入后的项目记忆
      */
     @Transactional
-    public ProjectMemoryResponse approve(Long actor, Long projectId, Long groupId, Long approvalMessageId) {
+    public ProjectMemoryResponse approve(
+            Long actor, Long projectId, Long groupId, Long approvalMessageId) {
         access.requireProjectAdmin(projectId, actor);
         // 候选状态只锁自己那一行；不同候选并发审批还会竞争同一份 memory.md，所以按项目加锁。
         projects.selectByIdForUpdate(projectId);
         MessageEntity approval = messages.selectById(approvalMessageId);
-        if (approval == null || !groupId.equals(approval.getGroupId()) || !actor.equals(approval.getAuthorUserId())) {
+        if (approval == null
+                || !groupId.equals(approval.getGroupId())
+                || !actor.equals(approval.getAuthorUserId())) {
             throw proposalNotFound();
         }
-        ProjectMemoryProposalEntity proposal = approval.getReplyToMessageId() == null ? null
-                : proposals.selectByMessageId(approval.getReplyToMessageId());
-        if (proposal == null || !projectId.equals(proposal.getProjectId())
+        ProjectMemoryProposalEntity proposal =
+                approval.getReplyToMessageId() == null
+                        ? null
+                        : proposals.selectByMessageId(approval.getReplyToMessageId());
+        if (proposal == null
+                || !projectId.equals(proposal.getProjectId())
                 || !groupId.equals(proposal.getGroupId())) {
             throw proposalNotFound();
         }
         if (!"PENDING".equals(proposal.getStatus())) {
-            throw new ApiException(HttpStatus.CONFLICT, "MEMORY_PROPOSAL_NOT_PENDING",
-                    "该候选已审批，不能重复执行");
+            throw new ApiException(
+                    HttpStatus.CONFLICT, "MEMORY_PROPOSAL_NOT_PENDING", "该候选已审批，不能重复执行");
         }
-        ProjectMemoryResponse saved = memories.applyApproved(projectId, proposal.getContent(),
-                proposal.getBaseVersion());
-        if (proposals.markApplied(proposal.getId(), actor, approvalMessageId, saved.getVersion()) == 0) {
-            throw new ApiException(HttpStatus.CONFLICT, "MEMORY_PROPOSAL_NOT_PENDING",
-                    "该候选状态已变化，审批未完成");
+        ProjectMemoryResponse saved =
+                memories.applyApproved(projectId, proposal.getContent(), proposal.getBaseVersion());
+        if (proposals.markApplied(proposal.getId(), actor, approvalMessageId, saved.getVersion())
+                == 0) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT, "MEMORY_PROPOSAL_NOT_PENDING", "该候选状态已变化，审批未完成");
         }
         return saved;
     }
@@ -154,27 +178,29 @@ public class ProjectMemoryProposalService {
     }
 
     /** 校验来源群与候选正文，返回待写入的整篇记忆；受限群与无变化的内容在这里被拒绝。 */
-    private String requirePublishable(Long projectId, Long groupId, String content,
-                                      ProjectMemoryResponse current) {
+    private String requirePublishable(
+            Long projectId, Long groupId, String content, ProjectMemoryResponse current) {
         ChatGroupEntity group = groups.selectById(groupId);
         if (group == null || !group.getProjectId().equals(projectId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
         }
         if (!Boolean.TRUE.equals(group.getDefaultGroup())) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "MEMORY_SOURCE_GROUP_RESTRICTED",
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN,
+                    "MEMORY_SOURCE_GROUP_RESTRICTED",
                     "受限群内容在授权规则明确前不能更新项目记忆，请到项目默认群提出候选");
         }
         String text = content.trim();
         memories.requireContentBudget(text);
         if (current.getContent().trim().equals(text)) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "MEMORY_PROPOSAL_UNCHANGED",
-                    "候选内容与当前项目记忆一致");
+            throw new ApiException(
+                    HttpStatus.UNPROCESSABLE_ENTITY, "MEMORY_PROPOSAL_UNCHANGED", "候选内容与当前项目记忆一致");
         }
         return text;
     }
 
-    private ProjectMemoryProposalEntity newProposal(Long projectId, Long groupId, String content,
-                                                   ProjectMemoryResponse current) {
+    private ProjectMemoryProposalEntity newProposal(
+            Long projectId, Long groupId, String content, ProjectMemoryResponse current) {
         ProjectMemoryProposalEntity proposal = new ProjectMemoryProposalEntity();
         proposal.setProjectId(projectId);
         proposal.setGroupId(groupId);
@@ -190,15 +216,15 @@ public class ProjectMemoryProposalService {
             proposals.insert(proposal);
         } catch (DuplicateKeyException e) {
             // uk_memory_proposal_run / uk_memory_proposal_message 是唯一性的真正保障；并发提出时撞键的调用方拿到同一提示。
-            throw new ApiException(HttpStatus.CONFLICT, "MEMORY_PROPOSAL_PENDING",
-                    "已有待审批的项目记忆候选，等待管理员审批");
+            throw new ApiException(
+                    HttpStatus.CONFLICT, "MEMORY_PROPOSAL_PENDING", "已有待审批的项目记忆候选，等待管理员审批");
         }
         return proposal;
     }
 
     /** 状态与来源都不匹配时统一按「没有可审批候选」处理，不暴露其他群的候选。 */
     private ApiException proposalNotFound() {
-        return new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "MEMORY_PROPOSAL_NOT_FOUND",
-                "当前回复没有对应的待审批项目记忆候选");
+        return new ApiException(
+                HttpStatus.UNPROCESSABLE_ENTITY, "MEMORY_PROPOSAL_NOT_FOUND", "当前回复没有对应的待审批项目记忆候选");
     }
 }

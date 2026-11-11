@@ -2,7 +2,6 @@ package qg.qgent.chat.mapper.view;
 
 import lombok.Data;
 
-
 /**
  * 群未读计数查询结果行：{@code MessageMapper.countUnreadByGroupIds} 的映射结果。
  * <p>

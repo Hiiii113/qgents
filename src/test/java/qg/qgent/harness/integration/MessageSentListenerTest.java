@@ -1,29 +1,25 @@
 package qg.qgent.harness.integration;
 
-import qg.qgent.support.TestIds;
+import static org.mockito.Mockito.*;
 
-import qg.qgent.chat.event.MessageSentEvent;
-
+import java.util.List;
 import org.junit.jupiter.api.Test;
-
-import qg.qgent.harness.runtime.AgentChatService;
 import qg.qgent.chat.dto.Mention;
 import qg.qgent.chat.entity.MessageEntity;
+import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.service.GroupService;
 import qg.qgent.chat.service.MessageService;
-
-import java.util.List;
-
-import static org.mockito.Mockito.*;
+import qg.qgent.harness.runtime.AgentChatService;
+import qg.qgent.support.TestIds;
 
 class MessageSentListenerTest {
     private final MessageMapper messages = mock(MessageMapper.class);
     private final AgentChatService agents = mock(AgentChatService.class);
     private final MessageService messageService = mock(MessageService.class);
     private final GroupService groupService = mock(GroupService.class);
-    private final MessageSentListener listener = new MessageSentListener(messages, agents, messageService,
-            groupService);
+    private final MessageSentListener listener =
+            new MessageSentListener(messages, agents, messageService, groupService);
 
     @Test
     void ordinaryMessagesDoNotStartAgents() {
@@ -49,7 +45,8 @@ class MessageSentListenerTest {
         message.setContent("{\"text\":\"你好\"}");
         when(messages.selectById(event.messageId())).thenReturn(message);
         when(messageService.agentInstruction(message)).thenReturn("你好");
-        when(groupService.groupAgentIds(event.groupId())).thenReturn(List.of(firstAgent, secondAgent));
+        when(groupService.groupAgentIds(event.groupId()))
+                .thenReturn(List.of(firstAgent, secondAgent));
 
         listener.onMessageSent(event);
 
@@ -66,8 +63,11 @@ class MessageSentListenerTest {
         message.setContent("{\"text\":\"你好\"}");
         when(messages.selectById(event.messageId())).thenReturn(message);
         when(messageService.agentInstruction(message)).thenReturn("你好");
-        when(groupService.groupAgentIds(event.groupId())).thenReturn(List.of(failingAgent, otherAgent));
-        doThrow(new IllegalStateException("沙箱不可用")).when(agents).replyToMention(event, failingAgent, "你好");
+        when(groupService.groupAgentIds(event.groupId()))
+                .thenReturn(List.of(failingAgent, otherAgent));
+        doThrow(new IllegalStateException("沙箱不可用"))
+                .when(agents)
+                .replyToMention(event, failingAgent, "你好");
 
         listener.onMessageSent(event);
 
@@ -97,6 +97,7 @@ class MessageSentListenerTest {
     }
 
     private MessageSentEvent event(List<Mention> mentions) {
-        return new MessageSentEvent(TestIds.next(), TestIds.next(), TestIds.next(), TestIds.next(), mentions);
+        return new MessageSentEvent(
+                TestIds.next(), TestIds.next(), TestIds.next(), TestIds.next(), mentions);
     }
 }

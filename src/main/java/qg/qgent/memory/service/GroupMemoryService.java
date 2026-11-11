@@ -1,13 +1,5 @@
 package qg.qgent.memory.service;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Service;
-
-import qg.qgent.chat.service.GroupService;
-import qg.qgent.memory.dto.GroupMemoryResponse;
-import qg.qgent.project.service.ProjectAccessService;
-import qg.qgent.project.storage.ProjectDirectoryService;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -15,6 +7,12 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import qg.qgent.chat.service.GroupService;
+import qg.qgent.memory.dto.GroupMemoryResponse;
+import qg.qgent.project.service.ProjectAccessService;
+import qg.qgent.project.storage.ProjectDirectoryService;
 
 /** 群聊记忆：每个群在项目目录 groups/&lt;groupId&gt;/memory.md 保存独立正文，只由后台提炼任务写入。 */
 @Service
@@ -27,8 +25,11 @@ public class GroupMemoryService {
     private final ProjectDirectoryService directories;
     private final int maxMemoryChars;
 
-    public GroupMemoryService(ProjectAccessService access, GroupService groups, ProjectDirectoryService directories,
-                              @Value("${app.agent.context.max-memory-chars:12000}") int maxMemoryChars) {
+    public GroupMemoryService(
+            ProjectAccessService access,
+            GroupService groups,
+            ProjectDirectoryService directories,
+            @Value("${app.agent.context.max-memory-chars:12000}") int maxMemoryChars) {
         this.access = access;
         this.groups = groups;
         this.directories = directories;
@@ -49,8 +50,12 @@ public class GroupMemoryService {
             return new GroupMemoryResponse(id(projectId), id(groupId), "", null);
         }
         try {
-            return new GroupMemoryResponse(id(projectId), id(groupId), Files.readString(file, StandardCharsets.UTF_8),
-                    LocalDateTime.ofInstant(Files.getLastModifiedTime(file).toInstant(), ZoneOffset.UTC));
+            return new GroupMemoryResponse(
+                    id(projectId),
+                    id(groupId),
+                    Files.readString(file, StandardCharsets.UTF_8),
+                    LocalDateTime.ofInstant(
+                            Files.getLastModifiedTime(file).toInstant(), ZoneOffset.UTC));
         } catch (IOException e) {
             throw new IllegalStateException("群记忆读取失败: " + file, e);
         }
@@ -68,7 +73,11 @@ public class GroupMemoryService {
             // 先写临时文件再原子替换，避免进程中断留下半篇群记忆
             Path temporary = Files.createTempFile(file.getParent(), FILE_NAME, ".tmp");
             Files.writeString(temporary, text, StandardCharsets.UTF_8);
-            Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            Files.move(
+                    temporary,
+                    file,
+                    StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
         } catch (IOException e) {
             throw new IllegalStateException("群记忆写入失败: " + file, e);
         }

@@ -1,13 +1,11 @@
 package qg.qgent.harness.config;
 
+import java.util.concurrent.Executor;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
-
 import qg.qgent.common.config.MdcTaskDecorator;
-
-import java.util.concurrent.Executor;
 
 /** Agent 异步执行线程池。 */
 @Configuration

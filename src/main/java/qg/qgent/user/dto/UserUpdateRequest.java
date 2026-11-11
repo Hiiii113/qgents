@@ -7,6 +7,7 @@ import lombok.Data;
 public class UserUpdateRequest {
     @Size(min = 1, max = 120)
     private String displayName;
+
     @Size(max = 2048)
     private String avatarUrl;
 }

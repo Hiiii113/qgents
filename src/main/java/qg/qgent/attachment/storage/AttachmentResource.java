@@ -1,8 +1,7 @@
 package qg.qgent.attachment.storage;
 
-import org.springframework.core.io.AbstractResource;
-
 import java.io.InputStream;
+import org.springframework.core.io.AbstractResource;
 
 /** 延迟打开附件内容，交给 Spring 写出响应并关闭流；范围请求直接交给存储读取。 */
 public class AttachmentResource extends AbstractResource {
@@ -14,13 +13,23 @@ public class AttachmentResource extends AbstractResource {
     private final Long start;
     private final Long end;
 
-    public AttachmentResource(AttachmentStorageStrategy storage, String objectKey, String fileName,
-            String contentType, long size) {
+    public AttachmentResource(
+            AttachmentStorageStrategy storage,
+            String objectKey,
+            String fileName,
+            String contentType,
+            long size) {
         this(storage, objectKey, fileName, contentType, size, null, null);
     }
 
-    private AttachmentResource(AttachmentStorageStrategy storage, String objectKey, String fileName,
-            String contentType, long size, Long start, Long end) {
+    private AttachmentResource(
+            AttachmentStorageStrategy storage,
+            String objectKey,
+            String fileName,
+            String contentType,
+            long size,
+            Long start,
+            Long end) {
         this.storage = storage;
         this.objectKey = objectKey;
         this.fileName = fileName;
@@ -35,7 +44,9 @@ public class AttachmentResource extends AbstractResource {
     }
 
     public String contentType() {
-        return contentType == null || contentType.isBlank() ? "application/octet-stream" : contentType;
+        return contentType == null || contentType.isBlank()
+                ? "application/octet-stream"
+                : contentType;
     }
 
     @Override
@@ -55,7 +66,8 @@ public class AttachmentResource extends AbstractResource {
 
     @Override
     public InputStream getInputStream() {
-        return start == null ? storage.loadContent(objectKey, fileName, contentType).getStream()
+        return start == null
+                ? storage.loadContent(objectKey, fileName, contentType).getStream()
                 : storage.loadRange(objectKey, start, end);
     }
 }

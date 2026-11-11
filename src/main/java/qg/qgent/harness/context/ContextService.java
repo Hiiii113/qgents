@@ -20,11 +20,16 @@ public class ContextService {
     private final GroupMemoryService groupMemory;
     private final AgentMemoryService agentMemories;
 
-    public GroupContext buildForGroup(Long actor, Long projectId, Long groupId, Long agentId, Integer limit) {
+    public GroupContext buildForGroup(
+            Long actor, Long projectId, Long groupId, Long agentId, Integer limit) {
         var group = groups.requireGroupMember(projectId, groupId, actor);
-        return new GroupContext(groupId.toString(), projectId.toString(), group.getName(),
+        return new GroupContext(
+                groupId.toString(),
+                projectId.toString(),
+                group.getName(),
                 history.recentMessages(actor, projectId, groupId, limit),
-                skills.publishedCatalog(actor, projectId), projectMemory.get(actor, projectId).getContent(),
+                skills.publishedCatalog(actor, projectId),
+                projectMemory.get(actor, projectId).getContent(),
                 groupMemory.read(projectId, groupId).getContent(),
                 agentMemories.view(projectId, agentId));
     }

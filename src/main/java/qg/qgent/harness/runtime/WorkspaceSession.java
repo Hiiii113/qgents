@@ -17,8 +17,12 @@ final class WorkspaceSession implements WorkSession {
     private final SandboxSessionManager sessions;
     private final AgentRunService runs;
 
-    WorkspaceSession(WorkContext work, ChildRuns.Execution execution, WorkspaceService workspaces,
-                     SandboxSessionManager sessions, AgentRunService runs) {
+    WorkspaceSession(
+            WorkContext work,
+            ChildRuns.Execution execution,
+            WorkspaceService workspaces,
+            SandboxSessionManager sessions,
+            AgentRunService runs) {
         this.work = work;
         this.execution = execution;
         this.workspaces = workspaces;
@@ -44,13 +48,15 @@ final class WorkspaceSession implements WorkSession {
     @Override
     public Long ensure(Long workspaceId) {
         synchronized (work.environmentLock) {
-            if (work.isCancelled() || execution.isStopRequested()) throw new IllegalStateException("Agent 运行已取消");
+            if (work.isCancelled() || execution.isStopRequested())
+                throw new IllegalStateException("Agent 运行已取消");
             if (workspaceId == null) {
                 workspaceId = execution.workspace.workspaceId();
             }
             if (workspaceId == null) {
                 if (work.defaultWorkspaceId == null) {
-                    work.defaultWorkspaceId = workspaces.defaultWorkspace(work.event.projectId()).getId();
+                    work.defaultWorkspaceId =
+                            workspaces.defaultWorkspace(work.event.projectId()).getId();
                 }
                 workspaceId = work.defaultWorkspaceId;
                 execution.workspace.bindDefault(workspaceId);

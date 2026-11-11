@@ -1,8 +1,7 @@
 package qg.qgent.chat.mapper.view;
 
-import lombok.Data;
-
 import java.time.LocalDateTime;
+import lombok.Data;
 
 /**
  * 群最新消息批量查询结果行：{@code MessageMapper.selectLatestByGroupIds} 的映射结果。

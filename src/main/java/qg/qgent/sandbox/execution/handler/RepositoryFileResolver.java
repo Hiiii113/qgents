@@ -1,14 +1,12 @@
 package qg.qgent.sandbox.execution.handler;
 
-import org.springframework.stereotype.Component;
-
-import qg.qgent.sandbox.exception.SandboxException;
+import static org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY;
 
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
-
-import static org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY;
+import org.springframework.stereotype.Component;
+import qg.qgent.sandbox.exception.SandboxException;
 
 /** 将 Agent 提交的仓库相对路径解析为受控本地文件。 */
 @Component

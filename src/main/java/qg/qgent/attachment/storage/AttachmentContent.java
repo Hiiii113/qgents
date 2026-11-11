@@ -1,7 +1,7 @@
 package qg.qgent.attachment.storage;
 
-import lombok.Value;
 import java.io.InputStream;
+import lombok.Value;
 
 /** 内容流及文件信息，调用方负责关闭流。 */
 @Value

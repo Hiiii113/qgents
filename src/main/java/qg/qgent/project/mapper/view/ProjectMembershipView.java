@@ -2,7 +2,6 @@ package qg.qgent.project.mapper.view;
 
 import lombok.Data;
 
-
 @Data
 public class ProjectMembershipView {
     private Long id;

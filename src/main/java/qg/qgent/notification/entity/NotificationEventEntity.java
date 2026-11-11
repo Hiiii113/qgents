@@ -5,10 +5,9 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
-import lombok.Data;
-
 import java.time.LocalDateTime;
 import java.util.Map;
+import lombok.Data;
 
 /** 按用户保存的实时通知事件；sequenceNo 用于 SSE 断线续传。 */
 @Data

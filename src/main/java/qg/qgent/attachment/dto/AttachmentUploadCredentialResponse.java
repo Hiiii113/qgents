@@ -1,12 +1,11 @@
 package qg.qgent.attachment.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.time.LocalDateTime;
+import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
-import java.time.LocalDateTime;
-import java.util.Map;
 
 @Data
 @NoArgsConstructor
@@ -15,7 +14,11 @@ public class AttachmentUploadCredentialResponse {
 
     /** 由附件 ID 与存储层签发的凭证组装；凭证字段只在这里赋值一次。 */
     public AttachmentUploadCredentialResponse(String attachmentId, UploadCredential credential) {
-        this(attachmentId, credential.getUploadUrl(), credential.getMethod(), credential.getExpiresAt(),
+        this(
+                attachmentId,
+                credential.getUploadUrl(),
+                credential.getMethod(),
+                credential.getExpiresAt(),
                 credential.getHeaders());
     }
 

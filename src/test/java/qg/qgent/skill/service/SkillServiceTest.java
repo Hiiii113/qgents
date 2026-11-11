@@ -1,30 +1,29 @@
 package qg.qgent.skill.service;
 
-import qg.qgent.support.TestIds;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
+import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.mock.web.MockMultipartFile;
-import java.nio.charset.StandardCharsets;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.skill.dto.SkillUpdateRequest;
 import qg.qgent.skill.entity.SkillEntity;
 import qg.qgent.skill.mapper.SkillMapper;
+import qg.qgent.support.TestIds;
 import qg.qgent.user.mapper.UserMapper;
-
-
-import static org.assertj.core.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
 
 class SkillServiceTest {
     private final SkillMapper mapper = mock(SkillMapper.class);
     private final ProjectAccessService access = mock(ProjectAccessService.class);
     private final EventService events = mock(EventService.class);
-    private final SkillService service = new SkillService(mapper, access, mock(UserMapper.class), events);
+    private final SkillService service =
+            new SkillService(mapper, access, mock(UserMapper.class), events);
     private final Long projectId = TestIds.next(), owner = TestIds.next(), other = TestIds.next();
 
     @ParameterizedTest
@@ -42,7 +41,13 @@ class SkillServiceTest {
         assertThat(result.getDescription()).isEqualTo("更新后的用途");
         assertThat(result.getStatus()).isEqualTo(status);
         verify(mapper).updateById(skill);
-        verify(events).publish(eq(projectId), isNull(), eq("skill.updated"), eq(skill.getId().toString()), any());
+        verify(events)
+                .publish(
+                        eq(projectId),
+                        isNull(),
+                        eq("skill.updated"),
+                        eq(skill.getId().toString()),
+                        any());
     }
 
     @Test
@@ -64,13 +69,15 @@ class SkillServiceTest {
         SkillUpdateRequest request = new SkillUpdateRequest();
         request.setContent("---\nname: revised\ndescription: 修订说明\n---\n修订内容");
         service.update(owner, projectId, skill.getId(), request);
-        assertThat(service.submitReview(owner, projectId, skill.getId()).getStatus()).isEqualTo("PENDING_REVIEW");
+        assertThat(service.submitReview(owner, projectId, skill.getId()).getStatus())
+                .isEqualTo("PENDING_REVIEW");
     }
 
     @Test
     void ownerCanArchivePrivatePublishedSkillWithoutAdminPermission() {
         SkillEntity skill = skill("PUBLISHED", "PRIVATE");
-        assertThat(service.archive(owner, projectId, skill.getId()).getStatus()).isEqualTo("ARCHIVED");
+        assertThat(service.archive(owner, projectId, skill.getId()).getStatus())
+                .isEqualTo("ARCHIVED");
         verify(access, never()).requireProjectAdmin(any(), any());
     }
 
@@ -87,11 +94,18 @@ class SkillServiceTest {
     @Test
     void ordinaryNonOwnerCannotEditOrArchive() {
         SkillEntity skill = skill("PUBLISHED", "PROJECT_SHARED");
-        doThrow(new ApiException(org.springframework.http.HttpStatus.FORBIDDEN, "PROJECT_ADMIN_REQUIRED", "需要管理员"))
-                .when(access).requireProjectAdmin(projectId, other);
-        assertThatThrownBy(() -> service.update(other, projectId, skill.getId(), new SkillUpdateRequest()))
+        doThrow(
+                        new ApiException(
+                                org.springframework.http.HttpStatus.FORBIDDEN,
+                                "PROJECT_ADMIN_REQUIRED",
+                                "需要管理员"))
+                .when(access)
+                .requireProjectAdmin(projectId, other);
+        assertThatThrownBy(() ->
+                        service.update(other, projectId, skill.getId(), new SkillUpdateRequest()))
                 .isInstanceOf(ApiException.class);
-        assertThatThrownBy(() -> service.archive(other, projectId, skill.getId())).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> service.archive(other, projectId, skill.getId()))
+                .isInstanceOf(ApiException.class);
         verify(mapper, never()).updateById(any(SkillEntity.class));
     }
 
@@ -100,7 +114,8 @@ class SkillServiceTest {
     void unpublishedSharedDetailsAreVisibleToOwnerAndAdminOnly(String status) {
         SkillEntity skill = skill(status, "PROJECT_SHARED");
         assertThat(service.get(owner, projectId, skill.getId()).getStatus()).isEqualTo(status);
-        assertThatThrownBy(() -> service.get(other, projectId, skill.getId())).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> service.get(other, projectId, skill.getId()))
+                .isInstanceOf(ApiException.class);
         when(access.isProjectAdmin(projectId, other)).thenReturn(true);
         assertThat(service.get(other, projectId, skill.getId()).getStatus()).isEqualTo(status);
     }
@@ -109,25 +124,33 @@ class SkillServiceTest {
     void privateDetailsStayHiddenFromOtherUsersIncludingAdmins() {
         SkillEntity skill = skill("PUBLISHED", "PRIVATE");
         when(access.isProjectAdmin(projectId, other)).thenReturn(true);
-        assertThatThrownBy(() -> service.get(other, projectId, skill.getId())).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> service.get(other, projectId, skill.getId()))
+                .isInstanceOf(ApiException.class);
     }
 
     @Test
     void archivedSkillAndBlankContentCannotBeEdited() {
         SkillEntity skill = skill("ARCHIVED", "PRIVATE");
-        assertThatThrownBy(() -> service.update(owner, projectId, skill.getId(), new SkillUpdateRequest()))
+        assertThatThrownBy(() ->
+                        service.update(owner, projectId, skill.getId(), new SkillUpdateRequest()))
                 .isInstanceOf(ApiException.class);
         skill.setStatus("PUBLISHED");
         SkillUpdateRequest request = new SkillUpdateRequest();
         request.setContent(" ");
-        assertThatThrownBy(() -> service.update(owner, projectId, skill.getId(), request)).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> service.update(owner, projectId, skill.getId(), request))
+                .isInstanceOf(ApiException.class);
         verify(mapper, never()).updateById(any(SkillEntity.class));
     }
 
     @Test
     void previewChecksMembershipAndDoesNotSave() throws Exception {
         String content = "---\nname: example\ndescription: 用途\n---\n正文\n";
-        var file = new MockMultipartFile("file", "SKILL.md", "text/markdown", content.getBytes(StandardCharsets.UTF_8));
+        var file =
+                new MockMultipartFile(
+                        "file",
+                        "SKILL.md",
+                        "text/markdown",
+                        content.getBytes(StandardCharsets.UTF_8));
         var preview = service.preview(owner, projectId, file);
         assertThat(preview.name()).isEqualTo("example");
         assertThat(preview.description()).isEqualTo("用途");

@@ -1,14 +1,12 @@
 package qg.qgent.sandbox.execution.dto;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import jakarta.validation.Validation;
 import jakarta.validation.Validator;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-
-
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ToolExecutionRequestValidationTest {
     private static Validator validator;

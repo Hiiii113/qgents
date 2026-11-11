@@ -3,7 +3,6 @@ package qg.qgent.chat.mapper.view;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
-
 /** 项目或群聊成员与用户资料关联的查询结果，由服务组装为成员响应。 */
 @Data
 public class GroupMemberRow {

@@ -1,14 +1,12 @@
 package qg.qgent.skill.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.time.LocalDateTime;
+import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-
 import qg.qgent.user.dto.UserSummary;
-
-import java.time.LocalDateTime;
-import java.util.List;
 
 /** Skill 视图。 */
 @Data

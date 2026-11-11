@@ -4,7 +4,6 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
-
 import qg.qgent.realtime.websocket.RealtimeAuthInterceptor;
 import qg.qgent.realtime.websocket.WebSocketRealtimeHandler;
 
@@ -16,7 +15,8 @@ public class RealtimeWebSocketConfiguration implements WebSocketConfigurer {
     private final WebSocketRealtimeHandler realtimeHandler;
     private final RealtimeAuthInterceptor authInterceptor;
 
-    public RealtimeWebSocketConfiguration(WebSocketRealtimeHandler realtimeHandler, RealtimeAuthInterceptor authInterceptor) {
+    public RealtimeWebSocketConfiguration(
+            WebSocketRealtimeHandler realtimeHandler, RealtimeAuthInterceptor authInterceptor) {
         this.realtimeHandler = realtimeHandler;
         this.authInterceptor = authInterceptor;
     }

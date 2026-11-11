@@ -1,5 +1,7 @@
 package qg.qgent.realtime.websocket;
 
+import java.io.IOException;
+import java.nio.ByteBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -9,11 +11,7 @@ import org.springframework.web.socket.PingMessage;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
-
 import qg.qgent.realtime.service.RealtimeHub;
-
-import java.io.IOException;
-import java.nio.ByteBuffer;
 
 /** 注册在线连接、发送连接确认和心跳，断线时移除连接。 */
 @Component
@@ -38,8 +36,7 @@ public class WebSocketRealtimeHandler extends TextWebSocketHandler {
         }
         hub.register(userId, session);
         // 鉴权成功确认帧：客户端据此判定连接可用
-        session.sendMessage(new TextMessage(
-                "{\"type\":\"hello\",\"userId\":\"" + userId + "\"}"));
+        session.sendMessage(new TextMessage("{\"type\":\"hello\",\"userId\":\"" + userId + "\"}"));
     }
 
     @Override

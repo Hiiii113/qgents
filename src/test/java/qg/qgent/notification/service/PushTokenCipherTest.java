@@ -1,12 +1,10 @@
 package qg.qgent.notification.service;
 
-import org.junit.jupiter.api.Test;
-
-import qg.qgent.notification.config.PushProperties;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Base64;
-
-import static org.assertj.core.api.Assertions.assertThat;
+import org.junit.jupiter.api.Test;
+import qg.qgent.notification.config.PushProperties;
 
 /** 推送 Token 必须以不可逆摘要和随机 AES-GCM 密文持久化。 */
 class PushTokenCipherTest {

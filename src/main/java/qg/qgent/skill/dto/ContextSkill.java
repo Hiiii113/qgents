@@ -5,7 +5,6 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-
 /**
  * 上下文中的一条可激活 Skill 目录记录。
  * <p>

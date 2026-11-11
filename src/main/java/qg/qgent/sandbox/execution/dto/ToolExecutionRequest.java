@@ -6,10 +6,9 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
-import lombok.Data;
-
 import java.util.LinkedHashMap;
 import java.util.Map;
+import lombok.Data;
 
 /** Agent 调用沙箱工具时提交的结构化请求。 */
 @Data
@@ -18,9 +17,7 @@ public class ToolExecutionRequest {
     private Long agentRunId;
     private Long workspaceId;
 
-    @lombok.ToString.Exclude
-    private Map<String,String> environment = Map.of();
-
+    @lombok.ToString.Exclude private Map<String, String> environment = Map.of();
 
     @NotBlank
     @Size(max = 64)

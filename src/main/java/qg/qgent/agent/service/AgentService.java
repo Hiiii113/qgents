@@ -1,16 +1,14 @@
 package qg.qgent.agent.service;
 
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-
-import qg.qgent.agent.entity.AgentEntity;
-import qg.qgent.agent.mapper.AgentMapper;
-import qg.qgent.common.web.ApiException;
-
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import qg.qgent.agent.entity.AgentEntity;
+import qg.qgent.agent.mapper.AgentMapper;
+import qg.qgent.common.web.ApiException;
 
 /** 项目内 Agent 的归属与默认 Agent 初始化；Agent 只属于创建它的项目。 */
 @Service
@@ -47,22 +45,27 @@ public class AgentService {
             return;
         }
         List<AgentEntity> found = agents.selectBatchIds(agentIds);
-        boolean allAvailable = agentIds.stream().distinct().count() == found.size()
-                && found.stream().allMatch(agent -> projectId.equals(agent.getProjectId())
-                        && AgentEntity.STATUS_ACTIVE.equals(agent.getStatus()));
+        boolean allAvailable =
+                agentIds.stream().distinct().count() == found.size()
+                        && found.stream()
+                                .allMatch(agent ->
+                                        projectId.equals(agent.getProjectId())
+                                                && AgentEntity.STATUS_ACTIVE.equals(
+                                                        agent.getStatus()));
         if (!allAvailable) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_GROUP_AGENT",
-                    "只能邀请本项目已启用的 Agent");
+            throw new ApiException(
+                    HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_GROUP_AGENT", "只能邀请本项目已启用的 Agent");
         }
     }
 
     /** 运行前校验：被提及的 Agent 必须属于本项目且已启用，否则不产生回复。 */
     public AgentEntity requireActiveProjectAgent(Long projectId, Long agentId) {
         AgentEntity agent = agents.selectById(agentId);
-        if (agent == null || !projectId.equals(agent.getProjectId())
+        if (agent == null
+                || !projectId.equals(agent.getProjectId())
                 || !AgentEntity.STATUS_ACTIVE.equals(agent.getStatus())) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_NOT_ACTIVE",
-                    "Agent 未启用或不属于本项目");
+            throw new ApiException(
+                    HttpStatus.UNPROCESSABLE_ENTITY, "AGENT_NOT_ACTIVE", "Agent 未启用或不属于本项目");
         }
         return agent;
     }

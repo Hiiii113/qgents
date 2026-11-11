@@ -1,15 +1,15 @@
 package qg.qgent.project.service;
 
+import java.util.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import qg.qgent.common.dto.KeysetPagination;
 import qg.qgent.agent.service.AgentService;
-import qg.qgent.common.storage.AvatarStorageService;
+import qg.qgent.common.dto.KeysetPagination;
 import qg.qgent.common.dto.PageSlice;
+import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.project.dto.ProjectCreateRequest;
@@ -28,11 +28,9 @@ import qg.qgent.realtime.service.EventService;
 import qg.qgent.team.entity.TeamEntity;
 import qg.qgent.team.entity.TeamMemberEntity;
 import qg.qgent.team.mapper.TeamMapper;
+import qg.qgent.team.mapper.TeamMemberMapper;
 import qg.qgent.user.dto.AvatarConfirmResponse;
 import qg.qgent.workspace.service.WorkspaceService;
-import qg.qgent.team.mapper.TeamMemberMapper;
-
-import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -67,18 +65,32 @@ public class ProjectService {
         agentService.createDefaultAgent(project.getId());
 
         insertMember(project.getId(), actor, "PROJECT_ADMIN");
-        for (Long userId : new LinkedHashSet<>(request.getMemberIds() == null ? List.of() : request.getMemberIds())) {
+        for (Long userId :
+                new LinkedHashSet<>(
+                        request.getMemberIds() == null ? List.of() : request.getMemberIds())) {
             if (actor.equals(userId)) {
                 continue;
             }
             requireTeamMember(teamId, userId);
             insertMember(project.getId(), userId, "PROJECT_MEMBER");
         }
-        eventPublisher.publishEvent(new ProjectCreatedEvent(project.getId(), project.getName(), actor));
+        eventPublisher.publishEvent(
+                new ProjectCreatedEvent(project.getId(), project.getName(), actor));
         // 项目创建事务提交后保存事件，供团队最近动态展示。
-        eventService.publish(project.getId(), null, "project.created", project.getId().toString(),
-                Map.of("projectId", id(project.getId()), "name", project.getName(), "createdBy", id(actor)));
-        return ProjectViews.response(project, "PROJECT_ADMIN", memberMapper.countMembers(project.getId()));
+        eventService.publish(
+                project.getId(),
+                null,
+                "project.created",
+                project.getId().toString(),
+                Map.of(
+                        "projectId",
+                        id(project.getId()),
+                        "name",
+                        project.getName(),
+                        "createdBy",
+                        id(actor)));
+        return ProjectViews.response(
+                project, "PROJECT_ADMIN", memberMapper.countMembers(project.getId()));
     }
 
     public PageSlice<ProjectResponse> list(Long actor, Long teamId, String cursor, Integer limit) {
@@ -88,15 +100,17 @@ public class ProjectService {
         int size = KeysetPagination.pageSize(limit);
         String scope = "team-projects:" + teamId + ":" + actor;
         Long anchor = KeysetPagination.decodeCursor(cursor, scope);
-        List<ProjectMembershipView> rows = projectMapper.selectAccessiblePage(teamId, actor, teamOwner, anchor,
-                size + 1);
-        return KeysetPagination.keysetPage(rows, size, scope, ProjectMembershipView::getId,
-                ProjectViews::response);
+        List<ProjectMembershipView> rows =
+                projectMapper.selectAccessiblePage(teamId, actor, teamOwner, anchor, size + 1);
+        return KeysetPagination.keysetPage(
+                rows, size, scope, ProjectMembershipView::getId, ProjectViews::response);
     }
 
     public ProjectResponse get(Long actor, Long projectId) {
         ProjectEntity project = requireActiveProject(projectId);
-        return ProjectViews.response(project, access.requireAccess(project, actor),
+        return ProjectViews.response(
+                project,
+                access.requireAccess(project, actor),
                 memberMapper.countMembers(project.getId()));
     }
 
@@ -106,7 +120,9 @@ public class ProjectService {
         access.requireProjectAdminAnyState(project, actor);
         requireActive(project);
         // PATCH 语义：name/description/avatarUrl 均可单独更新；全 null 时拒绝空更新
-        if (request.getName() == null && request.getDescription() == null && request.getAvatarUrl() == null) {
+        if (request.getName() == null
+                && request.getDescription() == null
+                && request.getAvatarUrl() == null) {
             throw invalid("至少需要提供 name、description 或 avatarUrl");
         }
         if (request.getName() != null) {
@@ -128,12 +144,13 @@ public class ProjectService {
             avatarStorage.deleteReplacedAfterCommit("projects", projectId, previousAvatar, null);
         }
         projectMapper.updateById(project);
-        return ProjectViews.response(project, "PROJECT_ADMIN", memberMapper.countMembers(project.getId()));
+        return ProjectViews.response(
+                project, "PROJECT_ADMIN", memberMapper.countMembers(project.getId()));
     }
 
     /** 签发项目头像直传凭证；权限与修改项目资料一致。 */
-    public AvatarStorageService.AvatarCredential avatarCredential(Long actor, Long projectId, String mediaType,
-                                                                  Long sizeBytes) {
+    public AvatarStorageService.AvatarCredential avatarCredential(
+            Long actor, Long projectId, String mediaType, Long sizeBytes) {
         ProjectEntity project = requireProjectForUpdate(projectId);
         access.requireProjectAdminAnyState(project, actor);
         requireActive(project);
@@ -164,19 +181,26 @@ public class ProjectService {
         return transition(actor, projectId, "ACTIVE");
     }
 
-    public PageSlice<ProjectMemberResponse> members(Long actor, Long projectId, String cursor, Integer limit) {
+    public PageSlice<ProjectMemberResponse> members(
+            Long actor, Long projectId, String cursor, Integer limit) {
         ProjectEntity project = requireActiveProject(projectId);
         access.requireAccess(project, actor);
         int size = KeysetPagination.pageSize(limit);
         String scope = "project-members:" + projectId;
         Long anchor = KeysetPagination.decodeCursor(cursor, scope);
         List<ProjectMemberEntity> rows = memberMapper.selectMemberPage(projectId, anchor, size + 1);
-        return KeysetPagination.keysetPage(rows, size, scope, ProjectMemberEntity::getUserId,
-                member -> new ProjectMemberResponse(member.getUserId().toString(), member.getRole()));
+        return KeysetPagination.keysetPage(
+                rows,
+                size,
+                scope,
+                ProjectMemberEntity::getUserId,
+                member ->
+                        new ProjectMemberResponse(member.getUserId().toString(), member.getRole()));
     }
 
     @Transactional
-    public ProjectMemberResponse addMember(Long actor, Long projectId, ProjectMemberAddRequest request) {
+    public ProjectMemberResponse addMember(
+            Long actor, Long projectId, ProjectMemberAddRequest request) {
         ProjectEntity project = lockTeamThenProject(projectId);
         access.requireProjectAdminAnyState(project, actor);
         requireActive(project);
@@ -186,10 +210,19 @@ public class ProjectService {
         }
         insertMember(projectId, request.getUserId(), "PROJECT_MEMBER");
         // 通知被加入项目的成员
-        notificationService.notify(request.getUserId(), projectId, null, "PROJECT_ADDED",
-                "你被加入项目 " + project.getName(), null, projectId.toString());
+        notificationService.notify(
+                request.getUserId(),
+                projectId,
+                null,
+                "PROJECT_ADDED",
+                "你被加入项目 " + project.getName(),
+                null,
+                projectId.toString());
         // 告知团队在线客户端有新项目成员。
-        eventService.publishTeamEvent(project.getTeamId(), "project.member.added", id(projectId),
+        eventService.publishTeamEvent(
+                project.getTeamId(),
+                "project.member.added",
+                id(projectId),
                 Map.of("teamId", id(project.getTeamId()), "projectId", id(projectId)));
         return new ProjectMemberResponse(request.getUserId().toString(), "PROJECT_MEMBER");
     }
@@ -199,8 +232,8 @@ public class ProjectService {
     }
 
     @Transactional
-    public ProjectMemberResponse updateMember(Long actor, Long projectId, Long userId,
-                                              ProjectMemberUpdateRequest request) {
+    public ProjectMemberResponse updateMember(
+            Long actor, Long projectId, Long userId, ProjectMemberUpdateRequest request) {
         ProjectEntity project = lockTeamThenProject(projectId);
         access.requireProjectAdminAnyState(project, actor);
         requireActive(project);
@@ -209,7 +242,9 @@ public class ProjectService {
         }
         requireProjectMember(projectId, userId);
         if (access.isCanonicalTeamOwner(project.getTeamId(), userId)) {
-            throw new ApiException(HttpStatus.CONFLICT, "TEAM_OWNER_PROJECT_ROLE_INHERITED",
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "TEAM_OWNER_PROJECT_ROLE_INHERITED",
                     "团队所有者通过团队身份拥有项目管理员权限，不能通过项目成员接口调整");
         }
         memberMapper.updateRole(projectId, userId, request.getRole());
@@ -223,7 +258,9 @@ public class ProjectService {
         requireActive(project);
         ProjectMemberEntity target = requireProjectMember(projectId, userId);
         if (access.isCanonicalTeamOwner(project.getTeamId(), userId)) {
-            throw new ApiException(HttpStatus.CONFLICT, "TEAM_OWNER_PROJECT_ROLE_INHERITED",
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "TEAM_OWNER_PROJECT_ROLE_INHERITED",
                     "团队所有者通过团队身份拥有项目管理员权限，不能通过项目成员接口移除");
         }
         memberMapper.deleteByProjectAndUser(projectId, userId);
@@ -241,7 +278,8 @@ public class ProjectService {
             project.setStatus(targetStatus);
             projectMapper.updateById(project);
         }
-        return ProjectViews.response(project, "PROJECT_ADMIN", memberMapper.countMembers(project.getId()));
+        return ProjectViews.response(
+                project, "PROJECT_ADMIN", memberMapper.countMembers(project.getId()));
     }
 
     private void insertMember(Long projectId, Long userId, String role) {
@@ -255,7 +293,8 @@ public class ProjectService {
     private TeamMemberEntity requireTeamMember(Long teamId, Long userId) {
         TeamMemberEntity member = teamMemberMapper.selectByTeamAndUser(teamId, userId);
         if (member == null) {
-            throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "TEAM_MEMBER_REQUIRED", "用户必须属于该团队");
+            throw new ApiException(
+                    HttpStatus.UNPROCESSABLE_ENTITY, "TEAM_MEMBER_REQUIRED", "用户必须属于该团队");
         }
         return member;
     }
@@ -321,7 +360,8 @@ public class ProjectService {
     }
 
     private ApiException invalid(String message) {
-        return new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_PROJECT_OPERATION", message);
+        return new ApiException(
+                HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_PROJECT_OPERATION", message);
     }
 
     private ApiException conflict(String code, String message) {

@@ -1,21 +1,5 @@
 package qg.qgent.memory.service;
 
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import org.springframework.http.HttpStatus;
-
-import qg.qgent.common.web.ApiException;
-import qg.qgent.memory.dto.ProjectMemoryResponse;
-import qg.qgent.project.service.ProjectAccessService;
-import qg.qgent.project.storage.ProjectDirectoryService;
-import qg.qgent.realtime.service.EventService;
-import qg.qgent.support.TestIds;
-
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -26,13 +10,26 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.springframework.http.HttpStatus;
+import qg.qgent.common.web.ApiException;
+import qg.qgent.memory.dto.ProjectMemoryResponse;
+import qg.qgent.project.service.ProjectAccessService;
+import qg.qgent.project.storage.ProjectDirectoryService;
+import qg.qgent.realtime.service.EventService;
+import qg.qgent.support.TestIds;
+
 /** 项目 memory.md：首次创建、审批写入、版本检测、字符预算、项目隔离与成员校验。 */
 class ProjectMemoryServiceTest {
 
     private static final int MAX_CHARS = 100;
 
-    @TempDir
-    Path root;
+    @TempDir Path root;
 
     private final ProjectAccessService access = mock(ProjectAccessService.class);
     private final EventService events = mock(EventService.class);
@@ -40,7 +37,12 @@ class ProjectMemoryServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ProjectMemoryService(access, new ProjectDirectoryService(root.toString(), root.toString()), events, MAX_CHARS);
+        service =
+                new ProjectMemoryService(
+                        access,
+                        new ProjectDirectoryService(root.toString(), root.toString()),
+                        events,
+                        MAX_CHARS);
     }
 
     @Test
@@ -52,7 +54,8 @@ class ProjectMemoryServiceTest {
 
         assertThat(memory.getContent()).isEmpty();
         assertThat(memory.getProjectId()).isEqualTo(projectId.toString());
-        assertThat(Files.readString(root.resolve(projectId.toString()).resolve("memory.md"))).isEmpty();
+        assertThat(Files.readString(root.resolve(projectId.toString()).resolve("memory.md")))
+                .isEmpty();
         verify(access).requireProjectMember(projectId, actor);
     }
 
@@ -67,7 +70,13 @@ class ProjectMemoryServiceTest {
         assertThat(saved.getContent()).isEqualTo("# 登录约定\n- 统一邮箱登录");
         assertThat(saved.getVersion()).isNotEqualTo(empty);
         assertThat(service.get(actor, projectId).getVersion()).isEqualTo(saved.getVersion());
-        verify(events).publish(eq(projectId), isNull(), eq("memory.updated"), eq(projectId.toString()), any());
+        verify(events)
+                .publish(
+                        eq(projectId),
+                        isNull(),
+                        eq("memory.updated"),
+                        eq(projectId.toString()),
+                        any());
     }
 
     @Test
@@ -83,7 +92,10 @@ class ProjectMemoryServiceTest {
                     assertThat(error.status()).isEqualTo(HttpStatus.CONFLICT);
                     assertThat(error.code()).isEqualTo("MEMORY_VERSION_CONFLICT");
                 });
-        assertThat(Files.readString(root.resolve(projectId.toString()).resolve("memory.md"), StandardCharsets.UTF_8))
+        assertThat(
+                        Files.readString(
+                                root.resolve(projectId.toString()).resolve("memory.md"),
+                                StandardCharsets.UTF_8))
                 .isEqualTo("第一版");
     }
 
@@ -122,7 +134,8 @@ class ProjectMemoryServiceTest {
         Long projectId = TestIds.next();
         Long actor = TestIds.next();
         doThrow(new ApiException(HttpStatus.NOT_FOUND, "PROJECT_NOT_FOUND", "项目不存在或不可见"))
-                .when(access).requireProjectMember(projectId, actor);
+                .when(access)
+                .requireProjectMember(projectId, actor);
 
         assertThatThrownBy(() -> service.get(actor, projectId)).isInstanceOf(ApiException.class);
     }

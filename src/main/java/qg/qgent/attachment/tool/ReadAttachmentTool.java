@@ -1,18 +1,15 @@
 package qg.qgent.attachment.tool;
 
+import java.net.URI;
+import java.util.Base64;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.http.HttpStatus;
 import org.springframework.util.MimeTypeUtils;
-
 import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.harness.tool.ToolResult;
-
-import java.net.URI;
-import java.util.Base64;
-
 
 /** 按需读取群聊附件：文本和代码分段返回，图片暂存到当前 Agent 会话。 */
 public class ReadAttachmentTool {
@@ -23,22 +20,27 @@ public class ReadAttachmentTool {
     private final Long projectId;
     private final ImageSink images;
 
-    public ReadAttachmentTool(AttachmentService attachments, Long actor, Long projectId, ImageSink images) {
+    public ReadAttachmentTool(
+            AttachmentService attachments, Long actor, Long projectId, ImageSink images) {
         this.attachments = attachments;
         this.actor = actor;
         this.projectId = projectId;
         this.images = images;
     }
 
-    @Tool(name = "read_attachment", description = "按附件 ID 读取当前项目的图片或文本/代码附件。"
-            + "聊天上下文里的图片和文件消息只有引用信息，需要内容时必须调用本工具，不要假设已经看到。"
-            + "文本/代码按字节游标分段返回，续读时把 nextOffset 作为 offset；图片会加入下一轮模型请求。")
+    @Tool(
+            name = "read_attachment",
+            description =
+                    "按附件 ID 读取当前项目的图片或文本/代码附件。"
+                            + "聊天上下文里的图片和文件消息只有引用信息，需要内容时必须调用本工具，不要假设已经看到。"
+                            + "文本/代码按字节游标分段返回，续读时把 nextOffset 作为 offset；图片会加入下一轮模型请求。")
     public ToolResult readAttachment(
             @ToolParam(description = "附件 ID，来自聊天上下文或 read_chat_message") String attachmentId,
-            @ToolParam(description = "文本/代码的字节游标，首次读取省略或传 0，续读传上次返回的 nextOffset",
-                    required = false) Long offset) {
+            @ToolParam(description = "文本/代码的字节游标，首次读取省略或传 0，续读传上次返回的 nextOffset", required = false)
+                    Long offset) {
         Long id = parseId(attachmentId);
-        AttachmentService.AttachmentPreviewMetadata meta = attachments.previewMetadata(actor, projectId, id);
+        AttachmentService.AttachmentPreviewMetadata meta =
+                attachments.previewMetadata(actor, projectId, id);
         if (meta.kind().readableAsImage()) {
             return readImage(id);
         }
@@ -63,7 +65,8 @@ public class ReadAttachmentTool {
     private ToolResult readImage(Long id) {
         AttachmentService.AttachmentImage image = attachments.readImage(actor, projectId, id);
         var mime = MimeTypeUtils.parseMimeType(image.mediaType());
-        String dataUri = "data:" + mime + ";base64," + Base64.getEncoder().encodeToString(image.bytes());
+        String dataUri =
+                "data:" + mime + ";base64," + Base64.getEncoder().encodeToString(image.bytes());
         images.stage(id.toString(), image.fileName(), new Media(mime, URI.create(dataUri)));
         ToolResult result = ToolResult.ok();
         result.put("attachmentId", id.toString());

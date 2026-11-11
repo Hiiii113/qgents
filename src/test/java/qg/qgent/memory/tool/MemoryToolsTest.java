@@ -1,18 +1,16 @@
 package qg.qgent.memory.tool;
 
-import org.junit.jupiter.api.Test;
-import org.springframework.ai.support.ToolCallbacks;
-
-import qg.qgent.memory.dto.ProjectMemoryResponse;
-import qg.qgent.memory.service.ProjectMemoryService;
-import qg.qgent.support.TestIds;
-
-import java.time.LocalDateTime;
-import java.util.Map;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+
+import java.time.LocalDateTime;
+import java.util.Map;
+import org.junit.jupiter.api.Test;
+import org.springframework.ai.support.ToolCallbacks;
+import qg.qgent.memory.dto.ProjectMemoryResponse;
+import qg.qgent.memory.service.ProjectMemoryService;
+import qg.qgent.support.TestIds;
 
 /** 项目记忆工具：只读，写入必须走群聊审批。 */
 class MemoryToolsTest {
@@ -24,18 +22,23 @@ class MemoryToolsTest {
 
     @Test
     void exposesOnlyReadProjectMemory() {
-        assertThat(ToolCallbacks.from(tools)).extracting(callback -> callback.getToolDefinition().name())
+        assertThat(ToolCallbacks.from(tools))
+                .extracting(callback -> callback.getToolDefinition().name())
                 .containsExactly("read_project_memory");
     }
 
     @Test
     void readReturnsContentAndVersion() {
         when(memories.get(actor, projectId))
-                .thenReturn(new ProjectMemoryResponse(projectId.toString(), "# 约定", "v1", LocalDateTime.now()));
+                .thenReturn(
+                        new ProjectMemoryResponse(
+                                projectId.toString(), "# 约定", "v1", LocalDateTime.now()));
 
         Map<String, Object> result = tools.readProjectMemory();
 
-        assertThat(result).containsEntry("ok", true).containsEntry("content", "# 约定")
+        assertThat(result)
+                .containsEntry("ok", true)
+                .containsEntry("content", "# 约定")
                 .containsEntry("version", "v1");
     }
 }

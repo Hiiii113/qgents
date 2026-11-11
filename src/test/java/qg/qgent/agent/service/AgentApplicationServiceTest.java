@@ -1,9 +1,18 @@
 package qg.qgent.agent.service;
 
-import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.springframework.http.HttpStatus;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import java.util.List;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import qg.qgent.agent.dto.AgentApplicationRequest;
 import qg.qgent.agent.entity.AgentEntity;
 import qg.qgent.agent.mapper.AgentMapper;
@@ -16,18 +25,6 @@ import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.support.TestIds;
 
-import java.util.List;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.inOrder;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
 /** 自定义 Agent 申请：成员提交、项目内数量上限、管理员在默认群按真实审批消息激活。 */
 class AgentApplicationServiceTest {
 
@@ -38,8 +35,8 @@ class AgentApplicationServiceTest {
     private final ProjectMapper projects = mock(ProjectMapper.class);
     private final ChatGroupMapper groups = mock(ChatGroupMapper.class);
     private final MessageMapper messages = mock(MessageMapper.class);
-    private final AgentApplicationService service = new AgentApplicationService(agents, access, projects, groups,
-            messages, MAX_AGENTS);
+    private final AgentApplicationService service =
+            new AgentApplicationService(agents, access, projects, groups, messages, MAX_AGENTS);
 
     @Test
     void memberApplicationIsStoredAsPendingAgentWithItsOwnPrompt() {
@@ -70,7 +67,8 @@ class AgentApplicationServiceTest {
         when(groups.selectById(group)).thenReturn(group(group, project, true));
         when(agents.countCountedByProject(project)).thenReturn(MAX_AGENTS);
 
-        ApiException error = assertThatApiError(() -> service.apply(actor, project, group, request("评审助手")));
+        ApiException error =
+                assertThatApiError(() -> service.apply(actor, project, group, request("评审助手")));
 
         assertThat(error.code()).isEqualTo("AGENT_LIMIT_REACHED");
         verify(agents, never()).insert(any(AgentEntity.class));
@@ -81,11 +79,17 @@ class AgentApplicationServiceTest {
         Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next();
         when(groups.selectById(group)).thenReturn(group(group, project, true));
 
-        assertThat(assertThatApiError(() -> service.apply(actor, project, group, request("  "))).code())
+        assertThat(
+                        assertThatApiError(
+                                        () -> service.apply(actor, project, group, request("  ")))
+                                .code())
                 .isEqualTo("AGENT_APPLICATION_INVALID");
         AgentApplicationRequest withoutPrompt = request("评审助手");
         withoutPrompt.setSystemPrompt(null);
-        assertThat(assertThatApiError(() -> service.apply(actor, project, group, withoutPrompt)).code())
+        assertThat(
+                        assertThatApiError(
+                                        () -> service.apply(actor, project, group, withoutPrompt))
+                                .code())
                 .isEqualTo("AGENT_APPLICATION_INVALID");
         verify(agents, never()).insert(any(AgentEntity.class));
     }
@@ -99,9 +103,15 @@ class AgentApplicationServiceTest {
         AgentApplicationRequest tooLongAvatar = request("评审助手");
         tooLongAvatar.setAvatarUrl("https://cdn.example.com/" + "a".repeat(2048));
 
-        assertThat(assertThatApiError(() -> service.apply(actor, project, group, tooLongDescription)).code())
+        assertThat(
+                        assertThatApiError(() ->
+                                        service.apply(actor, project, group, tooLongDescription))
+                                .code())
                 .isEqualTo("AGENT_APPLICATION_INVALID");
-        assertThat(assertThatApiError(() -> service.apply(actor, project, group, tooLongAvatar)).code())
+        assertThat(
+                        assertThatApiError(
+                                        () -> service.apply(actor, project, group, tooLongAvatar))
+                                .code())
                 .isEqualTo("AGENT_APPLICATION_INVALID");
         verify(agents, never()).insert(any(AgentEntity.class));
     }
@@ -111,7 +121,8 @@ class AgentApplicationServiceTest {
         Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next();
         when(groups.selectById(group)).thenReturn(group(group, project, false));
 
-        ApiException error = assertThatApiError(() -> service.apply(actor, project, group, request("评审助手")));
+        ApiException error =
+                assertThatApiError(() -> service.apply(actor, project, group, request("评审助手")));
 
         assertThat(error.code()).isEqualTo("AGENT_SOURCE_GROUP_RESTRICTED");
         verify(agents, never()).insert(any(AgentEntity.class));
@@ -121,9 +132,13 @@ class AgentApplicationServiceTest {
     void projectMemberOutsideTheProjectCannotApply() {
         Long actor = TestIds.next(), project = TestIds.next();
         doThrow(new ApiException(HttpStatus.NOT_FOUND, "PROJECT_NOT_FOUND", "项目不存在或不可见"))
-                .when(access).requireProjectMember(project, actor);
+                .when(access)
+                .requireProjectMember(project, actor);
 
-        assertThat(assertThatApiError(() -> service.apply(actor, project, null, request("评审助手"))).code())
+        assertThat(
+                        assertThatApiError(
+                                        () -> service.apply(actor, project, null, request("评审助手")))
+                                .code())
                 .isEqualTo("PROJECT_NOT_FOUND");
         verify(agents, never()).insert(any(AgentEntity.class));
         verify(projects, never()).selectByIdForUpdate(any());
@@ -148,7 +163,9 @@ class AgentApplicationServiceTest {
 
         assertThat(service.pendingApplications(actor, project, group)).containsExactly(pending);
         when(groups.selectById(group)).thenReturn(group(group, project, false));
-        assertThat(assertThatApiError(() -> service.pendingApplications(actor, project, group)).code())
+        assertThat(
+                        assertThatApiError(() -> service.pendingApplications(actor, project, group))
+                                .code())
                 .isEqualTo("AGENT_SOURCE_GROUP_RESTRICTED");
     }
 
@@ -156,9 +173,13 @@ class AgentApplicationServiceTest {
     void pendingApplicationsAreOnlyVisibleToProjectAdmins() {
         Long member = TestIds.next(), project = TestIds.next(), group = TestIds.next();
         doThrow(new ApiException(HttpStatus.FORBIDDEN, "PROJECT_ADMIN_REQUIRED", "需要项目 Admin 权限"))
-                .when(access).requireProjectAdmin(project, member);
+                .when(access)
+                .requireProjectAdmin(project, member);
 
-        assertThat(assertThatApiError(() -> service.pendingApplications(member, project, group)).code())
+        assertThat(
+                        assertThatApiError(
+                                        () -> service.pendingApplications(member, project, group))
+                                .code())
                 .isEqualTo("PROJECT_ADMIN_REQUIRED");
         verify(agents, never()).selectPendingByProject(any());
     }
@@ -170,7 +191,8 @@ class AgentApplicationServiceTest {
         AgentEntity application = pendingApplication(project, announcedMessage);
         AgentEntity activated = agent(application.getId(), project, AgentEntity.STATUS_ACTIVE);
         when(groups.selectById(group)).thenReturn(group(group, project, true));
-        when(messages.selectById(approvalMessage)).thenReturn(reply(approvalMessage, group, admin, announcedMessage));
+        when(messages.selectById(approvalMessage))
+                .thenReturn(reply(approvalMessage, group, admin, announcedMessage));
         when(agents.selectByAnnouncedMessageId(announcedMessage)).thenReturn(application);
         when(agents.selectById(application.getId())).thenReturn(activated);
         when(agents.activate(application.getId(), admin)).thenReturn(1);
@@ -183,11 +205,14 @@ class AgentApplicationServiceTest {
     @Test
     void aReplyToTheAnnouncementActivatesOnlyThatApplication() {
         Long admin = TestIds.next(), project = TestIds.next(), group = TestIds.next();
-        Long firstAnnouncement = TestIds.next(), secondAnnouncement = TestIds.next(), approvalMessage = TestIds.next();
+        Long firstAnnouncement = TestIds.next(),
+                secondAnnouncement = TestIds.next(),
+                approvalMessage = TestIds.next();
         AgentEntity first = pendingApplication(project, firstAnnouncement);
         AgentEntity second = pendingApplication(project, secondAnnouncement);
         when(groups.selectById(group)).thenReturn(group(group, project, true));
-        when(messages.selectById(approvalMessage)).thenReturn(reply(approvalMessage, group, admin, firstAnnouncement));
+        when(messages.selectById(approvalMessage))
+                .thenReturn(reply(approvalMessage, group, admin, firstAnnouncement));
         when(agents.selectByAnnouncedMessageId(firstAnnouncement)).thenReturn(first);
         when(agents.selectById(first.getId())).thenReturn(first);
         when(agents.activate(first.getId(), admin)).thenReturn(1);
@@ -202,7 +227,9 @@ class AgentApplicationServiceTest {
     @Test
     void approvalFollowsTheLatestAnnouncementOfTheApplication() {
         Long admin = TestIds.next(), project = TestIds.next(), group = TestIds.next();
-        Long submitReply = TestIds.next(), listingReply = TestIds.next(), approvalMessage = TestIds.next();
+        Long submitReply = TestIds.next(),
+                listingReply = TestIds.next(),
+                approvalMessage = TestIds.next();
         // 提交时公布的回复先绑定，管理员让 Agent 重新公布时绑定到新的公布消息。
         AgentEntity application = pendingApplication(project, listingReply);
         AgentEntity activated = agent(application.getId(), project, AgentEntity.STATUS_ACTIVE);
@@ -216,8 +243,12 @@ class AgentApplicationServiceTest {
         assertThat(service.approve(admin, project, group, approvalMessage)).isSameAs(activated);
 
         // 回复更早的公布消息时找不到申请：申请只挂在最新一次公布上。
-        when(messages.selectById(approvalMessage)).thenReturn(reply(approvalMessage, group, admin, submitReply));
-        assertThat(assertThatApiError(() -> service.approve(admin, project, group, approvalMessage)).code())
+        when(messages.selectById(approvalMessage))
+                .thenReturn(reply(approvalMessage, group, admin, submitReply));
+        assertThat(
+                        assertThatApiError(() ->
+                                        service.approve(admin, project, group, approvalMessage))
+                                .code())
                 .isEqualTo("AGENT_APPLICATION_NOT_FOUND");
     }
 
@@ -225,9 +256,13 @@ class AgentApplicationServiceTest {
     void plainMemberCannotApprove() {
         Long member = TestIds.next(), project = TestIds.next(), group = TestIds.next();
         doThrow(new ApiException(HttpStatus.FORBIDDEN, "PROJECT_ADMIN_REQUIRED", "需要项目 Admin 权限"))
-                .when(access).requireProjectAdmin(project, member);
+                .when(access)
+                .requireProjectAdmin(project, member);
 
-        assertThat(assertThatApiError(() -> service.approve(member, project, group, TestIds.next())).code())
+        assertThat(
+                        assertThatApiError(() ->
+                                        service.approve(member, project, group, TestIds.next()))
+                                .code())
                 .isEqualTo("PROJECT_ADMIN_REQUIRED");
         verify(agents, never()).activate(any(), any());
     }
@@ -237,9 +272,13 @@ class AgentApplicationServiceTest {
         Long admin = TestIds.next(), project = TestIds.next(), group = TestIds.next();
         Long approvalMessage = TestIds.next(), otherMessage = TestIds.next();
         when(groups.selectById(group)).thenReturn(group(group, project, true));
-        when(messages.selectById(approvalMessage)).thenReturn(reply(approvalMessage, group, admin, otherMessage));
+        when(messages.selectById(approvalMessage))
+                .thenReturn(reply(approvalMessage, group, admin, otherMessage));
 
-        assertThat(assertThatApiError(() -> service.approve(admin, project, group, approvalMessage)).code())
+        assertThat(
+                        assertThatApiError(() ->
+                                        service.approve(admin, project, group, approvalMessage))
+                                .code())
                 .isEqualTo("AGENT_APPLICATION_NOT_FOUND");
         verify(agents, never()).activate(any(), any());
     }
@@ -249,9 +288,13 @@ class AgentApplicationServiceTest {
         Long admin = TestIds.next(), project = TestIds.next(), group = TestIds.next();
         Long approvalMessage = TestIds.next();
         when(groups.selectById(group)).thenReturn(group(group, project, true));
-        when(messages.selectById(approvalMessage)).thenReturn(reply(approvalMessage, group, admin, null));
+        when(messages.selectById(approvalMessage))
+                .thenReturn(reply(approvalMessage, group, admin, null));
 
-        assertThat(assertThatApiError(() -> service.approve(admin, project, group, approvalMessage)).code())
+        assertThat(
+                        assertThatApiError(() ->
+                                        service.approve(admin, project, group, approvalMessage))
+                                .code())
                 .isEqualTo("AGENT_APPLICATION_NOT_FOUND");
         verify(agents, never()).activate(any(), any());
     }
@@ -266,7 +309,10 @@ class AgentApplicationServiceTest {
         when(messages.selectById(approvalMessage))
                 .thenReturn(reply(approvalMessage, group, TestIds.next(), announcedMessage));
 
-        assertThat(assertThatApiError(() -> service.approve(admin, project, group, approvalMessage)).code())
+        assertThat(
+                        assertThatApiError(() ->
+                                        service.approve(admin, project, group, approvalMessage))
+                                .code())
                 .isEqualTo("AGENT_APPLICATION_NOT_FOUND");
         verify(agents, never()).activate(any(), any());
     }
@@ -277,10 +323,14 @@ class AgentApplicationServiceTest {
         Long announcedMessage = TestIds.next(), approvalMessage = TestIds.next();
         AgentEntity foreign = pendingApplication(TestIds.next(), announcedMessage);
         when(groups.selectById(group)).thenReturn(group(group, project, true));
-        when(messages.selectById(approvalMessage)).thenReturn(reply(approvalMessage, group, admin, announcedMessage));
+        when(messages.selectById(approvalMessage))
+                .thenReturn(reply(approvalMessage, group, admin, announcedMessage));
         when(agents.selectByAnnouncedMessageId(announcedMessage)).thenReturn(foreign);
 
-        assertThat(assertThatApiError(() -> service.approve(admin, project, group, approvalMessage)).code())
+        assertThat(
+                        assertThatApiError(() ->
+                                        service.approve(admin, project, group, approvalMessage))
+                                .code())
                 .isEqualTo("AGENT_APPLICATION_NOT_FOUND");
         verify(agents, never()).activate(any(), any());
     }
@@ -292,10 +342,14 @@ class AgentApplicationServiceTest {
         AgentEntity application = pendingApplication(project, announcedMessage);
         application.setStatus(AgentEntity.STATUS_ACTIVE);
         when(groups.selectById(group)).thenReturn(group(group, project, true));
-        when(messages.selectById(approvalMessage)).thenReturn(reply(approvalMessage, group, admin, announcedMessage));
+        when(messages.selectById(approvalMessage))
+                .thenReturn(reply(approvalMessage, group, admin, announcedMessage));
         when(agents.selectByAnnouncedMessageId(announcedMessage)).thenReturn(application);
 
-        assertThat(assertThatApiError(() -> service.approve(admin, project, group, approvalMessage)).code())
+        assertThat(
+                        assertThatApiError(() ->
+                                        service.approve(admin, project, group, approvalMessage))
+                                .code())
                 .isEqualTo("AGENT_APPLICATION_NOT_PENDING");
         verify(agents, never()).activate(any(), any());
     }
@@ -306,12 +360,16 @@ class AgentApplicationServiceTest {
         Long announcedMessage = TestIds.next(), approvalMessage = TestIds.next();
         AgentEntity application = pendingApplication(project, announcedMessage);
         when(groups.selectById(group)).thenReturn(group(group, project, true));
-        when(messages.selectById(approvalMessage)).thenReturn(reply(approvalMessage, group, admin, announcedMessage));
+        when(messages.selectById(approvalMessage))
+                .thenReturn(reply(approvalMessage, group, admin, announcedMessage));
         when(agents.selectByAnnouncedMessageId(announcedMessage)).thenReturn(application);
         // 另一个审批先提交：条件更新影响 0 行，本次不能再次激活。
         when(agents.activate(application.getId(), admin)).thenReturn(0);
 
-        assertThat(assertThatApiError(() -> service.approve(admin, project, group, approvalMessage)).code())
+        assertThat(
+                        assertThatApiError(() ->
+                                        service.approve(admin, project, group, approvalMessage))
+                                .code())
                 .isEqualTo("AGENT_APPLICATION_NOT_PENDING");
     }
 
@@ -322,7 +380,8 @@ class AgentApplicationServiceTest {
         AgentEntity application = pendingApplication(project, announcedMessage);
         AgentEntity rejected = agent(application.getId(), project, AgentEntity.STATUS_REJECTED);
         when(groups.selectById(group)).thenReturn(group(group, project, true));
-        when(messages.selectById(approvalMessage)).thenReturn(reply(approvalMessage, group, admin, announcedMessage));
+        when(messages.selectById(approvalMessage))
+                .thenReturn(reply(approvalMessage, group, admin, announcedMessage));
         when(agents.selectByAnnouncedMessageId(announcedMessage)).thenReturn(application);
         when(agents.selectById(application.getId())).thenReturn(rejected);
         when(agents.reject(application.getId(), admin)).thenReturn(1);
@@ -338,10 +397,14 @@ class AgentApplicationServiceTest {
         AgentEntity application = pendingApplication(project, announcedMessage);
         application.setStatus(AgentEntity.STATUS_REJECTED);
         when(groups.selectById(group)).thenReturn(group(group, project, true));
-        when(messages.selectById(approvalMessage)).thenReturn(reply(approvalMessage, group, admin, announcedMessage));
+        when(messages.selectById(approvalMessage))
+                .thenReturn(reply(approvalMessage, group, admin, announcedMessage));
         when(agents.selectByAnnouncedMessageId(announcedMessage)).thenReturn(application);
 
-        assertThat(assertThatApiError(() -> service.approve(admin, project, group, approvalMessage)).code())
+        assertThat(
+                        assertThatApiError(() ->
+                                        service.approve(admin, project, group, approvalMessage))
+                                .code())
                 .isEqualTo("AGENT_APPLICATION_NOT_PENDING");
     }
 

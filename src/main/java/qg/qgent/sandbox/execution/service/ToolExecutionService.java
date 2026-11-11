@@ -3,27 +3,6 @@ package qg.qgent.sandbox.execution.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Service;
-
-import qg.qgent.sandbox.exception.SandboxException;
-import qg.qgent.sandbox.config.SandboxProperties;
-import qg.qgent.sandbox.runtime.SandboxAllocation;
-import qg.qgent.sandbox.service.SandboxService;
-import qg.qgent.sandbox.execution.dto.ToolContext;
-import qg.qgent.sandbox.execution.dto.ToolExecutionRequest;
-import qg.qgent.sandbox.execution.dto.ToolExecutionResponse;
-import qg.qgent.sandbox.execution.dto.ToolResult;
-import qg.qgent.sandbox.execution.output.CommandOutput;
-import qg.qgent.sandbox.execution.entity.ExecutionStatus;
-import qg.qgent.sandbox.execution.entity.ToolExecutionEntity;
-import qg.qgent.sandbox.execution.entity.ToolExecutionLogEntity;
-import qg.qgent.sandbox.execution.mapper.ToolExecutionLogMapper;
-import qg.qgent.sandbox.execution.mapper.ToolExecutionMapper;
-import qg.qgent.sandbox.filesystem.service.WorkspacePathResolver;
-
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -35,14 +14,33 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.regex.Pattern;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import qg.qgent.sandbox.config.SandboxProperties;
+import qg.qgent.sandbox.exception.SandboxException;
+import qg.qgent.sandbox.execution.dto.ToolContext;
+import qg.qgent.sandbox.execution.dto.ToolExecutionRequest;
+import qg.qgent.sandbox.execution.dto.ToolExecutionResponse;
+import qg.qgent.sandbox.execution.dto.ToolResult;
+import qg.qgent.sandbox.execution.entity.ExecutionStatus;
+import qg.qgent.sandbox.execution.entity.ToolExecutionEntity;
+import qg.qgent.sandbox.execution.entity.ToolExecutionLogEntity;
+import qg.qgent.sandbox.execution.mapper.ToolExecutionLogMapper;
+import qg.qgent.sandbox.execution.mapper.ToolExecutionMapper;
+import qg.qgent.sandbox.execution.output.CommandOutput;
+import qg.qgent.sandbox.filesystem.service.WorkspacePathResolver;
+import qg.qgent.sandbox.runtime.SandboxAllocation;
+import qg.qgent.sandbox.service.SandboxService;
 
 /**
  * 管理同步文件工具与异步命令的执行、取消、完成通知和持久化。
@@ -58,14 +56,15 @@ public class ToolExecutionService {
     private static final String EXECUTION_QUEUE_UNAVAILABLE = "EXECUTION_QUEUE_UNAVAILABLE";
     private static final int MAX_FAILURE_REASON_LENGTH = 1024;
     private static final Pattern BEARER = Pattern.compile("(?i)\\bBearer\\s+[^\\s,;]+");
-    private static final Pattern SENSITIVE_VALUE = Pattern.compile(
-            "(?i)\\b(token|password|secret|api[-_]?key|authorization)\\b\\s*[:=]\\s*([^\\s,;}]*)");
-    private static final Pattern WINDOWS_HOST_PATH = Pattern.compile(
-            "(?i)(?<![A-Za-z0-9_])(?:[A-Za-z]:[\\\\/])[^\\s,;\\\"']+");
-    private static final Pattern UNIX_HOST_PATH = Pattern.compile(
-            "(?<![A-Za-z0-9_/:])/(?:home|Users|root|tmp|var|etc|opt|srv)(?:/[^\\s,;\\\"']*)?");
-    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
-    };
+    private static final Pattern SENSITIVE_VALUE =
+            Pattern.compile(
+                    "(?i)\\b(token|password|secret|api[-_]?key|authorization)\\b\\s*[:=]\\s*([^\\s,;}]*)");
+    private static final Pattern WINDOWS_HOST_PATH =
+            Pattern.compile("(?i)(?<![A-Za-z0-9_])(?:[A-Za-z]:[\\\\/])[^\\s,;\\\"']+");
+    private static final Pattern UNIX_HOST_PATH =
+            Pattern.compile(
+                    "(?<![A-Za-z0-9_/:])/(?:home|Users|root|tmp|var|etc|opt|srv)(?:/[^\\s,;\\\"']*)?");
+    private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {};
     private final SandboxService sandboxes;
     private final WorkspacePathResolver paths;
     private final ToolRegistry tools;
@@ -88,10 +87,14 @@ public class ToolExecutionService {
     public ToolExecutionResponse execute(UUID sandboxId, ToolExecutionRequest request) {
         SandboxAllocation sandbox = sandboxes.findAllocation(sandboxId);
         ToolExecutionEntity entity = prepare(sandboxId, request);
-        return active.execute(entity.getId(), sandboxId, request.getAgentRunId(), () -> {
-            run(entity.getId(), sandbox, request);
-            return find(entity.getId());
-        });
+        return active.execute(
+                entity.getId(),
+                sandboxId,
+                request.getAgentRunId(),
+                () -> {
+                    run(entity.getId(), sandbox, request);
+                    return find(entity.getId());
+                });
     }
 
     /** 命令在线程池执行；调用方持有执行句柄并按需等待完成通知。 */
@@ -99,15 +102,24 @@ public class ToolExecutionService {
         SandboxAllocation sandbox = sandboxes.findAllocation(sandboxId);
         ToolExecutionEntity entity = prepare(sandboxId, request);
         try {
-            active.submit(entity.getId(), sandboxId, request.getAgentRunId(), sandboxExecutionPool, () -> {
-                run(entity.getId(), sandbox, request);
-                return find(entity.getId());
-            });
+            active.submit(
+                    entity.getId(),
+                    sandboxId,
+                    request.getAgentRunId(),
+                    sandboxExecutionPool,
+                    () -> {
+                        run(entity.getId(), sandbox, request);
+                        return find(entity.getId());
+                    });
         } catch (RejectedExecutionException exception) {
-            executionMapper.rejectQueued(entity.getId(), properties.getInstanceId(),
-                    EXECUTION_QUEUE_UNAVAILABLE, "命令执行队列不可用", utc(clock.instant()));
-            throw new SandboxException(HttpStatus.SERVICE_UNAVAILABLE,
-                    EXECUTION_QUEUE_UNAVAILABLE, "命令执行队列暂时不可用");
+            executionMapper.rejectQueued(
+                    entity.getId(),
+                    properties.getInstanceId(),
+                    EXECUTION_QUEUE_UNAVAILABLE,
+                    "命令执行队列不可用",
+                    utc(clock.instant()));
+            throw new SandboxException(
+                    HttpStatus.SERVICE_UNAVAILABLE, EXECUTION_QUEUE_UNAVAILABLE, "命令执行队列暂时不可用");
         }
         return response(entity);
     }
@@ -135,8 +147,12 @@ public class ToolExecutionService {
         ToolExecutionEntity entity = createEntity(sandboxId, request, argumentsJson);
         executionMapper.insert(entity);
         append(entity.getId(), "SYSTEM", "工具执行已登记：" + request.getTool());
-        log.info("tool registered executionId={} sandboxId={} agentRunId={} tool={}",
-                entity.getId(), sandboxId, request.getAgentRunId(), request.getTool());
+        log.info(
+                "tool registered executionId={} sandboxId={} agentRunId={} tool={}",
+                entity.getId(),
+                sandboxId,
+                request.getAgentRunId(),
+                request.getTool());
         return entity;
     }
 
@@ -151,15 +167,20 @@ public class ToolExecutionService {
      */
     public ToolExecutionResponse cancel(Long executionId) {
         LocalDateTime finishedAt = utc(clock.instant());
-        if (executionMapper.markCancelled(executionId, properties.getInstanceId(), finishedAt) == 0) {
+        if (executionMapper.markCancelled(executionId, properties.getInstanceId(), finishedAt)
+                == 0) {
             ToolExecutionEntity current = require(executionId);
             if (!properties.getInstanceId().equals(current.getOwnerInstanceId())) {
-                throw new SandboxException(HttpStatus.CONFLICT,
-                        "EXECUTION_OWNED_BY_OTHER_INSTANCE", "执行不属于当前 Sandbox");
+                throw new SandboxException(
+                        HttpStatus.CONFLICT,
+                        "EXECUTION_OWNED_BY_OTHER_INSTANCE",
+                        "执行不属于当前 Sandbox");
             }
             if (current.getStatus().terminal()) return response(current);
-            throw new SandboxException(HttpStatus.CONFLICT,
-                    "EXECUTION_NOT_CANCELLABLE", "当前执行状态不可取消：" + current.getStatus());
+            throw new SandboxException(
+                    HttpStatus.CONFLICT,
+                    "EXECUTION_NOT_CANCELLABLE",
+                    "当前执行状态不可取消：" + current.getStatus());
         }
         ToolExecutionResponse cancelled = response(require(executionId));
         active.cancel(executionId, cancelled);
@@ -171,8 +192,10 @@ public class ToolExecutionService {
 
     /** Cancels commands owned by a Sandbox and waits for their worker bodies to stop using it. */
     public void stopAndAwaitBySandbox(UUID sandboxId) {
-        Set<Long> ids = new LinkedHashSet<>(
-                executionMapper.selectActiveIdsBySandbox(sandboxId.toString(), properties.getInstanceId()));
+        Set<Long> ids =
+                new LinkedHashSet<>(
+                        executionMapper.selectActiveIdsBySandbox(
+                                sandboxId.toString(), properties.getInstanceId()));
         ids.addAll(active.idsBySandbox(sandboxId));
         stopAndAwait(ids);
     }
@@ -188,8 +211,10 @@ public class ToolExecutionService {
     }
 
     private Set<Long> agentRunIds(Long agentRunId) {
-        Set<Long> ids = new LinkedHashSet<>(
-                executionMapper.selectActiveIdsByAgentRun(agentRunId, properties.getInstanceId()));
+        Set<Long> ids =
+                new LinkedHashSet<>(
+                        executionMapper.selectActiveIdsByAgentRun(
+                                agentRunId, properties.getInstanceId()));
         ids.addAll(active.idsByAgentRun(agentRunId));
         return ids;
     }
@@ -209,20 +234,27 @@ public class ToolExecutionService {
     }
 
     /** 读取命令当前输出；执行记录限定输出目录，不接受外部路径。 */
-    public Map<String, Object> output(Long executionId, long stdoutOffset, long stderrOffset, int count) {
+    public Map<String, Object> output(
+            Long executionId, long stdoutOffset, long stderrOffset, int count) {
         ToolExecutionEntity execution = require(executionId);
-        if (!"command.run".equals(execution.getToolName())) throw new SandboxException(HttpStatus.UNPROCESSABLE_ENTITY,
-                "NOT_COMMAND_EXECUTION", "只有命令执行提供输出窗口");
+        if (!"command.run".equals(execution.getToolName()))
+            throw new SandboxException(
+                    HttpStatus.UNPROCESSABLE_ENTITY, "NOT_COMMAND_EXECUTION", "只有命令执行提供输出窗口");
         var sandbox = sandboxes.findAllocation(UUID.fromString(execution.getSandboxId()));
-        var directory = CommandOutput.directory(
-                paths.resolveLocal(sandbox.getWorkspaceStorageKey()), executionId);
-        return Map.of("stdout", CommandOutput.read(directory, "stdout", stdoutOffset, count),
-                "stderr", CommandOutput.read(directory, "stderr", stderrOffset, count));
+        var directory =
+                CommandOutput.directory(
+                        paths.resolveLocal(sandbox.getWorkspaceStorageKey()), executionId);
+        return Map.of(
+                "stdout",
+                CommandOutput.read(directory, "stdout", stdoutOffset, count),
+                "stderr",
+                CommandOutput.read(directory, "stderr", stderrOffset, count));
     }
 
     private void run(Long executionId, SandboxAllocation sandbox, ToolExecutionRequest request) {
         Instant started = clock.instant();
-        if (executionMapper.markRunning(executionId, properties.getInstanceId(), utc(started)) == 0) {
+        if (executionMapper.markRunning(executionId, properties.getInstanceId(), utc(started))
+                == 0) {
             return;
         }
         ToolExecutionEntity running = executionMapper.selectById(executionId);
@@ -230,8 +262,12 @@ public class ToolExecutionService {
             return;
         }
         append(executionId, "SYSTEM", "开始执行工具：" + request.getTool());
-        log.info("tool start executionId={} sandboxId={} agentRunId={} tool={}",
-                executionId, sandbox.getId(), request.getAgentRunId(), request.getTool());
+        log.info(
+                "tool start executionId={} sandboxId={} agentRunId={} tool={}",
+                executionId,
+                sandbox.getId(),
+                request.getAgentRunId(),
+                request.getTool());
 
         ExecutionStatus status;
         Integer exitCode = null;
@@ -242,15 +278,18 @@ public class ToolExecutionService {
             Duration timeout = timeout(request.getTimeoutSeconds(), sandbox.getExecutionTimeout());
             ToolContext context = context(sandbox, timeout);
             context.setExecutionId(executionId);
-            context.setEnvironment(request.getEnvironment() == null ? Map.of() : request.getEnvironment());
+            context.setEnvironment(
+                    request.getEnvironment() == null ? Map.of() : request.getEnvironment());
             ToolResult result = tools.execute(request.getTool(), context, request.getArguments());
             result.getStandardOutput().forEach(line -> append(executionId, "STDOUT", line));
             result.getStandardError().forEach(line -> append(executionId, "STDERR", line));
             exitCode = result.getExitCode();
             resultJson = json(result.getResult());
             // 命令正常取得退出码即完成执行；非零退出码由模型判断，不冒充基础设施失败。
-            status = "command.run".equals(request.getTool()) || exitCode == null || exitCode == 0
-                    ? ExecutionStatus.SUCCEEDED : ExecutionStatus.FAILED;
+            status =
+                    "command.run".equals(request.getTool()) || exitCode == null || exitCode == 0
+                            ? ExecutionStatus.SUCCEEDED
+                            : ExecutionStatus.FAILED;
             if (status == ExecutionStatus.FAILED) {
                 failureCode = PROCESS_EXIT_NONZERO;
                 failureReason = "工具进程以非零退出码结束";
@@ -265,28 +304,53 @@ public class ToolExecutionService {
             status = ExecutionStatus.FAILED;
             failureCode = failureCode(exception);
             failureReason = failureReason(exception);
-            log.error("tool failed executionId={} sandboxId={} agentRunId={} tool={} failureCode={} failureReason={}",
-                    executionId, sandbox.getId(), request.getAgentRunId(), request.getTool(), failureCode, failureReason);
+            log.error(
+                    "tool failed executionId={} sandboxId={} agentRunId={} tool={} failureCode={} failureReason={}",
+                    executionId,
+                    sandbox.getId(),
+                    request.getAgentRunId(),
+                    request.getTool(),
+                    failureCode,
+                    failureReason);
         }
 
-        executionMapper.finishIfRunning(executionId, properties.getInstanceId(), status,
-                exitCode, resultJson, failureCode, failureReason,
+        executionMapper.finishIfRunning(
+                executionId,
+                properties.getInstanceId(),
+                status,
+                exitCode,
+                resultJson,
+                failureCode,
+                failureReason,
                 utc(clock.instant()));
         ToolExecutionEntity completed = executionMapper.selectById(executionId);
         if (completed != null) {
             append(executionId, "SYSTEM", "工具执行结束，状态：" + completed.getStatus());
         }
         logLocks.remove(executionId);
-        log.info("tool done executionId={} sandboxId={} agentRunId={} tool={} status={} exitCode={} durationMs={} failureCode={} failureReason={}",
-                executionId, sandbox.getId(), request.getAgentRunId(), request.getTool(), status, exitCode,
-                Duration.between(started, clock.instant()).toMillis(), failureCode, failureReason);
+        log.info(
+                "tool done executionId={} sandboxId={} agentRunId={} tool={} status={} exitCode={} durationMs={} failureCode={} failureReason={}",
+                executionId,
+                sandbox.getId(),
+                request.getAgentRunId(),
+                request.getTool(),
+                status,
+                exitCode,
+                Duration.between(started, clock.instant()).toMillis(),
+                failureCode,
+                failureReason);
     }
 
     private ToolContext context(SandboxAllocation sandbox, Duration timeout) {
-        return new ToolContext(sandbox, paths.resolveLocal(sandbox.getWorkspaceStorageKey()), "/workspace", timeout);
+        return new ToolContext(
+                sandbox,
+                paths.resolveLocal(sandbox.getWorkspaceStorageKey()),
+                "/workspace",
+                timeout);
     }
 
-    private ToolExecutionEntity createEntity(UUID sandboxId, ToolExecutionRequest request, String argumentsJson) {
+    private ToolExecutionEntity createEntity(
+            UUID sandboxId, ToolExecutionRequest request, String argumentsJson) {
         ToolExecutionEntity entity = new ToolExecutionEntity();
         entity.setOwnerInstanceId(properties.getInstanceId());
         entity.setSandboxId(sandboxId.toString());
@@ -302,8 +366,7 @@ public class ToolExecutionService {
     private ToolExecutionEntity require(Long executionId) {
         ToolExecutionEntity entity = executionMapper.selectById(executionId);
         if (entity == null) {
-            throw new SandboxException(HttpStatus.NOT_FOUND,
-                    "EXECUTION_NOT_FOUND", "工具执行记录不存在");
+            throw new SandboxException(HttpStatus.NOT_FOUND, "EXECUTION_NOT_FOUND", "工具执行记录不存在");
         }
         return entity;
     }
@@ -333,8 +396,8 @@ public class ToolExecutionService {
         try {
             return objectMapper.writeValueAsString(value);
         } catch (Exception exception) {
-            throw new SandboxException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "TOOL_ARGUMENT_INVALID", "工具参数无法序列化");
+            throw new SandboxException(
+                    HttpStatus.UNPROCESSABLE_ENTITY, "TOOL_ARGUMENT_INVALID", "工具参数无法序列化");
         }
     }
 
@@ -360,7 +423,8 @@ public class ToolExecutionService {
 
     private String failureReason(RuntimeException exception) {
         if ((exception instanceof SandboxException || exception instanceof IllegalArgumentException)
-                && exception.getMessage() != null && !exception.getMessage().isBlank()) {
+                && exception.getMessage() != null
+                && !exception.getMessage().isBlank()) {
             return sanitizeFailureReason(exception.getMessage());
         }
         return "工具执行失败";
@@ -380,14 +444,23 @@ public class ToolExecutionService {
             return "工具执行失败";
         }
         return sanitized.length() <= MAX_FAILURE_REASON_LENGTH
-                ? sanitized : sanitized.substring(0, MAX_FAILURE_REASON_LENGTH - 3) + "...";
+                ? sanitized
+                : sanitized.substring(0, MAX_FAILURE_REASON_LENGTH - 3) + "...";
     }
 
     private ToolExecutionResponse response(ToolExecutionEntity entity) {
-        return new ToolExecutionResponse(entity.getId(), entity.getOwnerInstanceId(),
+        return new ToolExecutionResponse(
+                entity.getId(),
+                entity.getOwnerInstanceId(),
                 UUID.fromString(entity.getSandboxId()),
-                entity.getToolName(), entity.getStatus(), entity.getExitCode(), map(entity.getResultJson()),
-                entity.getFailureCode(), entity.getFailureReason(), instant(entity.getCreatedAt()), instant(entity.getStartedAt()),
+                entity.getToolName(),
+                entity.getStatus(),
+                entity.getExitCode(),
+                map(entity.getResultJson()),
+                entity.getFailureCode(),
+                entity.getFailureReason(),
+                instant(entity.getCreatedAt()),
+                instant(entity.getStartedAt()),
                 instant(entity.getFinishedAt()));
     }
 

@@ -3,9 +3,8 @@ package qg.qgent.agent.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
-
 import java.time.LocalDateTime;
+import lombok.Data;
 
 /**
  * 项目内 Agent；每个项目创建时得到自己的默认 Agent 记录，ID 自增且互不复用。
@@ -21,6 +20,7 @@ public class AgentEntity {
 
     @TableId(type = IdType.AUTO)
     private Long id;
+
     private Long projectId;
     private String name;
     private String description;

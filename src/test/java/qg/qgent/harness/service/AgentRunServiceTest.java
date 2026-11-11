@@ -1,31 +1,29 @@
 package qg.qgent.harness.service;
 
-import qg.qgent.support.TestIds;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 import com.baomidou.mybatisplus.annotation.FieldStrategy;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.HttpStatus;
-import qg.qgent.harness.entity.AgentRunEntity;
-import qg.qgent.harness.entity.RunStatus;
-import qg.qgent.harness.mapper.AgentRunMapper;
 import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.service.MessageService;
 import qg.qgent.common.web.ApiException;
+import qg.qgent.harness.entity.AgentRunEntity;
+import qg.qgent.harness.entity.RunStatus;
+import qg.qgent.harness.mapper.AgentRunMapper;
 import qg.qgent.project.service.ProjectAccessService;
-
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
-
-import static org.assertj.core.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import qg.qgent.support.TestIds;
 
 class AgentRunServiceTest {
     private final Long actor = TestIds.next(), projectId = TestIds.next();
@@ -37,7 +35,8 @@ class AgentRunServiceTest {
 
     @BeforeAll
     static void initTableInfo() {
-        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), AgentRunEntity.class);
+        TableInfoHelper.initTableInfo(
+                new MapperBuilderAssistant(new MybatisConfiguration(), ""), AgentRunEntity.class);
     }
 
     @Test
@@ -48,7 +47,13 @@ class AgentRunServiceTest {
         ArgumentCaptor<Wrapper<AgentRunEntity>> wrapper = ArgumentCaptor.forClass(Wrapper.class);
         verify(runs).update(isNull(), wrapper.capture());
         String sql = wrapper.getValue().getSqlSegment();
-        assertThat(sql).contains("project_id", "group_id", "trigger_message_id", "parent_run_id IS NULL", "status");
+        assertThat(sql)
+                .contains(
+                        "project_id",
+                        "group_id",
+                        "trigger_message_id",
+                        "parent_run_id IS NULL",
+                        "status");
         verifyNoInteractions(access);
     }
 
@@ -64,8 +69,10 @@ class AgentRunServiceTest {
     void ordinaryMemberCannotCancelAnotherUsersExecution() {
         messageFrom(TestIds.next());
         doThrow(new ApiException(HttpStatus.FORBIDDEN, "PROJECT_ADMIN_REQUIRED", "需要项目 Admin 权限"))
-                .when(access).requireProjectAdmin(projectId, actor);
-        assertThatThrownBy(() -> service.cancel(actor, projectId, groupId, messageId)).isInstanceOf(ApiException.class);
+                .when(access)
+                .requireProjectAdmin(projectId, actor);
+        assertThatThrownBy(() -> service.cancel(actor, projectId, groupId, messageId))
+                .isInstanceOf(ApiException.class);
         verifyNoInteractions(runs);
     }
 
@@ -73,7 +80,8 @@ class AgentRunServiceTest {
     void inaccessibleMessageCannotCancelAnyRun() {
         when(messages.getMessage(actor, projectId, groupId, messageId))
                 .thenThrow(new ApiException(HttpStatus.NOT_FOUND, "MESSAGE_NOT_FOUND", "消息不存在"));
-        assertThatThrownBy(() -> service.cancel(actor, projectId, groupId, messageId)).isInstanceOf(ApiException.class);
+        assertThatThrownBy(() -> service.cancel(actor, projectId, groupId, messageId))
+                .isInstanceOf(ApiException.class);
         verifyNoInteractions(access, runs);
     }
 
@@ -91,7 +99,8 @@ class AgentRunServiceTest {
         assertThat(saved.getValue().getStatus()).isEqualTo(RunStatus.RUNNING);
         assertThat(saved.getValue().getFinishedAt()).isNull();
         assertThat(saved.getValue().getInstruction()).contains("继续实现");
-        TableField mapping = AgentRunEntity.class.getDeclaredField("finishedAt").getAnnotation(TableField.class);
+        TableField mapping =
+                AgentRunEntity.class.getDeclaredField("finishedAt").getAnnotation(TableField.class);
         assertThat(mapping.updateStrategy()).isEqualTo(FieldStrategy.ALWAYS);
     }
 
@@ -119,27 +128,36 @@ class AgentRunServiceTest {
         messageFrom(actor);
         AtomicReference<String> persistedStatus = new AtomicReference<>("RUNNING");
         AtomicInteger updateCount = new AtomicInteger();
-        when(runs.selectList(any())).thenAnswer(invocation -> "RUNNING".equals(persistedStatus.get())
-                ? java.util.List.of(root) : java.util.List.of());
-        org.mockito.Mockito.doAnswer(invocation -> {
-            Wrapper<AgentRunEntity> update = invocation.getArgument(1);
-            assertThat(update.getSqlSegment()).contains("status");
-            return switch (updateCount.getAndIncrement()) {
-                case 0 -> {
-                    assertThat(persistedStatus.get()).isEqualTo("RUNNING");
-                    assertThat(updateValues(update)).contains("RUNNING", "SUCCEEDED");
-                    persistedStatus.set("SUCCEEDED");
-                    assertThat(service.cancel(actor, projectId, groupId, messageId)).isZero();
-                    yield 1;
-                }
-                case 1 -> {
-                    assertThat(persistedStatus.get()).isEqualTo("SUCCEEDED");
-                    assertThat(updateValues(update)).contains("RUNNING", "CANCELLING");
-                    yield 0;
-                }
-                default -> throw new AssertionError("Unexpected AgentRun update");
-            };
-        }).when(runs).update(isNull(), any());
+        when(runs.selectList(any()))
+                .thenAnswer(invocation ->
+                        "RUNNING".equals(persistedStatus.get())
+                                ? java.util.List.of(root)
+                                : java.util.List.of());
+        org.mockito.Mockito.doAnswer(
+                        invocation -> {
+                            Wrapper<AgentRunEntity> update = invocation.getArgument(1);
+                            assertThat(update.getSqlSegment()).contains("status");
+                            return switch (updateCount.getAndIncrement()) {
+                                case 0 -> {
+                                    assertThat(persistedStatus.get()).isEqualTo("RUNNING");
+                                    assertThat(updateValues(update))
+                                            .contains("RUNNING", "SUCCEEDED");
+                                    persistedStatus.set("SUCCEEDED");
+                                    assertThat(service.cancel(actor, projectId, groupId, messageId))
+                                            .isZero();
+                                    yield 1;
+                                }
+                                case 1 -> {
+                                    assertThat(persistedStatus.get()).isEqualTo("SUCCEEDED");
+                                    assertThat(updateValues(update))
+                                            .contains("RUNNING", "CANCELLING");
+                                    yield 0;
+                                }
+                                default -> throw new AssertionError("Unexpected AgentRun update");
+                            };
+                        })
+                .when(runs)
+                .update(isNull(), any());
 
         service.finishRoot(root, RunStatus.SUCCEEDED, "完成", 2);
 
@@ -157,32 +175,39 @@ class AgentRunServiceTest {
         AtomicReference<String> persistedStatus = new AtomicReference<>("RUNNING");
         AtomicInteger updateCount = new AtomicInteger();
 
-        org.mockito.Mockito.doAnswer(invocation -> {
-            Wrapper<AgentRunEntity> update = invocation.getArgument(1);
-            assertThat(update.getSqlSegment()).contains("status");
-            return switch (updateCount.getAndIncrement()) {
-                case 0 -> {
-                    assertThat(persistedStatus.get()).isEqualTo("RUNNING");
-                    assertThat(updateValues(update)).contains("RUNNING", "SUCCEEDED");
-                    assertThat(service.cancel(actor, projectId, groupId, messageId)).isEqualTo(1);
-                    assertThat(persistedStatus.get()).isEqualTo("CANCELLING");
-                    yield 0;
-                }
-                case 1 -> {
-                    assertThat(persistedStatus.get()).isEqualTo("RUNNING");
-                    assertThat(updateValues(update)).contains("RUNNING", "CANCELLING");
-                    persistedStatus.set("CANCELLING");
-                    yield 1;
-                }
-                case 2 -> {
-                    assertThat(persistedStatus.get()).isEqualTo("CANCELLING");
-                    assertThat(updateValues(update)).contains("CANCELLING", "CANCELLED");
-                    persistedStatus.set("CANCELLED");
-                    yield 1;
-                }
-                default -> throw new AssertionError("Unexpected AgentRun update");
-            };
-        }).when(runs).update(isNull(), any());
+        org.mockito.Mockito.doAnswer(
+                        invocation -> {
+                            Wrapper<AgentRunEntity> update = invocation.getArgument(1);
+                            assertThat(update.getSqlSegment()).contains("status");
+                            return switch (updateCount.getAndIncrement()) {
+                                case 0 -> {
+                                    assertThat(persistedStatus.get()).isEqualTo("RUNNING");
+                                    assertThat(updateValues(update))
+                                            .contains("RUNNING", "SUCCEEDED");
+                                    assertThat(service.cancel(actor, projectId, groupId, messageId))
+                                            .isEqualTo(1);
+                                    assertThat(persistedStatus.get()).isEqualTo("CANCELLING");
+                                    yield 0;
+                                }
+                                case 1 -> {
+                                    assertThat(persistedStatus.get()).isEqualTo("RUNNING");
+                                    assertThat(updateValues(update))
+                                            .contains("RUNNING", "CANCELLING");
+                                    persistedStatus.set("CANCELLING");
+                                    yield 1;
+                                }
+                                case 2 -> {
+                                    assertThat(persistedStatus.get()).isEqualTo("CANCELLING");
+                                    assertThat(updateValues(update))
+                                            .contains("CANCELLING", "CANCELLED");
+                                    persistedStatus.set("CANCELLED");
+                                    yield 1;
+                                }
+                                default -> throw new AssertionError("Unexpected AgentRun update");
+                            };
+                        })
+                .when(runs)
+                .update(isNull(), any());
 
         service.finishRoot(root, RunStatus.SUCCEEDED, "完成", 2);
 
@@ -215,7 +240,7 @@ class AgentRunServiceTest {
         // 枚举状态按名字参与 SQL 绑定，断言仍用字符串直接比对。
         return ((com.baomidou.mybatisplus.core.conditions.AbstractWrapper<?, ?, ?>) update)
                 .getParamNameValuePairs().values().stream()
-                .map(value -> value instanceof Enum<?> constant ? constant.name() : value)
-                .toList();
+                        .map(value -> value instanceof Enum<?> constant ? constant.name() : value)
+                        .toList();
     }
 }

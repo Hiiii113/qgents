@@ -9,9 +9,11 @@ public class TeamUpdateRequest {
     // 团队名称（可选）：传 null 表示保留原值；非 null 时去除首尾空白后覆盖保存，最长 255 字符。
     @Size(max = 255)
     private String name;
+
     // 团队简介：null 保留原值，空字符串清空。
     @Size(max = 2000)
     private String description;
+
     // 团队头像 URL（可选）：传 null 表示保留原值，传空串表示清空头像。
     @Size(max = 4096)
     private String avatarUrl;

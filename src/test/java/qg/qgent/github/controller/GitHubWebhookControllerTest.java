@@ -1,25 +1,29 @@
 package qg.qgent.github.controller;
 
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.Test;
-import qg.qgent.github.config.GitHubAppProperties;
-import qg.qgent.github.service.GitHubRepositoryService;
 import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
-import static org.assertj.core.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import org.junit.jupiter.api.Test;
+import qg.qgent.github.config.GitHubAppProperties;
+import qg.qgent.github.service.GitHubRepositoryService;
 
 class GitHubWebhookControllerTest {
     private final GitHubAppProperties properties = new GitHubAppProperties();
     private final GitHubRepositoryService service = mock(GitHubRepositoryService.class);
-    private final GitHubWebhookController controller = new GitHubWebhookController(properties, service, new ObjectMapper());
+    private final GitHubWebhookController controller =
+            new GitHubWebhookController(properties, service, new ObjectMapper());
 
     @Test
     void validDeletionIsForwardedAndInvalidSignatureHasNoEffect() throws Exception {
         properties.setWebhookSecret("test-secret");
-        byte[] body = "{\"action\":\"deleted\",\"installation\":{\"id\":12}}".getBytes(StandardCharsets.UTF_8);
+        byte[] body =
+                "{\"action\":\"deleted\",\"installation\":{\"id\":12}}"
+                        .getBytes(StandardCharsets.UTF_8);
         assertThatThrownBy(() -> controller.receive(body, "sha256=invalid", "installation"))
                 .hasMessage("GitHub 事件签名无效");
         verifyNoInteractions(service);
@@ -30,7 +34,9 @@ class GitHubWebhookControllerTest {
     @Test
     void repositoryChangesRefreshImportsAndPullRequestsDoNotRestoreOldWorkflow() throws Exception {
         properties.setWebhookSecret("test-secret");
-        byte[] body = "{\"action\":\"removed\",\"installation\":{\"id\":12}}".getBytes(StandardCharsets.UTF_8);
+        byte[] body =
+                "{\"action\":\"removed\",\"installation\":{\"id\":12}}"
+                        .getBytes(StandardCharsets.UTF_8);
         controller.receive(body, signature(body), "installation_repositories");
         verify(service).installationChanged(12L, false);
         controller.receive(body, signature(body), "pull_request");

@@ -5,7 +5,6 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-
 /** 项目群聊视图，包含消息摘要及当前用户的未读和置顶状态。 */
 @Data
 @NoArgsConstructor
@@ -18,10 +17,8 @@ public class GroupResponse {
     @Schema(description = "所属项目 ID")
     private String projectId;
 
-
     @Schema(description = "群标题")
     private String title;
-
 
     @Schema(description = "群创建者用户 ID")
     private String createdBy;
@@ -37,7 +34,6 @@ public class GroupResponse {
 
     @Schema(description = "创建时间（ISO8601 UTC）")
     private String createdAt;
-
 
     @Schema(description = "群内用户及 Agent 数")
     private Long memberCount;

@@ -48,12 +48,21 @@ public class ContextMessage {
     @Schema(description = "附件大小（字节，仅展示）")
     private Long size;
 
-    public ContextMessage(Long sequence, String type, String senderType, String senderId, String text) {
+    public ContextMessage(
+            Long sequence, String type, String senderType, String senderId, String text) {
         this(sequence, type, senderType, senderId, text, null, null, null, null);
     }
 
-    public ContextMessage(Long sequence, String type, String senderType, String senderId, String text,
-                          String attachmentId, String fileName, String mediaType, Long size) {
+    public ContextMessage(
+            Long sequence,
+            String type,
+            String senderType,
+            String senderId,
+            String text,
+            String attachmentId,
+            String fileName,
+            String mediaType,
+            Long size) {
         this.sequence = sequence;
         this.type = type;
         this.senderType = senderType;

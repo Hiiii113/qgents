@@ -1,28 +1,28 @@
 package qg.qgent.attachment.storage;
 
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
 import com.aliyun.oss.HttpMethod;
 import com.aliyun.oss.OSS;
 import com.aliyun.oss.OSSException;
 import com.aliyun.oss.model.GeneratePresignedUrlRequest;
-import com.aliyun.oss.model.ObjectMetadata;
 import com.aliyun.oss.model.GetObjectRequest;
 import com.aliyun.oss.model.OSSObject;
+import com.aliyun.oss.model.ObjectMetadata;
+import java.io.ByteArrayInputStream;
+import java.net.URI;
+import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import qg.qgent.attachment.config.AliyunOssProperties;
 import qg.qgent.common.web.ApiException;
 
-import java.io.ByteArrayInputStream;
-import java.net.URI;
-import java.time.Instant;
-
-import static org.assertj.core.api.Assertions.*;
-import static org.mockito.Mockito.*;
-
 class AliyunOssAttachmentStorageTest {
     private final OSS oss = mock(OSS.class);
     private final AliyunOssProperties properties = new AliyunOssProperties();
-    private final AliyunOssAttachmentStorage storage = new AliyunOssAttachmentStorage(oss, properties);
+    private final AliyunOssAttachmentStorage storage =
+            new AliyunOssAttachmentStorage(oss, properties);
 
     @Test
     void signsPutForTheObjectAndContentType() throws Exception {
@@ -40,7 +40,8 @@ class AliyunOssAttachmentStorageTest {
         assertThat(request.getValue().getKey()).isEqualTo("projects/p/attachments/a");
         assertThat(request.getValue().getMethod()).isEqualTo(HttpMethod.PUT);
         assertThat(request.getValue().getContentType()).isEqualTo("image/png");
-        assertThat(request.getValue().getExpiration().toInstant()).isBetween(before.plusSeconds(59), Instant.now().plusSeconds(61));
+        assertThat(request.getValue().getExpiration().toInstant())
+                .isBetween(before.plusSeconds(59), Instant.now().plusSeconds(61));
         assertThat(credential.getUploadUrl()).startsWith("https://oss.example/");
         assertThat(credential.getHeaders()).containsEntry("Content-Type", "image/png");
         assertThat(credential.getMethod()).isEqualTo("PUT");
@@ -66,9 +67,12 @@ class AliyunOssAttachmentStorageTest {
 
     @Test
     void rejectsBackendProxyUploads() {
-        assertThatThrownBy(() -> storage.storeBytes("key", new ByteArrayInputStream(new byte[1]), 1, 100))
+        assertThatThrownBy(() ->
+                        storage.storeBytes("key", new ByteArrayInputStream(new byte[1]), 1, 100))
                 .isInstanceOf(ApiException.class)
-                .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("ATTACHMENT_DIRECT_UPLOAD_REQUIRED"));
+                .satisfies(e ->
+                        assertThat(((ApiException) e).code())
+                                .isEqualTo("ATTACHMENT_DIRECT_UPLOAD_REQUIRED"));
         verifyNoInteractions(oss);
     }
 

@@ -1,6 +1,11 @@
 package qg.qgent.common.web;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpMethod;
@@ -8,12 +13,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
-
-import java.util.Map;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 /** 全局异常处理单测：未映射路径/方法应返回 404/405（不被 Exception 兜底吞成 500）。 */
 class GlobalExceptionHandlerTest {
@@ -28,9 +27,13 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void notFoundReturns404EnvelopeInsteadOf500() {
-        ResponseEntity<?> resp = handler.notFound(
-                new NoResourceFoundException(HttpMethod.PUT, "/api/v1/projects/1/attachments/2",
-                        "/api/v1/projects/1/attachments/2"), request);
+        ResponseEntity<?> resp =
+                handler.notFound(
+                        new NoResourceFoundException(
+                                HttpMethod.PUT,
+                                "/api/v1/projects/1/attachments/2",
+                                "/api/v1/projects/1/attachments/2"),
+                        request);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
         Map<String, Object> body = (Map<String, Object>) resp.getBody();
@@ -42,8 +45,9 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void methodNotSupportedReturns405Envelope() {
-        ResponseEntity<?> resp = handler.methodNotSupported(
-                new HttpRequestMethodNotSupportedException("POST"), request);
+        ResponseEntity<?> resp =
+                handler.methodNotSupported(
+                        new HttpRequestMethodNotSupportedException("POST"), request);
 
         assertThat(resp.getStatusCode()).isEqualTo(HttpStatus.METHOD_NOT_ALLOWED);
         Map<String, Object> body = (Map<String, Object>) resp.getBody();

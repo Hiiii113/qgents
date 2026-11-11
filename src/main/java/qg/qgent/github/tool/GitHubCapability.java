@@ -2,7 +2,6 @@ package qg.qgent.github.tool;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-
 import qg.qgent.github.client.GitHubAppClient;
 import qg.qgent.github.service.GitHubRepositoryService;
 import qg.qgent.sandbox.service.SandboxCommands;
@@ -16,6 +15,12 @@ public class GitHubCapability {
     private final GitHubRepositoryService repositories;
 
     public GitHubTools tools(Long actor, Long projectId, WorkSession session) {
-        return new GitHubTools(GitHubAppClient.httpBuilder().build(), repositories, actor, projectId, commands, session);
+        return new GitHubTools(
+                GitHubAppClient.httpBuilder().build(),
+                repositories,
+                actor,
+                projectId,
+                commands,
+                session);
     }
 }

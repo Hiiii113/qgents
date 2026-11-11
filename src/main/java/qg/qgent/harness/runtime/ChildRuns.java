@@ -1,17 +1,5 @@
 package qg.qgent.harness.runtime;
 
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.tool.ToolCallback;
-
-import qg.qgent.harness.entity.AgentRunEntity;
-import qg.qgent.harness.entity.RunStatus;
-import qg.qgent.harness.service.AgentRunService;
-import qg.qgent.harness.tool.ToolResult;
-import qg.qgent.sandbox.dto.SandboxExecutionContext;
-import qg.qgent.sandbox.service.SandboxSessionManager;
-import qg.qgent.workspace.service.WorkspaceSelection;
-
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -24,6 +12,16 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.tool.ToolCallback;
+import qg.qgent.harness.entity.AgentRunEntity;
+import qg.qgent.harness.entity.RunStatus;
+import qg.qgent.harness.service.AgentRunService;
+import qg.qgent.harness.tool.ToolResult;
+import qg.qgent.sandbox.dto.SandboxExecutionContext;
+import qg.qgent.sandbox.service.SandboxSessionManager;
+import qg.qgent.workspace.service.WorkspaceSelection;
 
 /**
  * 根运行派发的子 Agent。
@@ -50,9 +48,15 @@ final class ChildRuns {
     private int active;
     private volatile boolean closing;
 
-    ChildRuns(Long rootRunId, int limit, Executor executor, AgentRunService runs,
-              SandboxSessionManager sessions, BooleanSupplier rootCancelled, AgentLoop loop,
-              Function<Execution, List<ToolCallback>> tools) {
+    ChildRuns(
+            Long rootRunId,
+            int limit,
+            Executor executor,
+            AgentRunService runs,
+            SandboxSessionManager sessions,
+            BooleanSupplier rootCancelled,
+            AgentLoop loop,
+            Function<Execution, List<ToolCallback>> tools) {
         this.rootRunId = rootRunId;
         this.limit = limit;
         this.executor = executor;
@@ -63,13 +67,18 @@ final class ChildRuns {
         this.tools = tools;
     }
 
-    ToolResult start(AgentRunEntity parent, String instruction, Long workspaceId, String directory,
-                     Function<String, AgentLoop.Conversation> conversation) {
+    ToolResult start(
+            AgentRunEntity parent,
+            String instruction,
+            Long workspaceId,
+            String directory,
+            Function<String, AgentLoop.Conversation> conversation) {
         if (!hasCapacity()) {
             return ToolResult.error("SUBAGENT_LIMIT_REACHED", "同时运行的子 Agent 已达到上限，请等待或复用现有子对话");
         }
         AgentRunEntity run = runs.startChild(parent, instruction, workspaceId);
-        Execution child = new Execution(run, conversation.apply(instruction), workspaceId, directory);
+        Execution child =
+                new Execution(run, conversation.apply(instruction), workspaceId, directory);
         if (!reserve(child)) {
             runs.finish(run, RunStatus.FAILED, "同时运行的子 Agent 已达到上限", 0);
             return ToolResult.error("SUBAGENT_LIMIT_REACHED", "同时运行的子 Agent 已达到上限，请等待或复用现有子对话");
@@ -87,17 +96,21 @@ final class ChildRuns {
 
     /** 忙碌时排入同一对话，已结束时续接原对话。 */
     ToolResult handoff(String runId, String message) {
-        if (message == null || message.isBlank()) return ToolResult.error("INVALID_ARGUMENT", "补充内容不能为空");
-        if (rootCancelled.getAsBoolean()) return ToolResult.error("RUN_CANCELLED", "根 Agent 正在停止，无法续接子 Agent");
+        if (message == null || message.isBlank())
+            return ToolResult.error("INVALID_ARGUMENT", "补充内容不能为空");
+        if (rootCancelled.getAsBoolean())
+            return ToolResult.error("RUN_CANCELLED", "根 Agent 正在停止，无法续接子 Agent");
         Execution child = require(runId);
         synchronized (child) {
             if (child.isFinishing()) return ToolResult.error("SUBAGENT_BUSY", "子 Agent 正在结算，请稍后续接");
             if (child.isBusy()) {
-                if (child.isStopRequested()) return ToolResult.error("SUBAGENT_BUSY", "子 Agent 正在停止，完成后再续接");
+                if (child.isStopRequested())
+                    return ToolResult.error("SUBAGENT_BUSY", "子 Agent 正在停止，完成后再续接");
                 child.enqueueMessage(message);
                 return accepted(runId, true);
             }
-            if (!reserveContinuation(child)) return ToolResult.error("SUBAGENT_LIMIT_REACHED", "同时运行的子 Agent 已达到上限");
+            if (!reserveContinuation(child))
+                return ToolResult.error("SUBAGENT_LIMIT_REACHED", "同时运行的子 Agent 已达到上限");
             child.resumeConversation(message);
             runs.resume(child.run, message);
             try {
@@ -131,7 +144,8 @@ final class ChildRuns {
         boolean wasBusy = child.isBusy();
         boolean newlyStopped = requestStop(child);
         if (wasBusy && newlyStopped) runs.requestChildCancellation(rootRunId, child.run.getId());
-        if (markCommandsCancelled(child.run.getId())) sessions.cancelExecutionsByAgentRun(child.run.getId());
+        if (markCommandsCancelled(child.run.getId()))
+            sessions.cancelExecutionsByAgentRun(child.run.getId());
         ToolResult result = ToolResult.ok();
         result.put("runId", runId);
         result.put("stopping", child.isBusy());
@@ -140,14 +154,15 @@ final class ChildRuns {
 
     /** 根运行取消或失败时停止全部子 Agent，并取消它们仍在运行的命令。 */
     void cancelAll() {
-        children.values().forEach(child -> {
-            boolean newlyStopped = requestStop(child);
-            if (newlyStopped) runs.requestChildCancellation(rootRunId, child.run.getId());
-            // 命令可能比一次成功的子会话活得更久，但仍归它自己的 AgentRun 所有。
-            if (markCommandsCancelled(child.run.getId())) {
-                sessions.cancelExecutionsByAgentRun(child.run.getId());
-            }
-        });
+        children.values()
+                .forEach(child -> {
+                    boolean newlyStopped = requestStop(child);
+                    if (newlyStopped) runs.requestChildCancellation(rootRunId, child.run.getId());
+                    // 命令可能比一次成功的子会话活得更久，但仍归它自己的 AgentRun 所有。
+                    if (markCommandsCancelled(child.run.getId())) {
+                        sessions.cancelExecutionsByAgentRun(child.run.getId());
+                    }
+                });
         synchronized (lock) {
             lock.notifyAll();
         }
@@ -168,10 +183,15 @@ final class ChildRuns {
     /** 根 loop 接收子 Agent 完成通知，等待期间不轮询存储。 */
     AgentLoop.UpdateSource updates() {
         return new AgentLoop.UpdateSource() {
-            public List<Message> drain() { return drainNotifications(); }
+            public List<Message> drain() {
+                return drainNotifications();
+            }
+
             public List<Message> awaitNext() {
                 synchronized (lock) {
-                    while (notifications.isEmpty() && active > 0 && !closing
+                    while (notifications.isEmpty()
+                            && active > 0
+                            && !closing
                             && !rootCancelled.getAsBoolean()) {
                         try {
                             lock.wait();
@@ -189,9 +209,15 @@ final class ChildRuns {
     AgentLoop.UpdateSource updates(Execution child) {
         return new AgentLoop.UpdateSource() {
             public List<Message> drain() {
-                return child.drainMessages().stream().map(UserMessage::new).map(Message.class::cast).toList();
+                return child.drainMessages().stream()
+                        .map(UserMessage::new)
+                        .map(Message.class::cast)
+                        .toList();
             }
-            public List<Message> awaitNext() { return List.of(); }
+
+            public List<Message> awaitNext() {
+                return List.of();
+            }
         };
     }
 
@@ -260,10 +286,11 @@ final class ChildRuns {
     }
 
     private void submit(Execution child) {
-        java.util.concurrent.FutureTask<Void> task = new java.util.concurrent.FutureTask<>(() -> {
-            runChild(child);
-            return null;
-        });
+        java.util.concurrent.FutureTask<Void> task =
+                new java.util.concurrent.FutureTask<>(() -> {
+                    runChild(child);
+                    return null;
+                });
         child.schedule();
         executor.execute(task);
     }
@@ -281,8 +308,12 @@ final class ChildRuns {
                 AgentLoop.Result result = null;
                 RuntimeException failure = null;
                 try {
-                    result = loop.run(child.conversation, () -> tools.apply(child),
-                            () -> rootCancelled.getAsBoolean() || child.isStopRequested(), updates(child));
+                    result =
+                            loop.run(
+                                    child.conversation,
+                                    () -> tools.apply(child),
+                                    () -> rootCancelled.getAsBoolean() || child.isStopRequested(),
+                                    updates(child));
                     totalRounds += result.rounds();
                 } catch (RuntimeException exception) {
                     failure = exception;
@@ -290,15 +321,23 @@ final class ChildRuns {
                 RunStatus finishStatus;
                 String finishResult;
                 synchronized (child) {
-                    String pending = child.drainMessages().stream()
-                            .reduce((first, next) -> first + "\n\n" + next).orElse(null);
-                    if (!rootCancelled.getAsBoolean() && !child.isStopRequested() && pending != null) {
+                    String pending =
+                            child.drainMessages().stream()
+                                    .reduce((first, next) -> first + "\n\n" + next)
+                                    .orElse(null);
+                    if (!rootCancelled.getAsBoolean()
+                            && !child.isStopRequested()
+                            && pending != null) {
                         child.conversation.addUserMessage(pending);
                         runs.resume(child.run, pending);
                         continue;
                     }
-                    finishStatus = rootCancelled.getAsBoolean() || child.isStopRequested() ? RunStatus.CANCELLED
-                            : failure == null && result.success() ? RunStatus.SUCCEEDED : RunStatus.FAILED;
+                    finishStatus =
+                            rootCancelled.getAsBoolean() || child.isStopRequested()
+                                    ? RunStatus.CANCELLED
+                                    : failure == null && result.success()
+                                            ? RunStatus.SUCCEEDED
+                                            : RunStatus.FAILED;
                     finishResult = failure == null ? result.text() : failure(failure);
                     if (!child.beginFinishing()) break;
                 }
@@ -306,8 +345,13 @@ final class ChildRuns {
                 break;
             }
         } catch (RuntimeException exception) {
-            finish(child, rootCancelled.getAsBoolean() || child.isStopRequested() ? RunStatus.CANCELLED : RunStatus.FAILED,
-                    failure(exception), totalRounds);
+            finish(
+                    child,
+                    rootCancelled.getAsBoolean() || child.isStopRequested()
+                            ? RunStatus.CANCELLED
+                            : RunStatus.FAILED,
+                    failure(exception),
+                    totalRounds);
         } finally {
             SandboxExecutionContext.set(previousRunId);
         }
@@ -349,9 +393,17 @@ final class ChildRuns {
                         && child.run.getStatus() != RunStatus.CANCELLED) {
                     return false;
                 }
-                notifications.put(child.run.getId(), new UserMessage("子 Agent " + child.run.getId()
-                        + " 已结束，状态：" + child.run.getStatus() + "。执行结果：\n"
-                        + (child.run.getResult() == null ? "" : child.run.getResult())));
+                notifications.put(
+                        child.run.getId(),
+                        new UserMessage(
+                                "子 Agent "
+                                        + child.run.getId()
+                                        + " 已结束，状态："
+                                        + child.run.getStatus()
+                                        + "。执行结果：\n"
+                                        + (child.run.getResult() == null
+                                                ? ""
+                                                : child.run.getResult())));
                 if (child.releaseReservation()) active--;
                 child.finishTurn(child.run);
                 lock.notifyAll();
@@ -403,16 +455,27 @@ final class ChildRuns {
         private boolean finishing;
         private boolean turnFinished;
 
-        Execution(AgentRunEntity run, AgentLoop.Conversation conversation,
-                  Long selectedWorkspace, String currentDirectory) {
+        Execution(
+                AgentRunEntity run,
+                AgentLoop.Conversation conversation,
+                Long selectedWorkspace,
+                String currentDirectory) {
             this.run = run;
             this.conversation = conversation;
             this.workspace = new WorkspaceSelection(selectedWorkspace, currentDirectory);
         }
 
-        boolean isBusy() { return busy; }
-        boolean isStopRequested() { return stopRequested; }
-        synchronized boolean isFinishing() { return finishing; }
+        boolean isBusy() {
+            return busy;
+        }
+
+        boolean isStopRequested() {
+            return stopRequested;
+        }
+
+        synchronized boolean isFinishing() {
+            return finishing;
+        }
 
         synchronized void schedule() {
             busy = true;
@@ -450,7 +513,9 @@ final class ChildRuns {
             if (active != null) active.interrupt();
         }
 
-        synchronized void holdReservation() { reservationHeld = true; }
+        synchronized void holdReservation() {
+            reservationHeld = true;
+        }
 
         synchronized boolean releaseReservation() {
             if (!reservationHeld) return false;
@@ -486,6 +551,8 @@ final class ChildRuns {
             }
         }
 
-        private synchronized CompletableFuture<AgentRunEntity> completion() { return completion; }
+        private synchronized CompletableFuture<AgentRunEntity> completion() {
+            return completion;
+        }
     }
 }

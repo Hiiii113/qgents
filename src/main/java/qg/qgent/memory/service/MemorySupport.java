@@ -10,14 +10,15 @@ import java.util.HexFormat;
 /** 记忆模块公共小工具：正文版本、模型输出整理，以及后台任务共用的 UTC 时间与失败摘要。 */
 final class MemorySupport {
 
-    private MemorySupport() {
-    }
+    private MemorySupport() {}
 
     /** 记忆内容版本，用于并发修改检测和重复发现判断。 */
     static String version(String content) {
         try {
-            return HexFormat.of().formatHex(
-                    MessageDigest.getInstance("SHA-256").digest(content.getBytes(StandardCharsets.UTF_8)));
+            return HexFormat.of()
+                    .formatHex(
+                            MessageDigest.getInstance("SHA-256")
+                                    .digest(content.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 不可用", e);
         }
@@ -31,7 +32,8 @@ final class MemorySupport {
         }
         int firstLineEnd = trimmed.indexOf('\n');
         int lastFence = trimmed.lastIndexOf("```");
-        return firstLineEnd < 0 || lastFence <= firstLineEnd ? trimmed
+        return firstLineEnd < 0 || lastFence <= firstLineEnd
+                ? trimmed
                 : trimmed.substring(firstLineEnd + 1, lastFence).strip();
     }
 
@@ -42,7 +44,9 @@ final class MemorySupport {
     /** 失败摘要，截断到状态表列宽。 */
     static String failure(RuntimeException exception) {
         String message = exception.getMessage();
-        String text = exception.getClass().getSimpleName() + (message == null || message.isBlank() ? "" : ": " + message);
+        String text =
+                exception.getClass().getSimpleName()
+                        + (message == null || message.isBlank() ? "" : ": " + message);
         return text.length() <= 500 ? text : text.substring(0, 500);
     }
 }

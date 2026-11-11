@@ -5,10 +5,9 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
-import lombok.Data;
-
 import java.time.LocalDateTime;
 import java.util.List;
+import lombok.Data;
 
 /** 项目 Skill 的内容、可见范围和审核状态；已发布正文由 Agent 通过 activate_skill 按需读取。 */
 @Data

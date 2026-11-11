@@ -15,5 +15,4 @@ public class QgentsApplication {
     public static void main(String[] args) {
         SpringApplication.run(QgentsApplication.class, args);
     }
-
 }

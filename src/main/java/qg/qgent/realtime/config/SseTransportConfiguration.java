@@ -1,15 +1,13 @@
 package qg.qgent.realtime.config;
 
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-
-import qg.qgent.common.config.MdcTaskDecorator;
-import qg.qgent.realtime.transport.SseEmitterFactory;
-
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import qg.qgent.common.config.MdcTaskDecorator;
+import qg.qgent.realtime.transport.SseEmitterFactory;
 
 /** 配置 SSE 连接泵的执行器和 emitter 工厂。 */
 @Configuration(proxyBeanMethods = false)
@@ -19,8 +17,11 @@ public class SseTransportConfiguration {
     @Bean(name = "sseEventPumpExecutor", destroyMethod = "shutdown")
     public ExecutorService sseEventPumpExecutor() {
         MdcTaskDecorator mdcDecorator = new MdcTaskDecorator();
-        ThreadFactory factory = runnable ->
-                Thread.ofVirtual().name("sse-event-pump-", 1).unstarted(mdcDecorator.decorate(runnable));
+        ThreadFactory factory =
+                runnable ->
+                        Thread.ofVirtual()
+                                .name("sse-event-pump-", 1)
+                                .unstarted(mdcDecorator.decorate(runnable));
         return Executors.newThreadPerTaskExecutor(factory);
     }
 

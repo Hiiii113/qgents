@@ -1,13 +1,12 @@
 package qg.qgent.harness.entity;
 
-import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.FieldStrategy;
-import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import lombok.Data;
-
 import java.time.LocalDateTime;
+import lombok.Data;
 
 /** 一次聊天执行；子执行通过 parentRunId 关联，关联触发消息、实际 Agent 身份和工作区。 */
 @Data
@@ -15,6 +14,7 @@ import java.time.LocalDateTime;
 public class AgentRunEntity {
     @TableId(type = IdType.AUTO)
     private Long id;
+
     private Long projectId;
     private Long groupId;
     private Long agentId;
@@ -27,6 +27,7 @@ public class AgentRunEntity {
     private String result;
     private Integer rounds;
     private LocalDateTime createdAt;
+
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private LocalDateTime finishedAt;
 }

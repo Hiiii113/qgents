@@ -16,9 +16,24 @@ public record RealtimeFrame(
         Instant sentAt) {
 
     /** 构造一条实时推送帧。 */
-    public static RealtimeFrame of(String type, String scope, String projectId, String groupId, String teamId,
-                                   String recipientUserId, String resourceId, Map<String, Object> payload) {
-        return new RealtimeFrame(type, scope, projectId, groupId, teamId, recipientUserId, resourceId,
-                payload == null ? Map.of() : payload, Instant.now());
+    public static RealtimeFrame of(
+            String type,
+            String scope,
+            String projectId,
+            String groupId,
+            String teamId,
+            String recipientUserId,
+            String resourceId,
+            Map<String, Object> payload) {
+        return new RealtimeFrame(
+                type,
+                scope,
+                projectId,
+                groupId,
+                teamId,
+                recipientUserId,
+                resourceId,
+                payload == null ? Map.of() : payload,
+                Instant.now());
     }
 }

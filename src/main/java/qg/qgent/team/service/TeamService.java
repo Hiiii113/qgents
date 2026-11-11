@@ -1,17 +1,24 @@
 package qg.qgent.team.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-
 import qg.qgent.auth.service.TokenService;
 import qg.qgent.common.dto.KeysetPagination;
-import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.common.dto.PageSlice;
+import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.project.mapper.ProjectMemberMapper;
@@ -37,15 +44,6 @@ import qg.qgent.team.mapper.view.TeamMembershipView;
 import qg.qgent.user.dto.AvatarConfirmResponse;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
-
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 /** 管理团队资料、成员和邀请。 */
 @Service
@@ -89,9 +87,14 @@ public class TeamService {
         String scope = "teams";
         Long anchor = KeysetPagination.decodeCursor(cursor, scope);
 
-        List<TeamMembershipView> rows = teamMapper.selectMembershipPage(actor, anchor, pageSize + 1);
+        List<TeamMembershipView> rows =
+                teamMapper.selectMembershipPage(actor, anchor, pageSize + 1);
         // 转成指定的分页响应，memberCount/description/createdAt 来自列表聚合查询
-        return KeysetPagination.keysetPage(rows, pageSize, scope, TeamMembershipView::getId,
+        return KeysetPagination.keysetPage(
+                rows,
+                pageSize,
+                scope,
+                TeamMembershipView::getId,
                 row -> TeamViews.response(row, actor));
     }
 
@@ -130,8 +133,8 @@ public class TeamService {
     }
 
     /** 签发团队头像直传凭证；权限与修改团队资料一致（所有者或管理员）。 */
-    public AvatarStorageService.AvatarCredential avatarCredential(Long actor, Long teamId, String mediaType,
-                                                                  Long sizeBytes) {
+    public AvatarStorageService.AvatarCredential avatarCredential(
+            Long actor, Long teamId, String mediaType, Long sizeBytes) {
         access.requireTeamManager(requireTeam(teamId), actor);
         return avatarStorage.createCredential("teams", teamId, mediaType, sizeBytes);
     }
@@ -150,18 +153,27 @@ public class TeamService {
     }
 
     /** 获取团队成员列表 */
-    public PageSlice<TeamMemberResponse> members(Long actor, Long teamId, String cursor, Integer limit) {
+    public PageSlice<TeamMemberResponse> members(
+            Long actor, Long teamId, String cursor, Integer limit) {
         TeamEntity team = requireTeam(teamId);
         access.requireTeamMemberRole(team, actor);
         int pageSize = KeysetPagination.pageSize(limit);
         String scope = "team-members:" + teamId;
         Long anchor = KeysetPagination.decodeCursor(cursor, scope);
         List<TeamMemberView> rows = memberMapper.selectMemberPage(teamId, anchor, pageSize + 1);
-        return KeysetPagination.keysetPage(rows, pageSize, scope, TeamMemberView::getUserId,
+        return KeysetPagination.keysetPage(
+                rows,
+                pageSize,
+                scope,
+                TeamMemberView::getUserId,
                 member -> {
-                    TeamMemberResponse response = new TeamMemberResponse(member.getUserId().toString(),
-                            ProjectAccessService.effectiveTeamRole(team.getOwnerUserId(), member.getUserId(),
-                                    member.getRole()));
+                    TeamMemberResponse response =
+                            new TeamMemberResponse(
+                                    member.getUserId().toString(),
+                                    ProjectAccessService.effectiveTeamRole(
+                                            team.getOwnerUserId(),
+                                            member.getUserId(),
+                                            member.getRole()));
                     response.setDisplayName(member.getDisplayName());
                     response.setEmail(member.getEmail());
                     response.setAvatarUrl(member.getAvatarUrl());
@@ -183,16 +195,21 @@ public class TeamService {
         }
         String email = normalize(request.getEmail());
 
-        UserEntity invitedUser = userMapper
-                .selectOne(Wrappers.<UserEntity>lambdaQuery().eq(UserEntity::getEmail, email));
-        if (invitedUser != null && memberMapper.selectByTeamAndUser(teamId, invitedUser.getId()) != null) {
+        UserEntity invitedUser =
+                userMapper.selectOne(
+                        Wrappers.<UserEntity>lambdaQuery().eq(UserEntity::getEmail, email));
+        if (invitedUser != null
+                && memberMapper.selectByTeamAndUser(teamId, invitedUser.getId()) != null) {
             throw conflict("ALREADY_TEAM_MEMBER", "该用户已是团队成员");
         }
-        TeamInvitationEntity pending = invitationMapper.selectOne(Wrappers.<TeamInvitationEntity>lambdaQuery()
-                .eq(TeamInvitationEntity::getTeamId, teamId)
-                .eq(TeamInvitationEntity::getEmailNormalized, email)
-                .eq(TeamInvitationEntity::getStatus, "PENDING")
-                .gt(TeamInvitationEntity::getExpiresAt, now()).last("LIMIT 1"));
+        TeamInvitationEntity pending =
+                invitationMapper.selectOne(
+                        Wrappers.<TeamInvitationEntity>lambdaQuery()
+                                .eq(TeamInvitationEntity::getTeamId, teamId)
+                                .eq(TeamInvitationEntity::getEmailNormalized, email)
+                                .eq(TeamInvitationEntity::getStatus, "PENDING")
+                                .gt(TeamInvitationEntity::getExpiresAt, now())
+                                .last("LIMIT 1"));
         if (pending != null) {
             throw conflict("INVITATION_ALREADY_PENDING", "该邮箱已有待处理邀请");
         }
@@ -208,34 +225,44 @@ public class TeamService {
         invitation.setExpiresAt(now().plusDays(request.getExpiresInDays()));
         invitationMapper.insert(invitation);
         // 注册一个事务同步，确保在事务提交后发送邮件
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                invitationMailer.send(email, rawToken);
-            }
-        });
+        TransactionSynchronizationManager.registerSynchronization(
+                new TransactionSynchronization() {
+                    @Override
+                    public void afterCommit() {
+                        invitationMailer.send(email, rawToken);
+                    }
+                });
         // 被邀请邮箱已注册时，通知被邀请人（未注册用户继续走邮件邀请）
         if (invitedUser != null) {
             UserEntity inviter = userMapper.selectById(actor);
-            notificationService.notify(invitedUser.getId(), null, null, "INVITED",
+            notificationService.notify(
+                    invitedUser.getId(),
+                    null,
+                    null,
+                    "INVITED",
                     "你被邀请加入团队 " + team.getName(),
-                    inviter == null ? null : "邀请人：" + inviter.getDisplayName(), teamId.toString());
+                    inviter == null ? null : "邀请人：" + inviter.getDisplayName(),
+                    teamId.toString());
         }
         return invitation(invitation);
     }
 
     /** 获取团队邀请列表；所有者和管理员均可查看。 */
-    public PageSlice<TeamInvitationResponse> invitations(Long actor, Long teamId, String cursor, Integer limit) {
+    public PageSlice<TeamInvitationResponse> invitations(
+            Long actor, Long teamId, String cursor, Integer limit) {
         access.requireTeamManager(requireTeam(teamId), actor);
         int pageSize = KeysetPagination.pageSize(limit);
         String scope = "team-invitations:" + teamId;
         Long anchor = KeysetPagination.decodeCursor(cursor, scope);
-        List<TeamInvitationEntity> rows = invitationMapper.selectInvitationPage(teamId, anchor, pageSize + 1);
-        return KeysetPagination.keysetPage(rows, pageSize, scope, TeamInvitationEntity::getId, this::effectiveInvitation);
+        List<TeamInvitationEntity> rows =
+                invitationMapper.selectInvitationPage(teamId, anchor, pageSize + 1);
+        return KeysetPagination.keysetPage(
+                rows, pageSize, scope, TeamInvitationEntity::getId, this::effectiveInvitation);
     }
 
     /** 当前用户收到的待处理团队邀请（收件人视角）。 */
-    public PageSlice<ReceivedInvitationResponse> myInvitations(Long actor, String cursor, Integer limit) {
+    public PageSlice<ReceivedInvitationResponse> myInvitations(
+            Long actor, String cursor, Integer limit) {
         UserEntity user = userMapper.selectById(actor);
         if (user == null || user.getEmail() == null || user.getEmail().isBlank()) {
             throw notFound();
@@ -243,11 +270,16 @@ public class TeamService {
         int pageSize = KeysetPagination.pageSize(limit);
         String scope = "my-team-invitations";
         Long anchor = KeysetPagination.decodeCursor(cursor, scope);
-        List<TeamInvitationEntity> rows = invitationMapper.selectPendingByEmail(normalize(user.getEmail()), anchor,
-                pageSize + 1);
+        List<TeamInvitationEntity> rows =
+                invitationMapper.selectPendingByEmail(
+                        normalize(user.getEmail()), anchor, pageSize + 1);
         Map<Long, String> teamNames = loadTeamNames(rows);
         Map<Long, String> inviterNames = loadUserDisplayNames(rows);
-        return KeysetPagination.keysetPage(rows, pageSize, scope, TeamInvitationEntity::getId,
+        return KeysetPagination.keysetPage(
+                rows,
+                pageSize,
+                scope,
+                TeamInvitationEntity::getId,
                 invitation -> receivedInvitation(invitation, teamNames, inviterNames));
     }
 
@@ -263,11 +295,13 @@ public class TeamService {
         }
         // reference 为邀请数字 ID 或明文邀请 token；两者以数字解析区分
         TeamInvitationEntity invitation = resolveInvitation(reference);
-        if (invitation == null || !normalize(user.getEmail()).equals(invitation.getEmailNormalized())) {
+        if (invitation == null
+                || !normalize(user.getEmail()).equals(invitation.getEmailNormalized())) {
             throw notFound();
         }
         if ("ACCEPTED".equals(invitation.getStatus())) {
-            TeamMemberEntity existing = memberMapper.selectByTeamAndUser(invitation.getTeamId(), actor);
+            TeamMemberEntity existing =
+                    memberMapper.selectByTeamAndUser(invitation.getTeamId(), actor);
             if (existing != null) {
                 TeamEntity team = requireTeam(invitation.getTeamId());
                 return memberResponse(actor, team, existing.getRole(), user);
@@ -287,7 +321,10 @@ public class TeamService {
             member.setRole("TEAM_MEMBER");
             memberMapper.insert(member);
             // 团队级 SSE：新成员加入团队
-            eventService.publishTeamEvent(invitation.getTeamId(), "team.member.updated", id(actor),
+            eventService.publishTeamEvent(
+                    invitation.getTeamId(),
+                    "team.member.updated",
+                    id(actor),
                     Map.of("teamId", id(invitation.getTeamId()), "userId", id(actor)));
         }
         invitation.setStatus("ACCEPTED");
@@ -296,8 +333,14 @@ public class TeamService {
         TeamEntity team = requireTeam(invitation.getTeamId());
         // 通知邀请者：该用户已加入团队
         if (invitation.getInvitedBy() != null) {
-            notificationService.notify(invitation.getInvitedBy(), null, null, "TEAM_JOINED",
-                    user.getDisplayName() + " 已加入团队 " + team.getName(), null, team.getId().toString());
+            notificationService.notify(
+                    invitation.getInvitedBy(),
+                    null,
+                    null,
+                    "TEAM_JOINED",
+                    user.getDisplayName() + " 已加入团队 " + team.getName(),
+                    null,
+                    team.getId().toString());
         }
         return memberResponse(actor, team, member.getRole(), user);
     }
@@ -306,11 +349,15 @@ public class TeamService {
     private TeamInvitationEntity resolveInvitation(String reference) {
         Long parsed = tryId(reference);
         if (parsed != null) {
-            return invitationMapper.selectOne(Wrappers.<TeamInvitationEntity>lambdaQuery()
-                    .eq(TeamInvitationEntity::getId, parsed).last("FOR UPDATE"));
+            return invitationMapper.selectOne(
+                    Wrappers.<TeamInvitationEntity>lambdaQuery()
+                            .eq(TeamInvitationEntity::getId, parsed)
+                            .last("FOR UPDATE"));
         }
-        return invitationMapper.selectOne(Wrappers.<TeamInvitationEntity>lambdaQuery()
-                .eq(TeamInvitationEntity::getTokenHash, tokens.hash(reference)).last("FOR UPDATE"));
+        return invitationMapper.selectOne(
+                Wrappers.<TeamInvitationEntity>lambdaQuery()
+                        .eq(TeamInvitationEntity::getTokenHash, tokens.hash(reference))
+                        .last("FOR UPDATE"));
     }
 
     private Long tryId(String value) {
@@ -327,9 +374,12 @@ public class TeamService {
         TeamEntity team = requireTeamForUpdate(teamId);
 
         access.requireTeamManager(team, actor);
-        TeamInvitationEntity invitation = invitationMapper.selectOne(Wrappers.<TeamInvitationEntity>lambdaQuery()
-                .eq(TeamInvitationEntity::getId, invitationId).eq(TeamInvitationEntity::getTeamId, teamId)
-                .last("FOR UPDATE"));
+        TeamInvitationEntity invitation =
+                invitationMapper.selectOne(
+                        Wrappers.<TeamInvitationEntity>lambdaQuery()
+                                .eq(TeamInvitationEntity::getId, invitationId)
+                                .eq(TeamInvitationEntity::getTeamId, teamId)
+                                .last("FOR UPDATE"));
         if (invitation == null) {
             throw notFound();
         }
@@ -346,7 +396,8 @@ public class TeamService {
 
     /** 更新团队成员角色；仅团队所有者可任命、降级或移除团队管理员。 */
     @Transactional
-    public TeamMemberResponse updateMember(Long actor, Long teamId, Long userId, TeamMemberUpdateRequest request) {
+    public TeamMemberResponse updateMember(
+            Long actor, Long teamId, Long userId, TeamMemberUpdateRequest request) {
         TeamEntity team = requireTeamForUpdate(teamId);
 
         access.requireTeamOwner(team, actor);
@@ -370,7 +421,9 @@ public class TeamService {
 
         String actorRole = access.requireTeamManager(team, actor);
         TeamMemberEntity target = access.requireTeamMemberRow(teamId, userId);
-        String targetRole = ProjectAccessService.effectiveTeamRole(team.getOwnerUserId(), userId, target.getRole());
+        String targetRole =
+                ProjectAccessService.effectiveTeamRole(
+                        team.getOwnerUserId(), userId, target.getRole());
         if ("TEAM_OWNER".equals(targetRole)) {
             throw conflict("TEAM_OWNER_IMMUTABLE", "Team Owner 不能被移除");
         }
@@ -381,7 +434,10 @@ public class TeamService {
         projectMemberMapper.deleteByTeamAndUser(teamId, userId);
         memberMapper.deleteByTeamAndUser(teamId, userId);
         // 团队级 SSE：成员移出团队
-        eventService.publishTeamEvent(teamId, "team.member.updated", id(userId),
+        eventService.publishTeamEvent(
+                teamId,
+                "team.member.updated",
+                id(userId),
                 Map.of("teamId", id(teamId), "userId", id(userId)));
         return memberResponse(userId, team, target.getRole(), userMapper.selectById(userId));
     }
@@ -420,14 +476,20 @@ public class TeamService {
     }
 
     private int memberCount(Long teamId) {
-        Long count = memberMapper.selectCount(Wrappers.<TeamMemberEntity>lambdaQuery()
-                .eq(TeamMemberEntity::getTeamId, teamId));
+        Long count =
+                memberMapper.selectCount(
+                        Wrappers.<TeamMemberEntity>lambdaQuery()
+                                .eq(TeamMemberEntity::getTeamId, teamId));
         return count == null ? 0 : count.intValue();
     }
 
-    private TeamMemberResponse memberResponse(Long userId, TeamEntity team, String storedRole, UserEntity user) {
-        TeamMemberResponse response = new TeamMemberResponse(userId.toString(),
-                ProjectAccessService.effectiveTeamRole(team.getOwnerUserId(), userId, storedRole));
+    private TeamMemberResponse memberResponse(
+            Long userId, TeamEntity team, String storedRole, UserEntity user) {
+        TeamMemberResponse response =
+                new TeamMemberResponse(
+                        userId.toString(),
+                        ProjectAccessService.effectiveTeamRole(
+                                team.getOwnerUserId(), userId, storedRole));
         response.setDisplayName(user == null ? null : user.getDisplayName());
         response.setEmail(user == null ? null : user.getEmail());
         response.setAvatarUrl(user == null ? null : user.getAvatarUrl());
@@ -435,7 +497,10 @@ public class TeamService {
     }
 
     private TeamInvitationResponse invitation(TeamInvitationEntity value) {
-        return new TeamInvitationResponse(value.getId().toString(), value.getEmailNormalized(), value.getStatus(),
+        return new TeamInvitationResponse(
+                value.getId().toString(),
+                value.getEmailNormalized(),
+                value.getStatus(),
                 value.getExpiresAt());
     }
 
@@ -447,33 +512,56 @@ public class TeamService {
         return response;
     }
 
-    private ReceivedInvitationResponse receivedInvitation(TeamInvitationEntity value, Map<Long, String> teamNames,
-                                                          Map<Long, String> inviterNames) {
-        String status = "PENDING".equals(value.getStatus()) && !value.getExpiresAt().isAfter(now())
-                ? "EXPIRED" : value.getStatus();
-        return new ReceivedInvitationResponse(value.getId().toString(), value.getTeamId().toString(),
-                teamNames.get(value.getTeamId()), "TEAM_MEMBER", inviterNames.get(value.getInvitedBy()),
-                status, iso(value.getExpiresAt()), iso(value.getCreatedAt()));
+    private ReceivedInvitationResponse receivedInvitation(
+            TeamInvitationEntity value,
+            Map<Long, String> teamNames,
+            Map<Long, String> inviterNames) {
+        String status =
+                "PENDING".equals(value.getStatus()) && !value.getExpiresAt().isAfter(now())
+                        ? "EXPIRED"
+                        : value.getStatus();
+        return new ReceivedInvitationResponse(
+                value.getId().toString(),
+                value.getTeamId().toString(),
+                teamNames.get(value.getTeamId()),
+                "TEAM_MEMBER",
+                inviterNames.get(value.getInvitedBy()),
+                status,
+                iso(value.getExpiresAt()),
+                iso(value.getCreatedAt()));
     }
 
     private Map<Long, String> loadTeamNames(List<TeamInvitationEntity> rows) {
-        Set<Long> teamIds = rows.stream().map(TeamInvitationEntity::getTeamId).filter(Objects::nonNull)
-                .collect(Collectors.toSet());
+        Set<Long> teamIds =
+                rows.stream()
+                        .map(TeamInvitationEntity::getTeamId)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet());
         if (teamIds.isEmpty()) {
             return Map.of();
         }
-        return teamMapper.selectBatchIds(teamIds).stream().collect(Collectors.toMap(TeamEntity::getId, TeamEntity::getName));
+        return teamMapper.selectBatchIds(teamIds).stream()
+                .collect(Collectors.toMap(TeamEntity::getId, TeamEntity::getName));
     }
 
     private Map<Long, String> loadUserDisplayNames(List<TeamInvitationEntity> rows) {
-        Set<Long> userIds = rows.stream().map(TeamInvitationEntity::getInvitedBy).filter(Objects::nonNull)
-                .collect(Collectors.toSet());
+        Set<Long> userIds =
+                rows.stream()
+                        .map(TeamInvitationEntity::getInvitedBy)
+                        .filter(Objects::nonNull)
+                        .collect(Collectors.toSet());
         if (userIds.isEmpty()) {
             return Map.of();
         }
-        return userMapper.selectBatchIds(userIds).stream().collect(Collectors.toMap(UserEntity::getId,
-                user -> user.getDisplayName() == null || user.getDisplayName().isBlank() ? "已注销用户"
-                        : user.getDisplayName()));
+        return userMapper.selectBatchIds(userIds).stream()
+                .collect(
+                        Collectors.toMap(
+                                UserEntity::getId,
+                                user ->
+                                        user.getDisplayName() == null
+                                                        || user.getDisplayName().isBlank()
+                                                ? "已注销用户"
+                                                : user.getDisplayName()));
     }
 
     private String iso(LocalDateTime time) {

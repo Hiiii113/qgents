@@ -9,6 +9,7 @@ public class TeamCreateRequest {
     @NotBlank
     @Size(max = 255)
     private String name;
+
     // 团队简介（可选），最长为 2000 字符。
     @Size(max = 2000)
     private String description;

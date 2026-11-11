@@ -3,7 +3,6 @@ package qg.qgent.project.entity;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
-
 @Data
 @TableName("project_members")
 public class ProjectMemberEntity {

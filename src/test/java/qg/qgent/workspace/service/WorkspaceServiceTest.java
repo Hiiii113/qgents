@@ -1,18 +1,15 @@
 package qg.qgent.workspace.service;
 
-import qg.qgent.support.TestIds;
-
-import org.junit.jupiter.api.Test;
-
-import qg.qgent.workspace.entity.WorkspaceEntity;
-import qg.qgent.workspace.mapper.WorkspaceMapper;
-
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+
+import org.junit.jupiter.api.Test;
+import qg.qgent.support.TestIds;
+import qg.qgent.workspace.entity.WorkspaceEntity;
+import qg.qgent.workspace.mapper.WorkspaceMapper;
 
 /** 工作区记录创建和选择校验，不准备物理目录或执行环境。 */
 class WorkspaceServiceTest {
@@ -38,7 +35,8 @@ class WorkspaceServiceTest {
         when(mapper.selectOne(any())).thenReturn(existing);
 
         assertThat(new WorkspaceService(mapper).defaultWorkspace(projectId)).isSameAs(existing);
-        org.mockito.Mockito.verify(mapper, org.mockito.Mockito.never()).insert(any(WorkspaceEntity.class));
+        org.mockito.Mockito.verify(mapper, org.mockito.Mockito.never())
+                .insert(any(WorkspaceEntity.class));
     }
 
     @Test
@@ -47,7 +45,8 @@ class WorkspaceServiceTest {
         when(mapper.selectOne(any())).thenReturn(null);
         WorkspaceEntity created = new WorkspaceService(mapper).defaultWorkspace(projectId);
         assertThat(created.getIsDefault()).isTrue();
-        assertThat(WorkspaceService.storageKey(created)).isEqualTo(projectId + "/workspaces/default");
+        assertThat(WorkspaceService.storageKey(created))
+                .isEqualTo(projectId + "/workspaces/default");
         org.mockito.Mockito.verify(mapper).insert(created);
     }
 
@@ -75,5 +74,4 @@ class WorkspaceServiceTest {
         workspace.setIsDefault(false);
         return workspace;
     }
-
 }
