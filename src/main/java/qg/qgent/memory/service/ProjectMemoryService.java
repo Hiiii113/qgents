@@ -9,14 +9,15 @@ import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.locks.ReentrantLock;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import qg.qgent.chat.entity.ChatGroupEntity;
+import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.memory.dto.ProjectMemoryResponse;
+import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.project.storage.ProjectDirectoryService;
 import qg.qgent.realtime.service.EventService;
@@ -24,7 +25,7 @@ import qg.qgent.realtime.service.EventService;
 /**
  * 项目长期记忆：项目目录下的 memory.md 是正文唯一来源，按内容版本检测并发修改。
  * <p>
- * 写入只发生在已审批的项目记忆候选上，不再提供直接保存的入口。
+ * 只有项目管理员在项目默认群的对话中确认后才写入，其余成员和子 Agent 只读。
  */
 @Service
 public class ProjectMemoryService {
@@ -32,19 +33,22 @@ public class ProjectMemoryService {
     private static final String FILE_NAME = "memory.md";
 
     private final ProjectAccessService access;
+    private final ChatGroupMapper groups;
+    private final ProjectMapper projects;
     private final ProjectDirectoryService directories;
     private final EventService events;
-
-    // 同一实例内的写入串行化；跨实例由审批方持有的项目行锁与内容版本兜底。
-    private final ConcurrentMap<Long, ReentrantLock> locks = new ConcurrentHashMap<>();
     private final int maxMemoryChars;
 
     public ProjectMemoryService(
             ProjectAccessService access,
+            ChatGroupMapper groups,
+            ProjectMapper projects,
             ProjectDirectoryService directories,
             EventService events,
             @Value("${app.agent.context.max-memory-chars:12000}") int maxMemoryChars) {
         this.access = access;
+        this.groups = groups;
+        this.projects = projects;
         this.directories = directories;
         this.events = events;
         this.maxMemoryChars = maxMemoryChars;
@@ -57,51 +61,42 @@ public class ProjectMemoryService {
     }
 
     /**
-     * 审批通过后整篇替换 memory.md。
+     * 管理员在默认群确认后整篇替换 memory.md。
      * <p>
-     * baseVersion 与当前内容不一致时拒绝，避免覆盖候选提出后其他人已审批的更新；
-     * 内容与候选相同时直接返回，使审批重试（例如写文件后进程中断）可以幂等完成。
+     * 先锁项目行，让同项目的写入跨实例串行；baseVersion 与当前内容不一致时拒绝，避免覆盖他人已写入的更新；
+     * 内容与当前相同时直接返回，使写入重试可以幂等完成。
      */
-    public ProjectMemoryResponse applyApproved(Long projectId, String content, String baseVersion) {
-        ReentrantLock lock = locks.computeIfAbsent(projectId, ignored -> new ReentrantLock());
-        lock.lock();
-        try {
-            ProjectMemoryResponse current = read(projectId);
-            if (current.getContent().equals(content)) {
-                return current;
-            }
-            if (!current.getVersion().equals(baseVersion)) {
-                throw new ApiException(
-                        HttpStatus.CONFLICT, "MEMORY_VERSION_CONFLICT", "项目记忆在候选提出后已被修改，请重新提出候选");
-            }
-            write(projectId, content);
-            ProjectMemoryResponse saved = read(projectId);
-            events.publish(
-                    projectId,
-                    null,
-                    "memory.updated",
-                    projectId.toString(),
-                    Map.of(
-                            "projectId",
-                            projectId.toString(),
-                            "version",
-                            saved.getVersion(),
-                            "updatedAt",
-                            saved.getUpdatedAt().toString()));
-            return saved;
-        } finally {
-            lock.unlock();
+    @Transactional
+    public ProjectMemoryResponse update(
+            Long actor, Long projectId, Long groupId, String content, String baseVersion) {
+        access.requireProjectAdmin(projectId, actor);
+        requireDefaultGroup(groupId);
+        String text = content.trim();
+        requireContentBudget(text);
+        projects.selectByIdForUpdate(projectId);
+        ProjectMemoryResponse current = read(projectId);
+        if (current.getContent().equals(text)) {
+            return current;
         }
-    }
-
-    /** 候选正文必须与注入 Agent 上下文的记忆预算一致；超限时拒绝提出，而不是等到审批才失败。 */
-    public void requireContentBudget(String content) {
-        if (content.length() > maxMemoryChars) {
+        if (!current.getVersion().equals(baseVersion)) {
             throw new ApiException(
-                    HttpStatus.CONFLICT,
-                    "MEMORY_CONTEXT_LIMIT_EXCEEDED",
-                    "项目记忆超出 Agent 上下文字符预算 " + maxMemoryChars + "，请精简候选后重新提出");
+                    HttpStatus.CONFLICT, "MEMORY_VERSION_CONFLICT", "项目记忆已被其他更新修改，请重新读取后合并");
         }
+        write(projectId, text);
+        ProjectMemoryResponse saved = read(projectId);
+        events.publish(
+                projectId,
+                null,
+                "memory.updated",
+                projectId.toString(),
+                Map.of(
+                        "projectId",
+                        projectId.toString(),
+                        "version",
+                        saved.getVersion(),
+                        "updatedAt",
+                        saved.getUpdatedAt().toString()));
+        return saved;
     }
 
     /** 读取正文与版本；不做权限检查，只给已通过成员校验的调用方和后台发现任务使用。 */
@@ -117,6 +112,25 @@ public class ProjectMemoryService {
                             Files.getLastModifiedTime(file).toInstant(), ZoneOffset.UTC));
         } catch (IOException e) {
             throw new IllegalStateException("项目记忆读取失败: " + file, e);
+        }
+    }
+
+    /** 只在项目默认群写入：受限群的讨论不扩散为共享项目记忆。 */
+    private void requireDefaultGroup(Long groupId) {
+        ChatGroupEntity group = groups.selectById(groupId);
+        if (group == null || !Boolean.TRUE.equals(group.getDefaultGroup())) {
+            throw new ApiException(
+                    HttpStatus.FORBIDDEN, "MEMORY_SOURCE_GROUP_RESTRICTED", "只能在项目默认群更新项目记忆");
+        }
+    }
+
+    /** 正文必须与注入 Agent 上下文的记忆预算一致，超限时拒绝写入。 */
+    private void requireContentBudget(String content) {
+        if (content.length() > maxMemoryChars) {
+            throw new ApiException(
+                    HttpStatus.CONFLICT,
+                    "MEMORY_CONTEXT_LIMIT_EXCEEDED",
+                    "项目记忆超出 Agent 上下文字符预算 " + maxMemoryChars + "，请精简后重新写入");
         }
     }
 

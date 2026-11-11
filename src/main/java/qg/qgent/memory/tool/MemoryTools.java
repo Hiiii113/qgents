@@ -7,7 +7,7 @@ import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.memory.dto.ProjectMemoryResponse;
 import qg.qgent.memory.service.ProjectMemoryService;
 
-/** 让当前 AgentRun 按触发者的项目权限读取项目 memory.md；写入只能经群聊审批。 */
+/** 让当前 AgentRun 按触发者的项目权限读取项目 memory.md；写入由主 Agent 的 MemoryWriteTools 完成。 */
 public class MemoryTools {
 
     private final ProjectMemoryService memories;
@@ -20,11 +20,11 @@ public class MemoryTools {
         this.projectId = projectId;
     }
 
-    /** 读取整篇项目记忆和版本号；提出候选时据此保留无关内容。 */
+    /** 读取整篇项目记忆和版本号；写入前据此保留无关内容并带上基线版本。 */
     @ParallelTool
     @Tool(
             name = "read_project_memory",
-            description = "读取项目长期记忆 memory.md 最新全文和版本号。" + "上下文包含的是启动时快照，准备提出更新或需要确认最新内容时调用。")
+            description = "读取项目长期记忆 memory.md 最新全文和版本号。" + "上下文包含的是启动时快照，准备写入或需要确认最新内容时调用。")
     public ToolResult readProjectMemory() {
         return ToolErrors.call(
                 "MEMORY_UNAVAILABLE",

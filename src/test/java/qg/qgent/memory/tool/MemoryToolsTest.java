@@ -12,7 +12,7 @@ import qg.qgent.memory.dto.ProjectMemoryResponse;
 import qg.qgent.memory.service.ProjectMemoryService;
 import qg.qgent.support.TestIds;
 
-/** 项目记忆工具：只读，写入必须走群聊审批。 */
+/** 项目记忆工具：Agent 只读，写入由管理员确认后主 Agent 的写工具完成。 */
 class MemoryToolsTest {
 
     private final ProjectMemoryService memories = mock(ProjectMemoryService.class);

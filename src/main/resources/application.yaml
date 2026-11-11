@@ -72,7 +72,7 @@ app:
     # 每个项目的 Agent 数量上限，含默认 Agent 与待审批申请；被拒绝的申请不占名额。
     max-per-project: ${APP_AGENT_MAX_PER_PROJECT:10}
     context:
-      # 项目 memory.md 注入 Agent 上下文的字符上限；超过时拒绝提出记忆候选。
+      # 项目 memory.md 注入 Agent 上下文的字符上限；超过时拒绝写入。
       max-memory-chars: ${APP_AGENT_CONTEXT_MAX_MEMORY_CHARS:12000}
   # 群记忆后台提炼：新消息数与闲置时长同时达到才触发，失败有限重试；阈值均可在环境覆盖。
   memory:
@@ -92,7 +92,7 @@ app:
       max-messages-per-run: ${APP_MEMORY_GROUP_MAX_MESSAGES_PER_RUN:200}
       # 扫描按键游标翻页读取，每页群数；每轮覆盖全部群，不会漏掉新活动的群。
       scan-page-size: ${APP_MEMORY_GROUP_SCAN_PAGE_SIZE:20}
-    # 项目记忆候选发现：后台按周期从项目默认群的群记忆里找项目背景和决策，管理员审批后才写入。
+    # 项目记忆发现：后台按周期从项目默认群的群记忆里找项目背景和决策，再以默认 Agent 的普通消息提出更新建议。
     discovery:
       # 扫描周期，支持 s/m/h 时长写法。
       scan-interval: ${APP_MEMORY_DISCOVERY_SCAN_INTERVAL:1h}

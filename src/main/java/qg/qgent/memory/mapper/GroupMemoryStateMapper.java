@@ -109,7 +109,7 @@ public interface GroupMemoryStateMapper extends BaseMapper<GroupMemoryStateEntit
             @Param("now") LocalDateTime now);
 
     /**
-     * 项目记忆发现的到期群：只取项目默认群。受限群内容不进模型、不发候选消息、不写入项目记忆，
+     * 项目记忆发现的到期群：只取项目默认群。受限群内容不进模型、不发建议消息、不写入项目记忆，
      * 因此这里先用 SQL 排除，不依赖提示词或后续校验。连续失败达到上限的群等待群记忆重新提炼后再试。
      */
     @Select(
@@ -132,7 +132,7 @@ public interface GroupMemoryStateMapper extends BaseMapper<GroupMemoryStateEntit
             @Param("nextSlot") LocalDateTime nextSlot,
             @Param("now") LocalDateTime now);
 
-    /** 发现完成（含“没有候选”）：记录已处理的群记忆版本，清零失败次数；同一版本不再重复发现。 */
+    /** 发现完成（含“没有建议”）：记录已处理的群记忆版本，清零失败次数；同一版本不再重复发现。 */
     @Update(
             "UPDATE group_memory_state SET discovered_version = #{version}, discovery_attempt_count = 0, "
                     + "discovery_next_attempt_at = #{nextSlot}, discovery_error = NULL, updated_at = #{now} "

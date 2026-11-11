@@ -134,7 +134,7 @@ class GroupMemoryStateMapperTest {
                         "selectDiscoveryCandidates",
                         Map.of("now", LocalDateTime.now(), "maxAttempts", 3, "limit", 10));
 
-        // 受限群的群记忆不是候选来源：连模型都不该看到，所以由 SQL 先排除
+        // 受限群的群记忆不是发现来源：连模型都不该看到，所以由 SQL 先排除
         assertThat(sql)
                 .contains("default_group = 1")
                 .contains("discovery_next_attempt_at <= ?")

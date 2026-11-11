@@ -168,7 +168,7 @@ class AgentChatServiceTest {
                         "read_agent_memory",
                         "write_agent_memory",
                         "read_project_memory",
-                        "propose_project_memory");
+                        "write_project_memory");
     }
 
     @Test
@@ -252,6 +252,27 @@ class AgentChatServiceTest {
     }
 
     @Test
+    void failedRunDoesNotExposeItsAnnouncedAgentApplicationForApproval() {
+        Long actor = TestIds.next(),
+                project = TestIds.next(),
+                group = TestIds.next(),
+                message = TestIds.next();
+        ChatModel model = model();
+        // 空白回复让本次运行失败：失败回复不是可审批的对象。
+        when(model.call(any(Prompt.class))).thenReturn(reply(""));
+        var fixture = fixture(model, actor, project, group, message, childExecutor);
+
+        fixture.service().replyToMention(fixture.event(), fixture.agentId(), "帮我申请一个评审助手");
+
+        verify(fixture.messages())
+                .sendAsAgent(
+                        eq(fixture.agentId()),
+                        eq(group),
+                        argThat(request -> "模型返回了空回复".equals(request.getContent().get("text"))));
+        verify(fixture.agentApplications(), never()).bindAnnouncement(any(), any());
+    }
+
+    @Test
     void startsChildInBackgroundAndFeedsItsCompletionBackBeforeReplying() throws Exception {
         Long actor = TestIds.next(),
                 project = TestIds.next(),
@@ -290,8 +311,7 @@ class AgentChatServiceTest {
                                     .contains(
                                             "read_attachment",
                                             "read_project_memory",
-                                            "propose_project_memory",
-                                            "approve_project_memory");
+                                            "write_project_memory");
                             yield toolCall("start_subagent", "{\"instruction\":\"独立分析接口\"}");
                         }
                         case 2 -> {
@@ -337,50 +357,13 @@ class AgentChatServiceTest {
                         "continue_subagent",
                         "stop_subagent",
                         "cancel_agent",
-                        "propose_project_memory",
-                        "approve_project_memory")
+                        "write_project_memory")
                 .contains("read_attachment");
         verify(fixture.messages())
                 .sendAsAgent(
                         eq(fixture.agentId()),
                         eq(group),
                         argThat(request -> "已汇总子任务结果".equals(request.getContent().get("text"))));
-    }
-
-    @Test
-    void memoryCandidateRaisedInTheRunIsBoundToTheAgentReplyMessage() {
-        Long actor = TestIds.next(),
-                project = TestIds.next(),
-                group = TestIds.next(),
-                message = TestIds.next();
-        ChatModel model = model();
-        when(model.call(any(Prompt.class))).thenReturn(reply("候选：新增统一邮箱登录约定，等待管理员审批"));
-        var fixture = fixture(model, actor, project, group, message, childExecutor);
-
-        fixture.service().replyToMention(fixture.event(), fixture.agentId(), "补充一条项目约定");
-
-        verify(fixture.proposals()).bindMessage(fixture.root().getId(), fixture.replyMessageId());
-    }
-
-    @Test
-    void failedRunDoesNotExposeItsMemoryCandidateForApproval() {
-        Long actor = TestIds.next(),
-                project = TestIds.next(),
-                group = TestIds.next(),
-                message = TestIds.next();
-        ChatModel model = model();
-        // 空白回复让本次运行失败：失败回复的正文不是候选内容，不能拿来审批。
-        when(model.call(any(Prompt.class))).thenReturn(reply(""));
-        var fixture = fixture(model, actor, project, group, message, childExecutor);
-
-        fixture.service().replyToMention(fixture.event(), fixture.agentId(), "补充一条项目约定");
-
-        verify(fixture.messages())
-                .sendAsAgent(
-                        eq(fixture.agentId()),
-                        eq(group),
-                        argThat(request -> "模型返回了空回复".equals(request.getContent().get("text"))));
-        verify(fixture.proposals(), never()).bindMessage(any(), any());
     }
 
     @Test
@@ -1338,7 +1321,6 @@ class AgentChatServiceTest {
         var groupMemory = mock(GroupMemoryService.class);
         when(groupMemory.read(any(), any()))
                 .thenReturn(new GroupMemoryResponse("1", "2", "# 群约定", null));
-        var proposals = mock(qg.qgent.memory.service.ProjectMemoryProposalService.class);
         Long replyMessageId = TestIds.next();
         when(messages.sendAsAgent(anyLong(), anyLong(), any()))
                 .thenAnswer(invocation -> {
@@ -1378,7 +1360,6 @@ class AgentChatServiceTest {
                         memories,
                         groupMemory,
                         mock(GroupMemoryExtractionService.class),
-                        proposals,
                         agentMemories,
                         new CrossGroupAccessService(groups),
                         agents,
@@ -1399,7 +1380,6 @@ class AgentChatServiceTest {
                 sessions,
                 context,
                 attachments,
-                proposals,
                 replyMessageId,
                 groups,
                 history,
@@ -1512,7 +1492,6 @@ class AgentChatServiceTest {
             SandboxSessionManager sessions,
             ContextService context,
             AttachmentService attachments,
-            qg.qgent.memory.service.ProjectMemoryProposalService proposals,
             Long replyMessageId,
             GroupService groups,
             ChatHistoryService history,

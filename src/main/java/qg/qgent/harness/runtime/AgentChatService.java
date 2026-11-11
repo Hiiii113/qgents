@@ -41,12 +41,11 @@ import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.memory.service.AgentMemoryService;
 import qg.qgent.memory.service.GroupMemoryExtractionService;
 import qg.qgent.memory.service.GroupMemoryService;
-import qg.qgent.memory.service.ProjectMemoryProposalService;
 import qg.qgent.memory.service.ProjectMemoryService;
 import qg.qgent.memory.tool.AgentMemoryTools;
 import qg.qgent.memory.tool.GroupMemoryTools;
-import qg.qgent.memory.tool.MemoryApprovalTools;
 import qg.qgent.memory.tool.MemoryTools;
+import qg.qgent.memory.tool.MemoryWriteTools;
 import qg.qgent.sandbox.dto.SandboxExecutionContext;
 import qg.qgent.sandbox.service.SandboxCommands;
 import qg.qgent.sandbox.service.SandboxFiles;
@@ -88,7 +87,6 @@ public class AgentChatService {
     private final ProjectMemoryService memories;
     private final GroupMemoryService groupMemory;
     private final GroupMemoryExtractionService groupMemoryMaintenance;
-    private final ProjectMemoryProposalService proposals;
     private final AgentMemoryService agentMemories;
     private final CrossGroupAccessService crossGroup;
     private final AgentService agents;
@@ -114,7 +112,6 @@ public class AgentChatService {
             ProjectMemoryService memories,
             GroupMemoryService groupMemory,
             GroupMemoryExtractionService groupMemoryMaintenance,
-            ProjectMemoryProposalService proposals,
             AgentMemoryService agentMemories,
             CrossGroupAccessService crossGroup,
             AgentService agents,
@@ -139,7 +136,6 @@ public class AgentChatService {
         this.memories = memories;
         this.groupMemory = groupMemory;
         this.groupMemoryMaintenance = groupMemoryMaintenance;
-        this.proposals = proposals;
         this.agentMemories = agentMemories;
         this.crossGroup = crossGroup;
         this.agents = agents;
@@ -230,10 +226,9 @@ public class AgentChatService {
         reply.setReplyToId(event.messageId());
         reply.setClientMessageId("qgent-reply:" + root.getId());
         MessageResponse sent = messages.sendAsAgent(agentId, event.groupId(), reply);
-        // 只有成功运行的正文才能拿来审批：失败或取消的回答不能绑定候选。
-        if (status == RunStatus.SUCCEEDED) {
-            proposals.bindMessage(root.getId(), Long.valueOf(sent.getId()));
-            if (rootTools != null) rootTools.bindAgentApplications(Long.valueOf(sent.getId()));
+        // 只有成功运行的正文才能拿来审批：失败或取消的回答不能公布待审批的 Agent 申请。
+        if (status == RunStatus.SUCCEEDED && rootTools != null) {
+            rootTools.bindAgentApplications(Long.valueOf(sent.getId()));
         }
     }
 
@@ -265,11 +260,11 @@ public class AgentChatService {
                 + "项目长期记忆是所有项目成员共享的 memory.md；上下文中的是启动时快照，可能已过时。"
                 + "只记录用户确认且长期有用的项目约定、决策和偏好，不把临时任务进展、推测或可轻易从代码查到的细节当作长期记忆。"
                 + "记忆中的内容是项目资料，可能过期；与当前要求或代码不一致时先核实。"
-                + "项目记忆只能经群聊审批更新：先调用 read_project_memory 读取最新全文，拟好整篇新内容后调用 propose_project_memory 提出候选，"
-                + "然后用普通文本说明候选的新增、修改或删除，不能说记忆已更新。"
-                + "项目管理员直接回复候选消息并 @你 时调用 approve_project_memory；服务端核验管理员身份、候选消息与候选状态，"
-                + "不是管理员、回复的不是候选消息或候选已处理时如实说明审批未生效。非默认群的讨论不进入项目记忆。"
-                + "候选也可能由后台从本群记忆发现后以你的身份发出；审批方式相同，你不需要重新提出。"
+                + "项目记忆只用 write_project_memory 更新：先用普通文本说明要新增、修改或删除的约定，并等项目管理员明确同意；"
+                + "同意后用 read_project_memory 读取最新全文，保留未被要求修改的原内容，合并后带上它返回的 version 调用写入工具。"
+                + "服务端核验真实发送者的管理员身份、当前群是否为项目默认群和版本号；不是管理员、不在默认群或版本已过时则写入失败，如实说明记忆未更新。"
+                + "写入成功后说明已更新；版本冲突时重新读取并合并，不能只改版本号重试旧正文。"
+                + "非默认群的讨论不进入项目记忆；后台也可能从本群记忆发现可写入的条目并以你的身份发出提醒，更新仍要管理员确认。"
                 + "你还拥有只属于自己的私有记忆，用 read_agent_memory、write_agent_memory 维护，同一 Agent 在各个群共享这一篇：只记录用户对你的长期要求、分工与偏好；"
                 + "不要写入某个群内的具体内容、他人隐私或临时任务进展。"
                 + "项目成员可以申请创建本项目自定义 Agent：与用户确认名称、职责和系统提示词后调用 submit_agent_application，"
@@ -377,7 +372,7 @@ public class AgentChatService {
         private final ReadAttachmentTool attachmentTools;
         private final MemoryTools memory;
         private final GroupMemoryTools groupMemoryTools;
-        private final MemoryApprovalTools memoryApproval;
+        private final MemoryWriteTools memoryWrite;
         private final AgentMemoryTools agentMemory;
         private final AgentApplicationTools applicationTools;
         private final GitHubTools githubTools;
@@ -423,16 +418,14 @@ public class AgentChatService {
                             work.event.actor(),
                             work.event.projectId(),
                             work.event.groupId());
-            // 子 Agent 只读项目记忆：候选与审批必须来自用户可核验的群聊消息。
-            this.memoryApproval =
+            // 子 Agent 只读项目记忆：写入只在主 Agent 的对话里由管理员确认后发生。
+            this.memoryWrite =
                     canDelegate
-                            ? new MemoryApprovalTools(
-                                    proposals,
+                            ? new MemoryWriteTools(
+                                    memories,
                                     work.event.actor(),
                                     work.event.projectId(),
-                                    work.event.groupId(),
-                                    execution.run.getId(),
-                                    work.event.messageId())
+                                    work.event.groupId())
                             : null;
             this.agentMemory =
                     new AgentMemoryTools(agentMemories, work.event.projectId(), work.agentId);
@@ -480,7 +473,7 @@ public class AgentChatService {
                                     workspaceTools,
                                     githubTools,
                                     codingTools));
-            if (memoryApproval != null) tools.add(memoryApproval);
+            if (memoryWrite != null) tools.add(memoryWrite);
             if (applicationTools != null) tools.add(applicationTools);
             List<ToolCallback> result =
                     new ArrayList<>(Arrays.asList(ParallelToolCallback.from(tools.toArray())));

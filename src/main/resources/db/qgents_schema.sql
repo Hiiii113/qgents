@@ -253,28 +253,6 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     KEY idx_agent_run_message (trigger_message_id, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent loop 根运行及 subagent 运行';
 
--- 项目记忆候选：默认群里的普通文本候选与管理员审批回复，服务端绑定候选原文、来源群、运行与审批消息。
-CREATE TABLE IF NOT EXISTS project_memory_proposals (
-    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '候选ID',
-    project_id BIGINT NOT NULL COMMENT '所属项目ID',
-    group_id BIGINT NOT NULL COMMENT '提出候选的项目默认群ID',
-    agent_run_id BIGINT NULL COMMENT '提出候选的 AgentRun；每个运行最多一个候选；后台发现时为空',
-    message_id BIGINT NULL COMMENT '候选所在的 Agent 回复消息；审批必须回复这条消息',
-    content MEDIUMTEXT NOT NULL COMMENT '候选 memory.md 全文',
-    base_version VARCHAR(64) NOT NULL COMMENT '提出时的 memory.md 内容版本',
-    source_memory_version VARCHAR(64) NULL COMMENT '后台发现时的来源群记忆内容版本；群聊提出时为空',
-    status VARCHAR(16) NOT NULL DEFAULT 'PENDING' COMMENT '状态枚举：PENDING/APPLIED',
-    proposed_by BIGINT NULL COMMENT '提出候选的真实用户ID；后台发现时为空',
-    approved_by BIGINT NULL COMMENT '审批的管理员用户ID',
-    approved_message_id BIGINT NULL COMMENT '审批回复消息ID',
-    applied_version VARCHAR(64) NULL COMMENT '写入后的 memory.md 内容版本',
-    created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
-    approved_at DATETIME (6) NULL COMMENT '审批完成时间（UTC）',
-    UNIQUE KEY uk_memory_proposal_run (agent_run_id),
-    UNIQUE KEY uk_memory_proposal_message (message_id),
-    CONSTRAINT fk_memory_proposal_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目记忆候选与群聊审批状态';
-
 CREATE TABLE IF NOT EXISTS workspaces (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, project_id BIGINT NOT NULL,
     is_default TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否项目默认 Workspace；每个项目唯一',
@@ -416,7 +394,7 @@ CREATE TABLE IF NOT EXISTS
         last_error VARCHAR(500) NULL COMMENT '最近一次失败摘要',
         discovered_version VARCHAR(64) NULL COMMENT '最近一次项目记忆发现所依据的群记忆内容版本',
         discovery_attempt_count INT NOT NULL DEFAULT 0 COMMENT '项目记忆发现连续失败次数；成功后清零',
-        discovery_next_attempt_at DATETIME(6) NULL COMMENT '下次允许发现项目记忆候选的时间（UTC）',
+        discovery_next_attempt_at DATETIME(6) NULL COMMENT '下次允许发现项目记忆更新的时间（UTC）',
         discovery_error VARCHAR(500) NULL COMMENT '最近一次项目记忆发现失败摘要',
         updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',
         CONSTRAINT fk_gms_group FOREIGN KEY (group_id) REFERENCES chat_groups (id) ON DELETE CASCADE,
@@ -426,7 +404,7 @@ CREATE TABLE IF NOT EXISTS
 
 -- 已存在的库不会重建表（README 第 2 步：数据卷初始化过的库不会重跑本脚本）；从上一个版本升级时手工执行：
 -- 1. 先执行本文件中新增的建表语句（CREATE TABLE IF NOT EXISTS，已存在则跳过）：
---    agents、group_agents、project_memory_proposals、group_memory_state。
+--    agents、group_agents、group_memory_state。
 -- 2. 再补已有表上新增的列、索引与约束；重复执行会报 Duplicate column/key，跳过即可：
 -- ALTER TABLE messages
 --     ADD COLUMN sender_agent_id BIGINT NULL COMMENT '发送 Agent ID；AGENT 消息必填，其余为空' AFTER author_user_id,
@@ -445,7 +423,9 @@ CREATE TABLE IF NOT EXISTS
 --     ADD COLUMN agent_id BIGINT NOT NULL COMMENT '执行该轮运行的项目内 Agent' AFTER group_id;
 -- -- 群不再有单独的启用开关，Agent 以群成员的身份存在：
 -- ALTER TABLE chat_groups DROP COLUMN qgent_enabled;
--- 已经在这个分支的早期构建上跑过的库（project_memory_proposals / group_memory_state 缺列）不单独补：
+-- -- 项目记忆改成管理员在默认群确认后由 Agent 直接写入，旧候选表不再使用：
+-- DROP TABLE IF EXISTS project_memory_proposals;
+-- 已经在这个分支的早期构建上跑过的库（group_memory_state 缺列）不单独补：
 -- README 第 2 步的 docker compose down -v 重建就是支持路径。
 
 -- 全新整库初始化时上方 users 建表已含该列，此处仅服务已存在的库；已存在该列的库自动跳过。
