@@ -26,6 +26,6 @@ public class ContextService {
                 history.recentMessages(actor, projectId, groupId, limit),
                 skills.publishedCatalog(actor, projectId), projectMemory.get(actor, projectId).getContent(),
                 groupMemory.read(projectId, groupId).getContent(),
-                agentMemories.view(projectId, agentId, groupId).merged());
+                agentMemories.view(projectId, agentId));
     }
 }

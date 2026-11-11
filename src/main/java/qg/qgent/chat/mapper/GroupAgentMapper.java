@@ -23,6 +23,9 @@ public interface GroupAgentMapper {
     @Select("SELECT agent_id FROM group_agents WHERE group_id = #{groupId}")
     List<Long> selectAgentIds(@Param("groupId") Long groupId);
 
+    @Select("SELECT group_id FROM group_agents WHERE agent_id = #{agentId}")
+    List<Long> selectGroupIds(@Param("agentId") Long agentId);
+
     @Select("SELECT COUNT(*) FROM group_agents WHERE group_id = #{groupId}")
     Long countAgents(@Param("groupId") Long groupId);
 }
