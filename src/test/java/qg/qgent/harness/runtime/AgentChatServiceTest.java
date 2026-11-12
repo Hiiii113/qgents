@@ -42,6 +42,7 @@ import qg.qgent.agent.service.AgentApplicationService;
 import qg.qgent.agent.service.AgentService;
 import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.chat.dto.ContextMessage;
+import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.service.ChatHistoryService;
 import qg.qgent.chat.service.CrossGroupAccessService;
@@ -50,8 +51,7 @@ import qg.qgent.chat.service.MessageService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.github.service.GitHubRepositoryService;
 import qg.qgent.github.tool.GitHubCapability;
-import qg.qgent.harness.context.ContextService;
-import qg.qgent.harness.context.GroupContext;
+import qg.qgent.harness.briefing.BriefingService;
 import qg.qgent.harness.entity.AgentRunEntity;
 import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.service.AgentRunService;
@@ -93,21 +93,19 @@ class AgentChatServiceTest {
         ChatModel model = model();
         when(model.call(any(Prompt.class))).thenReturn(reply("已收到"));
         var fixture = fixture(model, actor, project, group, message, childExecutor);
-        GroupContext groupContext = new GroupContext();
-        groupContext.setConversation(
-                List.of(
-                        new ContextMessage(
-                                1L,
-                                "IMAGE",
-                                "USER",
-                                "1",
-                                "",
-                                "9",
-                                "photo.png",
-                                "image/png",
-                                2048L)));
-        when(fixture.context().buildForGroup(actor, project, group, fixture.agentId(), 30))
-                .thenReturn(groupContext);
+        when(fixture.history().recentMessages(actor, project, group, 30))
+                .thenReturn(
+                        List.of(
+                                new ContextMessage(
+                                        1L,
+                                        "IMAGE",
+                                        "USER",
+                                        "1",
+                                        "",
+                                        "9",
+                                        "photo.png",
+                                        "image/png",
+                                        2048L)));
 
         fixture.service().replyToMention(fixture.event(), fixture.agentId(), "看看图片");
 
@@ -116,7 +114,9 @@ class AgentChatServiceTest {
         verify(model).call(prompts.capture());
         UserMessage first = (UserMessage) prompts.getValue().getInstructions().get(1);
         assertThat(first.getMedia()).isEmpty();
-        assertThat(first.getText()).contains("\"attachmentId\":\"9\"", "\"size\":2048");
+        assertThat(first.getText())
+                .contains("[1] USER 1：[图片 photo.png，附件 ID 9，类型 image/png，2048 字节]")
+                .doesNotContain("attachmentId");
         verify(fixture.attachments(), never()).readImage(any(), any(), any());
         verify(fixture.attachments(), never())
                 .readTextChunk(any(), any(), any(), anyLong(), anyInt());
@@ -148,11 +148,7 @@ class AgentChatServiceTest {
         ChatModel model = model();
         when(model.call(any(Prompt.class))).thenReturn(reply("已记住"));
         var fixture = fixture(model, actor, project, group, message, childExecutor);
-        GroupContext groupContext = new GroupContext();
-        groupContext.setConversation(List.of());
-        groupContext.setAgentMemory("# 你负责后端接口");
-        when(fixture.context().buildForGroup(actor, project, group, fixture.agentId(), 30))
-                .thenReturn(groupContext);
+        when(fixture.agentMemories().view(project, fixture.agentId())).thenReturn("# 你负责后端接口");
 
         fixture.service().replyToMention(fixture.event(), fixture.agentId(), "记住分工");
 
@@ -347,7 +343,7 @@ class AgentChatServiceTest {
         assertThat(childInput.get())
                 .contains(
                         "published-skill", "适用于测试任务", "activate_skill", "# 项目约定", "# 群约定", "# 你的分工")
-                .doesNotContain("root-only context");
+                .doesNotContain("root-only 群名", "近期群消息");
         assertThat(childToolNames.get())
                 .doesNotContain(
                         "start_subagent",
@@ -1256,18 +1252,20 @@ class AgentChatServiceTest {
         WorkspaceService workspaces = mock(WorkspaceService.class);
         SandboxFiles codeAccess = mock(SandboxFiles.class);
         SandboxSessionManager sessions = mock(SandboxSessionManager.class);
-        ContextService context = mock(ContextService.class);
         SkillService skills = mock(SkillService.class);
         ChatHistoryService history = mock(ChatHistoryService.class);
         AttachmentService attachments = mock(AttachmentService.class);
-        GroupContext groupContext = new GroupContext();
-        groupContext.setTitle("root-only context");
-        groupContext.setConversation(List.of());
-        groupContext.setSkills(
-                List.of(new ContextSkill(TestIds.next(), "published-skill", "适用于测试任务")));
+        GroupService groups = mock(GroupService.class);
         Long agentId = TestIds.next();
-        when(context.buildForGroup(actor, project, group, agentId, 30)).thenReturn(groupContext);
-        when(skills.publishedCatalog(actor, project)).thenReturn(groupContext.getSkills());
+        when(skills.publishedCatalog(actor, project))
+                .thenReturn(
+                        List.of(new ContextSkill(TestIds.next(), "published-skill", "适用于测试任务")));
+        ChatGroupEntity groupEntity = new ChatGroupEntity();
+        groupEntity.setId(group);
+        groupEntity.setProjectId(project);
+        groupEntity.setName("root-only 群名");
+        when(groups.requireGroupMember(project, group, actor)).thenReturn(groupEntity);
+        when(history.recentMessages(actor, project, group, 30)).thenReturn(List.of());
         AgentRunEntity root = new AgentRunEntity();
         root.setId(TestIds.next());
         root.setProjectId(project);
@@ -1331,7 +1329,8 @@ class AgentChatServiceTest {
                 });
         var agentMemories = mock(AgentMemoryService.class);
         when(agentMemories.view(any(), any())).thenReturn("# 你的分工");
-        var groups = mock(GroupService.class);
+        BriefingService briefing =
+                new BriefingService(groups, history, skills, memories, groupMemory, agentMemories);
         AgentEntity agent = new AgentEntity();
         agent.setId(agentId);
         agent.setProjectId(project);
@@ -1349,7 +1348,7 @@ class AgentChatServiceTest {
                         workspaces,
                         mock(WorkspaceRepositoryService.class),
                         loop,
-                        context,
+                        briefing,
                         skills,
                         history,
                         messages,
@@ -1364,7 +1363,6 @@ class AgentChatServiceTest {
                         new CrossGroupAccessService(groups),
                         agents,
                         agentApplications,
-                        new ObjectMapper(),
                         childExecutor,
                         maxSubagents);
         MessageSentEvent event = new MessageSentEvent(actor, project, group, message, List.of());
@@ -1378,11 +1376,11 @@ class AgentChatServiceTest {
                 workspaces,
                 codeAccess,
                 sessions,
-                context,
                 attachments,
                 replyMessageId,
                 groups,
                 history,
+                agentMemories,
                 agents,
                 agentApplications);
     }
@@ -1490,11 +1488,11 @@ class AgentChatServiceTest {
             WorkspaceService workspaces,
             SandboxFiles codeAccess,
             SandboxSessionManager sessions,
-            ContextService context,
             AttachmentService attachments,
             Long replyMessageId,
             GroupService groups,
             ChatHistoryService history,
+            AgentMemoryService agentMemories,
             AgentService agents,
             AgentApplicationService agentApplications) {}
 }
