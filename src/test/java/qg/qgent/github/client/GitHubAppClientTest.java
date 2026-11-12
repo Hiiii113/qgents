@@ -90,7 +90,6 @@ class GitHubAppClientTest {
         var result = new GitHubAppProperties();
         result.setAppId("123");
         result.setSlug("qgents");
-        result.setCallbackUrl("https://backend.example/callback");
         result.setPrivateKeyPath(key.toString());
         return result;
     }

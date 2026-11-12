@@ -190,7 +190,6 @@ github:
     app-id: ${GITHUB_APP_ID:}
     slug: ${GITHUB_APP_SLUG:}
     private-key-path: ${GITHUB_APP_PRIVATE_KEY_PATH:}
-    callback-url: ${GITHUB_APP_CALLBACK_URL:}
     webhook-secret: ${GITHUB_WEBHOOK_SECRET:}
 
 # 进程内 Sandbox 模块；用户命令仍在 Docker 容器中执行。

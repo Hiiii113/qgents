@@ -14,13 +14,9 @@ public class GitHubAppProperties {
     private String appId = "";
     private String slug = "";
     private String privateKeyPath = "";
-    private String callbackUrl = "";
     private String webhookSecret = "";
 
     public boolean configured() {
-        return !appId.isBlank()
-                && !slug.isBlank()
-                && !privateKeyPath.isBlank()
-                && !callbackUrl.isBlank();
+        return !appId.isBlank() && !slug.isBlank() && !privateKeyPath.isBlank();
     }
 }

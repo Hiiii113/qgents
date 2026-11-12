@@ -39,6 +39,7 @@ public class GitHubRepositoryService {
     private final GitHubAppProperties properties;
     private final TokenService tokens;
 
+    /** 安装回调地址由 GitHub App 设置里的 Setup URL 决定，代码无法覆盖。 */
     @Transactional
     public InstallationUrl createInstallationUrl(Long actor, Long teamId, String client) {
         requireOwner(actor, teamId);
@@ -58,7 +59,6 @@ public class GitHubRepositoryService {
                                         + properties.getSlug()
                                         + "/installations/new")
                         .queryParam("state", raw)
-                        .queryParam("redirect_uri", properties.getCallbackUrl())
                         .build()
                         .encode()
                         .toUriString();

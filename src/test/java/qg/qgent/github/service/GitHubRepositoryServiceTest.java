@@ -56,7 +56,6 @@ class GitHubRepositoryServiceTest {
         entity.setTeamId(team);
         when(projects.selectById(project)).thenReturn(entity);
         properties.setSlug("qgents");
-        properties.setCallbackUrl("https://backend.example/api/v1/integrations/github/callback");
     }
 
     @Test
@@ -64,7 +63,8 @@ class GitHubRepositoryServiceTest {
         var result = service.createInstallationUrl(actor, team, "MOBILE");
         assertThat(result.installationUrl())
                 .startsWith("https://github.com/apps/qgents/installations/new?")
-                .contains("state=", "redirect_uri=");
+                .contains("state=")
+                .doesNotContain("redirect_uri");
         var state = org.mockito.ArgumentCaptor.forClass(GitHubInstallationStateEntity.class);
         verify(states).insert(state.capture());
         assertThat(state.getValue().getStateHash()).hasSize(32);
