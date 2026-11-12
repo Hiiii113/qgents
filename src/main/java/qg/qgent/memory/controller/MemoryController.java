@@ -24,7 +24,7 @@ public class MemoryController {
         this.groupMemories = groupMemories;
     }
 
-    @Operation(summary = "读取项目长期记忆", description = "返回 memory.md 全文、内容版本和最后修改时间；项目成员均可读取。")
+    @Operation(summary = "读取项目长期记忆", description = "返回 memory.md 全文和最后修改时间；项目成员均可读取。")
     @GetMapping("/projects/{projectId}/memory")
     public ApiResponse<ProjectMemoryResponse> get(
             @AuthenticationPrincipal Long userId,

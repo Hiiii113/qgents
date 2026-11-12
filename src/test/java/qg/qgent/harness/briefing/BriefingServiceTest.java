@@ -127,7 +127,7 @@ class BriefingServiceTest {
         when(projectMemories.get(actor, projectId))
                 .thenReturn(
                         new ProjectMemoryResponse(
-                                projectId.toString(), "# 项目记忆", "v1", LocalDateTime.now()));
+                                projectId.toString(), "# 项目记忆", LocalDateTime.now()));
         when(groupMemories.read(projectId, groupId))
                 .thenReturn(
                         new GroupMemoryResponse(

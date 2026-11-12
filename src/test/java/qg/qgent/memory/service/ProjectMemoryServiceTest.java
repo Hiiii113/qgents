@@ -1,7 +1,6 @@
 package qg.qgent.memory.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -9,15 +8,17 @@ import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.springframework.http.HttpStatus;
 import qg.qgent.chat.entity.ChatGroupEntity;
@@ -30,7 +31,7 @@ import qg.qgent.project.storage.ProjectDirectoryService;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.support.TestIds;
 
-/** 项目 memory.md：首次创建、管理员写入、版本检测、默认群、字符预算、磁盘失败、项目隔离与权限校验。 */
+/** 项目 memory.md：管理员写入、默认群、幂等、磁盘失败、项目隔离与权限校验。 */
 class ProjectMemoryServiceTest {
 
     private static final int MAX_CHARS = 100;
@@ -57,11 +58,11 @@ class ProjectMemoryServiceTest {
                 projects,
                 new ProjectDirectoryService(directory.toString(), directory.toString()),
                 events,
-                MAX_CHARS);
+                new MemoryDocument(MAX_CHARS));
     }
 
     @Test
-    void firstReadCreatesEmptyMemoryFileInProjectDirectory() throws Exception {
+    void firstReadIsEmptyWithoutCreatingMemoryFile() {
         Long projectId = TestIds.next();
         Long actor = TestIds.next();
 
@@ -69,8 +70,8 @@ class ProjectMemoryServiceTest {
 
         assertThat(memory.getContent()).isEmpty();
         assertThat(memory.getProjectId()).isEqualTo(projectId.toString());
-        assertThat(Files.readString(root.resolve(projectId.toString()).resolve("memory.md")))
-                .isEmpty();
+        assertThat(memory.getUpdatedAt()).isNull();
+        assertThat(root.resolve(projectId.toString()).resolve("memory.md")).doesNotExist();
         verify(access).requireProjectMember(projectId, actor);
     }
 
@@ -78,80 +79,47 @@ class ProjectMemoryServiceTest {
     void adminWriteReplacesMemoryAndPublishesUpdate() {
         Long projectId = TestIds.next();
         Long actor = TestIds.next();
-        String empty = service.get(actor, projectId).getVersion();
 
-        ProjectMemoryResponse saved =
-                service.update(actor, projectId, group, "# 登录约定\n- 统一邮箱登录", empty);
+        ProjectMemoryResponse saved = service.update(actor, projectId, group, "# 登录约定\n- 统一邮箱登录");
 
         assertThat(saved.getContent()).isEqualTo("# 登录约定\n- 统一邮箱登录");
-        assertThat(saved.getVersion()).isNotEqualTo(empty);
-        assertThat(service.get(actor, projectId).getVersion()).isEqualTo(saved.getVersion());
+        assertThat(saved.getUpdatedAt()).isNotNull();
+        assertThat(service.get(actor, projectId).getContent()).isEqualTo("# 登录约定\n- 统一邮箱登录");
         verify(access).requireProjectAdmin(projectId, actor);
         verify(projects).selectByIdForUpdate(projectId);
+        ArgumentCaptor<Map<String, Object>> payload = ArgumentCaptor.forClass(Map.class);
         verify(events)
                 .publish(
                         eq(projectId),
                         isNull(),
                         eq("memory.updated"),
                         eq(projectId.toString()),
-                        any());
-    }
-
-    @Test
-    void staleBaseVersionIsRejectedAndKeepsCurrentContent() throws Exception {
-        Long projectId = TestIds.next();
-        Long actor = TestIds.next();
-        String version = service.get(actor, projectId).getVersion();
-        service.update(actor, projectId, group, "第一版", version);
-
-        assertThatExceptionOfType(ApiException.class)
-                .isThrownBy(() -> service.update(actor, projectId, group, "第二版", version))
-                .satisfies(error -> {
-                    assertThat(error.status()).isEqualTo(HttpStatus.CONFLICT);
-                    assertThat(error.code()).isEqualTo("MEMORY_VERSION_CONFLICT");
-                });
-        assertThat(
-                        Files.readString(
-                                root.resolve(projectId.toString()).resolve("memory.md"),
-                                StandardCharsets.UTF_8))
-                .isEqualTo("第一版");
+                        payload.capture());
+        assertThat(payload.getValue()).containsOnlyKeys("projectId", "updatedAt");
     }
 
     @Test
     void writingTheSameContentAgainIsIdempotent() {
         Long projectId = TestIds.next();
         Long actor = TestIds.next();
-        String version = service.get(actor, projectId).getVersion();
-        ProjectMemoryResponse first = service.update(actor, projectId, group, "同一版", version);
+        ProjectMemoryResponse first = service.update(actor, projectId, group, "同一版");
 
-        ProjectMemoryResponse again = service.update(actor, projectId, group, "同一版", version);
+        ProjectMemoryResponse again = service.update(actor, projectId, group, "同一版");
 
-        assertThat(again.getVersion()).isEqualTo(first.getVersion());
-    }
-
-    @Test
-    void contentOverContextBudgetIsRejectedBeforeItIsStored() {
-        Long projectId = TestIds.next();
-        Long actor = TestIds.next();
-        String version = service.get(actor, projectId).getVersion();
-
-        assertThatThrownBy(() ->
-                        service.update(actor, projectId, group, "x".repeat(MAX_CHARS + 1), version))
-                .isInstanceOf(ApiException.class)
-                .hasFieldOrPropertyWithValue("code", "MEMORY_CONTEXT_LIMIT_EXCEEDED");
-        assertThat(service.get(actor, projectId).getContent()).isEmpty();
+        assertThat(again.getContent()).isEqualTo(first.getContent());
+        assertThat(again.getUpdatedAt()).isEqualTo(first.getUpdatedAt());
+        verify(events, times(1)).publish(any(), any(), any(), any(), any());
     }
 
     @Test
     void plainMemberCannotWriteAndMemoryStaysUnchanged() {
         Long projectId = TestIds.next();
         Long member = TestIds.next();
-        String version = service.get(member, projectId).getVersion();
         doThrow(new ApiException(HttpStatus.FORBIDDEN, "PROJECT_ADMIN_REQUIRED", "需要项目 Admin 权限"))
                 .when(access)
                 .requireProjectAdmin(projectId, member);
 
-        assertThatThrownBy(() -> service.update(member, projectId, group, "# 新约定", version))
+        assertThatThrownBy(() -> service.update(member, projectId, group, "# 新约定"))
                 .isInstanceOf(ApiException.class)
                 .hasFieldOrPropertyWithValue("code", "PROJECT_ADMIN_REQUIRED");
 
@@ -165,9 +133,8 @@ class ProjectMemoryServiceTest {
         Long actor = TestIds.next();
         Long restricted = TestIds.next();
         when(groups.selectById(restricted)).thenReturn(group(restricted, false));
-        String version = service.get(actor, projectId).getVersion();
 
-        assertThatThrownBy(() -> service.update(actor, projectId, restricted, "# 受限群结论", version))
+        assertThatThrownBy(() -> service.update(actor, projectId, restricted, "# 受限群结论"))
                 .isInstanceOf(ApiException.class)
                 .hasFieldOrPropertyWithValue("code", "MEMORY_SOURCE_GROUP_RESTRICTED");
 
@@ -182,7 +149,7 @@ class ProjectMemoryServiceTest {
         Long projectId = TestIds.next();
         Long actor = TestIds.next();
 
-        assertThatThrownBy(() -> broken.update(actor, projectId, group, "# 新约定", "whatever"))
+        assertThatThrownBy(() -> broken.update(actor, projectId, group, "# 新约定"))
                 .isInstanceOf(IllegalStateException.class);
 
         verify(events, never())
@@ -200,7 +167,7 @@ class ProjectMemoryServiceTest {
         Long first = TestIds.next();
         Long second = TestIds.next();
 
-        service.update(actor, first, group, "项目一", service.get(actor, first).getVersion());
+        service.update(actor, first, group, "项目一");
 
         assertThat(service.get(actor, second).getContent()).isEmpty();
     }

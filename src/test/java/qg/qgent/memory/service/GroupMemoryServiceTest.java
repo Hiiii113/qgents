@@ -39,7 +39,7 @@ class GroupMemoryServiceTest {
                         access,
                         groups,
                         new ProjectDirectoryService(root.toString(), root.toString()),
-                        MAX_CHARS);
+                        new MemoryDocument(MAX_CHARS));
     }
 
     @Test
@@ -80,16 +80,6 @@ class GroupMemoryServiceTest {
                                 .resolve(groupId.toString())
                                 .resolve("memory.md"))
                 .doesNotExist();
-    }
-
-    @Test
-    void writeTruncatesContentOverContextBudget() {
-        Long projectId = TestIds.next();
-        Long groupId = TestIds.next();
-
-        service.write(projectId, groupId, "x".repeat(MAX_CHARS + 50));
-
-        assertThat(service.read(projectId, groupId).getContent()).hasSize(MAX_CHARS);
     }
 
     @Test

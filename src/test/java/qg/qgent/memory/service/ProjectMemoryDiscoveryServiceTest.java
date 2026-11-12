@@ -76,6 +76,7 @@ class ProjectMemoryDiscoveryServiceTest {
     private final ProjectAccessService access = mock(ProjectAccessService.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
     private final ChatModel model = mock(ChatModel.class);
+    private final MemoryDocument document = new MemoryDocument(MAX_CHARS);
 
     private GroupMemoryService groupMemories;
     private ProjectMemoryService projectMemories;
@@ -117,10 +118,10 @@ class ProjectMemoryDiscoveryServiceTest {
                                 mock(AttachmentService.class),
                                 new ObjectMapper()),
                         eventPublisher);
-        groupMemories = new GroupMemoryService(access, chatGroupsService, directories, MAX_CHARS);
+        groupMemories = new GroupMemoryService(access, chatGroupsService, directories, document);
         projectMemories =
                 new ProjectMemoryService(
-                        access, chatGroups, projects, directories, events, MAX_CHARS);
+                        access, chatGroups, projects, directories, events, document);
         service =
                 new ProjectMemoryDiscoveryService(
                         states,
@@ -132,7 +133,7 @@ class ProjectMemoryDiscoveryServiceTest {
                         model,
                         Runnable::run,
                         properties(),
-                        MAX_CHARS);
+                        document);
         when(messageMapper.nextSequence(any())).thenReturn(1L);
         when(messageMapper.insert(any(MessageEntity.class)))
                 .thenAnswer(invocation -> {
@@ -221,7 +222,7 @@ class ProjectMemoryDiscoveryServiceTest {
         Long project = TestIds.next(), group = TestIds.next();
         groupMemories.write(project, group, "- 结论：先做邮箱登录");
         GroupMemoryStateEntity state = state(project, group);
-        state.setDiscoveredVersion(MemorySupport.version("- 结论：先做邮箱登录"));
+        state.setDiscoveredVersion(document.version("- 结论：先做邮箱登录"));
         when(chatGroups.selectById(group)).thenReturn(group(group, project, true));
         when(states.selectById(group)).thenReturn(state);
         claims(group);
@@ -245,8 +246,7 @@ class ProjectMemoryDiscoveryServiceTest {
         service.discover(project, group);
 
         verify(messageMapper, never()).insert(any(MessageEntity.class));
-        verify(states)
-                .finishDiscovery(eq(group), eq(MemorySupport.version("- 闲聊：明天吃火锅")), any(), any());
+        verify(states).finishDiscovery(eq(group), eq(document.version("- 闲聊：明天吃火锅")), any(), any());
     }
 
     @Test
@@ -272,7 +272,7 @@ class ProjectMemoryDiscoveryServiceTest {
 
         assertThat(insertedMessage().getSenderAgentId()).isEqualTo(agent);
         verify(states)
-                .finishDiscovery(eq(group), eq(MemorySupport.version("- 结论：先做邮箱登录")), any(), any());
+                .finishDiscovery(eq(group), eq(document.version("- 结论：先做邮箱登录")), any(), any());
     }
 
     @Test
@@ -309,7 +309,7 @@ class ProjectMemoryDiscoveryServiceTest {
                         model,
                         queued::add,
                         properties(),
-                        MAX_CHARS);
+                        document);
 
         scheduled.scan();
 
@@ -338,7 +338,7 @@ class ProjectMemoryDiscoveryServiceTest {
                             throw new RejectedExecutionException("队列已满");
                         },
                         properties(),
-                        MAX_CHARS);
+                        document);
 
         saturated.scan();
 

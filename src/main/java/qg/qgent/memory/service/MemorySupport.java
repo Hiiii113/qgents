@@ -1,28 +1,12 @@
 package qg.qgent.memory.service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.HexFormat;
 
-/** 记忆模块公共小工具：正文版本、模型输出整理，以及后台任务共用的 UTC 时间与失败摘要。 */
+/** 记忆模块公共小工具：模型输出整理，以及后台任务共用的 UTC 时间与失败摘要。 */
 final class MemorySupport {
 
     private MemorySupport() {}
-
-    /** 记忆内容版本，用于并发修改检测和重复发现判断。 */
-    static String version(String content) {
-        try {
-            return HexFormat.of()
-                    .formatHex(
-                            MessageDigest.getInstance("SHA-256")
-                                    .digest(content.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 不可用", e);
-        }
-    }
 
     /** 模型偶尔仍会套代码围栏，写入前去掉，避免记忆正文被围栏污染。 */
     static String withoutCodeFence(String text) {

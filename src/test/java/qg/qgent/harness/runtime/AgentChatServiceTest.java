@@ -1314,8 +1314,7 @@ class AgentChatServiceTest {
         var memories = mock(ProjectMemoryService.class);
         when(memories.get(any(), any()))
                 .thenReturn(
-                        new ProjectMemoryResponse(
-                                "1", "# 项目约定", "v1", java.time.LocalDateTime.now()));
+                        new ProjectMemoryResponse("1", "# 项目约定", java.time.LocalDateTime.now()));
         var groupMemory = mock(GroupMemoryService.class);
         when(groupMemory.read(any(), any()))
                 .thenReturn(new GroupMemoryResponse("1", "2", "# 群约定", null));

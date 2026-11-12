@@ -6,7 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/** 项目长期记忆 memory.md 的内容、内容版本和最后修改时间。 */
+/** 项目长期记忆 memory.md 的内容和最后修改时间。 */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -18,9 +18,6 @@ public class ProjectMemoryResponse {
     @Schema(description = "memory.md 全文")
     private String content;
 
-    @Schema(description = "内容版本（正文 SHA-256），保存时用于检测并发修改")
-    private String version;
-
-    @Schema(description = "最后修改时间（UTC）")
+    @Schema(description = "最后修改时间（UTC）；项目尚未写入时为空")
     private LocalDateTime updatedAt;
 }

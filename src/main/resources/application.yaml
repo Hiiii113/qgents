@@ -72,7 +72,7 @@ app:
     # 每个项目的 Agent 数量上限，含默认 Agent 与待审批申请；被拒绝的申请不占名额。
     max-per-project: ${APP_AGENT_MAX_PER_PROJECT:10}
     context:
-      # 项目 memory.md 注入 Agent 上下文的字符上限；超过时拒绝写入。
+      # 三种记忆（项目 / 群 / Agent 私有）注入 Agent 上下文的字符上限；超过时拒绝写入。
       max-memory-chars: ${APP_AGENT_CONTEXT_MAX_MEMORY_CHARS:12000}
   # 群记忆后台提炼：新消息数与闲置时长同时达到才触发，失败有限重试；阈值均可在环境覆盖。
   memory:

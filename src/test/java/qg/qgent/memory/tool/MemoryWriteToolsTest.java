@@ -18,7 +18,7 @@ import qg.qgent.memory.dto.ProjectMemoryResponse;
 import qg.qgent.memory.service.ProjectMemoryService;
 import qg.qgent.support.TestIds;
 
-/** 项目记忆写工具：写入身份来自本次运行，管理员、默认群与版本由服务端校验。 */
+/** 项目记忆写工具：写入身份来自本次运行，管理员与默认群由服务端校验。 */
 class MemoryWriteToolsTest {
 
     private final ProjectMemoryService memories = mock(ProjectMemoryService.class);
@@ -36,24 +36,21 @@ class MemoryWriteToolsTest {
     }
 
     @Test
-    void writesWithTheRunActorProjectAndGroupAndReturnsTheNewVersion() {
-        when(memories.update(actor, projectId, groupId, "# 约定", "v1"))
+    void writesWithTheRunActorProjectAndGroup() {
+        when(memories.update(actor, projectId, groupId, "# 约定"))
                 .thenReturn(
                         new ProjectMemoryResponse(
-                                projectId.toString(), "# 约定", "v2", LocalDateTime.now()));
+                                projectId.toString(), "# 约定", LocalDateTime.now()));
 
-        Map<String, Object> result = tools.writeProjectMemory("# 约定", "v1");
+        Map<String, Object> result = tools.writeProjectMemory("# 约定");
 
-        assertThat(result).containsEntry("ok", true).containsEntry("version", "v2");
-        verify(memories).update(actor, projectId, groupId, "# 约定", "v1");
+        assertThat(result).containsEntry("ok", true).containsKey("updatedAt");
+        verify(memories).update(actor, projectId, groupId, "# 约定");
     }
 
     @Test
-    void rejectsBlankContentOrMissingBaseVersionWithoutTouchingMemory() {
-        assertThat(tools.writeProjectMemory("  ", "v1"))
-                .containsEntry("ok", false)
-                .containsEntry("errorCode", "INVALID_ARGUMENT");
-        assertThat(tools.writeProjectMemory("# 约定", " "))
+    void rejectsBlankContentWithoutTouchingMemory() {
+        assertThat(tools.writeProjectMemory("  "))
                 .containsEntry("ok", false)
                 .containsEntry("errorCode", "INVALID_ARGUMENT");
         verifyNoInteractions(memories);
@@ -63,9 +60,9 @@ class MemoryWriteToolsTest {
     void refusedWriteKeepsTheServerErrorCode() {
         doThrow(new ApiException(HttpStatus.FORBIDDEN, "PROJECT_ADMIN_REQUIRED", "需要项目 Admin 权限"))
                 .when(memories)
-                .update(any(), any(), any(), any(), any());
+                .update(any(), any(), any(), any());
 
-        Map<String, Object> result = tools.writeProjectMemory("# 约定", "v1");
+        Map<String, Object> result = tools.writeProjectMemory("# 约定");
 
         assertThat(result)
                 .containsEntry("ok", false)
@@ -76,9 +73,9 @@ class MemoryWriteToolsTest {
     void diskFailureBecomesToolError() {
         doThrow(new IllegalStateException("项目记忆写入失败"))
                 .when(memories)
-                .update(any(), any(), any(), any(), any());
+                .update(any(), any(), any(), any());
 
-        Map<String, Object> result = tools.writeProjectMemory("# 约定", "v1");
+        Map<String, Object> result = tools.writeProjectMemory("# 约定");
 
         assertThat(result)
                 .containsEntry("ok", false)

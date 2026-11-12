@@ -28,6 +28,7 @@ import qg.qgent.chat.service.CrossGroupAccessService;
 import qg.qgent.chat.service.GroupService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.memory.service.GroupMemoryService;
+import qg.qgent.memory.service.MemoryDocument;
 import qg.qgent.project.mapper.ProjectMemberMapper;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.project.storage.ProjectDirectoryService;
@@ -84,7 +85,7 @@ class CrossGroupToolsTest {
                         access,
                         groups,
                         new ProjectDirectoryService(root.toString(), root.toString()),
-                        12000);
+                        new MemoryDocument(12000));
         crossGroup = new CrossGroupAccessService(groups);
         defaultGroup = group(defaultGroupId, projectId, true, "项目群聊");
         restrictedGroup = group(restrictedGroupId, projectId, false, "后端改造");

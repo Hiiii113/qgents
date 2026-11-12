@@ -28,17 +28,28 @@ class MemoryToolsTest {
     }
 
     @Test
-    void readReturnsContentAndVersion() {
+    void readReturnsContentAndUpdatedAtWithoutAnyVersion() {
         when(memories.get(actor, projectId))
                 .thenReturn(
                         new ProjectMemoryResponse(
-                                projectId.toString(), "# 约定", "v1", LocalDateTime.now()));
+                                projectId.toString(), "# 约定", LocalDateTime.now()));
 
         Map<String, Object> result = tools.readProjectMemory();
 
         assertThat(result)
                 .containsEntry("ok", true)
                 .containsEntry("content", "# 约定")
-                .containsEntry("version", "v1");
+                .containsKey("updatedAt")
+                .doesNotContainKey("version");
+    }
+
+    @Test
+    void readOfNeverWrittenMemoryHasNoUpdatedAt() {
+        when(memories.get(actor, projectId))
+                .thenReturn(new ProjectMemoryResponse(projectId.toString(), "", null));
+
+        Map<String, Object> result = tools.readProjectMemory();
+
+        assertThat(result).containsEntry("ok", true).containsEntry("content", "");
     }
 }

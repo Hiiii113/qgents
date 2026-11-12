@@ -63,6 +63,7 @@ class GroupMemoryExtractionServiceTest {
     private final GroupService groups = mock(GroupService.class);
     private final ChatModel model = mock(ChatModel.class);
     private final Executor executor = Runnable::run;
+    private final MemoryDocument document = new MemoryDocument(12000);
     private GroupMemoryService memories;
     private GroupMemoryExtractionService service;
 
@@ -73,7 +74,7 @@ class GroupMemoryExtractionServiceTest {
                         mock(ProjectAccessService.class),
                         groups,
                         new ProjectDirectoryService(root.toString(), root.toString()),
-                        12000);
+                        document);
         when(chat.agentInstruction(any()))
                 .thenAnswer(invocation -> ((MessageEntity) invocation.getArgument(0)).getContent());
         service =
@@ -86,7 +87,7 @@ class GroupMemoryExtractionServiceTest {
                         model,
                         executor,
                         properties(),
-                        12000);
+                        document);
     }
 
     @Test
@@ -513,7 +514,7 @@ class GroupMemoryExtractionServiceTest {
                         model,
                         rejecting,
                         properties(),
-                        12000);
+                        document);
 
         assertThatCode(fullQueue::scan).doesNotThrowAnyException();
         // 队列拒绝时没有领取，状态保持可重试
