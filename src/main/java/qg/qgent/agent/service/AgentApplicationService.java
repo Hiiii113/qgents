@@ -105,7 +105,7 @@ public class AgentApplicationService {
         return agents.selectById(applicationId);
     }
 
-    private AgentEntity requirePendingApplication(Long projectId, Long applicationId) {
+    private void requirePendingApplication(Long projectId, Long applicationId) {
         AgentEntity application = agents.selectById(applicationId);
         if (application == null || !projectId.equals(application.getProjectId())) {
             throw applicationNotFound();
@@ -113,7 +113,6 @@ public class AgentApplicationService {
         if (!AgentEntity.STATUS_PENDING.equals(application.getStatus())) {
             throw notPending();
         }
-        return application;
     }
 
     private String required(String value, int maxLength, String message) {

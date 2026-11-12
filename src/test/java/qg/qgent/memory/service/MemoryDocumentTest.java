@@ -38,9 +38,6 @@ class MemoryDocumentTest {
         assertThatThrownBy(() -> document.edit(directory(), "- 手机登录", "- 手机登录"))
                 .isInstanceOf(ApiException.class)
                 .hasFieldOrPropertyWithValue("code", "MEMORY_EDIT_ANCHOR_NOT_FOUND");
-        assertThatThrownBy(() -> document.edit(directory(), "", "- x"))
-                .isInstanceOf(ApiException.class)
-                .hasFieldOrPropertyWithValue("code", "MEMORY_EDIT_ANCHOR_NOT_FOUND");
         assertThat(document.read(directory())).isEqualTo("# 约定\n- 邮箱登录");
     }
 

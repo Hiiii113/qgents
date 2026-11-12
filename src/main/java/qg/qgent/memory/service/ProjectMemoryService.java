@@ -11,7 +11,7 @@ import qg.qgent.project.storage.ProjectDirectoryService;
 import qg.qgent.realtime.service.EventService;
 
 /**
- * 项目长期记忆：项目目录下的 memory.md 是正文唯一来源，整篇替换。
+ * 项目长期记忆：项目目录下的 memory.md 是正文唯一来源，整篇替换或按片段替换。
  * <p>
  * 只有项目管理员在对话中确认后才写入，其余成员和子 Agent 只读。
  */
@@ -52,11 +52,12 @@ public class ProjectMemoryService {
     public ProjectMemoryResponse update(Long actor, Long projectId, String content) {
         beginWrite(actor, projectId);
         String text = content.trim();
-        if (read(projectId).getContent().equals(text)) {
-            return read(projectId);
+        ProjectMemoryResponse current = read(projectId);
+        if (current.getContent().equals(text)) {
+            return current;
         }
         document.write(directories.projectRoot(projectId), text);
-        return touch(projectId);
+        return publishUpdated(projectId);
     }
 
     /** 管理员确认后按片段替换 memory.md；原文找不到或不唯一时原文件不动。 */
@@ -65,7 +66,7 @@ public class ProjectMemoryService {
             Long actor, Long projectId, String anchor, String replacement) {
         beginWrite(actor, projectId);
         document.edit(directories.projectRoot(projectId), anchor, replacement);
-        return touch(projectId);
+        return publishUpdated(projectId);
     }
 
     /** 写入前的校验与行锁：同项目的读改写跨实例串行，并发的两次替换才不会互相吃掉对方的修改。 */
@@ -75,7 +76,7 @@ public class ProjectMemoryService {
     }
 
     /** 读回正文并广播更新。 */
-    private ProjectMemoryResponse touch(Long projectId) {
+    private ProjectMemoryResponse publishUpdated(Long projectId) {
         ProjectMemoryResponse saved = read(projectId);
         events.publish(
                 projectId,

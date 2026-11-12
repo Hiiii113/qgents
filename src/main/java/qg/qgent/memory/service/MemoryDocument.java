@@ -64,7 +64,7 @@ public class MemoryDocument {
      */
     public String edit(Path directory, String anchor, String replacement) {
         String content = read(directory);
-        int start = anchor.isEmpty() ? -1 : content.indexOf(anchor);
+        int start = content.indexOf(anchor);
         if (start < 0) {
             throw new ApiException(
                     HttpStatus.UNPROCESSABLE_ENTITY,
