@@ -27,6 +27,13 @@
 - 未实施但已认可的事项记入 `docs/pending.md`，区分已确定与待决定；实施后同步更新。
 - 提交按标准格式，一次提交只做一件事，可以拆成多次。
 
+## 并行编排
+
+- 加载 `herdr-core` skill 时用 `hc` 编排：可以派 subagent，也可以并行开发。
+- 并行开发用 `git worktree` 隔离改动，按依赖顺序调度，不让两个 agent 改同一份工作区。
+- 派出去的 agent 尽量在当前窗口分屏显示（半页给它），别只丢在后台。
+- agent 跑完就收尾：结束终端、关掉分屏，不留后台进程。
+
 ## Agent skills
 
 - Issue 与 spec 存为 GitHub issue（`Hiiii113/qgents`），统一用 `gh` 操作 → `docs/agents/issue-tracker.md`
