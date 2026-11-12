@@ -14,7 +14,7 @@ import qg.qgent.common.web.RequestIdFilter;
 
 /**
  * 项目内 Agent 接口：查询已启用 Agent 供群设置邀请，以及成员提交自定义 Agent 申请。
- * 申请由项目管理员在默认群回复公布消息并 @Agent 后审批，本接口不提供审批入口。
+ * 申请由项目管理员在群聊里审批，本接口不提供审批入口。
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -44,7 +44,7 @@ public class AgentController {
             @PathVariable Long projectId,
             @RequestBody AgentApplicationRequest body,
             HttpServletRequest request) {
-        return ok(AgentResponse.of(applications.apply(actor, projectId, null, body)), request);
+        return ok(AgentResponse.of(applications.apply(actor, projectId, body)), request);
     }
 
     private <T> ApiResponse<T> ok(T value, HttpServletRequest request) {

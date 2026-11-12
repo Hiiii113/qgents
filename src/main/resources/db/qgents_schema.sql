@@ -100,14 +100,12 @@ CREATE TABLE IF NOT EXISTS agents (
     default_agent TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否项目默认 Agent；每项目唯一',
     status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT '状态枚举：PENDING/ACTIVE/REJECTED；只有 ACTIVE 可邀请入群和运行',
     proposed_by BIGINT NULL COMMENT '提出申请的真实用户ID；默认 Agent 为空',
-    announced_message_id BIGINT NULL COMMENT '公布该申请的 Agent 消息；审批回复必须回复这条消息',
     approved_by BIGINT NULL COMMENT '审批的管理员用户ID',
     approved_at DATETIME(6) NULL COMMENT '审批完成时间（UTC）',
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
     -- 生成列只对默认 Agent 取 project_id，其余为 NULL；唯一索引允许多个 NULL，保证每项目只有一个默认 Agent。
     default_slot BIGINT GENERATED ALWAYS AS (IF(default_agent = 1, project_id, NULL)) STORED,
     UNIQUE KEY uk_agent_default (default_slot),
-    UNIQUE KEY uk_agent_announced_message (announced_message_id),
     KEY idx_agent_project (project_id, status),
     CONSTRAINT fk_agent_project FOREIGN KEY (project_id) REFERENCES projects (id),
     CONSTRAINT fk_agent_proposed_by FOREIGN KEY (proposed_by) REFERENCES users (id),
@@ -425,6 +423,8 @@ CREATE TABLE IF NOT EXISTS
 -- ALTER TABLE chat_groups DROP COLUMN qgent_enabled;
 -- -- 项目记忆改成管理员在默认群确认后由 Agent 直接写入，旧候选表不再使用：
 -- DROP TABLE IF EXISTS project_memory_proposals;
+-- -- 项目 Agent 审批改为按申请 ID 进行，不再把申请绑定到 Agent 公布消息：
+-- ALTER TABLE agents DROP INDEX uk_agent_announced_message, DROP COLUMN announced_message_id;
 -- 已经在这个分支的早期构建上跑过的库（group_memory_state 缺列）不单独补：
 -- README 第 2 步的 docker compose down -v 重建就是支持路径。
 

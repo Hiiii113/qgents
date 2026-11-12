@@ -75,37 +75,11 @@ class AgentMapperTest {
     }
 
     @Test
-    void aLaterAnnouncementMovesTheApprovalTargetToTheNewMessage() throws Exception {
-        Long id = TestIds.next(), secondAnnouncement = TestIds.next();
-
-        try (SqlSession session = factory.openSession()) {
-            assertThat(
-                            session.getMapper(AgentMapper.class)
-                                    .bindAnnouncement(id, secondAnnouncement))
-                    .isEqualTo(1);
-        }
-
-        // 管理员按 Agent 最新一次公布回复，因此更晚的公布覆盖旧的绑定；已处理的申请不再接收公布。
-        assertThat(updateSql())
-                .contains(
-                        "announced_message_id = ?",
-                        "status = 'PENDING'",
-                        "announced_message_id < ?");
-    }
-
-    @Test
     void onlyActiveAgentsAreListedForInvitesAndPendingOnesForApproval() {
         assertThat(selectSql("selectActiveByProject", Map.of("projectId", TestIds.next())))
                 .contains("status = 'ACTIVE'");
         assertThat(selectSql("selectPendingByProject", Map.of("projectId", TestIds.next())))
                 .contains("status = 'PENDING'");
-    }
-
-    @Test
-    void theApplicationIsLookedUpByTheMessageThatAnnouncedIt() {
-        // 审批回复只提供引用消息，申请由服务端按公布消息反查，不再由模型参数指定。
-        assertThat(selectSql("selectByAnnouncedMessageId", Map.of("messageId", TestIds.next())))
-                .contains("announced_message_id = ?");
     }
 
     @Test
@@ -120,14 +94,11 @@ class AgentMapperTest {
         assertParametersResolve("selectDefaultAgent", Map.of("projectId", TestIds.next()));
         assertParametersResolve("selectActiveByProject", Map.of("projectId", TestIds.next()));
         assertParametersResolve("selectPendingByProject", Map.of("projectId", TestIds.next()));
-        assertParametersResolve("selectByAnnouncedMessageId", Map.of("messageId", TestIds.next()));
         assertParametersResolve("countCountedByProject", Map.of("projectId", TestIds.next()));
         assertParametersResolve(
                 "activate", Map.of("id", TestIds.next(), "approvedBy", TestIds.next()));
         assertParametersResolve(
                 "reject", Map.of("id", TestIds.next(), "approvedBy", TestIds.next()));
-        assertParametersResolve(
-                "bindAnnouncement", Map.of("id", TestIds.next(), "messageId", TestIds.next()));
     }
 
     private void assertParametersResolve(String method, Map<String, Object> declaredParameters) {

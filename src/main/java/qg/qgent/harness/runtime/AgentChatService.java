@@ -19,7 +19,6 @@ import qg.qgent.agent.service.AgentService;
 import qg.qgent.agent.tool.AgentApplicationTools;
 import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.attachment.tool.ReadAttachmentTool;
-import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.dto.MessageSendRequest;
 import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.service.ChatHistoryService;
@@ -163,7 +162,6 @@ public class AgentChatService {
         RunStatus status = RunStatus.FAILED;
         String resultText = "Agent 执行失败，请稍后重试";
         int rounds = 0;
-        ConversationTools rootTools = null;
         try {
             String input =
                     userInput(
@@ -178,7 +176,6 @@ public class AgentChatService {
                     loop.conversation(briefing.systemPrompt(agent, Scope.ROOT), List.of(user));
             ChildRuns.Execution execution = new ChildRuns.Execution(root, conversation, null, ".");
             ConversationTools tools = conversationTools(work, execution, true);
-            rootTools = tools;
             AgentLoop.Result result =
                     loop.run(
                             root.getId(),
@@ -203,11 +200,7 @@ public class AgentChatService {
         reply.setContent(Map.of("text", answer(root)));
         reply.setReplyToId(event.messageId());
         reply.setClientMessageId("qgent-reply:" + root.getId());
-        MessageResponse sent = messages.sendAsAgent(agentId, event.groupId(), reply);
-        // 只有成功运行的正文才能拿来审批：失败或取消的回答不能公布待审批的 Agent 申请。
-        if (status == RunStatus.SUCCEEDED && rootTools != null) {
-            rootTools.bindAgentApplications(Long.valueOf(sent.getId()));
-        }
+        messages.sendAsAgent(agentId, event.groupId(), reply);
     }
 
     private List<ToolCallback> callbacks(
@@ -325,15 +318,11 @@ public class AgentChatService {
                             : null;
             this.agentMemory =
                     new AgentMemoryTools(agentMemories, work.event.projectId(), work.agentId);
-            // 申请与审批同样要求来自用户可核验的群聊消息，因此只装配给主 Agent。
+            // 申请与审批只装配给主 Agent：子 Agent 不能替用户提交申请，也不能代替管理员审批。
             this.applicationTools =
                     canDelegate
                             ? new AgentApplicationTools(
-                                    agentApplications,
-                                    work.event.actor(),
-                                    work.event.projectId(),
-                                    work.event.groupId(),
-                                    work.event.messageId())
+                                    agentApplications, work.event.actor(), work.event.projectId())
                             : null;
             WorkSession session =
                     new WorkspaceSession(work, execution, workspaces, sessions, runService);
@@ -347,11 +336,6 @@ public class AgentChatService {
                             workspaceCommands,
                             session);
             this.codingTools = new CodingTools(session, files);
-        }
-
-        /** 把本次运行公布的那一条 Agent 申请绑定到它的回复消息，管理员才能回复该消息审批。 */
-        private void bindAgentApplications(Long messageId) {
-            if (applicationTools != null) applicationTools.bindAnnounced(messageId);
         }
 
         private ToolCallback[] callbacks() {

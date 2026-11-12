@@ -212,49 +212,13 @@ class AgentChatServiceTest {
     }
 
     @Test
-    void announcedAgentApplicationIsBoundToTheAgentReplyMessage() {
+    void failedRunReportsItsFailureAndStopsItsCommands() {
         Long actor = TestIds.next(),
                 project = TestIds.next(),
                 group = TestIds.next(),
                 message = TestIds.next();
         ChatModel model = model();
-        AtomicInteger calls = new AtomicInteger();
-        when(model.call(any(Prompt.class)))
-                .thenAnswer(invocation ->
-                        switch (calls.incrementAndGet()) {
-                            case 1 ->
-                                    toolCall(
-                                            "submit_agent_application",
-                                            "{\"name\":\"评审助手\",\"description\":\"负责代码评审\","
-                                                    + "\"systemPrompt\":\"你只评审 Pull Request\"}");
-                            default -> reply("已提交申请，等待管理员审核");
-                        });
-        var fixture = fixture(model, actor, project, group, message, childExecutor);
-        AgentEntity application = new AgentEntity();
-        application.setId(TestIds.next());
-        application.setStatus(AgentEntity.STATUS_PENDING);
-        when(fixture.agentApplications()
-                        .apply(
-                                org.mockito.ArgumentMatchers.eq(actor),
-                                org.mockito.ArgumentMatchers.eq(project),
-                                org.mockito.ArgumentMatchers.eq(group),
-                                any(qg.qgent.agent.dto.AgentApplicationRequest.class)))
-                .thenReturn(application);
-
-        fixture.service().replyToMention(fixture.event(), fixture.agentId(), "帮我申请一个评审助手");
-
-        verify(fixture.agentApplications())
-                .bindAnnouncement(application.getId(), fixture.replyMessageId());
-    }
-
-    @Test
-    void failedRunDoesNotExposeItsAnnouncedAgentApplicationForApproval() {
-        Long actor = TestIds.next(),
-                project = TestIds.next(),
-                group = TestIds.next(),
-                message = TestIds.next();
-        ChatModel model = model();
-        // 空白回复让本次运行失败：失败回复不是可审批的对象。
+        // 空白回复让本次运行失败：失败也要按失败文案回复，不能留下静默的空白消息。
         when(model.call(any(Prompt.class))).thenReturn(reply(""));
         var fixture = fixture(model, actor, project, group, message, childExecutor);
 
@@ -265,7 +229,6 @@ class AgentChatServiceTest {
                         eq(fixture.agentId()),
                         eq(group),
                         argThat(request -> "模型返回了空回复".equals(request.getContent().get("text"))));
-        verify(fixture.agentApplications(), never()).bindAnnouncement(any(), any());
         // 失败与取消一样要等自己名下的命令停下；成功运行不停（见 successfulRunDoesNotStopItsCommands）。
         verify(fixture.sessions()).stopExecutionsByAgentRun(fixture.root().getId());
         assertThat(fixture.root().getStatus()).isEqualTo(RunStatus.FAILED);
