@@ -58,15 +58,6 @@ public class GitHubRepositoryController {
         return ok(service.sync(actor, teamId, installationId), request);
     }
 
-    @DeleteMapping("/teams/{teamId}/integrations/github/installations/{installationId}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void disconnect(
-            @AuthenticationPrincipal Long actor,
-            @PathVariable Long teamId,
-            @PathVariable Long installationId) {
-        service.removeInstallation(actor, teamId, installationId);
-    }
-
     @GetMapping("/integrations/github/callback")
     public ResponseEntity<Void> callback(
             @RequestParam("installation_id") long installationId,

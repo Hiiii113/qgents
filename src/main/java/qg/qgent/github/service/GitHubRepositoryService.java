@@ -138,13 +138,6 @@ public class GitHubRepositoryService {
     }
 
     /** 解除本系统的团队连接并移除对应导入记录，不卸载 GitHub 账号上的 App。 */
-    @Transactional
-    public void removeInstallation(Long actor, Long teamId, Long installationId) {
-        requireOwner(actor, teamId);
-        requireInstallation(teamId, installationId);
-        installations.deleteById(installationId);
-    }
-
     public List<ProjectRepositoryEntity> listProjectRepositories(Long actor, Long projectId) {
         access.requireProjectMember(projectId, actor);
         return repositories.selectList(
