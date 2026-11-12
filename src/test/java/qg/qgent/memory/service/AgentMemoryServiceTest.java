@@ -52,6 +52,15 @@ class AgentMemoryServiceTest {
     }
 
     @Test
+    void editReplacesOnlyTheAnchorAndKeepsTheRest() {
+        service.save(projectId, agentId, "# 分工\n- 你负责接口");
+
+        service.edit(projectId, agentId, "- 你负责接口", "- 你负责接口与测试");
+
+        assertThat(service.view(projectId, agentId)).isEqualTo("# 分工\n- 你负责接口与测试");
+    }
+
+    @Test
     void agentsAndProjectsKeepSeparateMemory() {
         Long otherAgent = TestIds.next();
         Long otherProject = TestIds.next();

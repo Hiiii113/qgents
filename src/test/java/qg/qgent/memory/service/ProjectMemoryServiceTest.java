@@ -99,6 +99,34 @@ class ProjectMemoryServiceTest {
     }
 
     @Test
+    void adminEditReplacesOnlyTheAnchorAndPublishesUpdate() {
+        Long projectId = TestIds.next();
+        Long actor = TestIds.next();
+        service.update(actor, projectId, group, "# 登录约定\n- 统一邮箱登录\n- 密码 8 位");
+
+        ProjectMemoryResponse saved =
+                service.edit(actor, projectId, group, "- 密码 8 位", "- 密码 12 位");
+
+        assertThat(saved.getContent()).isEqualTo("# 登录约定\n- 统一邮箱登录\n- 密码 12 位");
+        verify(access, times(2)).requireProjectAdmin(projectId, actor);
+        verify(projects, times(2)).selectByIdForUpdate(projectId);
+        verify(events, times(2)).publish(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void editWithUnknownAnchorIsRefusedAndMemoryStaysUnchanged() {
+        Long projectId = TestIds.next();
+        Long actor = TestIds.next();
+        service.update(actor, projectId, group, "# 登录约定");
+
+        assertThatThrownBy(() -> service.edit(actor, projectId, group, "- 不存在的行", "- x"))
+                .isInstanceOf(ApiException.class)
+                .hasFieldOrPropertyWithValue("code", "MEMORY_EDIT_ANCHOR_NOT_FOUND");
+
+        assertThat(service.get(actor, projectId).getContent()).isEqualTo("# 登录约定");
+    }
+
+    @Test
     void writingTheSameContentAgainIsIdempotent() {
         Long projectId = TestIds.next();
         Long actor = TestIds.next();

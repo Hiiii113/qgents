@@ -57,15 +57,33 @@ public class ProjectMemoryService {
      */
     @Transactional
     public ProjectMemoryResponse update(Long actor, Long projectId, Long groupId, String content) {
-        access.requireProjectAdmin(projectId, actor);
-        requireDefaultGroup(groupId);
+        beginWrite(actor, projectId, groupId);
         String text = content.trim();
-        projects.selectByIdForUpdate(projectId);
-        ProjectMemoryResponse current = read(projectId);
-        if (current.getContent().equals(text)) {
-            return current;
+        if (read(projectId).getContent().equals(text)) {
+            return read(projectId);
         }
         document.write(directories.projectRoot(projectId), text);
+        return touch(projectId);
+    }
+
+    /** 管理员在默认群确认后按片段替换 memory.md；原文找不到或不唯一时原文件不动。 */
+    @Transactional
+    public ProjectMemoryResponse edit(
+            Long actor, Long projectId, Long groupId, String anchor, String replacement) {
+        beginWrite(actor, projectId, groupId);
+        document.edit(directories.projectRoot(projectId), anchor, replacement);
+        return touch(projectId);
+    }
+
+    /** 写入前的校验与行锁：同项目的读改写跨实例串行，并发的两次替换才不会互相吃掉对方的修改。 */
+    private void beginWrite(Long actor, Long projectId, Long groupId) {
+        access.requireProjectAdmin(projectId, actor);
+        requireDefaultGroup(groupId);
+        projects.selectByIdForUpdate(projectId);
+    }
+
+    /** 读回正文并广播更新。 */
+    private ProjectMemoryResponse touch(Long projectId) {
         ProjectMemoryResponse saved = read(projectId);
         events.publish(
                 projectId,

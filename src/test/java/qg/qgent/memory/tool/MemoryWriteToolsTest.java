@@ -29,10 +29,31 @@ class MemoryWriteToolsTest {
             new MemoryWriteTools(memories, actor, projectId, groupId);
 
     @Test
-    void exposesOnlyWriteProjectMemory() {
+    void exposesWriteAndEditBoundToTheRunIdentity() {
         assertThat(ToolCallbacks.from(tools))
                 .extracting(callback -> callback.getToolDefinition().name())
-                .containsExactly("write_project_memory");
+                .containsExactlyInAnyOrder("write_project_memory", "edit_project_memory");
+    }
+
+    @Test
+    void editReplacesTheAnchorThroughTheRunIdentity() {
+        when(memories.edit(actor, projectId, groupId, "- 密码 8 位", "- 密码 12 位"))
+                .thenReturn(
+                        new ProjectMemoryResponse(
+                                projectId.toString(), "# 约定\n- 密码 12 位", LocalDateTime.now()));
+
+        Map<String, Object> result = tools.editProjectMemory("- 密码 8 位", "- 密码 12 位");
+
+        assertThat(result).containsEntry("ok", true).containsKey("updatedAt");
+        verify(memories).edit(actor, projectId, groupId, "- 密码 8 位", "- 密码 12 位");
+    }
+
+    @Test
+    void blankAnchorIsRefusedWithoutTouchingMemory() {
+        assertThat(tools.editProjectMemory(" ", "- x"))
+                .containsEntry("ok", false)
+                .containsEntry("errorCode", "INVALID_ARGUMENT");
+        verifyNoInteractions(memories);
     }
 
     @Test

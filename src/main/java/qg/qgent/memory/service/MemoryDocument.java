@@ -57,6 +57,34 @@ public class MemoryDocument {
         }
     }
 
+    /**
+     * 按片段替换：anchor 必须在正文里唯一出现，否则原文件保持不变。
+     * <p>
+     * 替换后仍按写入预算校验，再走同一套原子替换。
+     */
+    public String edit(Path directory, String anchor, String replacement) {
+        String content = read(directory);
+        int start = anchor.isEmpty() ? -1 : content.indexOf(anchor);
+        if (start < 0) {
+            throw new ApiException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "MEMORY_EDIT_ANCHOR_NOT_FOUND",
+                    "记忆里找不到要替换的原文，请先读取最新正文再调用");
+        }
+        if (content.indexOf(anchor, start + anchor.length()) >= 0) {
+            throw new ApiException(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "MEMORY_EDIT_ANCHOR_AMBIGUOUS",
+                    "要替换的原文在记忆里出现了多次，请带上前后的上下文让它唯一");
+        }
+        String updated =
+                content.substring(0, start)
+                        + replacement
+                        + content.substring(start + anchor.length());
+        write(directory, updated);
+        return updated;
+    }
+
     /** 整篇替换；超出字符预算时拒绝写入，原文件保持不变。 */
     public void write(Path directory, String content) {
         if (content.length() > maxChars) {

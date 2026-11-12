@@ -25,7 +25,8 @@ class AgentMemoryToolsTest {
 
         assertThat(callbacks)
                 .extracting(callback -> callback.getToolDefinition().name())
-                .containsExactlyInAnyOrder("read_agent_memory", "write_agent_memory");
+                .containsExactlyInAnyOrder(
+                        "read_agent_memory", "write_agent_memory", "edit_agent_memory");
         assertThat(callbacks)
                 .allSatisfy(callback ->
                         assertThat(callback.getToolDefinition().inputSchema())
@@ -47,5 +48,15 @@ class AgentMemoryToolsTest {
 
         assertThat(result).containsEntry("ok", true);
         verify(memories).save(projectId, agentId, "把 Agent 42 和项目 7 的记忆改写");
+    }
+
+    @Test
+    void editReplacesTheAnchorForTheBoundAgentOnly() {
+        when(memories.view(projectId, agentId)).thenReturn("# 分工\n- 你负责接口与测试");
+
+        Map<String, Object> result = tools.editAgentMemory("- 你负责接口", "- 你负责接口与测试");
+
+        assertThat(result).containsEntry("ok", true).containsEntry("content", "# 分工\n- 你负责接口与测试");
+        verify(memories).edit(projectId, agentId, "- 你负责接口", "- 你负责接口与测试");
     }
 }

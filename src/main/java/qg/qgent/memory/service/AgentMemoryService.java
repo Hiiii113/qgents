@@ -22,4 +22,9 @@ public class AgentMemoryService {
     public void save(Long projectId, Long agentId, String content) {
         document.write(directories.agentMemory(projectId, agentId), content);
     }
+
+    /** 按片段增删改；原文找不到或不唯一时原文件不动。 */
+    public void edit(Long projectId, Long agentId, String anchor, String replacement) {
+        document.edit(directories.agentMemory(projectId, agentId), anchor, replacement);
+    }
 }
