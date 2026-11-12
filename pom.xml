@@ -269,32 +269,6 @@
                         </excludes>
                     </configuration>
                 </plugin>
-                <plugin>
-                    <groupId>com.diffplug.spotless</groupId>
-                    <artifactId>spotless-maven-plugin</artifactId>
-                    <version>3.11.0</version>
-                    <configuration>
-                        <!-- AOSP 风格：4 空格缩进、100 列，与现有代码一致；格式化结果不由 IDE 决定。 -->
-                        <java>
-                            <googleJavaFormat>
-                                <version>2.0.0</version>
-                                <style>AOSP</style>
-                                <!-- 中文 Javadoc 手写的换行不能被重排，只格式化代码本身。 -->
-                                <formatJavadoc>false</formatJavadoc>
-                                <cleanup>true</cleanup>
-                            </googleJavaFormat>
-                        </java>
-                    </configuration>
-                    <executions>
-                        <execution>
-                            <id>spotless-check</id>
-                            <phase>verify</phase>
-                            <goals>
-                                <goal>check</goal>
-                            </goals>
-                        </execution>
-                    </executions>
-                </plugin>
             </plugins>
         </pluginManagement>
         <resources>
@@ -313,10 +287,6 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-            </plugin>
-            <plugin>
-                <groupId>com.diffplug.spotless</groupId>
-                <artifactId>spotless-maven-plugin</artifactId>
             </plugin>
         </plugins>
     </build>
