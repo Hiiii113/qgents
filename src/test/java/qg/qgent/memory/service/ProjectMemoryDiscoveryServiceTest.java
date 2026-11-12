@@ -119,9 +119,7 @@ class ProjectMemoryDiscoveryServiceTest {
                                 new ObjectMapper()),
                         eventPublisher);
         groupMemories = new GroupMemoryService(access, chatGroupsService, directories, document);
-        projectMemories =
-                new ProjectMemoryService(
-                        access, chatGroups, projects, directories, events, document);
+        projectMemories = new ProjectMemoryService(access, projects, directories, events, document);
         service =
                 new ProjectMemoryDiscoveryService(
                         states,

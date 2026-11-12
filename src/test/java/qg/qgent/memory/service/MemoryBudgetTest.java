@@ -3,14 +3,11 @@ package qg.qgent.memory.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import java.nio.file.Path;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import qg.qgent.chat.entity.ChatGroupEntity;
-import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.chat.service.GroupService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.mapper.ProjectMapper;
@@ -39,15 +36,9 @@ class MemoryBudgetTest {
         ProjectDirectoryService directories =
                 new ProjectDirectoryService(root.toString(), root.toString());
         MemoryDocument document = new MemoryDocument(MAX_CHARS);
-        ChatGroupEntity group = new ChatGroupEntity();
-        group.setId(groupId);
-        group.setDefaultGroup(true);
-        ChatGroupMapper groups = mock(ChatGroupMapper.class);
-        when(groups.selectById(groupId)).thenReturn(group);
         projectMemories =
                 new ProjectMemoryService(
                         mock(ProjectAccessService.class),
-                        groups,
                         mock(ProjectMapper.class),
                         directories,
                         mock(EventService.class),
@@ -63,11 +54,11 @@ class MemoryBudgetTest {
 
     @Test
     void overBudgetWriteIsRejectedForAllThreeMemoryKindsWithoutChangingStoredContent() {
-        projectMemories.update(TestIds.next(), projectId, groupId, "项目原有约定");
+        projectMemories.update(TestIds.next(), projectId, "项目原有约定");
         groupMemories.write(projectId, groupId, "群原有约定");
         agentMemories.save(projectId, agentId, "Agent 原有约定");
 
-        assertRejected(() -> projectMemories.update(TestIds.next(), projectId, groupId, tooLong));
+        assertRejected(() -> projectMemories.update(TestIds.next(), projectId, tooLong));
         assertRejected(() -> groupMemories.write(projectId, groupId, tooLong));
         assertRejected(() -> agentMemories.save(projectId, agentId, tooLong));
 

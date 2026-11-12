@@ -11,7 +11,7 @@ import qg.qgent.memory.dto.ProjectMemoryResponse;
 import qg.qgent.memory.service.GroupMemoryService;
 import qg.qgent.memory.service.ProjectMemoryService;
 
-/** 记忆接口：项目 memory.md 与每个群的群记忆都存放在项目目录；项目记忆只在管理员于默认群确认后由 Agent 写入。 */
+/** 记忆接口：项目 memory.md 与每个群的群记忆都存放在项目目录；项目记忆只在管理员确认后由 Agent 写入。 */
 @RestController
 @RequestMapping("/api/v1")
 public class MemoryController {

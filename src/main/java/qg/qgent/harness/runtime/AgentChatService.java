@@ -321,10 +321,7 @@ public class AgentChatService {
             this.memoryWrite =
                     canDelegate
                             ? new MemoryWriteTools(
-                                    memories,
-                                    work.event.actor(),
-                                    work.event.projectId(),
-                                    work.event.groupId())
+                                    memories, work.event.actor(), work.event.projectId())
                             : null;
             this.agentMemory =
                     new AgentMemoryTools(agentMemories, work.event.projectId(), work.agentId);

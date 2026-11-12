@@ -10,7 +10,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,8 +20,6 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.springframework.http.HttpStatus;
-import qg.qgent.chat.entity.ChatGroupEntity;
-import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.memory.dto.ProjectMemoryResponse;
 import qg.qgent.project.mapper.ProjectMapper;
@@ -39,22 +36,18 @@ class ProjectMemoryServiceTest {
     @TempDir Path root;
 
     private final ProjectAccessService access = mock(ProjectAccessService.class);
-    private final ChatGroupMapper groups = mock(ChatGroupMapper.class);
     private final ProjectMapper projects = mock(ProjectMapper.class);
     private final EventService events = mock(EventService.class);
-    private final Long group = TestIds.next();
     private ProjectMemoryService service;
 
     @BeforeEach
     void setUp() {
         service = service(root);
-        when(groups.selectById(group)).thenReturn(group(group, true));
     }
 
     private ProjectMemoryService service(Path directory) {
         return new ProjectMemoryService(
                 access,
-                groups,
                 projects,
                 new ProjectDirectoryService(directory.toString(), directory.toString()),
                 events,
@@ -80,7 +73,7 @@ class ProjectMemoryServiceTest {
         Long projectId = TestIds.next();
         Long actor = TestIds.next();
 
-        ProjectMemoryResponse saved = service.update(actor, projectId, group, "# 登录约定\n- 统一邮箱登录");
+        ProjectMemoryResponse saved = service.update(actor, projectId, "# 登录约定\n- 统一邮箱登录");
 
         assertThat(saved.getContent()).isEqualTo("# 登录约定\n- 统一邮箱登录");
         assertThat(saved.getUpdatedAt()).isNotNull();
@@ -102,10 +95,9 @@ class ProjectMemoryServiceTest {
     void adminEditReplacesOnlyTheAnchorAndPublishesUpdate() {
         Long projectId = TestIds.next();
         Long actor = TestIds.next();
-        service.update(actor, projectId, group, "# 登录约定\n- 统一邮箱登录\n- 密码 8 位");
+        service.update(actor, projectId, "# 登录约定\n- 统一邮箱登录\n- 密码 8 位");
 
-        ProjectMemoryResponse saved =
-                service.edit(actor, projectId, group, "- 密码 8 位", "- 密码 12 位");
+        ProjectMemoryResponse saved = service.edit(actor, projectId, "- 密码 8 位", "- 密码 12 位");
 
         assertThat(saved.getContent()).isEqualTo("# 登录约定\n- 统一邮箱登录\n- 密码 12 位");
         verify(access, times(2)).requireProjectAdmin(projectId, actor);
@@ -117,9 +109,9 @@ class ProjectMemoryServiceTest {
     void editWithUnknownAnchorIsRefusedAndMemoryStaysUnchanged() {
         Long projectId = TestIds.next();
         Long actor = TestIds.next();
-        service.update(actor, projectId, group, "# 登录约定");
+        service.update(actor, projectId, "# 登录约定");
 
-        assertThatThrownBy(() -> service.edit(actor, projectId, group, "- 不存在的行", "- x"))
+        assertThatThrownBy(() -> service.edit(actor, projectId, "- 不存在的行", "- x"))
                 .isInstanceOf(ApiException.class)
                 .hasFieldOrPropertyWithValue("code", "MEMORY_EDIT_ANCHOR_NOT_FOUND");
 
@@ -130,9 +122,9 @@ class ProjectMemoryServiceTest {
     void writingTheSameContentAgainIsIdempotent() {
         Long projectId = TestIds.next();
         Long actor = TestIds.next();
-        ProjectMemoryResponse first = service.update(actor, projectId, group, "同一版");
+        ProjectMemoryResponse first = service.update(actor, projectId, "同一版");
 
-        ProjectMemoryResponse again = service.update(actor, projectId, group, "同一版");
+        ProjectMemoryResponse again = service.update(actor, projectId, "同一版");
 
         assertThat(again.getContent()).isEqualTo(first.getContent());
         assertThat(again.getUpdatedAt()).isEqualTo(first.getUpdatedAt());
@@ -147,26 +139,11 @@ class ProjectMemoryServiceTest {
                 .when(access)
                 .requireProjectAdmin(projectId, member);
 
-        assertThatThrownBy(() -> service.update(member, projectId, group, "# 新约定"))
+        assertThatThrownBy(() -> service.update(member, projectId, "# 新约定"))
                 .isInstanceOf(ApiException.class)
                 .hasFieldOrPropertyWithValue("code", "PROJECT_ADMIN_REQUIRED");
 
         assertThat(service.get(member, projectId).getContent()).isEmpty();
-        verify(projects, never()).selectByIdForUpdate(any());
-    }
-
-    @Test
-    void writeFromRestrictedGroupIsRefusedAndMemoryStaysUnchanged() {
-        Long projectId = TestIds.next();
-        Long actor = TestIds.next();
-        Long restricted = TestIds.next();
-        when(groups.selectById(restricted)).thenReturn(group(restricted, false));
-
-        assertThatThrownBy(() -> service.update(actor, projectId, restricted, "# 受限群结论"))
-                .isInstanceOf(ApiException.class)
-                .hasFieldOrPropertyWithValue("code", "MEMORY_SOURCE_GROUP_RESTRICTED");
-
-        assertThat(service.get(actor, projectId).getContent()).isEmpty();
         verify(projects, never()).selectByIdForUpdate(any());
     }
 
@@ -177,7 +154,7 @@ class ProjectMemoryServiceTest {
         Long projectId = TestIds.next();
         Long actor = TestIds.next();
 
-        assertThatThrownBy(() -> broken.update(actor, projectId, group, "# 新约定"))
+        assertThatThrownBy(() -> broken.update(actor, projectId, "# 新约定"))
                 .isInstanceOf(IllegalStateException.class);
 
         verify(events, never())
@@ -195,7 +172,7 @@ class ProjectMemoryServiceTest {
         Long first = TestIds.next();
         Long second = TestIds.next();
 
-        service.update(actor, first, group, "项目一");
+        service.update(actor, first, "项目一");
 
         assertThat(service.get(actor, second).getContent()).isEmpty();
     }
@@ -209,12 +186,5 @@ class ProjectMemoryServiceTest {
                 .requireProjectMember(projectId, actor);
 
         assertThatThrownBy(() -> service.get(actor, projectId)).isInstanceOf(ApiException.class);
-    }
-
-    private ChatGroupEntity group(Long groupId, boolean defaultGroup) {
-        ChatGroupEntity group = new ChatGroupEntity();
-        group.setId(groupId);
-        group.setDefaultGroup(defaultGroup);
-        return group;
     }
 }

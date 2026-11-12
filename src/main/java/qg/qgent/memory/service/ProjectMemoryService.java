@@ -2,12 +2,8 @@ package qg.qgent.memory.service;
 
 import java.nio.file.Path;
 import java.util.Map;
-import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import qg.qgent.chat.entity.ChatGroupEntity;
-import qg.qgent.chat.mapper.ChatGroupMapper;
-import qg.qgent.common.web.ApiException;
 import qg.qgent.memory.dto.ProjectMemoryResponse;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.service.ProjectAccessService;
@@ -17,13 +13,12 @@ import qg.qgent.realtime.service.EventService;
 /**
  * 项目长期记忆：项目目录下的 memory.md 是正文唯一来源，整篇替换。
  * <p>
- * 只有项目管理员在项目默认群的对话中确认后才写入，其余成员和子 Agent 只读。
+ * 只有项目管理员在对话中确认后才写入，其余成员和子 Agent 只读。
  */
 @Service
 public class ProjectMemoryService {
 
     private final ProjectAccessService access;
-    private final ChatGroupMapper groups;
     private final ProjectMapper projects;
     private final ProjectDirectoryService directories;
     private final EventService events;
@@ -31,13 +26,11 @@ public class ProjectMemoryService {
 
     public ProjectMemoryService(
             ProjectAccessService access,
-            ChatGroupMapper groups,
             ProjectMapper projects,
             ProjectDirectoryService directories,
             EventService events,
             MemoryDocument document) {
         this.access = access;
-        this.groups = groups;
         this.projects = projects;
         this.directories = directories;
         this.events = events;
@@ -51,13 +44,13 @@ public class ProjectMemoryService {
     }
 
     /**
-     * 管理员在默认群确认后整篇替换 memory.md。
+     * 管理员确认后整篇替换 memory.md。
      * <p>
-     * 先锁项目行，让同项目的写入跨实例串行；内容与当前相同时直接返回，使写入重试可以幂等完成。
+     * 内容与当前相同时直接返回，使写入重试可以幂等完成。
      */
     @Transactional
-    public ProjectMemoryResponse update(Long actor, Long projectId, Long groupId, String content) {
-        beginWrite(actor, projectId, groupId);
+    public ProjectMemoryResponse update(Long actor, Long projectId, String content) {
+        beginWrite(actor, projectId);
         String text = content.trim();
         if (read(projectId).getContent().equals(text)) {
             return read(projectId);
@@ -66,19 +59,18 @@ public class ProjectMemoryService {
         return touch(projectId);
     }
 
-    /** 管理员在默认群确认后按片段替换 memory.md；原文找不到或不唯一时原文件不动。 */
+    /** 管理员确认后按片段替换 memory.md；原文找不到或不唯一时原文件不动。 */
     @Transactional
     public ProjectMemoryResponse edit(
-            Long actor, Long projectId, Long groupId, String anchor, String replacement) {
-        beginWrite(actor, projectId, groupId);
+            Long actor, Long projectId, String anchor, String replacement) {
+        beginWrite(actor, projectId);
         document.edit(directories.projectRoot(projectId), anchor, replacement);
         return touch(projectId);
     }
 
     /** 写入前的校验与行锁：同项目的读改写跨实例串行，并发的两次替换才不会互相吃掉对方的修改。 */
-    private void beginWrite(Long actor, Long projectId, Long groupId) {
+    private void beginWrite(Long actor, Long projectId) {
         access.requireProjectAdmin(projectId, actor);
-        requireDefaultGroup(groupId);
         projects.selectByIdForUpdate(projectId);
     }
 
@@ -103,14 +95,5 @@ public class ProjectMemoryService {
         Path directory = directories.projectRoot(projectId);
         return new ProjectMemoryResponse(
                 projectId.toString(), document.read(directory), document.updatedAt(directory));
-    }
-
-    /** 只在项目默认群写入：受限群的讨论不扩散为共享项目记忆。 */
-    private void requireDefaultGroup(Long groupId) {
-        ChatGroupEntity group = groups.selectById(groupId);
-        if (group == null || !Boolean.TRUE.equals(group.getDefaultGroup())) {
-            throw new ApiException(
-                    HttpStatus.FORBIDDEN, "MEMORY_SOURCE_GROUP_RESTRICTED", "只能在项目默认群更新项目记忆");
-        }
     }
 }

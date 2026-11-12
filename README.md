@@ -59,7 +59,7 @@ docker-compose.yml          本地依赖、生产部署与可选 profile
 | `chat` | 群聊、消息、提及、已读、群内历史检索 |
 | `harness` | Agent 运行、上下文装配、工具循环、子 Agent |
 | `workspace` / `sandbox` | Workspace 与仓库 worktree、容器命令执行与编码工具 |
-| `skill` / `memory` | 项目 Skill；项目、群、Agent 三层记忆，项目记忆由管理员在默认群确认后写入 |
+| `skill` / `memory` | 项目 Skill；项目、群、Agent 三层记忆，项目记忆由管理员确认后写入 |
 | `attachment` / `github` | 附件上传预览、GitHub App 与仓库工具 |
 | `notification` / `realtime` | 站内通知与推送设备、SSE / WebSocket 事件流 |
 | `common` | 统一响应与异常、存储等基础能力 |
