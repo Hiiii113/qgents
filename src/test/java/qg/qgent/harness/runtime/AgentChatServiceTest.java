@@ -266,6 +266,9 @@ class AgentChatServiceTest {
                         eq(group),
                         argThat(request -> "模型返回了空回复".equals(request.getContent().get("text"))));
         verify(fixture.agentApplications(), never()).bindAnnouncement(any(), any());
+        // 失败与取消一样要等自己名下的命令停下；成功运行不停（见 successfulRunDoesNotStopItsCommands）。
+        verify(fixture.sessions()).stopExecutionsByAgentRun(fixture.root().getId());
+        assertThat(fixture.root().getStatus()).isEqualTo(RunStatus.FAILED);
     }
 
     @Test
@@ -596,20 +599,15 @@ class AgentChatServiceTest {
                 message = TestIds.next();
         ChatModel model = model();
         AtomicInteger rootCalls = new AtomicInteger();
-        var callsByRun = new ConcurrentHashMap<Long, AtomicInteger>();
         var workspacesByRun = new ConcurrentHashMap<Long, Long>();
         CountDownLatch codeCalls = new CountDownLatch(3), releaseCodeCalls = new CountDownLatch(1);
         when(model.call(any(Prompt.class)))
                 .thenAnswer(invocation -> {
                     Prompt prompt = invocation.getArgument(0);
                     if (childPrompt(prompt)) {
-                        int call =
-                                callsByRun
-                                        .computeIfAbsent(
-                                                SandboxExecutionContext.currentAgentRunId(),
-                                                ignored -> new AtomicInteger())
-                                        .incrementAndGet();
-                        return call == 1 ? toolCall("glob_files", "{}") : reply("子任务完成");
+                        boolean hasToolResult =
+                                prompt.getInstructions().getLast() instanceof ToolResponseMessage;
+                        return hasToolResult ? reply("子任务完成") : toolCall("glob_files", "{}");
                     }
                     return switch (rootCalls.incrementAndGet()) {
                         case 1 ->
@@ -779,6 +777,37 @@ class AgentChatServiceTest {
     }
 
     @Test
+    void childFinishingDoesNotReleaseTheWorkspaceItsRootOwns() throws Exception {
+        Long actor = TestIds.next(),
+                project = TestIds.next(),
+                group = TestIds.next(),
+                message = TestIds.next();
+        WorkspaceRun run =
+                rootRunWaitingForChildThatUsesDefaultWorkspace(actor, project, group, message);
+
+        assertThat(run.childCalls().get()).isEqualTo(2);
+        verify(run.fixture().sessions())
+                .acquire(run.fixture().root().getId(), project, run.workspace().getId());
+        verify(run.fixture().sessions(), org.mockito.Mockito.times(1))
+                .release(run.workspace().getId(), run.fixture().root().getId());
+    }
+
+    @Test
+    void successfulRunDoesNotStopItsCommands() throws Exception {
+        Long actor = TestIds.next(),
+                project = TestIds.next(),
+                group = TestIds.next(),
+                message = TestIds.next();
+        WorkspaceRun run =
+                rootRunWaitingForChildThatUsesDefaultWorkspace(actor, project, group, message);
+
+        assertThat(run.fixture().root().getStatus()).isEqualTo(RunStatus.SUCCEEDED);
+        verify(run.fixture().sessions())
+                .release(run.workspace().getId(), run.fixture().root().getId());
+        verify(run.fixture().sessions(), never()).stopExecutionsByAgentRun(any());
+    }
+
+    @Test
     void activeChildLimitRejectsAdditionalChildrenWhileFirstRuns() throws Exception {
         Long actor = TestIds.next(),
                 project = TestIds.next(),
@@ -858,11 +887,12 @@ class AgentChatServiceTest {
                                                 .map(callback ->
                                                         callback.getToolDefinition().name())
                                                 .toList());
-                        Long runId = SandboxExecutionContext.currentAgentRunId();
+                        String input = prompt.getInstructions().get(1).getText();
+                        CountDownLatch release =
+                                input.contains("停止目标") ? releaseFirstStop : releaseSecond;
                         bothChildrenStarted.countDown();
                         try {
-                            (runId.equals(childIds.getFirst()) ? releaseFirstStop : releaseSecond)
-                                    .await(5, TimeUnit.SECONDS);
+                            release.await(5, TimeUnit.SECONDS);
                         } catch (InterruptedException exception) {
                             Thread.currentThread().interrupt();
                         }
@@ -1228,6 +1258,68 @@ class AgentChatServiceTest {
                 .requestChildCancellation(fixture.root().getId(), childRunId.get());
     }
 
+    /** 根运行派发一个使用默认 Workspace 的子运行，等它结束再回复；两者都不失败。 */
+    private WorkspaceRun rootRunWaitingForChildThatUsesDefaultWorkspace(
+            Long actor, Long project, Long group, Long message) throws Exception {
+        ChatModel model = model();
+        AtomicInteger rootCalls = new AtomicInteger(), childCalls = new AtomicInteger();
+        AtomicReference<Long> childRunId = new AtomicReference<>();
+        when(model.call(any(Prompt.class)))
+                .thenAnswer(invocation -> {
+                    Prompt prompt = invocation.getArgument(0);
+                    if (childPrompt(prompt)) {
+                        return childCalls.incrementAndGet() == 1
+                                ? toolCall("glob_files", "{}")
+                                : reply("子任务完成");
+                    }
+                    return switch (rootCalls.incrementAndGet()) {
+                        case 1 -> toolCall("start_subagent", "{\"instruction\":\"分析代码\"}");
+                        case 2 -> toolCall("glob_files", "{}");
+                        case 3 ->
+                                toolCall(
+                                        "wait_subagent",
+                                        "{\"runId\":\""
+                                                + childRunId.get()
+                                                + "\",\"waitSeconds\":5}");
+                        default -> reply("子任务已完成");
+                    };
+                });
+        var fixture = fixture(model, actor, project, group, message, childExecutor);
+        WorkspaceEntity workspace = workspace(project);
+        when(fixture.workspaces().defaultWorkspace(project)).thenReturn(workspace);
+        when(fixture.workspaces().require(project, workspace.getId())).thenReturn(workspace);
+        when(fixture.sessions().acquire(any(), eq(project), eq(workspace.getId())))
+                .thenAnswer(invocation ->
+                        new SandboxSession(
+                                invocation.getArgument(0),
+                                workspace.getId(),
+                                java.util.UUID.randomUUID(),
+                                WorkspaceService.storageKey(workspace)));
+        when(fixture.codeAccess()
+                        .listFiles(
+                                any(),
+                                any(String.class),
+                                any(String.class),
+                                org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn(qg.qgent.harness.tool.ToolResult.ok());
+        org.mockito.Mockito.doAnswer(
+                        invocation -> {
+                            AgentRunEntity child =
+                                    run(invocation.getArgument(0), invocation.getArgument(1));
+                            childRunId.set(child.getId());
+                            return child;
+                        })
+                .when(fixture.runs())
+                .startChild(any(), any(), any());
+
+        rootExecutor
+                .submit(() ->
+                        fixture.service()
+                                .replyToMention(fixture.event(), fixture.agentId(), "并行分析代码"))
+                .get(5, TimeUnit.SECONDS);
+        return new WorkspaceRun(fixture, workspace, childCalls);
+    }
+
     private Fixture fixture(
             ChatModel model,
             Long actor,
@@ -1450,6 +1542,9 @@ class AgentChatServiceTest {
     }
 
     private record CodeLocation(Long workspaceId, String path) {}
+
+    private record WorkspaceRun(
+            Fixture fixture, WorkspaceEntity workspace, AtomicInteger childCalls) {}
 
     private void await(CountDownLatch latch) {
         try {

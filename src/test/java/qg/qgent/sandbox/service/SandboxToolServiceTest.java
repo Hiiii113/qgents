@@ -6,7 +6,6 @@ import static org.mockito.Mockito.*;
 
 import java.time.Duration;
 import java.util.Map;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import qg.qgent.sandbox.dto.SandboxExecutionContext;
@@ -15,11 +14,6 @@ import qg.qgent.sandbox.execution.service.ToolExecutionService;
 import qg.qgent.support.TestIds;
 
 class SandboxToolServiceTest {
-    @AfterEach
-    void clearContext() {
-        SandboxExecutionContext.set(null);
-    }
-
     @Test
     void childRunAndActualWorkspaceArePassedDirectlyToExecution() {
         Long root = TestIds.next(), child = TestIds.next(), workspace = TestIds.next();
@@ -28,14 +22,15 @@ class SandboxToolServiceTest {
         ToolExecutionService executions = mock(ToolExecutionService.class);
         when(sessions.require(workspace))
                 .thenReturn(new SandboxSession(root, workspace, sandbox, "key"));
-        SandboxExecutionContext.set(child);
-
-        new SandboxToolService(sessions, executions)
-                .execute(
-                        workspace,
-                        "file.read",
-                        Map.of("path", "README.md"),
-                        Duration.ofSeconds(30));
+        SandboxExecutionContext.within(
+                child,
+                () ->
+                        new SandboxToolService(sessions, executions)
+                                .execute(
+                                        workspace,
+                                        "file.read",
+                                        Map.of("path", "README.md"),
+                                        Duration.ofSeconds(30)));
 
         var request = ArgumentCaptor.forClass(ToolExecutionRequest.class);
         verify(executions).execute(eq(sandbox), request.capture());

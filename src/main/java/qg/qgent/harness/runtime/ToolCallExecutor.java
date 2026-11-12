@@ -33,9 +33,20 @@ final class ToolCallExecutor {
     }
 
     Result execute(
-            List<ToolCall> calls, Map<String, ToolCallback> callbacks, BooleanSupplier cancelled) {
+            Long runId,
+            List<ToolCall> calls,
+            Map<String, ToolCallback> callbacks,
+            BooleanSupplier cancelled) {
+        return SandboxExecutionContext.within(
+                runId, () -> dispatch(runId, calls, callbacks, cancelled));
+    }
+
+    private Result dispatch(
+            Long runId,
+            List<ToolCall> calls,
+            Map<String, ToolCallback> callbacks,
+            BooleanSupplier cancelled) {
         List<ToolResponse> results = new ArrayList<>(Collections.nCopies(calls.size(), null));
-        Long runId = SandboxExecutionContext.currentAgentRunId();
         Map<String, String> context = MDC.getCopyOfContextMap();
         try (ExecutorService pool =
                 Executors.newFixedThreadPool(
@@ -77,14 +88,15 @@ final class ToolCallExecutor {
             while (!stopped && next < end && active < maxParallel) {
                 int index = next++;
                 completed.submit(() -> {
-                    Long previousRun = SandboxExecutionContext.currentAgentRunId();
                     Map<String, String> previousContext = MDC.getCopyOfContextMap();
-                    SandboxExecutionContext.set(runId);
                     setMdc(context);
                     try {
-                        return new CompletedCall(index, invoke(calls.get(index), callbacks));
+                        return SandboxExecutionContext.within(
+                                runId,
+                                () ->
+                                        new CompletedCall(
+                                                index, invoke(calls.get(index), callbacks)));
                     } finally {
-                        SandboxExecutionContext.set(previousRun);
                         setMdc(previousContext);
                     }
                 });

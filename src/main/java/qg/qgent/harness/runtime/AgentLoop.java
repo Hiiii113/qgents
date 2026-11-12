@@ -46,11 +46,13 @@ public class AgentLoop {
 
     /** 逐轮调用模型，将工具结果加入历史；取消、轮次耗尽或模型异常回复时停止。 */
     public Result run(
+            Long runId,
             String systemPrompt,
             List<Message> initialHistory,
             Supplier<List<ToolCallback>> availableTools,
             BooleanSupplier cancelled) {
         return run(
+                runId,
                 conversation(systemPrompt, initialHistory),
                 availableTools,
                 cancelled,
@@ -59,14 +61,16 @@ public class AgentLoop {
 
     /** Continues a saved conversation, retaining earlier user, assistant, and tool messages. */
     public Result run(
+            Long runId,
             Conversation conversation,
             Supplier<List<ToolCallback>> availableTools,
             BooleanSupplier cancelled) {
-        return run(conversation, availableTools, cancelled, UpdateSource.NONE);
+        return run(runId, conversation, availableTools, cancelled, UpdateSource.NONE);
     }
 
     /** Runs a conversation that can receive asynchronous completion notices from delegated work. */
     public Result run(
+            Long runId,
             Conversation conversation,
             Supplier<List<ToolCallback>> availableTools,
             BooleanSupplier cancelled,
@@ -132,7 +136,7 @@ public class AgentLoop {
                 // 保留原始消息及供应商元数据，下一轮完整回传 tool_calls/reasoning_content。
                 conversation.append(assistant);
                 ToolCallExecutor.Result results =
-                        toolCalls.execute(assistant.getToolCalls(), callbacks, cancelled);
+                        toolCalls.execute(runId, assistant.getToolCalls(), callbacks, cancelled);
                 if (results.cancelled()) return new Result(false, "Agent 运行已取消", round);
                 conversation.append(
                         ToolResponseMessage.builder().responses(results.responses()).build());

@@ -27,6 +27,7 @@ import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.util.MimeType;
+import qg.qgent.support.TestIds;
 
 class AgentLoopTest {
     private final ChatModel model = mock(ChatModel.class);
@@ -44,6 +45,7 @@ class AgentLoopTest {
         Counter tools = new Counter();
         AgentLoop.Result result =
                 loop.run(
+                        TestIds.next(),
                         "通用 Agent",
                         List.of(new UserMessage("你好")),
                         () -> Arrays.asList(ToolCallbacks.from(tools)),
@@ -61,6 +63,7 @@ class AgentLoopTest {
         Counter tools = new Counter();
         AgentLoop.Result result =
                 loop.run(
+                        TestIds.next(),
                         "通用 Agent",
                         List.of(new UserMessage("执行")),
                         () -> Arrays.asList(ToolCallbacks.from(tools)),
@@ -97,6 +100,7 @@ class AgentLoopTest {
 
         assertThat(
                         loop.run(
+                                        TestIds.next(),
                                         conversation,
                                         () -> Arrays.asList(ToolCallbacks.from(tools)),
                                         () -> false)
@@ -104,7 +108,11 @@ class AgentLoopTest {
                 .isTrue();
         conversation.addUserMessage("再说明刚才工具返回的数字");
         AgentLoop.Result resumed =
-                loop.run(conversation, () -> Arrays.asList(ToolCallbacks.from(tools)), () -> false);
+                loop.run(
+                        TestIds.next(),
+                        conversation,
+                        () -> Arrays.asList(ToolCallbacks.from(tools)),
+                        () -> false);
 
         assertThat(resumed.success()).isTrue();
         assertThat(resumed.text()).isEqualTo("补充后完成");
@@ -141,7 +149,8 @@ class AgentLoopTest {
         AgentLoop.Conversation conversation =
                 loop.conversation("Qgent", List.of(new UserMessage("工作")));
 
-        AgentLoop.Result result = loop.run(conversation, List::of, () -> false, updates);
+        AgentLoop.Result result =
+                loop.run(TestIds.next(), conversation, List::of, () -> false, updates);
 
         assertThat(result.text()).isEqualTo("已汇总");
         ArgumentCaptor<Prompt> requests = ArgumentCaptor.forClass(Prompt.class);
@@ -157,6 +166,7 @@ class AgentLoopTest {
         Counter tools = new Counter();
         AgentLoop.Result result =
                 loop.run(
+                        TestIds.next(),
                         "通用 Agent",
                         List.of(new UserMessage("执行")),
                         () -> Arrays.asList(ToolCallbacks.from(tools)),
@@ -172,7 +182,12 @@ class AgentLoopTest {
         AgentLoop loop = loop(3);
         when(model.call(any(Prompt.class))).thenReturn(toolCall("missing"), reply("已修正"));
         AgentLoop.Result result =
-                loop.run("通用 Agent", List.of(new UserMessage("执行")), List::of, () -> false);
+                loop.run(
+                        TestIds.next(),
+                        "通用 Agent",
+                        List.of(new UserMessage("执行")),
+                        List::of,
+                        () -> false);
         assertThat(result.success()).isTrue();
         ArgumentCaptor<Prompt> requests = ArgumentCaptor.forClass(Prompt.class);
         verify(model, times(2)).call(requests.capture());
@@ -199,6 +214,7 @@ class AgentLoopTest {
         var callbacks = qg.qgent.harness.tool.ParallelToolCallback.from(new ReadTools());
         var result =
                 loop.run(
+                        TestIds.next(),
                         "Agent",
                         List.of(new UserMessage("读取")),
                         () -> Arrays.asList(callbacks),
@@ -249,7 +265,11 @@ class AgentLoopTest {
                 .thenReturn(new ChatResponse(List.of(new Generation(batch))), reply("已看到"));
 
         AgentLoop.Result result =
-                loop.run(conversation, () -> Arrays.asList(ToolCallbacks.from(tools)), () -> false);
+                loop.run(
+                        TestIds.next(),
+                        conversation,
+                        () -> Arrays.asList(ToolCallbacks.from(tools)),
+                        () -> false);
 
         assertThat(result.success()).isTrue();
         ArgumentCaptor<Prompt> requests = ArgumentCaptor.forClass(Prompt.class);
@@ -275,12 +295,20 @@ class AgentLoopTest {
                 .thenReturn(toolCall("show_image", "{\"attachmentId\":\"7\"}"));
 
         AgentLoop.Result result =
-                loop.run(conversation, () -> Arrays.asList(ToolCallbacks.from(tools)), () -> false);
+                loop.run(
+                        TestIds.next(),
+                        conversation,
+                        () -> Arrays.asList(ToolCallbacks.from(tools)),
+                        () -> false);
 
         assertThat(result.success()).isFalse();
         assertThat(result.text()).contains("最大调用轮次");
         when(model.call(any(Prompt.class))).thenReturn(reply("完成"));
-        loop.run(conversation, () -> Arrays.asList(ToolCallbacks.from(tools)), () -> false);
+        loop.run(
+                TestIds.next(),
+                conversation,
+                () -> Arrays.asList(ToolCallbacks.from(tools)),
+                () -> false);
         ArgumentCaptor<Prompt> requests = ArgumentCaptor.forClass(Prompt.class);
         verify(model, times(2)).call(requests.capture());
         assertThat(requests.getAllValues().get(1).getInstructions())
@@ -300,6 +328,7 @@ class AgentLoopTest {
 
         AgentLoop.Result result =
                 loop.run(
+                        TestIds.next(),
                         conversation,
                         () -> Arrays.asList(ToolCallbacks.from(tools)),
                         cancelled::get);
@@ -309,7 +338,11 @@ class AgentLoopTest {
         verify(model, times(1)).call(any(Prompt.class));
         cancelled.set(false);
         when(model.call(any(Prompt.class))).thenReturn(reply("完成"));
-        loop.run(conversation, () -> Arrays.asList(ToolCallbacks.from(tools)), () -> false);
+        loop.run(
+                TestIds.next(),
+                conversation,
+                () -> Arrays.asList(ToolCallbacks.from(tools)),
+                () -> false);
         ArgumentCaptor<Prompt> requests = ArgumentCaptor.forClass(Prompt.class);
         verify(model, times(2)).call(requests.capture());
         assertThat(requests.getAllValues().get(1).getInstructions())
@@ -329,8 +362,16 @@ class AgentLoopTest {
                         toolCall("show_image", "{\"attachmentId\":\"1\"}"), reply("一"),
                         toolCall("show_image", "{\"attachmentId\":\"2\"}"), reply("二"));
 
-        loop.run(first, () -> Arrays.asList(ToolCallbacks.from(firstTools)), () -> false);
-        loop.run(second, () -> Arrays.asList(ToolCallbacks.from(secondTools)), () -> false);
+        loop.run(
+                TestIds.next(),
+                first,
+                () -> Arrays.asList(ToolCallbacks.from(firstTools)),
+                () -> false);
+        loop.run(
+                TestIds.next(),
+                second,
+                () -> Arrays.asList(ToolCallbacks.from(secondTools)),
+                () -> false);
 
         ArgumentCaptor<Prompt> requests = ArgumentCaptor.forClass(Prompt.class);
         verify(model, times(4)).call(requests.capture());
@@ -387,6 +428,7 @@ class AgentLoopTest {
         Counter tools = new Counter();
         AgentLoop.Result result =
                 loop.run(
+                        TestIds.next(),
                         "通用 Agent",
                         List.of(new UserMessage("执行")),
                         () -> Arrays.asList(ToolCallbacks.from(tools)),
@@ -414,6 +456,7 @@ class AgentLoopTest {
         Counter tools = new Counter();
         AgentLoop.Result result =
                 loop.run(
+                        TestIds.next(),
                         "通用 Agent",
                         List.of(new UserMessage("执行")),
                         () -> Arrays.asList(ToolCallbacks.from(tools)),

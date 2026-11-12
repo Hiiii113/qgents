@@ -46,7 +46,10 @@ class ChildRunsTest {
                         1,
                         Runnable::run,
                         mock(AgentRunService.class),
-                        mock(SandboxSessionManager.class),
+                        new RunLifecycle(
+                                mock(AgentRunService.class),
+                                mock(SandboxSessionManager.class),
+                                new WorkContext(null, null, null, runId)),
                         () -> false,
                         mock(AgentLoop.class),
                         child -> List.of());

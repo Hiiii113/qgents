@@ -53,6 +53,7 @@ class ToolCallExecutorTest {
             var running =
                     caller.submit(() ->
                             executor.execute(
+                                    TestIds.next(),
                                     List.of(
                                             call("0", "read"),
                                             call("1", "read"),
@@ -113,6 +114,7 @@ class ToolCallExecutorTest {
             var running =
                     caller.submit(() ->
                             executor.execute(
+                                    TestIds.next(),
                                     List.of(
                                             call("a", "read"),
                                             call("b", "read"),
@@ -143,6 +145,7 @@ class ToolCallExecutorTest {
         ToolCallback read = callback("read", true, input -> "ok");
         var result =
                 executor.execute(
+                        TestIds.next(),
                         List.of(call("0", "broken"), call("1", "read"), call("2", "missing")),
                         Map.of("broken", broken, "read", read),
                         () -> false);
@@ -178,6 +181,7 @@ class ToolCallExecutorTest {
             var running =
                     caller.submit(() ->
                             executor.execute(
+                                    TestIds.next(),
                                     List.of(
                                             call("0", "read"),
                                             call("1", "read"),
@@ -203,7 +207,6 @@ class ToolCallExecutorTest {
     void propagatesRunIdentityAndLoggingContextToEveryParallelCall() {
         Long runId = TestIds.next();
         Map<String, String> previous = MDC.getCopyOfContextMap();
-        SandboxExecutionContext.set(runId);
         MDC.put("requestId", "parallel-request");
         try {
             ToolCallback read =
@@ -218,16 +221,16 @@ class ToolCallExecutorTest {
                             });
             var result =
                     executor.execute(
+                            runId,
                             List.of(call("0", "read"), call("1", "read")),
                             Map.of("read", read),
                             () -> false);
             assertThat(result.responses())
                     .extracting(r -> r.responseData())
                     .containsExactly("0", "1");
-            assertThat(SandboxExecutionContext.currentAgentRunId()).isEqualTo(runId);
+            assertThat(SandboxExecutionContext.currentAgentRunId()).isNull();
             assertThat(MDC.get("requestId")).isEqualTo("parallel-request");
         } finally {
-            SandboxExecutionContext.set(null);
             if (previous == null) MDC.clear();
             else MDC.setContextMap(previous);
         }
@@ -247,6 +250,7 @@ class ToolCallExecutorTest {
         var one = new ToolCallExecutor(new ObjectMapper(), 1);
         assertThat(
                         one.execute(
+                                        TestIds.next(),
                                         List.of(call("0", "serial")),
                                         Map.of("serial", serial),
                                         () -> false)

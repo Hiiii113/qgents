@@ -44,7 +44,6 @@ import qg.qgent.memory.tool.AgentMemoryTools;
 import qg.qgent.memory.tool.GroupMemoryTools;
 import qg.qgent.memory.tool.MemoryTools;
 import qg.qgent.memory.tool.MemoryWriteTools;
-import qg.qgent.sandbox.dto.SandboxExecutionContext;
 import qg.qgent.sandbox.service.SandboxCommands;
 import qg.qgent.sandbox.service.SandboxFiles;
 import qg.qgent.sandbox.service.SandboxSessionManager;
@@ -146,29 +145,21 @@ public class AgentChatService {
         AgentEntity agent = agents.requireActiveProjectAgent(event.projectId(), agentId);
         AgentRunEntity root = runService.startRoot(agentId, event, instruction);
         WorkContext work = new WorkContext(event, agentId, agent, root.getId());
+        RunLifecycle lifecycle = new RunLifecycle(runService, sessions, work);
         work.children =
                 new ChildRuns(
                         root.getId(),
                         maxSubagents,
                         childExecutor,
                         runService,
-                        sessions,
+                        lifecycle,
                         work::isCancelled,
                         loop,
                         child -> callbacks(work, child, conversationTools(work, child, false)));
         ChildRuns children = work.children;
         Thread rootWorker = Thread.currentThread();
         boolean wasInterrupted = rootWorker.isInterrupted();
-        runService.registerCancellationSignal(
-                root.getId(),
-                () -> {
-                    work.cancel();
-                    children.cancelAll();
-                    sessions.cancelExecutionsByAgentRun(root.getId());
-                    if (Thread.currentThread() != rootWorker) rootWorker.interrupt();
-                });
-        Long previousRunId = SandboxExecutionContext.currentAgentRunId();
-        SandboxExecutionContext.set(root.getId());
+        runService.registerCancellationSignal(root.getId(), () -> lifecycle.cancelled(root));
         RunStatus status = RunStatus.FAILED;
         String resultText = "Agent 执行失败，请稍后重试";
         int rounds = 0;
@@ -190,6 +181,7 @@ public class AgentChatService {
             rootTools = tools;
             AgentLoop.Result result =
                     loop.run(
+                            root.getId(),
                             conversation,
                             () -> callbacks(work, execution, tools),
                             work::isCancelled,
@@ -201,21 +193,8 @@ public class AgentChatService {
             status = work.isCancelled() ? RunStatus.CANCELLED : RunStatus.FAILED;
             resultText = failure(exception);
         } finally {
-            children.close();
-            if (work.isCancelled() || status != RunStatus.SUCCEEDED) children.cancelAll();
-            children.awaitIdle();
-            if (work.isCancelled() || status != RunStatus.SUCCEEDED) {
-                sessions.stopExecutionsByAgentRun(root.getId());
-            }
-            work.openedWorkspaces.forEach(
-                    workspaceId -> sessions.release(workspaceId, work.rootRunId));
-            if (work.isCancelled()) {
-                status = RunStatus.CANCELLED;
-                resultText = "Agent 运行已取消";
-            }
-            runService.finishRoot(root, status, resultText, rounds);
+            status = lifecycle.finish(root, status, resultText, rounds);
             runService.unregisterCancellationSignal(root.getId());
-            SandboxExecutionContext.set(previousRunId);
             Thread.interrupted();
             if (wasInterrupted) rootWorker.interrupt();
         }

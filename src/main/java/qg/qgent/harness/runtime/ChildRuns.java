@@ -19,14 +19,12 @@ import qg.qgent.harness.entity.AgentRunEntity;
 import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.service.AgentRunService;
 import qg.qgent.harness.tool.ToolResult;
-import qg.qgent.sandbox.dto.SandboxExecutionContext;
-import qg.qgent.sandbox.service.SandboxSessionManager;
 import qg.qgent.workspace.service.WorkspaceSelection;
 
 /**
  * 根运行派发的子 Agent。
  * <p>
- * 容量、排队、续接、停止、完成通知和命令取消全部在这一个状态机里；
+ * 容量、排队、续接、停止和完成通知全部在这一个状态机里；收尾顺序由 {@link RunLifecycle} 统一。
  * 根运行只提供取消信号、子 Agent 的工具集和对话工厂。
  */
 final class ChildRuns {
@@ -34,7 +32,7 @@ final class ChildRuns {
     private final int limit;
     private final Executor executor;
     private final AgentRunService runs;
-    private final SandboxSessionManager sessions;
+    private final RunLifecycle lifecycle;
     private final BooleanSupplier rootCancelled;
     private final AgentLoop loop;
     private final Function<Execution, List<ToolCallback>> tools;
@@ -53,7 +51,7 @@ final class ChildRuns {
             int limit,
             Executor executor,
             AgentRunService runs,
-            SandboxSessionManager sessions,
+            RunLifecycle lifecycle,
             BooleanSupplier rootCancelled,
             AgentLoop loop,
             Function<Execution, List<ToolCallback>> tools) {
@@ -61,7 +59,7 @@ final class ChildRuns {
         this.limit = limit;
         this.executor = executor;
         this.runs = runs;
-        this.sessions = sessions;
+        this.lifecycle = lifecycle;
         this.rootCancelled = rootCancelled;
         this.loop = loop;
         this.tools = tools;
@@ -141,11 +139,7 @@ final class ChildRuns {
 
     ToolResult stop(String runId) {
         Execution child = require(runId);
-        boolean wasBusy = child.isBusy();
-        boolean newlyStopped = requestStop(child);
-        if (wasBusy && newlyStopped) runs.requestChildCancellation(rootRunId, child.run.getId());
-        if (markCommandsCancelled(child.run.getId()))
-            sessions.cancelExecutionsByAgentRun(child.run.getId());
+        lifecycle.cancelled(child.run);
         ToolResult result = ToolResult.ok();
         result.put("runId", runId);
         result.put("stopping", child.isBusy());
@@ -154,15 +148,7 @@ final class ChildRuns {
 
     /** 根运行取消或失败时停止全部子 Agent，并取消它们仍在运行的命令。 */
     void cancelAll() {
-        children.values()
-                .forEach(child -> {
-                    boolean newlyStopped = requestStop(child);
-                    if (newlyStopped) runs.requestChildCancellation(rootRunId, child.run.getId());
-                    // 命令可能比一次成功的子会话活得更久，但仍归它自己的 AgentRun 所有。
-                    if (markCommandsCancelled(child.run.getId())) {
-                        sessions.cancelExecutionsByAgentRun(child.run.getId());
-                    }
-                });
+        children.values().forEach(child -> lifecycle.cancelled(child.run));
         synchronized (lock) {
             lock.notifyAll();
         }
@@ -172,6 +158,14 @@ final class ChildRuns {
         Execution child = children.get(parseId(runId));
         if (child == null) throw new IllegalArgumentException("该子 Agent 不属于当前根运行");
         return child;
+    }
+
+    Execution execution(Long runId) {
+        return children.get(runId);
+    }
+
+    boolean cancelled(Long runId) {
+        return rootCancelled.getAsBoolean() || execution(runId).isStopRequested();
     }
 
     boolean consumeNotification(Long childRunId) {
@@ -300,8 +294,6 @@ final class ChildRuns {
             finish(child, RunStatus.CANCELLED, "子 Agent 已停止", 0);
             return;
         }
-        Long previousRunId = SandboxExecutionContext.currentAgentRunId();
-        SandboxExecutionContext.set(child.run.getId());
         int totalRounds = 0;
         try {
             while (true) {
@@ -310,6 +302,7 @@ final class ChildRuns {
                 try {
                     result =
                             loop.run(
+                                    child.run.getId(),
                                     child.conversation,
                                     () -> tools.apply(child),
                                     () -> rootCancelled.getAsBoolean() || child.isStopRequested(),
@@ -341,8 +334,8 @@ final class ChildRuns {
                     finishResult = failure == null ? result.text() : failure(failure);
                     if (!child.beginFinishing()) break;
                 }
-                finishAfterBegin(child, finishStatus, finishResult, totalRounds);
-                break;
+                lifecycle.finish(child.run, finishStatus, finishResult, totalRounds);
+                return;
             }
         } catch (RuntimeException exception) {
             finish(
@@ -352,8 +345,6 @@ final class ChildRuns {
                             : RunStatus.FAILED,
                     failure(exception),
                     totalRounds);
-        } finally {
-            SandboxExecutionContext.set(previousRunId);
         }
     }
 
@@ -361,29 +352,7 @@ final class ChildRuns {
         synchronized (child) {
             if (!child.beginFinishing()) return;
         }
-        finishAfterBegin(child, status, result, rounds);
-    }
-
-    private void finishAfterBegin(Execution child, RunStatus status, String result, int rounds) {
-        boolean commandsStopped = false;
-        int roundsToPersist = rounds;
-        while (true) {
-            if (rootCancelled.getAsBoolean() || child.isStopRequested()) {
-                status = RunStatus.CANCELLED;
-                result = "子 Agent 已停止";
-            }
-            if (status != RunStatus.SUCCEEDED && !commandsStopped) {
-                sessions.stopExecutionsByAgentRun(child.run.getId());
-                commandsStopped = true;
-                continue;
-            }
-            runs.finish(child.run, status, result, roundsToPersist);
-            roundsToPersist = 0;
-            if (publishFinish(child)) return;
-            // 持久化运行状态期间可能收到取消。
-            status = RunStatus.CANCELLED;
-            result = "子 Agent 已停止";
-        }
+        lifecycle.finish(child.run, status, result, rounds);
     }
 
     boolean publishFinish(Execution child) {

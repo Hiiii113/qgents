@@ -42,25 +42,28 @@ final class ActiveToolExecutions {
         Execution execution = new Execution(sandboxId, agentRunId);
         Map<String, String> logContext = MDC.getCopyOfContextMap();
         execution.task =
-                new FutureTask<>(() -> {
-                    Long previousRun = SandboxExecutionContext.currentAgentRunId();
-                    Map<String, String> previousLog = MDC.getCopyOfContextMap();
-                    execution.worker = Thread.currentThread();
-                    SandboxExecutionContext.set(agentRunId);
-                    setLogContext(logContext);
-                    try {
-                        execution.completion.complete(body.get());
-                    } catch (RuntimeException exception) {
-                        execution.completion.completeExceptionally(exception);
-                        log.error("sandbox execution failed executionId={}", id, exception);
-                    } finally {
-                        execution.worker = null;
-                        SandboxExecutionContext.set(previousRun);
-                        setLogContext(previousLog);
-                        executions.remove(id, execution);
-                    }
-                    return null;
-                });
+                new FutureTask<>(() ->
+                        SandboxExecutionContext.within(
+                                agentRunId,
+                                () -> {
+                                    Map<String, String> previousLog = MDC.getCopyOfContextMap();
+                                    execution.worker = Thread.currentThread();
+                                    setLogContext(logContext);
+                                    try {
+                                        execution.completion.complete(body.get());
+                                    } catch (RuntimeException exception) {
+                                        execution.completion.completeExceptionally(exception);
+                                        log.error(
+                                                "sandbox execution failed executionId={}",
+                                                id,
+                                                exception);
+                                    } finally {
+                                        execution.worker = null;
+                                        setLogContext(previousLog);
+                                        executions.remove(id, execution);
+                                    }
+                                    return null;
+                                }));
         executions.put(id, execution);
         try {
             pool.execute(execution.task);

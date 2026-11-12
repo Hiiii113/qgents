@@ -54,7 +54,6 @@ class ToolExecutionServiceTest {
     void shutdown() {
         pool.shutdownNow();
         MDC.clear();
-        SandboxExecutionContext.set(null);
     }
 
     @Test
