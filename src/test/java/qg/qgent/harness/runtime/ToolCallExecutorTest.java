@@ -237,6 +237,66 @@ class ToolCallExecutorTest {
     }
 
     @Test
+    void reportsToolLifecycleWithCallIdsAndFailureOutcome() {
+        var events = new java.util.ArrayList<String>();
+        RunStreamSink sink =
+                new RunStreamSink() {
+                    public void roundStarted() {}
+
+                    public void delta(String text) {}
+
+                    public void toolStarted(String toolCallId, String toolName) {
+                        events.add("started:" + toolCallId + ":" + toolName);
+                    }
+
+                    public void toolFinished(String toolCallId, String toolName, Boolean ok) {
+                        events.add("finished:" + toolCallId + ":" + toolName + ":" + ok);
+                    }
+
+                    public void finished() {}
+                };
+        ToolCallback failing =
+                callback(
+                        "boom",
+                        false,
+                        input -> {
+                            throw new IllegalStateException("炸了");
+                        });
+        ToolCallback softFailure = callback("soft", false, input -> "{\"ok\":false,\"errorCode\":\"X\"}");
+        ToolCallback success = callback("good", false, input -> "{\"ok\":true}");
+
+        var result =
+                executor.execute(
+                        TestIds.next(),
+                        List.of(
+                                new ToolCall("call-x", "function", "boom", "{}"),
+                                new ToolCall("call-y", "function", "missing", "{}"),
+                                new ToolCall("call-z", "function", "soft", "{}"),
+                                new ToolCall("call-w", "function", "good", "{}")),
+                        Map.of("boom", failing, "soft", softFailure, "good", success),
+                        () -> false,
+                        sink);
+
+        assertThat(result.responses())
+                .extracting(r -> r.id())
+                .containsExactly("call-x", "call-y", "call-z", "call-w");
+        assertThat(result.responses().get(0).responseData()).contains("TOOL_FAILED");
+        assertThat(result.responses().get(1).responseData()).contains("TOOL_NOT_FOUND");
+        assertThat(result.responses().get(2).responseData()).contains("\"ok\":false");
+        assertThat(result.responses().get(3).responseData()).contains("\"ok\":true");
+        assertThat(events)
+                .containsExactly(
+                        "started:call-x:boom",
+                        "finished:call-x:boom:false",
+                        "started:call-y:missing",
+                        "finished:call-y:missing:false",
+                        "started:call-z:soft",
+                        "finished:call-z:soft:false",
+                        "started:call-w:good",
+                        "finished:call-w:good:true");
+    }
+
+    @Test
     void oneSlotAndUnmarkedToolsRemainSerialAndInvalidLimitsAreRejected() {
         var thread = Thread.currentThread();
         ToolCallback serial =

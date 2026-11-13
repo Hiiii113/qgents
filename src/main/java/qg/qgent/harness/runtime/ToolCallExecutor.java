@@ -37,15 +37,25 @@ final class ToolCallExecutor {
             List<ToolCall> calls,
             Map<String, ToolCallback> callbacks,
             BooleanSupplier cancelled) {
+        return execute(runId, calls, callbacks, cancelled, RunStreamSink.NONE);
+    }
+
+    Result execute(
+            Long runId,
+            List<ToolCall> calls,
+            Map<String, ToolCallback> callbacks,
+            BooleanSupplier cancelled,
+            RunStreamSink sink) {
         return SandboxExecutionContext.within(
-                runId, () -> dispatch(runId, calls, callbacks, cancelled));
+                runId, () -> dispatch(runId, calls, callbacks, cancelled, sink));
     }
 
     private Result dispatch(
             Long runId,
             List<ToolCall> calls,
             Map<String, ToolCallback> callbacks,
-            BooleanSupplier cancelled) {
+            BooleanSupplier cancelled,
+            RunStreamSink sink) {
         List<ToolResponse> results = new ArrayList<>(Collections.nCopies(calls.size(), null));
         Map<String, String> context = MDC.getCopyOfContextMap();
         try (ExecutorService pool =
@@ -54,7 +64,7 @@ final class ToolCallExecutor {
             for (int next = 0; next < calls.size(); ) {
                 if (stopped(cancelled)) return new Result(results, true);
                 if (!(callbacks.get(calls.get(next).name()) instanceof ParallelToolCallback)) {
-                    results.set(next, invoke(calls.get(next), callbacks));
+                    results.set(next, invoke(calls.get(next), callbacks, sink));
                     next++;
                     continue;
                 }
@@ -62,7 +72,8 @@ final class ToolCallExecutor {
                 while (end < calls.size()
                         && callbacks.get(calls.get(end).name()) instanceof ParallelToolCallback)
                     end++;
-                if (parallel(pool, calls, callbacks, next, end, results, cancelled, runId, context))
+                if (parallel(
+                        pool, calls, callbacks, next, end, results, cancelled, runId, context, sink))
                     return new Result(results, true);
                 next = end;
             }
@@ -79,7 +90,8 @@ final class ToolCallExecutor {
             List<ToolResponse> results,
             BooleanSupplier cancelled,
             Long runId,
-            Map<String, String> context) {
+            Map<String, String> context,
+            RunStreamSink sink) {
         var completed = new ExecutorCompletionService<CompletedCall>(pool);
         int next = start, active = 0;
         boolean stopped = false;
@@ -95,7 +107,8 @@ final class ToolCallExecutor {
                                 runId,
                                 () ->
                                         new CompletedCall(
-                                                index, invoke(calls.get(index), callbacks)));
+                                                index,
+                                                invoke(calls.get(index), callbacks, sink)));
                     } finally {
                         setMdc(previousContext);
                     }
@@ -121,26 +134,49 @@ final class ToolCallExecutor {
         return stopped;
     }
 
-    private ToolResponse invoke(ToolCall call, Map<String, ToolCallback> callbacks) {
-        ToolCallback callback = callbacks.get(call.name());
+    private ToolResponse invoke(
+            ToolCall call, Map<String, ToolCallback> callbacks, RunStreamSink sink) {
+        sink.toolStarted(call.id(), call.name());
+        // 未知工具与异常一定是失败；正常返回时只信 ToolResult 的 ok 字段，其他结果不声称成功。
+        Boolean ok = false;
         String result;
-        if (callback == null) result = error("TOOL_NOT_FOUND", "本轮没有工具：" + call.name());
-        else {
-            try {
-                result = callback.call(call.arguments());
-            } catch (RuntimeException exception) {
-                // 已知业务错误保留稳定错误码，便于模型按代码而不是文案判断处置方式
-                String code =
-                        exception instanceof qg.qgent.common.web.ApiException api
-                                ? api.code()
-                                : "TOOL_FAILED";
-                result =
-                        error(
-                                code,
-                                exception.getMessage() == null ? "工具执行失败" : exception.getMessage());
+        try {
+            ToolCallback callback = callbacks.get(call.name());
+            if (callback == null) result = error("TOOL_NOT_FOUND", "本轮没有工具：" + call.name());
+            else {
+                try {
+                    result = callback.call(call.arguments());
+                    ok = resultOk(result);
+                } catch (RuntimeException exception) {
+                    // 已知业务错误保留稳定错误码，便于模型按代码而不是文案判断处置方式
+                    String code =
+                            exception instanceof qg.qgent.common.web.ApiException api
+                                    ? api.code()
+                                    : "TOOL_FAILED";
+                    result =
+                            error(
+                                    code,
+                                    exception.getMessage() == null
+                                            ? "工具执行失败"
+                                            : exception.getMessage());
+                }
             }
+        } finally {
+            sink.toolFinished(call.id(), call.name(), ok);
         }
         return new ToolResponse(call.id(), call.name(), result);
+    }
+
+    /** 工具结果里显式的 ok 字段；不是 ToolResult 形状时返回 null，由前端中性展示。 */
+    private Boolean resultOk(String result) {
+        if (result == null) return null;
+        try {
+            var node = json.readTree(result);
+            var ok = node == null ? null : node.get("ok");
+            return ok != null && ok.isBoolean() ? ok.booleanValue() : null;
+        } catch (JsonProcessingException exception) {
+            return null;
+        }
     }
 
     private String error(String code, String message) {

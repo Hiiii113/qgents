@@ -36,6 +36,7 @@ final class ChildRuns {
     private final BooleanSupplier rootCancelled;
     private final AgentLoop loop;
     private final Function<Execution, List<ToolCallback>> tools;
+    private final Function<AgentRunEntity, RunStreamSink> sinks;
 
     private final Map<Long, Execution> children = new ConcurrentHashMap<>();
     private final Set<Long> cancelledCommands = ConcurrentHashMap.newKeySet();
@@ -54,7 +55,8 @@ final class ChildRuns {
             RunLifecycle lifecycle,
             BooleanSupplier rootCancelled,
             AgentLoop loop,
-            Function<Execution, List<ToolCallback>> tools) {
+            Function<Execution, List<ToolCallback>> tools,
+            Function<AgentRunEntity, RunStreamSink> sinks) {
         this.rootRunId = rootRunId;
         this.limit = limit;
         this.executor = executor;
@@ -63,6 +65,7 @@ final class ChildRuns {
         this.rootCancelled = rootCancelled;
         this.loop = loop;
         this.tools = tools;
+        this.sinks = sinks;
     }
 
     ToolResult start(
@@ -84,7 +87,7 @@ final class ChildRuns {
         try {
             submit(child);
         } catch (RejectedExecutionException exception) {
-            finish(child, RunStatus.FAILED, "子 Agent 执行队列已满，请稍后重试", 0);
+            finish(child, RunStatus.FAILED, "子 Agent 执行队列已满，请稍后重试", 0, null);
             return ToolResult.error("SUBAGENT_QUEUE_FULL", "子 Agent 执行队列已满，请稍后重试");
         }
         ToolResult result = ToolResult.ok();
@@ -114,7 +117,7 @@ final class ChildRuns {
             try {
                 submit(child);
             } catch (RejectedExecutionException exception) {
-                finish(child, RunStatus.FAILED, "子 Agent 执行队列已满，请稍后重试", 0);
+                finish(child, RunStatus.FAILED, "子 Agent 执行队列已满，请稍后重试", 0, null);
                 return ToolResult.error("SUBAGENT_QUEUE_FULL", "子 Agent 执行队列已满，请稍后重试");
             }
             return accepted(runId, false);
@@ -291,9 +294,10 @@ final class ChildRuns {
 
     private void runChild(Execution child) {
         if (!child.beginWorker()) {
-            finish(child, RunStatus.CANCELLED, "子 Agent 已停止", 0);
+            finish(child, RunStatus.CANCELLED, "子 Agent 已停止", 0, null);
             return;
         }
+        RunStreamSink sink = sinks.apply(child.run);
         int totalRounds = 0;
         try {
             while (true) {
@@ -306,7 +310,8 @@ final class ChildRuns {
                                     child.conversation,
                                     () -> tools.apply(child),
                                     () -> rootCancelled.getAsBoolean() || child.isStopRequested(),
-                                    updates(child));
+                                    updates(child),
+                                    sink);
                     totalRounds += result.rounds();
                 } catch (RuntimeException exception) {
                     failure = exception;
@@ -335,6 +340,7 @@ final class ChildRuns {
                     if (!child.beginFinishing()) break;
                 }
                 lifecycle.finish(child.run, finishStatus, finishResult, totalRounds);
+                sink.finished();
                 return;
             }
         } catch (RuntimeException exception) {
@@ -344,15 +350,22 @@ final class ChildRuns {
                             ? RunStatus.CANCELLED
                             : RunStatus.FAILED,
                     failure(exception),
-                    totalRounds);
+                    totalRounds,
+                    sink);
         }
     }
 
-    private void finish(Execution child, RunStatus status, String result, int rounds) {
+    private void finish(
+            Execution child,
+            RunStatus status,
+            String result,
+            int rounds,
+            RunStreamSink sink) {
         synchronized (child) {
             if (!child.beginFinishing()) return;
         }
         lifecycle.finish(child.run, status, result, rounds);
+        if (sink != null) sink.finished();
     }
 
     boolean publishFinish(Execution child) {

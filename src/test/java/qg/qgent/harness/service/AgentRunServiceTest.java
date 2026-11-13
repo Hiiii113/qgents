@@ -40,6 +40,28 @@ class AgentRunServiceTest {
     }
 
     @Test
+    void marksRunsLeftRunningByAPreviousProcessAsFailed() {
+        when(runs.update(isNull(), any())).thenReturn(2);
+
+        service.failInterruptedRuns();
+
+        ArgumentCaptor<Wrapper<AgentRunEntity>> wrapper = ArgumentCaptor.forClass(Wrapper.class);
+        verify(runs).update(isNull(), wrapper.capture());
+        assertThat(
+                        ((com.baomidou.mybatisplus.core.conditions.AbstractWrapper<?, ?, ?>)
+                                        wrapper.getValue())
+                                .getSqlSet())
+                .contains("status", "result", "finished_at");
+        assertThat(wrapper.getValue().getSqlSegment()).contains("status IN");
+        assertThat(
+                        ((com.baomidou.mybatisplus.core.conditions.AbstractWrapper<?, ?, ?>)
+                                        wrapper.getValue())
+                                .getParamNameValuePairs()
+                                .values())
+                .contains("服务重启，运行已中断", RunStatus.FAILED, RunStatus.RUNNING);
+    }
+
+    @Test
     void senderCanCancelOnlyRunningRootsFromTheSelectedMessage() {
         messageFrom(actor);
         when(runs.update(isNull(), any())).thenReturn(2);

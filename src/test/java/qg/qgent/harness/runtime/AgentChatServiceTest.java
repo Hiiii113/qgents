@@ -37,6 +37,7 @@ import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.http.HttpStatus;
+import reactor.core.publisher.Flux;
 import qg.qgent.agent.entity.AgentEntity;
 import qg.qgent.agent.service.AgentApplicationService;
 import qg.qgent.agent.service.AgentService;
@@ -1303,6 +1304,8 @@ class AgentChatServiceTest {
             int maxSubagents) {
         AgentLoop loop = new AgentLoop(model, new ObjectMapper(), 12, 4);
         AgentRunService runs = mock(AgentRunService.class);
+        AgentStreamService streams = mock(AgentStreamService.class);
+        when(streams.sink(any())).thenReturn(RunStreamSink.NONE);
         MessageService messages = mock(MessageService.class);
         WorkspaceService workspaces = mock(WorkspaceService.class);
         SandboxFiles codeAccess = mock(SandboxFiles.class);
@@ -1407,6 +1410,7 @@ class AgentChatServiceTest {
                         history,
                         messages,
                         runs,
+                        streams,
                         sessions,
                         codeAccess,
                         attachments,
@@ -1457,6 +1461,9 @@ class AgentChatServiceTest {
         ChatModel model = mock(ChatModel.class);
         when(model.getOptions())
                 .thenReturn(OpenAiChatOptions.builder().model("test-model").build());
+        // 既有用例按 call 桩模型回复；循环改用 stream 后在此适配为单 chunk，多 chunk 用例单独覆盖。
+        when(model.stream(any(Prompt.class)))
+                .thenAnswer(invocation -> Flux.just(model.call((Prompt) invocation.getArgument(0))));
         return model;
     }
 

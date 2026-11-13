@@ -52,7 +52,8 @@ class ChildRunsTest {
                                 new WorkContext(null, null, null, runId)),
                         () -> false,
                         mock(AgentLoop.class),
-                        child -> List.of());
+                        child -> List.of(),
+                        child -> RunStreamSink.NONE);
         ChildRuns.Execution child = new ChildRuns.Execution(run, null, null, ".");
         assertThat(children.reserve(child)).isTrue();
         child.schedule();

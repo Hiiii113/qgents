@@ -7,6 +7,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.service.MessageService;
@@ -19,10 +23,31 @@ import qg.qgent.project.service.ProjectAccessService;
 @Service
 @RequiredArgsConstructor
 public class AgentRunService {
+    private static final Logger log = LoggerFactory.getLogger(AgentRunService.class);
+
     private final AgentRunMapper runs;
     private final MessageService messages;
     private final ProjectAccessService access;
     private final Map<Long, Runnable> cancellationSignals = new ConcurrentHashMap<>();
+
+    /** 服务重启后，上一进程留下的运行不可能再继续；收尾为失败，避免前端永远看到 RUNNING。 */
+    @EventListener(ApplicationReadyEvent.class)
+    public void failInterruptedRuns() {
+        int interrupted =
+                runs.update(
+                        null,
+                        Wrappers.<AgentRunEntity>lambdaUpdate()
+                                .set(AgentRunEntity::getStatus, RunStatus.FAILED)
+                                .set(AgentRunEntity::getResult, "服务重启，运行已中断")
+                                .set(AgentRunEntity::getFinishedAt, LocalDateTime.now(ZoneOffset.UTC))
+                                .in(
+                                        AgentRunEntity::getStatus,
+                                        RunStatus.RUNNING,
+                                        RunStatus.CANCELLING));
+        if (interrupted > 0) {
+            log.warn("marked {} interrupted agent runs as FAILED after restart", interrupted);
+        }
+    }
 
     public AgentRunEntity startRoot(Long agentId, MessageSentEvent event, String instruction) {
         AgentRunEntity run = new AgentRunEntity();

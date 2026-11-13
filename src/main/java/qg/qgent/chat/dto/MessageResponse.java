@@ -53,6 +53,10 @@ public class MessageResponse {
     @Schema(description = "提及对象列表")
     private List<Mention> mentions;
 
+    // 发送方客户端去重 ID；Agent 回复为 qgent-reply:<rootRunId>。
+    @Schema(description = "发送方客户端去重 ID")
+    private String clientMessageId;
+
     // 发送时间（ISO8601 UTC，带时区后缀 Z）。
     @Schema(description = "发送时间（ISO8601 UTC）")
     private String createdAt;

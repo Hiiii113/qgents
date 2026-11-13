@@ -2,9 +2,11 @@ package qg.qgent.harness.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -14,6 +16,8 @@ import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.model.MessageAggregator;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.content.Media;
 import org.springframework.ai.openai.OpenAiChatOptions;
@@ -56,7 +60,8 @@ public class AgentLoop {
                 conversation(systemPrompt, initialHistory),
                 availableTools,
                 cancelled,
-                UpdateSource.NONE);
+                UpdateSource.NONE,
+                RunStreamSink.NONE);
     }
 
     /** Continues a saved conversation, retaining earlier user, assistant, and tool messages. */
@@ -75,6 +80,17 @@ public class AgentLoop {
             Supplier<List<ToolCallback>> availableTools,
             BooleanSupplier cancelled,
             UpdateSource updates) {
+        return run(runId, conversation, availableTools, cancelled, updates, RunStreamSink.NONE);
+    }
+
+    /** 运行一段对话，并把可展示的正文和工具阶段同步给实时层。 */
+    public Result run(
+            Long runId,
+            Conversation conversation,
+            Supplier<List<ToolCallback>> availableTools,
+            BooleanSupplier cancelled,
+            UpdateSource updates,
+            RunStreamSink sink) {
         try {
             for (int round = 1; round <= maxRounds; round++) {
                 if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
@@ -102,7 +118,8 @@ public class AgentLoop {
                 List<Message> request = new ArrayList<>();
                 request.add(new SystemMessage(conversation.systemPrompt()));
                 request.addAll(conversation.history());
-                ChatResponse response = model.call(new Prompt(request, options));
+                sink.roundStarted();
+                ChatResponse response = chat(new Prompt(request, options), sink, cancelled);
                 if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
                     return new Result(false, "Agent 运行已取消", round);
                 }
@@ -136,7 +153,8 @@ public class AgentLoop {
                 // 保留原始消息及供应商元数据，下一轮完整回传 tool_calls/reasoning_content。
                 conversation.append(assistant);
                 ToolCallExecutor.Result results =
-                        toolCalls.execute(runId, assistant.getToolCalls(), callbacks, cancelled);
+                        toolCalls.execute(
+                                runId, assistant.getToolCalls(), callbacks, cancelled, sink);
                 if (results.cancelled()) return new Result(false, "Agent 运行已取消", round);
                 conversation.append(
                         ToolResponseMessage.builder().responses(results.responses()).build());
@@ -147,6 +165,55 @@ public class AgentLoop {
         } finally {
             conversation.clearStagedImages();
         }
+    }
+
+    /**
+     * 逐步消费模型流：正文增量交给实时层，结束时用聚合结果保留完整 tool calls 与供应商元数据。
+     * reasoning 增量按 chunk 拼接，避免聚合器只保留最后一段。
+     */
+    private ChatResponse chat(Prompt prompt, RunStreamSink sink, BooleanSupplier cancelled) {
+        MessageAggregator aggregator = new MessageAggregator();
+        AtomicReference<ChatResponse> completed = new AtomicReference<>();
+        StringBuilder reasoning = new StringBuilder();
+        model.stream(prompt)
+                .doOnNext(chunk -> forward(chunk, sink, cancelled, reasoning))
+                .transform(flux -> aggregator.aggregate(flux, completed::set))
+                .blockLast();
+        return withFullReasoning(completed.get(), reasoning);
+    }
+
+    private void forward(
+            ChatResponse chunk,
+            RunStreamSink sink,
+            BooleanSupplier cancelled,
+            StringBuilder reasoning) {
+        if (chunk.getResult() == null || chunk.getResult().getOutput() == null) return;
+        AssistantMessage message = chunk.getResult().getOutput();
+        if (message.getMetadata().get("reasoningContent") instanceof String thoughts) {
+            reasoning.append(thoughts);
+        }
+        // 思考内容不进正文流；取消后立即停止推送。
+        if (cancelled.getAsBoolean()) return;
+        if (Boolean.parseBoolean(
+                String.valueOf(message.getMetadata().getOrDefault("isThought", "false")))) return;
+        String text = message.getText();
+        if (text != null && !text.isEmpty()) sink.delta(text);
+    }
+
+    private ChatResponse withFullReasoning(ChatResponse response, StringBuilder reasoning) {
+        if (response == null || response.getResult() == null || reasoning.isEmpty()) return response;
+        AssistantMessage message = response.getResult().getOutput();
+        Map<String, Object> properties = new HashMap<>(message.getMetadata());
+        properties.put("reasoningContent", reasoning.toString());
+        AssistantMessage aggregated =
+                AssistantMessage.builder()
+                        .content(message.getText())
+                        .properties(properties)
+                        .toolCalls(message.getToolCalls())
+                        .build();
+        return new ChatResponse(
+                List.of(new Generation(aggregated, response.getResult().getMetadata())),
+                response.getMetadata());
     }
 
     public record Result(boolean success, String text, int rounds) {}

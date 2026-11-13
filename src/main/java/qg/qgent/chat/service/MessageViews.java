@@ -149,6 +149,7 @@ public class MessageViews {
                         ? null
                         : message.getReplyToMessageId().toString(),
                 mentions,
+                message.getClientMessageId(),
                 iso(message.getCreatedAt()));
     }
 

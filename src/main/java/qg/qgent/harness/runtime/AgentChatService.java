@@ -77,6 +77,7 @@ public class AgentChatService {
     private final ChatHistoryService history;
     private final MessageService messages;
     private final AgentRunService runService;
+    private final AgentStreamService streams;
     private final SandboxSessionManager sessions;
     private final SandboxFiles files;
     private final AttachmentService attachments;
@@ -101,6 +102,7 @@ public class AgentChatService {
             ChatHistoryService history,
             MessageService messages,
             AgentRunService runService,
+            AgentStreamService streams,
             SandboxSessionManager sessions,
             SandboxFiles files,
             AttachmentService attachments,
@@ -124,6 +126,7 @@ public class AgentChatService {
         this.history = history;
         this.messages = messages;
         this.runService = runService;
+        this.streams = streams;
         this.sessions = sessions;
         this.files = files;
         this.attachments = attachments;
@@ -143,6 +146,7 @@ public class AgentChatService {
         // 未启用或不属于本项目的 Agent 不产生运行，也不产生回复。
         AgentEntity agent = agents.requireActiveProjectAgent(event.projectId(), agentId);
         AgentRunEntity root = runService.startRoot(agentId, event, instruction);
+        RunStreamSink sink = streams.sink(root);
         WorkContext work = new WorkContext(event, agentId, agent, root.getId());
         RunLifecycle lifecycle = new RunLifecycle(runService, sessions, work);
         work.children =
@@ -154,7 +158,8 @@ public class AgentChatService {
                         lifecycle,
                         work::isCancelled,
                         loop,
-                        child -> callbacks(work, child, conversationTools(work, child, false)));
+                        child -> callbacks(work, child, conversationTools(work, child, false)),
+                        streams::sink);
         ChildRuns children = work.children;
         Thread rootWorker = Thread.currentThread();
         boolean wasInterrupted = rootWorker.isInterrupted();
@@ -182,7 +187,8 @@ public class AgentChatService {
                             conversation,
                             () -> callbacks(work, execution, tools),
                             work::isCancelled,
-                            children.updates());
+                            children.updates(),
+                            sink);
             status = result.success() ? RunStatus.SUCCEEDED : RunStatus.FAILED;
             resultText = result.text();
             rounds = result.rounds();
@@ -190,7 +196,9 @@ public class AgentChatService {
             status = work.isCancelled() ? RunStatus.CANCELLED : RunStatus.FAILED;
             resultText = failure(exception);
         } finally {
-            status = lifecycle.finish(root, status, resultText, rounds);
+            lifecycle.finish(root, status, resultText, rounds);
+            // finishRoot 在并发取消时可能把运行改为 CANCELLED，终态事件以记录为准。
+            sink.finished();
             runService.unregisterCancellationSignal(root.getId());
             Thread.interrupted();
             if (wasInterrupted) rootWorker.interrupt();

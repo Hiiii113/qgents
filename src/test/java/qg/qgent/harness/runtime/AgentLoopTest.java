@@ -7,9 +7,11 @@ import static org.mockito.Mockito.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -17,6 +19,7 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.ToolResponseMessage;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.metadata.ChatGenerationMetadata;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
@@ -28,6 +31,7 @@ import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.util.MimeType;
 import qg.qgent.support.TestIds;
+import reactor.core.publisher.Flux;
 
 class AgentLoopTest {
     private final ChatModel model = mock(ChatModel.class);
@@ -35,6 +39,9 @@ class AgentLoopTest {
     private AgentLoop loop(int rounds) {
         when(model.getOptions())
                 .thenReturn(OpenAiChatOptions.builder().model("test-model").build());
+        // 默认把既有的单次 call 桩适配成单 chunk 流；需要多 chunk 的用例再单独覆盖 stream。
+        when(model.stream(any(Prompt.class)))
+                .thenAnswer(invocation -> Flux.just(model.call((Prompt) invocation.getArgument(0))));
         return new AgentLoop(model, new ObjectMapper(), rounds, 4);
     }
 
@@ -410,6 +417,210 @@ class AgentLoopTest {
     private static String dataUri(String attachmentId) {
         return "data:image/png;base64,"
                 + Base64.getEncoder().encodeToString(attachmentId.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Test
+    void forwardsModelTextChunksInOrderAndKeepsAggregatedAnswer() {
+        AgentLoop loop = loop(3);
+        when(model.stream(any(Prompt.class)))
+                .thenReturn(Flux.just(chunk("你", "STOP"), chunk("好", "STOP"), chunk("！", "STOP")));
+        RecordingSink sink = new RecordingSink();
+        AgentLoop.Result result =
+                loop.run(
+                        TestIds.next(),
+                        loop.conversation("Agent", List.of(new UserMessage("打招呼"))),
+                        List::of,
+                        () -> false,
+                        AgentLoop.UpdateSource.NONE,
+                        sink);
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.text()).isEqualTo("你好！");
+        assertThat(sink.deltas).containsExactly("你", "好", "！");
+        assertThat(sink.rounds).isEqualTo(1);
+    }
+
+    @Test
+    void aggregatesStreamedToolCallAndReportsToolLifecycle() {
+        AgentLoop loop = loop(3);
+        AssistantMessage toolCall =
+                AssistantMessage.builder()
+                        .content("先查一下")
+                        .toolCalls(
+                                List.of(
+                                        new AssistantMessage.ToolCall(
+                                                "call-9", "function", "count", "{}")))
+                        .build();
+        when(model.stream(any(Prompt.class)))
+                .thenReturn(
+                        Flux.just(
+                                new ChatResponse(
+                                        List.of(new Generation(toolCall, finish("TOOL_CALLS"))))),
+                        Flux.just(chunk("完成", "STOP")));
+        Counter tools = new Counter();
+        RecordingSink sink = new RecordingSink();
+        AgentLoop.Result result =
+                loop.run(
+                        TestIds.next(),
+                        loop.conversation("Agent", List.of(new UserMessage("执行"))),
+                        () -> Arrays.asList(ToolCallbacks.from(tools)),
+                        () -> false,
+                        AgentLoop.UpdateSource.NONE,
+                        sink);
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.text()).isEqualTo("完成");
+        assertThat(sink.events)
+                .contains("tool:started:call-9:count", "tool:finished:call-9:count:null");
+        assertThat(sink.rounds).isEqualTo(2);
+        ArgumentCaptor<Prompt> requests = ArgumentCaptor.forClass(Prompt.class);
+        verify(model, times(2)).stream(requests.capture());
+        ToolResponseMessage response =
+                (ToolResponseMessage) requests.getAllValues().get(1).getInstructions().getLast();
+        assertThat(response.getResponses().getFirst().id()).isEqualTo("call-9");
+    }
+
+    @Test
+    void lengthFinishReasonFailsInsteadOfReturningPartialText() {
+        AgentLoop loop = loop(3);
+        when(model.stream(any(Prompt.class)))
+                .thenReturn(Flux.just(chunk("写到一半", "STOP"), chunk("被截断", "LENGTH")));
+        RecordingSink sink = new RecordingSink();
+
+        AgentLoop.Result result =
+                loop.run(
+                        TestIds.next(),
+                        loop.conversation("Agent", List.of(new UserMessage("长文"))),
+                        List::of,
+                        () -> false,
+                        AgentLoop.UpdateSource.NONE,
+                        sink);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.text()).contains("截断");
+    }
+
+    @Test
+    void cancellationDuringStreamStopsForwardingLaterChunks() {
+        AgentLoop loop = loop(3);
+        AtomicBoolean cancelled = new AtomicBoolean();
+        AtomicInteger seen = new AtomicInteger();
+        when(model.stream(any(Prompt.class)))
+                .thenReturn(
+                        Flux.just(chunk("一", "STOP"), chunk("二", "STOP"), chunk("三", "STOP"))
+                                .doOnNext(
+                                        ignored -> {
+                                            if (seen.incrementAndGet() == 2) {
+                                                cancelled.set(true);
+                                            }
+                                        }));
+        RecordingSink sink = new RecordingSink();
+
+        AgentLoop.Result result =
+                loop.run(
+                        TestIds.next(),
+                        loop.conversation("Agent", List.of(new UserMessage("停下"))),
+                        List::of,
+                        cancelled::get,
+                        AgentLoop.UpdateSource.NONE,
+                        sink);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.text()).contains("取消");
+        assertThat(sink.deltas).containsExactly("一");
+    }
+
+    @Test
+    void concatenatesReasoningMetadataForTheNextRound() {
+        AgentLoop loop = loop(3);
+        AssistantMessage withToolCall =
+                AssistantMessage.builder()
+                        .content("")
+                        .properties(Map.of("reasoningContent", "考"))
+                        .toolCalls(
+                                List.of(
+                                        new AssistantMessage.ToolCall(
+                                                "call-1", "function", "count", "{}")))
+                        .build();
+        when(model.stream(any(Prompt.class)))
+                .thenReturn(
+                        Flux.just(
+                                thought("思"),
+                                new ChatResponse(
+                                        List.of(new Generation(withToolCall, finish("TOOL_CALLS"))))),
+                        Flux.just(chunk("完成", "STOP")));
+        RecordingSink sink = new RecordingSink();
+
+        AgentLoop.Result result =
+                loop.run(
+                        TestIds.next(),
+                        loop.conversation("Agent", List.of(new UserMessage("想想"))),
+                        () -> Arrays.asList(ToolCallbacks.from(new Counter())),
+                        () -> false,
+                        AgentLoop.UpdateSource.NONE,
+                        sink);
+
+        assertThat(result.success()).isTrue();
+        assertThat(sink.deltas).doesNotContain("思", "考");
+        ArgumentCaptor<Prompt> requests = ArgumentCaptor.forClass(Prompt.class);
+        verify(model, times(2)).stream(requests.capture());
+        AssistantMessage assistant =
+                requests.getAllValues().get(1).getInstructions().stream()
+                        .filter(AssistantMessage.class::isInstance)
+                        .map(AssistantMessage.class::cast)
+                        .findFirst()
+                        .orElseThrow();
+        assertThat(assistant.getMetadata().get("reasoningContent")).isEqualTo("思考");
+        assertThat(assistant.getToolCalls())
+                .extracting(AssistantMessage.ToolCall::id)
+                .containsExactly("call-1");
+    }
+
+    private ChatResponse chunk(String text, String finishReason) {
+        return new ChatResponse(
+                List.of(new Generation(new AssistantMessage(text), finish(finishReason))));
+    }
+
+    private ChatResponse thought(String reasoning) {
+        return new ChatResponse(
+                List.of(
+                        new Generation(
+                                AssistantMessage.builder()
+                                        .content("")
+                                        .properties(Map.of("reasoningContent", reasoning))
+                                        .build(),
+                                finish("STOP"))));
+    }
+
+    private ChatGenerationMetadata finish(String finishReason) {
+        return ChatGenerationMetadata.builder().finishReason(finishReason).build();
+    }
+
+    static class RecordingSink implements RunStreamSink {
+        final List<String> deltas = new ArrayList<>();
+        final List<String> events = new ArrayList<>();
+        int rounds;
+
+        public void roundStarted() {
+            rounds++;
+            events.add("round:" + rounds);
+        }
+
+        public void delta(String text) {
+            deltas.add(text);
+        }
+
+        public void toolStarted(String toolCallId, String toolName) {
+            events.add("tool:started:" + toolCallId + ":" + toolName);
+        }
+
+        public void toolFinished(String toolCallId, String toolName, Boolean ok) {
+            events.add("tool:finished:" + toolCallId + ":" + toolName + ":" + ok);
+        }
+
+        public void finished() {
+            events.add("finished");
+        }
     }
 
     private ChatResponse reply(String text) {
