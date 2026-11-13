@@ -6,7 +6,9 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import qg.qgent.agent.entity.AgentEntity;
 
-/** 项目内 Agent 视图：列表接口只返回已启用的 Agent，提交申请返回新建的待审批申请。 */
+/**
+ * 项目内 Agent 视图：列表接口只返回已启用的 Agent，提交申请返回新建的待审批申请。
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -33,11 +35,11 @@ public class AgentResponse {
 
     public static AgentResponse of(AgentEntity agent) {
         return new AgentResponse(
-                agent.getId().toString(),
-                agent.getName(),
-                agent.getDescription(),
-                agent.getAvatarUrl(),
-                Boolean.TRUE.equals(agent.getDefaultAgent()),
-                agent.getStatus());
+            agent.getId().toString(),
+            agent.getName(),
+            agent.getDescription(),
+            agent.getAvatarUrl(),
+            Boolean.TRUE.equals(agent.getDefaultAgent()),
+            agent.getStatus());
     }
 }

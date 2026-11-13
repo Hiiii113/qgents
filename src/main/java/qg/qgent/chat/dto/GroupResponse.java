@@ -5,7 +5,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/** 项目群聊视图，包含消息摘要及当前用户的未读和置顶状态。 */
+/**
+ * 项目群聊视图，包含消息摘要及当前用户的未读和置顶状态。
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

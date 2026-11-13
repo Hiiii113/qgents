@@ -4,7 +4,9 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** Agent 线程池容量配置。 */
+/**
+ * Agent 线程池容量配置。
+ */
 @Getter
 @Setter
 @ConfigurationProperties(prefix = "qgents.executor.agent")
@@ -19,7 +21,7 @@ public class AgentExecutorProperties {
     public void validate() {
         if (coreSize < 1 || maxSize < coreSize || queueCapacity < 0) {
             throw new IllegalArgumentException(
-                    "Agent 执行器要求 coreSize>=1、maxSize>=coreSize、queueCapacity>=0");
+                "Agent 执行器要求 coreSize>=1、maxSize>=coreSize、queueCapacity>=0");
         }
     }
 }

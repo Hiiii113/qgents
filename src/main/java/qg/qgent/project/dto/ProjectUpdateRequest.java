@@ -3,7 +3,9 @@ package qg.qgent.project.dto;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
-/** 项目更新请求（PATCH 语义：所有字段可选，传 null 表示保留原值）。 */
+/**
+ * 项目更新请求（PATCH 语义：所有字段可选，传 null 表示保留原值）。
+ */
 @Data
 public class ProjectUpdateRequest {
     // 项目名称（可选）：传 null 表示保留原值；非 null 时去除首尾空白后覆盖保存，最长 255 字符。

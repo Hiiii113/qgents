@@ -1,5 +1,13 @@
 package qg.qgent.skill.service;
 
+import org.springframework.http.HttpStatus;
+import org.springframework.web.multipart.MultipartFile;
+import org.yaml.snakeyaml.LoaderOptions;
+import org.yaml.snakeyaml.Yaml;
+import org.yaml.snakeyaml.constructor.SafeConstructor;
+import org.yaml.snakeyaml.error.YAMLException;
+import qg.qgent.common.web.ApiException;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
@@ -10,20 +18,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.multipart.MultipartFile;
-import org.yaml.snakeyaml.LoaderOptions;
-import org.yaml.snakeyaml.Yaml;
-import org.yaml.snakeyaml.constructor.SafeConstructor;
-import org.yaml.snakeyaml.error.YAMLException;
-import qg.qgent.common.web.ApiException;
 
 public record SkillDocument(String name, String description, String content) {
     private static final int MAX_BYTES = 256 * 1024;
     private static final Pattern FRONTMATTER =
-            Pattern.compile(
-                    "\\A\\uFEFF?---\\r?\\n(.*?)^---(?:\\r?\\n|\\z)",
-                    Pattern.DOTALL | Pattern.MULTILINE);
+        Pattern.compile(
+            "\\A\\uFEFF?---\\r?\\n(.*?)^---(?:\\r?\\n|\\z)",
+            Pattern.DOTALL | Pattern.MULTILINE);
 
     public static SkillDocument fromFile(MultipartFile file) {
         if (!"SKILL.md".equals(file.getOriginalFilename()) || file.getSize() > MAX_BYTES) {
@@ -35,7 +36,7 @@ public record SkillDocument(String name, String description, String content) {
                 throw invalid("文件大小不能超过 256 KiB");
             }
             return parse(
-                    StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString());
+                StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString());
         } catch (CharacterCodingException e) {
             throw invalid("文件必须是有效的 UTF-8");
         } catch (IOException e) {
@@ -46,7 +47,7 @@ public record SkillDocument(String name, String description, String content) {
     public static SkillDocument parse(String content) {
         try {
             if (StandardCharsets.UTF_8.newEncoder().encode(CharBuffer.wrap(content)).remaining()
-                    > MAX_BYTES) {
+                > MAX_BYTES) {
                 throw invalid("内容大小不能超过 256 KiB");
             }
         } catch (CharacterCodingException e) {
@@ -65,10 +66,10 @@ public record SkillDocument(String name, String description, String content) {
             throw invalid("frontmatter 不是有效的安全 YAML");
         }
         if (!(parsed instanceof Map<?, ?> fields)
-                || !(fields.get("name") instanceof String name)
-                || name.isBlank()
-                || !(fields.get("description") instanceof String description)
-                || description.isBlank()) {
+            || !(fields.get("name") instanceof String name)
+            || name.isBlank()
+            || !(fields.get("description") instanceof String description)
+            || description.isBlank()) {
             throw invalid("frontmatter 必须包含非空字符串 name 和 description");
         }
         if (name.length() > 255 || description.length() > 1024) {

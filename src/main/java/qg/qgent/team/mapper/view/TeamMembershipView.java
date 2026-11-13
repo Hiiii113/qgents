@@ -1,7 +1,8 @@
 package qg.qgent.team.mapper.view;
 
-import java.time.LocalDateTime;
 import lombok.Data;
+
+import java.time.LocalDateTime;
 
 @Data
 public class TeamMembershipView {

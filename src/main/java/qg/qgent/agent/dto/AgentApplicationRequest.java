@@ -3,7 +3,9 @@ package qg.qgent.agent.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
-/** 项目 Agent 申请：名称与系统提示词必填，描述和头像可选。 */
+/**
+ * 项目 Agent 申请：名称与系统提示词必填，描述和头像可选。
+ */
 @Data
 public class AgentApplicationRequest {
 

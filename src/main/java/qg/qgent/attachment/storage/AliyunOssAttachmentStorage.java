@@ -6,18 +6,21 @@ import com.aliyun.oss.OSSException;
 import com.aliyun.oss.model.GeneratePresignedUrlRequest;
 import com.aliyun.oss.model.GetObjectRequest;
 import com.aliyun.oss.model.OSSObject;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
+import qg.qgent.attachment.config.AliyunOssProperties;
+import qg.qgent.attachment.dto.UploadCredential;
+
 import java.io.InputStream;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Date;
 import java.util.Map;
 import java.util.OptionalLong;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
-import qg.qgent.attachment.config.AliyunOssProperties;
-import qg.qgent.attachment.dto.UploadCredential;
 
-/** 浏览器使用签名地址直传 OSS；后端读取对象元数据与内容。 */
+/**
+ * 浏览器使用签名地址直传 OSS；后端读取对象元数据与内容。
+ */
 @Component
 @ConditionalOnProperty(prefix = "aliyun.oss", name = "enabled", havingValue = "true")
 public class AliyunOssAttachmentStorage implements AttachmentStorageStrategy {
@@ -33,28 +36,28 @@ public class AliyunOssAttachmentStorage implements AttachmentStorageStrategy {
     @Override
     public UploadCredential createCredential(String objectKey, String mediaType) {
         LocalDateTime expiry =
-                LocalDateTime.now(ZoneOffset.UTC).plusSeconds(properties.getPresignExpirySeconds());
+            LocalDateTime.now(ZoneOffset.UTC).plusSeconds(properties.getPresignExpirySeconds());
         GeneratePresignedUrlRequest request =
-                new GeneratePresignedUrlRequest(
-                        properties.getBucketName(), objectKey, HttpMethod.PUT);
+            new GeneratePresignedUrlRequest(
+                properties.getBucketName(), objectKey, HttpMethod.PUT);
         request.setExpiration(Date.from(expiry.toInstant(ZoneOffset.UTC)));
         Map<String, String> headers =
-                mediaType == null || mediaType.isBlank()
-                        ? Map.of()
-                        : Map.of("Content-Type", mediaType);
+            mediaType == null || mediaType.isBlank()
+                ? Map.of()
+                : Map.of("Content-Type", mediaType);
         if (!headers.isEmpty()) {
             request.setContentType(mediaType);
         }
         return new UploadCredential(
-                oss.generatePresignedUrl(request).toString(), "PUT", headers, expiry);
+            oss.generatePresignedUrl(request).toString(), "PUT", headers, expiry);
     }
 
     @Override
     public OptionalLong objectSize(String objectKey) {
         try {
             return OptionalLong.of(
-                    oss.getObjectMetadata(properties.getBucketName(), objectKey)
-                            .getContentLength());
+                oss.getObjectMetadata(properties.getBucketName(), objectKey)
+                    .getContentLength());
         } catch (OSSException e) {
             if ("NoSuchKey".equals(e.getErrorCode())) {
                 return OptionalLong.empty();
@@ -67,13 +70,13 @@ public class AliyunOssAttachmentStorage implements AttachmentStorageStrategy {
     public AttachmentContent loadContent(String objectKey, String fileName, String contentType) {
         OSSObject object = oss.getObject(properties.getBucketName(), objectKey);
         String resolvedType =
-                contentType == null || contentType.isBlank()
-                        ? "application/octet-stream"
-                        : contentType;
+            contentType == null || contentType.isBlank()
+                ? "application/octet-stream"
+                : contentType;
         Long size =
-                object.getObjectMetadata() == null
-                        ? null
-                        : object.getObjectMetadata().getContentLength();
+            object.getObjectMetadata() == null
+                ? null
+                : object.getObjectMetadata().getContentLength();
         return new AttachmentContent(object.getObjectContent(), resolvedType, fileName, size);
     }
 

@@ -1,9 +1,10 @@
 package qg.qgent.team.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import java.util.List;
 import org.apache.ibatis.annotations.*;
 import qg.qgent.team.entity.TeamInvitationEntity;
+
+import java.util.List;
 
 @Mapper
 public interface TeamInvitationMapper extends BaseMapper<TeamInvitationEntity> {
@@ -16,22 +17,24 @@ public interface TeamInvitationMapper extends BaseMapper<TeamInvitationEntity> {
         "</script>"
     })
     @Results(
-            id = "invitation",
-            value = {
-                @Result(column = "id", property = "id"),
-                @Result(column = "team_id", property = "teamId"),
-                @Result(column = "invited_by", property = "invitedBy"),
-                @Result(column = "email_normalized", property = "emailNormalized"),
-                @Result(column = "token_hash", property = "tokenHash"),
-                @Result(column = "status", property = "status"),
-                @Result(column = "expires_at", property = "expiresAt"),
-                @Result(column = "accepted_at", property = "acceptedAt"),
-                @Result(column = "created_at", property = "createdAt")
-            })
+        id = "invitation",
+        value = {
+            @Result(column = "id", property = "id"),
+            @Result(column = "team_id", property = "teamId"),
+            @Result(column = "invited_by", property = "invitedBy"),
+            @Result(column = "email_normalized", property = "emailNormalized"),
+            @Result(column = "token_hash", property = "tokenHash"),
+            @Result(column = "status", property = "status"),
+            @Result(column = "expires_at", property = "expiresAt"),
+            @Result(column = "accepted_at", property = "acceptedAt"),
+            @Result(column = "created_at", property = "createdAt")
+        })
     List<TeamInvitationEntity> selectInvitationPage(
-            @Param("teamId") Long teamId, @Param("anchor") Long anchor, @Param("limit") int limit);
+        @Param("teamId") Long teamId, @Param("anchor") Long anchor, @Param("limit") int limit);
 
-    /** 按被邀请邮箱分页查询待处理（PENDING）邀请，按 id 升序，用于收件人视角列表。 */
+    /**
+     * 按被邀请邮箱分页查询待处理（PENDING）邀请，按 id 升序，用于收件人视角列表。
+     */
     @Select({
         "<script>",
         "SELECT id, team_id, invited_by, email_normalized, token_hash, status, expires_at, accepted_at, created_at",
@@ -42,7 +45,7 @@ public interface TeamInvitationMapper extends BaseMapper<TeamInvitationEntity> {
     })
     @ResultMap("invitation")
     List<TeamInvitationEntity> selectPendingByEmail(
-            @Param("emailNormalized") String emailNormalized,
-            @Param("anchor") Long anchor,
-            @Param("limit") int limit);
+        @Param("emailNormalized") String emailNormalized,
+        @Param("anchor") Long anchor,
+        @Param("limit") int limit);
 }

@@ -1,10 +1,13 @@
 package qg.qgent.team.dto;
 
-import java.time.LocalDateTime;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/** 团队资料和当前用户的团队角色。 */
+import java.time.LocalDateTime;
+
+/**
+ * 团队资料和当前用户的团队角色。
+ */
 @Data
 @NoArgsConstructor
 public class TeamResponse {

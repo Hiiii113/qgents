@@ -2,7 +2,9 @@ package qg.qgent.team.mapper.view;
 
 import lombok.Data;
 
-/** 团队成员查询结果，包含用户昵称、邮箱和头像。 */
+/**
+ * 团队成员查询结果，包含用户昵称、邮箱和头像。
+ */
 @Data
 public class TeamMemberView {
     private Long teamId;

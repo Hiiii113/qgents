@@ -5,7 +5,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/** 设置 / 取消群置顶接口响应：返回该群最新的置顶状态。 */
+/**
+ * 设置 / 取消群置顶接口响应：返回该群最新的置顶状态。
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

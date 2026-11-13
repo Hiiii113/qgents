@@ -3,10 +3,13 @@ package qg.qgent.notification.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 用户的移动端推送注册；接口响应永不返回加密 Token。 */
+import java.time.LocalDateTime;
+
+/**
+ * 用户的移动端推送注册；接口响应永不返回加密 Token。
+ */
 @Data
 @TableName("push_devices")
 public class PushDeviceEntity {

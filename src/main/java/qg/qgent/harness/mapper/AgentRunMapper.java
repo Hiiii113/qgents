@@ -5,4 +5,5 @@ import org.apache.ibatis.annotations.Mapper;
 import qg.qgent.harness.entity.AgentRunEntity;
 
 @Mapper
-public interface AgentRunMapper extends BaseMapper<AgentRunEntity> {}
+public interface AgentRunMapper extends BaseMapper<AgentRunEntity> {
+}

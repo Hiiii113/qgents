@@ -1,12 +1,15 @@
 package qg.qgent.sandbox.dto;
 
-import java.time.Instant;
-import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/** 沙箱的内部服务响应，不包含宿主机路径或凭证。 */
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * 沙箱的内部服务响应，不包含宿主机路径或凭证。
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

@@ -1,7 +1,11 @@
 package qg.qgent.sandbox.execution.handler;
 
-import static org.springframework.http.HttpStatus.CONFLICT;
-import static org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+import qg.qgent.sandbox.exception.SandboxException;
+import qg.qgent.sandbox.execution.dto.ToolArguments;
+import qg.qgent.sandbox.execution.dto.ToolContext;
+import qg.qgent.sandbox.execution.dto.ToolResult;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -11,17 +15,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Map;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
-import qg.qgent.sandbox.exception.SandboxException;
-import qg.qgent.sandbox.execution.dto.ToolArguments;
-import qg.qgent.sandbox.execution.dto.ToolContext;
-import qg.qgent.sandbox.execution.dto.ToolResult;
+import java.util.*;
+
+import static org.springframework.http.HttpStatus.CONFLICT;
+import static org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY;
 
 /**
  * 对已有 UTF-8 文本文件精确应用统一 Diff（unified diff）局部修改。
@@ -59,9 +56,9 @@ public class FilePatchTool implements SandboxTool {
             requireExistingTextFile(target);
             if (Files.size(target) > MAX_PATCH_TARGET_BYTES) {
                 throw new SandboxException(
-                        UNPROCESSABLE_ENTITY,
-                        "TOOL_PATH_INVALID",
-                        "目标文件超过 256KB，无法打补丁，请改用 file.write 提供完整文件内容");
+                    UNPROCESSABLE_ENTITY,
+                    "TOOL_PATH_INVALID",
+                    "目标文件超过 256KB，无法打补丁，请改用 file.write 提供完整文件内容");
             }
             byte[] previous = Files.readAllBytes(target);
             if (!FileReadTool.sha256(previous).equalsIgnoreCase(expectedHash)) {
@@ -72,22 +69,22 @@ public class FilePatchTool implements SandboxTool {
                 content = decodeUtf8(previous);
             } catch (CharacterCodingException exception) {
                 throw new SandboxException(
-                        UNPROCESSABLE_ENTITY, "TOOL_PATH_INVALID", "目标文件不是 UTF-8 文本");
+                    UNPROCESSABLE_ENTITY, "TOOL_PATH_INVALID", "目标文件不是 UTF-8 文本");
             }
             String next = UnifiedPatch.apply(content, patch);
             byte[] nextBytes = next.getBytes(StandardCharsets.UTF_8);
             boolean changed = !Arrays.equals(previous, nextBytes);
             FileWriteTool.atomicReplace(target, nextBytes);
             return ToolResult.value(
-                    Map.of(
-                            "path",
-                            relativePath,
-                            "sha256",
-                            FileReadTool.sha256(nextBytes),
-                            "bytes",
-                            nextBytes.length,
-                            "changed",
-                            changed));
+                Map.of(
+                    "path",
+                    relativePath,
+                    "sha256",
+                    FileReadTool.sha256(nextBytes),
+                    "bytes",
+                    nextBytes.length,
+                    "changed",
+                    changed));
         } catch (SandboxException exception) {
             throw exception;
         } catch (Exception exception) {
@@ -97,17 +94,17 @@ public class FilePatchTool implements SandboxTool {
 
     private void requireExistingTextFile(Path target) {
         if (Files.isSymbolicLink(target)
-                || !Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)) {
+            || !Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS)) {
             throw new SandboxException(UNPROCESSABLE_ENTITY, "TOOL_PATH_INVALID", "目标必须是已有的普通文本文件");
         }
     }
 
     private static String decodeUtf8(byte[] bytes) throws CharacterCodingException {
         CharsetDecoder decoder =
-                StandardCharsets.UTF_8
-                        .newDecoder()
-                        .onMalformedInput(CodingErrorAction.REPORT)
-                        .onUnmappableCharacter(CodingErrorAction.REPORT);
+            StandardCharsets.UTF_8
+                .newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT);
         return decoder.decode(ByteBuffer.wrap(bytes)).toString();
     }
 
@@ -116,7 +113,8 @@ public class FilePatchTool implements SandboxTool {
      * 按从文件末尾向前的顺序应用，保证多 hunk 之间行号互不干扰。
      */
     private static final class UnifiedPatch {
-        private UnifiedPatch() {}
+        private UnifiedPatch() {
+        }
 
         static String apply(String content, String patch) {
             List<Hunk> hunks = parse(patch);
@@ -180,16 +178,16 @@ public class FilePatchTool implements SandboxTool {
                     lastMark = mark;
                 }
                 if (oldLines.size() != header.old().count()
-                        || newLines.size() != header.new_().count()) {
+                    || newLines.size() != header.new_().count()) {
                     throw patchFailed("hunk 声明行数与正文不一致");
                 }
                 hunks.add(
-                        new Hunk(
-                                header.old().start(),
-                                oldLines,
-                                newLines,
-                                oldEndsWithNewline,
-                                newEndsWithNewline));
+                    new Hunk(
+                        header.old().start(),
+                        oldLines,
+                        newLines,
+                        oldEndsWithNewline,
+                        newEndsWithNewline));
             }
             return hunks;
         }
@@ -206,8 +204,8 @@ public class FilePatchTool implements SandboxTool {
                 throw new IllegalArgumentException("missing + separator");
             }
             return new Header(
-                    parsePosition(ranges.substring(1, plus).trim()),
-                    parsePosition(ranges.substring(plus + 1).trim()));
+                parsePosition(ranges.substring(1, plus).trim()),
+                parsePosition(ranges.substring(plus + 1).trim()));
         }
 
         private static Position parsePosition(String text) {
@@ -216,8 +214,8 @@ public class FilePatchTool implements SandboxTool {
                 return new Position(Integer.parseInt(text.trim()), 1);
             }
             return new Position(
-                    Integer.parseInt(text.substring(0, comma).trim()),
-                    Integer.parseInt(text.substring(comma + 1).trim()));
+                Integer.parseInt(text.substring(0, comma).trim()),
+                Integer.parseInt(text.substring(comma + 1).trim()));
         }
 
         private static List<String> splitLines(String text) {
@@ -241,13 +239,13 @@ public class FilePatchTool implements SandboxTool {
             for (Hunk hunk : ordered) {
                 // 旧侧行数为 0 时，hunk 头里的行号是插入点之前的行（从 1 开始），不需要回退一行。
                 int from =
-                        hunk.oldLines().isEmpty()
-                                ? hunk.oldStart()
-                                : Math.max(0, hunk.oldStart() - 1);
+                    hunk.oldLines().isEmpty()
+                        ? hunk.oldStart()
+                        : Math.max(0, hunk.oldStart() - 1);
                 int to = from + hunk.oldLines().size();
                 if (from > lines.size()
-                        || to > lines.size()
-                        || !lines.subList(from, to).equals(hunk.oldLines())) {
+                    || to > lines.size()
+                    || !lines.subList(from, to).equals(hunk.oldLines())) {
                     throw patchFailed("补丁上下文与文件不一致（第 " + hunk.oldStart() + " 行）");
                 }
                 lines.subList(from, to).clear();
@@ -297,15 +295,18 @@ public class FilePatchTool implements SandboxTool {
             return new SandboxException(UNPROCESSABLE_ENTITY, "FILE_PATCH_FAILED", message);
         }
 
-        private record Position(int start, int count) {}
+        private record Position(int start, int count) {
+        }
 
-        private record Header(Position old, Position new_) {}
+        private record Header(Position old, Position new_) {
+        }
 
         private record Hunk(
-                int oldStart,
-                List<String> oldLines,
-                List<String> newLines,
-                boolean oldEndsWithNewline,
-                boolean newEndsWithNewline) {}
+            int oldStart,
+            List<String> oldLines,
+            List<String> newLines,
+            boolean oldEndsWithNewline,
+            boolean newEndsWithNewline) {
+        }
     }
 }

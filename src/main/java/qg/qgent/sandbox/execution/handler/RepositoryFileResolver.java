@@ -1,14 +1,17 @@
 package qg.qgent.sandbox.execution.handler;
 
-import static org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY;
+import org.springframework.stereotype.Component;
+import qg.qgent.sandbox.exception.SandboxException;
 
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import org.springframework.stereotype.Component;
-import qg.qgent.sandbox.exception.SandboxException;
 
-/** 将 Agent 提交的仓库相对路径解析为受控本地文件。 */
+import static org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY;
+
+/**
+ * 将 Agent 提交的仓库相对路径解析为受控本地文件。
+ */
 @Component
 public class RepositoryFileResolver {
     public Path resolveExisting(Path repository, String relativePath) {
@@ -35,7 +38,7 @@ public class RepositoryFileResolver {
                 throw invalid("写入文件的父目录不存在或越界");
             }
             if (Files.exists(candidate, LinkOption.NOFOLLOW_LINKS)
-                    && Files.isSymbolicLink(candidate)) {
+                && Files.isSymbolicLink(candidate)) {
                 throw invalid("写入目标不能是符号链接");
             }
             validateParentChain(repository, parent);

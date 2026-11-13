@@ -4,7 +4,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/** 当前用户收到的团队邀请（收件人视角）视图。 */
+/**
+ * 当前用户收到的团队邀请（收件人视角）视图。
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

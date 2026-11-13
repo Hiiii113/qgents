@@ -1,10 +1,13 @@
 package qg.qgent.skill.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.util.List;
 import lombok.Data;
 
-/** 修改 Skill 内容，未传字段不修改。 */
+import java.util.List;
+
+/**
+ * 修改 Skill 内容，未传字段不修改。
+ */
 @Data
 public class SkillUpdateRequest {
 

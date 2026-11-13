@@ -1,13 +1,16 @@
 package qg.qgent.chat.mapper;
 
-import java.util.List;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 import qg.qgent.chat.mapper.view.GroupAgentRow;
 
-/** 群内 Agent 成员；Agent 入群后自动接受邀请，无需额外状态。 */
+import java.util.List;
+
+/**
+ * 群内 Agent 成员；Agent 入群后自动接受邀请，无需额外状态。
+ */
 @Mapper
 public interface GroupAgentMapper {
 
@@ -15,8 +18,8 @@ public interface GroupAgentMapper {
     int insertAgent(@Param("groupId") Long groupId, @Param("agentId") Long agentId);
 
     @Select(
-            "SELECT a.id AS agent_id, a.name, a.avatar_url FROM group_agents ga JOIN agents a ON a.id = ga.agent_id "
-                    + "WHERE ga.group_id = #{groupId} ORDER BY a.name")
+        "SELECT a.id AS agent_id, a.name, a.avatar_url FROM group_agents ga JOIN agents a ON a.id = ga.agent_id "
+            + "WHERE ga.group_id = #{groupId} ORDER BY a.name")
     List<GroupAgentRow> selectAgents(@Param("groupId") Long groupId);
 
     @Select("SELECT agent_id FROM group_agents WHERE group_id = #{groupId}")

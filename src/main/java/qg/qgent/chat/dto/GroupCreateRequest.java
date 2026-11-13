@@ -4,10 +4,13 @@ import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import java.util.List;
 import lombok.Data;
 
-/** 创建群时可同时邀请项目成员及可用 Agent。创建者自动加入。 */
+import java.util.List;
+
+/**
+ * 创建群时可同时邀请项目成员及可用 Agent。创建者自动加入。
+ */
 @Data
 public class GroupCreateRequest {
     @NotBlank

@@ -4,7 +4,9 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** 附件和各业务头像共用的 OSS 配置。 */
+/**
+ * 附件和各业务头像共用的 OSS 配置。
+ */
 @Getter
 @Setter
 @ConfigurationProperties("aliyun.oss")
@@ -26,8 +28,8 @@ public class AliyunOssProperties {
 
     public boolean configured() {
         return !endpoint.isBlank()
-                && !bucketName.isBlank()
-                && !accessKeyId.isBlank()
-                && !accessKeySecret.isBlank();
+            && !bucketName.isBlank()
+            && !accessKeyId.isBlank()
+            && !accessKeySecret.isBlank();
     }
 }

@@ -11,13 +11,16 @@ import java.util.function.Supplier;
 public final class SandboxExecutionContext {
     private static final ThreadLocal<Long> CURRENT = new ThreadLocal<>();
 
-    private SandboxExecutionContext() {}
+    private SandboxExecutionContext() {
+    }
 
     public static Long currentAgentRunId() {
         return CURRENT.get();
     }
 
-    /** 以给定运行身份执行，结束后恢复线程原有身份。 */
+    /**
+     * 以给定运行身份执行，结束后恢复线程原有身份。
+     */
     public static <T> T within(Long agentRunId, Supplier<T> body) {
         Long previous = CURRENT.get();
         CURRENT.set(agentRunId);

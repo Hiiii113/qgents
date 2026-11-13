@@ -4,7 +4,9 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** 后台从群记忆发现项目记忆更新建议的周期和重试间隔。 */
+/**
+ * 后台从群记忆发现项目记忆更新建议的周期和重试间隔。
+ */
 @Getter
 @Setter
 @ConfigurationProperties(prefix = "app.memory.discovery")

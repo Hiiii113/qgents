@@ -1,7 +1,5 @@
 package qg.qgent.realtime.websocket;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -13,7 +11,12 @@ import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 import qg.qgent.realtime.service.RealtimeHub;
 
-/** 注册在线连接、发送连接确认和心跳，断线时移除连接。 */
+import java.io.IOException;
+import java.nio.ByteBuffer;
+
+/**
+ * 注册在线连接、发送连接确认和心跳，断线时移除连接。
+ */
 @Component
 public class WebSocketRealtimeHandler extends TextWebSocketHandler {
     private static final Logger log = LoggerFactory.getLogger(WebSocketRealtimeHandler.class);
@@ -56,14 +59,18 @@ public class WebSocketRealtimeHandler extends TextWebSocketHandler {
         log.debug("realtime transport error, userId={}: {}", userId, exception.getMessage());
     }
 
-    /** 实时通道只做服务端推送；收到客户端文本时记录 debug 日志并忽略。 */
+    /**
+     * 实时通道只做服务端推送；收到客户端文本时记录 debug 日志并忽略。
+     */
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
         // 当前协议不处理客户端文本。
         log.debug("realtime unsolicited client frame ignored, session={}", session.getId());
     }
 
-    /** 定时心跳：对每条在线连接发送 PingMessage 保活；发送失败则关闭并注销该连接。 依赖 Qgents 全局 {@code @EnableScheduling} 生效。 */
+    /**
+     * 定时心跳：对每条在线连接发送 PingMessage 保活；发送失败则关闭并注销该连接。 依赖 Qgents 全局 {@code @EnableScheduling} 生效。
+     */
     @Scheduled(fixedRate = HEARTBEAT_MS)
     public void heartbeat() {
         hub.forEachSession(session -> {

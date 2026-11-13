@@ -1,12 +1,13 @@
 package qg.qgent.common.service;
 
 import com.zaxxer.hikari.HikariDataSource;
-import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+
+import javax.sql.DataSource;
 
 /**
  * 数据库连接池健康监控：周期性采样 Hikari 池的活跃/空闲/等待线程数。
@@ -26,9 +27,9 @@ public class DatabaseConnectionMonitor {
     private final int warnWhenIdleAtMost;
 
     public DatabaseConnectionMonitor(
-            DataSource dataSource,
-            @Value("${qgents.db-pool-monitor.enabled:true}") boolean enabled,
-            @Value("${qgents.db-pool-monitor.warn-when-idle-at-most:2}") int warnWhenIdleAtMost) {
+        DataSource dataSource,
+        @Value("${qgents.db-pool-monitor.enabled:true}") boolean enabled,
+        @Value("${qgents.db-pool-monitor.warn-when-idle-at-most:2}") int warnWhenIdleAtMost) {
         this.dataSource = dataSource;
         this.enabled = enabled;
         this.warnWhenIdleAtMost = warnWhenIdleAtMost;
@@ -39,8 +40,8 @@ public class DatabaseConnectionMonitor {
      * 采样本身不占数据库连接（读取 Hikari 内存指标）。
      */
     @Scheduled(
-            fixedDelayString = "${qgents.db-pool-monitor.interval-ms:60000}",
-            initialDelayString = "${qgents.db-pool-monitor.initial-delay-ms:60000}")
+        fixedDelayString = "${qgents.db-pool-monitor.interval-ms:60000}",
+        initialDelayString = "${qgents.db-pool-monitor.initial-delay-ms:60000}")
     public void samplePool() {
         if (!enabled || !(dataSource instanceof HikariDataSource hikari)) {
             return;
@@ -51,18 +52,18 @@ public class DatabaseConnectionMonitor {
         int waiting = hikari.getHikariPoolMXBean().getThreadsAwaitingConnection();
         if (idle <= warnWhenIdleAtMost) {
             log.warn(
-                    "db connection pool near capacity active={} idle={} waiting={} max={}",
-                    active,
-                    idle,
-                    waiting,
-                    max);
+                "db connection pool near capacity active={} idle={} waiting={} max={}",
+                active,
+                idle,
+                waiting,
+                max);
         } else {
             log.info(
-                    "db connection pool sample active={} idle={} waiting={} max={}",
-                    active,
-                    idle,
-                    waiting,
-                    max);
+                "db connection pool sample active={} idle={} waiting={} max={}",
+                active,
+                idle,
+                waiting,
+                max);
         }
     }
 }

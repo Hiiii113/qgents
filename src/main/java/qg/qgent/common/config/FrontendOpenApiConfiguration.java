@@ -2,12 +2,15 @@ package qg.qgent.common.config;
 
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.tags.Tag;
-import java.util.List;
 import org.springdoc.core.customizers.OpenApiCustomizer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/** 为公开业务接口补充中文分组，保留 Controller 的接口描述。 */
+import java.util.List;
+
+/**
+ * 为公开业务接口补充中文分组，保留 Controller 的接口描述。
+ */
 @Configuration
 public class FrontendOpenApiConfiguration {
 
@@ -22,24 +25,24 @@ public class FrontendOpenApiConfiguration {
         }
         openApi.getPaths().keySet().removeIf(path -> !path.startsWith("/api/v1/"));
         openApi.getPaths()
-                .forEach((path, item) ->
-                        item.readOperationsMap()
-                                .values()
-                                .forEach(operation -> operation.setTags(List.of(group(path)))));
+            .forEach((path, item) ->
+                item.readOperationsMap()
+                    .values()
+                    .forEach(operation -> operation.setTags(List.of(group(path)))));
         openApi.setTags(
-                List.of(
-                                "认证与账户",
-                                "团队与邀请",
-                                "项目与项目成员",
-                                "GitHub App 与仓库导入",
-                                "群组与消息",
-                                "通知中心",
-                                "共享 Skill",
-                                "共享 Memory",
-                                "实时事件流")
-                        .stream()
-                        .map(name -> new Tag().name(name))
-                        .toList());
+            List.of(
+                    "认证与账户",
+                    "团队与邀请",
+                    "项目与项目成员",
+                    "GitHub App 与仓库导入",
+                    "群组与消息",
+                    "通知中心",
+                    "共享 Skill",
+                    "共享 Memory",
+                    "实时事件流")
+                .stream()
+                .map(name -> new Tag().name(name))
+                .toList());
     }
 
     private String group(String path) {

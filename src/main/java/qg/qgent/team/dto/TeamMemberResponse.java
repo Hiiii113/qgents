@@ -3,7 +3,9 @@ package qg.qgent.team.dto;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/** 团队成员及其用户资料。 */
+/**
+ * 团队成员及其用户资料。
+ */
 @Data
 @NoArgsConstructor
 public class TeamMemberResponse {

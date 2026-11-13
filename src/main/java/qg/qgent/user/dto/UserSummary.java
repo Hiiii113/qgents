@@ -5,7 +5,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/** 用户摘要，用于 Skill/Memory 响应中的创建者、审核者展示。 */
+/**
+ * 用户摘要，用于 Skill/Memory 响应中的创建者、审核者展示。
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

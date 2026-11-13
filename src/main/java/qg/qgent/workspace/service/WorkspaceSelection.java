@@ -4,7 +4,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
-/** 单个 Agent 对话的工作区和目录选择；不负责创建或释放执行环境。 */
+/**
+ * 单个 Agent 对话的工作区和目录选择；不负责创建或释放执行环境。
+ */
 public final class WorkspaceSelection {
     private Long workspaceId;
     private String directory;
@@ -37,9 +39,9 @@ public final class WorkspaceSelection {
 
     public static String resolveDirectory(String base, String directory) {
         String input =
-                directory == null || directory.isBlank()
-                        ? "."
-                        : directory.trim().replace('\\', '/');
+            directory == null || directory.isBlank()
+                ? "."
+                : directory.trim().replace('\\', '/');
         if (input.startsWith("/") || input.matches("^[A-Za-z]:/.*") || input.indexOf('\0') >= 0)
             throw new IllegalArgumentException("工作目录必须位于 Workspace 内");
         List<String> parts = new ArrayList<>();

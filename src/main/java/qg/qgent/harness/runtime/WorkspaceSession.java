@@ -18,11 +18,11 @@ final class WorkspaceSession implements WorkSession {
     private final AgentRunService runs;
 
     WorkspaceSession(
-            WorkContext work,
-            ChildRuns.Execution execution,
-            WorkspaceService workspaces,
-            SandboxSessionManager sessions,
-            AgentRunService runs) {
+        WorkContext work,
+        ChildRuns.Execution execution,
+        WorkspaceService workspaces,
+        SandboxSessionManager sessions,
+        AgentRunService runs) {
         this.work = work;
         this.execution = execution;
         this.workspaces = workspaces;
@@ -56,7 +56,7 @@ final class WorkspaceSession implements WorkSession {
             if (workspaceId == null) {
                 if (work.defaultWorkspaceId == null) {
                     work.defaultWorkspaceId =
-                            workspaces.defaultWorkspace(work.event.projectId()).getId();
+                        workspaces.defaultWorkspace(work.event.projectId()).getId();
                 }
                 workspaceId = work.defaultWorkspaceId;
                 execution.workspace.bindDefault(workspaceId);

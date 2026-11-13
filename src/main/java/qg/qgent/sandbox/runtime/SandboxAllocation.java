@@ -1,10 +1,11 @@
 package qg.qgent.sandbox.runtime;
 
+import lombok.AllArgsConstructor;
+import lombok.Data;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
-import lombok.AllArgsConstructor;
-import lombok.Data;
 
 /**
  * 运行时维护的沙箱分配状态。

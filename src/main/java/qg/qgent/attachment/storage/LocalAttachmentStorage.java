@@ -1,5 +1,12 @@
 package qg.qgent.attachment.storage;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Component;
+import qg.qgent.attachment.dto.UploadCredential;
+import qg.qgent.common.web.ApiException;
+
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -14,20 +21,16 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Map;
 import java.util.OptionalLong;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.http.HttpStatus;
-import org.springframework.stereotype.Component;
-import qg.qgent.attachment.dto.UploadCredential;
-import qg.qgent.common.web.ApiException;
 
-/** 未启用 OSS 时，将附件存入本地磁盘。 */
+/**
+ * 未启用 OSS 时，将附件存入本地磁盘。
+ */
 @Component
 @ConditionalOnProperty(
-        prefix = "aliyun.oss",
-        name = "enabled",
-        havingValue = "false",
-        matchIfMissing = true)
+    prefix = "aliyun.oss",
+    name = "enabled",
+    havingValue = "false",
+    matchIfMissing = true)
 public class LocalAttachmentStorage implements AttachmentStorageStrategy {
 
     private static final String OBJECT_KEY_PATTERN = "projects/[0-9]+/attachments/[0-9]+";
@@ -36,8 +39,8 @@ public class LocalAttachmentStorage implements AttachmentStorageStrategy {
     private final Duration expiry;
 
     public LocalAttachmentStorage(
-            @Value("${app.attachment-local-root:./data/attachments}") String root,
-            @Value("${app.attachment-upload-expiry-seconds:900}") long expirySeconds) {
+        @Value("${app.attachment-local-root:./data/attachments}") String root,
+        @Value("${app.attachment-upload-expiry-seconds:900}") long expirySeconds) {
         this.root = Path.of(root).toAbsolutePath().normalize();
         this.expiry = Duration.ofSeconds(expirySeconds);
     }
@@ -47,9 +50,9 @@ public class LocalAttachmentStorage implements AttachmentStorageStrategy {
         LocalDateTime expiresAt = LocalDateTime.now(ZoneOffset.UTC).plus(expiry);
         // 代理上传：uploadUrl 指向后端代理端点（相对路径，前端按 API base origin 解析）。
         Map<String, String> headers =
-                mediaType == null || mediaType.isBlank()
-                        ? Map.of()
-                        : Map.of("Content-Type", mediaType);
+            mediaType == null || mediaType.isBlank()
+                ? Map.of()
+                : Map.of("Content-Type", mediaType);
         return new UploadCredential("/api/v1/" + objectKey, "PUT", headers, expiresAt);
     }
 
@@ -61,7 +64,7 @@ public class LocalAttachmentStorage implements AttachmentStorageStrategy {
             Files.createDirectories(target.getParent());
             temporary = Files.createTempFile(target.getParent(), ".upload-", ".tmp");
             try (InputStream in = bytes;
-                    var out = Files.newOutputStream(temporary)) {
+                 var out = Files.newOutputStream(temporary)) {
                 byte[] buffer = new byte[8192];
                 long total = 0;
                 int count;
@@ -69,22 +72,22 @@ public class LocalAttachmentStorage implements AttachmentStorageStrategy {
                     total += count;
                     if (total > maxSize) {
                         throw new ApiException(
-                                HttpStatus.PAYLOAD_TOO_LARGE,
-                                "ATTACHMENT_TOO_LARGE",
-                                "文件大小超过上限 " + maxSize + " 字节");
+                            HttpStatus.PAYLOAD_TOO_LARGE,
+                            "ATTACHMENT_TOO_LARGE",
+                            "文件大小超过上限 " + maxSize + " 字节");
                     }
                     out.write(buffer, 0, count);
                 }
                 if (total != expectedSize) {
                     throw new ApiException(
-                            HttpStatus.CONFLICT, "ATTACHMENT_SIZE_MISMATCH", "实际文件大小与申请上传时不一致");
+                        HttpStatus.CONFLICT, "ATTACHMENT_SIZE_MISMATCH", "实际文件大小与申请上传时不一致");
                 }
             }
             Files.move(
-                    temporary,
-                    target,
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING);
+                temporary,
+                target,
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             throw new IllegalStateException("Unable to store attachment locally: " + objectKey, e);
         } finally {
@@ -114,16 +117,16 @@ public class LocalAttachmentStorage implements AttachmentStorageStrategy {
     public AttachmentContent loadContent(String objectKey, String fileName, String contentType) {
         Path target = resolve(objectKey);
         String resolvedType =
-                contentType == null || contentType.isBlank()
-                        ? "application/octet-stream"
-                        : contentType;
+            contentType == null || contentType.isBlank()
+                ? "application/octet-stream"
+                : contentType;
         try {
             long size = Files.size(target);
             return new AttachmentContent(
-                    Files.newInputStream(target), resolvedType, fileName, size);
+                Files.newInputStream(target), resolvedType, fileName, size);
         } catch (IOException e) {
             throw new IllegalStateException(
-                    "Unable to read attachment from local storage: " + objectKey, e);
+                "Unable to read attachment from local storage: " + objectKey, e);
         }
     }
 

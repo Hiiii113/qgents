@@ -36,11 +36,11 @@ public class MessageController {
     @PostMapping("/projects/{projectId}/groups/{groupId}/messages")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<?> send(
-            @AuthenticationPrincipal Long userId,
-            @PathVariable Long projectId,
-            @PathVariable Long groupId,
-            @Valid @RequestBody MessageSendRequest body,
-            HttpServletRequest request) {
+        @AuthenticationPrincipal Long userId,
+        @PathVariable Long projectId,
+        @PathVariable Long groupId,
+        @Valid @RequestBody MessageSendRequest body,
+        HttpServletRequest request) {
         return ok(messageService.send(userId, projectId, groupId, body), request);
     }
 
@@ -50,18 +50,18 @@ public class MessageController {
      */
     @GetMapping("/projects/{projectId}/groups/{groupId}/messages")
     public PagedApiResponse<MessageResponse> list(
-            @AuthenticationPrincipal Long userId,
-            @PathVariable Long projectId,
-            @PathVariable Long groupId,
-            @RequestParam(value = "cursor", required = false) String cursor,
-            @RequestParam(value = "limit", defaultValue = "30") int limit,
-            HttpServletRequest request) {
+        @AuthenticationPrincipal Long userId,
+        @PathVariable Long projectId,
+        @PathVariable Long groupId,
+        @RequestParam(value = "cursor", required = false) String cursor,
+        @RequestParam(value = "limit", defaultValue = "30") int limit,
+        HttpServletRequest request) {
         PageSlice<MessageResponse> slice =
-                messageService.list(userId, projectId, groupId, cursor, limit);
+            messageService.list(userId, projectId, groupId, cursor, limit);
         return new PagedApiResponse<>(
-                slice.getData(),
-                slice.getPage(),
-                (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
+            slice.getData(),
+            slice.getPage(),
+            (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
     }
 
     /**
@@ -71,28 +71,30 @@ public class MessageController {
      */
     @GetMapping("/projects/{projectId}/groups/{groupId}/messages/incremental")
     public PagedApiResponse<MessageResponse> listIncremental(
-            @AuthenticationPrincipal Long userId,
-            @PathVariable Long projectId,
-            @PathVariable Long groupId,
-            @RequestParam long afterSequence,
-            @RequestParam(defaultValue = "100") int limit,
-            HttpServletRequest request) {
+        @AuthenticationPrincipal Long userId,
+        @PathVariable Long projectId,
+        @PathVariable Long groupId,
+        @RequestParam long afterSequence,
+        @RequestParam(defaultValue = "100") int limit,
+        HttpServletRequest request) {
         PageSlice<MessageResponse> slice =
-                messageService.listAfterSequence(userId, projectId, groupId, afterSequence, limit);
+            messageService.listAfterSequence(userId, projectId, groupId, afterSequence, limit);
         return new PagedApiResponse<>(
-                slice.getData(),
-                slice.getPage(),
-                (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
+            slice.getData(),
+            slice.getPage(),
+            (String) request.getAttribute(RequestIdFilter.ATTRIBUTE));
     }
 
-    /** 按 ID 查询群消息，供通知定位或读取分页之外的消息使用。 */
+    /**
+     * 按 ID 查询群消息，供通知定位或读取分页之外的消息使用。
+     */
     @GetMapping("/projects/{projectId}/groups/{groupId}/messages/{messageId}")
     public ApiResponse<?> getMessage(
-            @AuthenticationPrincipal Long userId,
-            @PathVariable Long projectId,
-            @PathVariable Long groupId,
-            @PathVariable Long messageId,
-            HttpServletRequest request) {
+        @AuthenticationPrincipal Long userId,
+        @PathVariable Long projectId,
+        @PathVariable Long groupId,
+        @PathVariable Long messageId,
+        HttpServletRequest request) {
         return ok(messageService.getMessage(userId, projectId, groupId, messageId), request);
     }
 

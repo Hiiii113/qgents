@@ -1,11 +1,14 @@
 package qg.qgent.harness.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
-/** 一次 Agent 运行的可展示快照：内存中的流式进度 + 数据库终态。 */
+import java.util.List;
+
+/**
+ * 一次 Agent 运行的可展示快照：内存中的流式进度 + 数据库终态。
+ */
 @Data
 @AllArgsConstructor
 public class AgentRunSnapshot {
@@ -51,7 +54,9 @@ public class AgentRunSnapshot {
     private String createdAt;
     private String finishedAt;
 
-    public record Segment(int round, String text) {}
+    public record Segment(int round, String text) {
+    }
 
-    public record Tool(String toolCallId, String tool, int round) {}
+    public record Tool(String toolCallId, String tool, int round) {
+    }
 }

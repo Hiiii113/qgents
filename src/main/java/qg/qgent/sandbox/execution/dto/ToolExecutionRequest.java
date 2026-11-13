@@ -1,23 +1,22 @@
 package qg.qgent.sandbox.execution.dto;
 
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Pattern;
-import jakarta.validation.constraints.Size;
-import java.util.LinkedHashMap;
-import java.util.Map;
+import jakarta.validation.constraints.*;
 import lombok.Data;
 
-/** Agent 调用沙箱工具时提交的结构化请求。 */
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * Agent 调用沙箱工具时提交的结构化请求。
+ */
 @Data
 public class ToolExecutionRequest {
     // 实际调用的 AgentRun 和 Workspace；子 Agent 与根运行共用沙箱，但保留自己的执行身份。
     private Long agentRunId;
     private Long workspaceId;
 
-    @lombok.ToString.Exclude private Map<String, String> environment = Map.of();
+    @lombok.ToString.Exclude
+    private Map<String, String> environment = Map.of();
 
     @NotBlank
     @Size(max = 64)

@@ -10,7 +10,9 @@ import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Component;
 import org.springframework.web.util.HtmlUtils;
 
-/** 发送团队邀请邮件。 */
+/**
+ * 发送团队邀请邮件。
+ */
 @Component
 public class TeamInvitationMailer {
     private static final Logger log = LoggerFactory.getLogger(TeamInvitationMailer.class);
@@ -19,9 +21,9 @@ public class TeamInvitationMailer {
     private final String frontendUrl;
 
     public TeamInvitationMailer(
-            JavaMailSender sender,
-            @Value("${spring.mail.username}") String from,
-            @Value("${app.frontend-url}") String frontendUrl) {
+        JavaMailSender sender,
+        @Value("${spring.mail.username}") String from,
+        @Value("${app.frontend-url}") String frontendUrl) {
         this.sender = sender;
         this.from = from;
         this.frontendUrl = frontendUrl;
@@ -31,7 +33,7 @@ public class TeamInvitationMailer {
         String safeUrl = HtmlUtils.htmlEscape(frontendUrl);
         String safeToken = HtmlUtils.htmlEscape(token);
         String html =
-                """
+            """
                 <!DOCTYPE html>
                 <html lang="zh-CN">
                 <body style="margin:0;padding:0;background-color:#f4f6f9;font-family:'Segoe UI','PingFang SC','Microsoft YaHei',Arial,sans-serif;">
@@ -62,7 +64,7 @@ public class TeamInvitationMailer {
                 </body>
                 </html>
                 """
-                        .formatted(safeToken, safeUrl);
+                .formatted(safeToken, safeUrl);
         try {
             MimeMessage message = sender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, false, "UTF-8");

@@ -5,4 +5,5 @@ import org.apache.ibatis.annotations.Mapper;
 import qg.qgent.github.entity.ProjectRepositoryEntity;
 
 @Mapper
-public interface ProjectRepositoryMapper extends BaseMapper<ProjectRepositoryEntity> {}
+public interface ProjectRepositoryMapper extends BaseMapper<ProjectRepositoryEntity> {
+}

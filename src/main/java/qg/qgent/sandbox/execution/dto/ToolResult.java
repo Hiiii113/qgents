@@ -1,11 +1,14 @@
 package qg.qgent.sandbox.execution.dto;
 
-import java.util.List;
-import java.util.Map;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
-/** 工具处理器返回的结构化结果与日志。 */
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 工具处理器返回的结构化结果与日志。
+ */
 @Data
 @AllArgsConstructor
 public class ToolResult {

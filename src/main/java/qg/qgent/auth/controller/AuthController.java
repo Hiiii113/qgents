@@ -2,21 +2,17 @@ package qg.qgent.auth.controller;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import java.util.Map;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import qg.qgent.auth.dto.LoginRequest;
-import qg.qgent.auth.dto.PasswordResetRequest;
-import qg.qgent.auth.dto.RefreshTokenRequest;
-import qg.qgent.auth.dto.RegisterRequest;
-import qg.qgent.auth.dto.ResetPasswordRequest;
-import qg.qgent.auth.dto.SendVerificationCodeRequest;
+import qg.qgent.auth.dto.*;
 import qg.qgent.auth.service.AuthService;
 import qg.qgent.common.web.ApiResponse;
 import qg.qgent.common.web.RequestIdFilter;
 import qg.qgent.user.dto.CurrentTeamRequest;
 import qg.qgent.user.dto.UserUpdateRequest;
+
+import java.util.Map;
 
 /**
  * 认证与账户接口
@@ -31,11 +27,13 @@ public class AuthController {
         this.authService = authService;
     }
 
-    /** 注册新用户并签发登录 Token（需先通过邮箱验证码校验）。 */
+    /**
+     * 注册新用户并签发登录 Token（需先通过邮箱验证码校验）。
+     */
     @PostMapping("/auth/register")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<?> register(
-            @Valid @RequestBody RegisterRequest body, HttpServletRequest request) {
+        @Valid @RequestBody RegisterRequest body, HttpServletRequest request) {
         return ok(authService.register(body, fingerprint(request)), request);
     }
 
@@ -46,70 +44,86 @@ public class AuthController {
     @PostMapping("/auth/register/verification-codes")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public ApiResponse<?> sendRegisterCode(
-            @Valid @RequestBody SendVerificationCodeRequest body, HttpServletRequest request) {
+        @Valid @RequestBody SendVerificationCodeRequest body, HttpServletRequest request) {
         authService.sendRegisterCode(body.getEmail(), fingerprint(request));
         return ok(Map.of("message", "验证码已发送到邮箱，10 分钟内有效"), request);
     }
 
-    /** 邮箱密码登录并签发新 Token。 */
+    /**
+     * 邮箱密码登录并签发新 Token。
+     */
     @PostMapping("/auth/login")
     public ApiResponse<?> login(@Valid @RequestBody LoginRequest body, HttpServletRequest request) {
         return ok(authService.login(body, fingerprint(request)), request);
     }
 
-    /** 用 refreshToken 轮换一组新 Token。 */
+    /**
+     * 用 refreshToken 轮换一组新 Token。
+     */
     @PostMapping("/auth/refresh")
     public ApiResponse<?> refresh(
-            @Valid @RequestBody RefreshTokenRequest body, HttpServletRequest request) {
+        @Valid @RequestBody RefreshTokenRequest body, HttpServletRequest request) {
         return ok(authService.refresh(body.getRefreshToken()), request);
     }
 
-    /** 注销当前刷新令牌；不需要 Bearer，前端退出时不携带 access token。 */
+    /**
+     * 注销当前刷新令牌；不需要 Bearer，前端退出时不携带 access token。
+     */
     @PostMapping("/auth/logout")
     public ApiResponse<?> logout(
-            @Valid @RequestBody RefreshTokenRequest body, HttpServletRequest request) {
+        @Valid @RequestBody RefreshTokenRequest body, HttpServletRequest request) {
         authService.logout(body.getRefreshToken());
         return ok(Map.of(), request);
     }
 
-    /** 发起找回密码邮件（未注册邮箱同样返回成功，规避枚举）。 */
+    /**
+     * 发起找回密码邮件（未注册邮箱同样返回成功，规避枚举）。
+     */
     @PostMapping("/auth/password-reset-requests")
     @ResponseStatus(HttpStatus.ACCEPTED)
     public ApiResponse<?> requestReset(
-            @Valid @RequestBody PasswordResetRequest body, HttpServletRequest request) {
+        @Valid @RequestBody PasswordResetRequest body, HttpServletRequest request) {
         authService.requestReset(body.getEmail(), fingerprint(request));
         return ok(Map.of("message", "如果邮箱已注册，重置邮件将很快发送"), request);
     }
 
-    /** 用邮箱验证码设置新密码并撤销全部 refreshToken。 */
+    /**
+     * 用邮箱验证码设置新密码并撤销全部 refreshToken。
+     */
     @PostMapping("/auth/password-resets")
     public ApiResponse<?> reset(
-            @Valid @RequestBody ResetPasswordRequest body, HttpServletRequest request) {
+        @Valid @RequestBody ResetPasswordRequest body, HttpServletRequest request) {
         authService.reset(body, fingerprint(request));
         return ok(Map.of(), request);
     }
 
-    /** 获取当前账户、团队与项目角色摘要。 */
+    /**
+     * 获取当前账户、团队与项目角色摘要。
+     */
     @GetMapping("/me")
     public ApiResponse<?> me(@AuthenticationPrincipal Long userId, HttpServletRequest request) {
         return ok(authService.me(userId), request);
     }
 
-    /** 修改昵称或头像。 */
+    /**
+     * 修改昵称或头像。
+     */
     @PatchMapping("/me")
     public ApiResponse<?> updateMe(
-            @AuthenticationPrincipal Long userId,
-            @Valid @RequestBody UserUpdateRequest body,
-            HttpServletRequest request) {
+        @AuthenticationPrincipal Long userId,
+        @Valid @RequestBody UserUpdateRequest body,
+        HttpServletRequest request) {
         return ok(authService.updateMe(userId, body), request);
     }
 
-    /** 保存当前团队，供后续登录和其他设备恢复。 */
+    /**
+     * 保存当前团队，供后续登录和其他设备恢复。
+     */
     @PutMapping("/me/current-team")
     public ApiResponse<?> selectTeam(
-            @AuthenticationPrincipal Long userId,
-            @Valid @RequestBody CurrentTeamRequest body,
-            HttpServletRequest request) {
+        @AuthenticationPrincipal Long userId,
+        @Valid @RequestBody CurrentTeamRequest body,
+        HttpServletRequest request) {
         authService.selectTeam(userId, body.teamId());
         return ok(Map.of(), request);
     }

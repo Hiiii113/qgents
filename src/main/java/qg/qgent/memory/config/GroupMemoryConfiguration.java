@@ -6,7 +6,9 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import qg.qgent.common.config.MdcTaskDecorator;
 
-/** 群记忆提炼线程池与配置；提炼串行执行且不使用聊天回复线程池。 */
+/**
+ * 群记忆提炼线程池与配置；提炼串行执行且不使用聊天回复线程池。
+ */
 @Configuration
 @EnableConfigurationProperties({
     GroupMemoryProperties.class,

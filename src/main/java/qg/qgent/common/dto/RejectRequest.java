@@ -5,7 +5,9 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
-/** 审核拒绝请求，必须填写原因。 */
+/**
+ * 审核拒绝请求，必须填写原因。
+ */
 @Data
 public class RejectRequest {
 

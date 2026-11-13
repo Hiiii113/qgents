@@ -4,7 +4,9 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/** Agent 上下文中的消息，保留消息标识、回复关系和发送者；图片及文件包含供按需加载的附件信息。 */
+/**
+ * Agent 上下文中的消息，保留消息标识、回复关系和发送者；图片及文件包含供按需加载的附件信息。
+ */
 @Data
 @NoArgsConstructor
 public class ContextMessage {
@@ -49,20 +51,20 @@ public class ContextMessage {
     private Long size;
 
     public ContextMessage(
-            Long sequence, String type, String senderType, String senderId, String text) {
+        Long sequence, String type, String senderType, String senderId, String text) {
         this(sequence, type, senderType, senderId, text, null, null, null, null);
     }
 
     public ContextMessage(
-            Long sequence,
-            String type,
-            String senderType,
-            String senderId,
-            String text,
-            String attachmentId,
-            String fileName,
-            String mediaType,
-            Long size) {
+        Long sequence,
+        String type,
+        String senderType,
+        String senderId,
+        String text,
+        String attachmentId,
+        String fileName,
+        String mediaType,
+        Long size) {
         this.sequence = sequence;
         this.type = type;
         this.senderType = senderType;

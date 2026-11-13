@@ -7,22 +7,34 @@ package qg.qgent.workspace.service;
  */
 public interface WorkSession {
 
-    /** 当前选中的 Workspace；尚未选择时为 null。 */
+    /**
+     * 当前选中的 Workspace；尚未选择时为 null。
+     */
     Long workspaceId();
 
-    /** 当前目录，相对 Workspace 根。 */
+    /**
+     * 当前目录，相对 Workspace 根。
+     */
     String directory();
 
-    /** 用当前选择准备代码环境；未选择时使用项目默认 Workspace。 */
+    /**
+     * 用当前选择准备代码环境；未选择时使用项目默认 Workspace。
+     */
     Long ensure();
 
-    /** 准备指定 Workspace 的代码环境，不改变当前选择。 */
+    /**
+     * 准备指定 Workspace 的代码环境，不改变当前选择。
+     */
     Long ensure(Long workspaceId);
 
-    /** 当前选择已初始化时返回它，否则提示先初始化。 */
+    /**
+     * 当前选择已初始化时返回它，否则提示先初始化。
+     */
     Long requireInitialized();
 
-    /** 切换当前选择并重置目录。 */
+    /**
+     * 切换当前选择并重置目录。
+     */
     void select(Long workspaceId);
 
     void setDirectory(String directory);

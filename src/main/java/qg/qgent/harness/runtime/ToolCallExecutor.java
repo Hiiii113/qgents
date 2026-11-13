@@ -2,16 +2,6 @@ package qg.qgent.harness.runtime;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorCompletionService;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
-import java.util.function.BooleanSupplier;
 import org.slf4j.MDC;
 import org.springframework.ai.chat.messages.AssistantMessage.ToolCall;
 import org.springframework.ai.chat.messages.ToolResponseMessage.ToolResponse;
@@ -20,7 +10,16 @@ import qg.qgent.harness.tool.ParallelToolCallback;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.sandbox.dto.SandboxExecutionContext;
 
-/** 连续的并行工具使用有界执行池；其他调用形成屏障，结果保持模型顺序。 */
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.*;
+import java.util.function.BooleanSupplier;
+
+/**
+ * 连续的并行工具使用有界执行池；其他调用形成屏障，结果保持模型顺序。
+ */
 final class ToolCallExecutor {
     private final ObjectMapper json;
     private final int maxParallel;
@@ -33,34 +32,34 @@ final class ToolCallExecutor {
     }
 
     Result execute(
-            Long runId,
-            List<ToolCall> calls,
-            Map<String, ToolCallback> callbacks,
-            BooleanSupplier cancelled) {
+        Long runId,
+        List<ToolCall> calls,
+        Map<String, ToolCallback> callbacks,
+        BooleanSupplier cancelled) {
         return execute(runId, calls, callbacks, cancelled, RunStreamSink.NONE);
     }
 
     Result execute(
-            Long runId,
-            List<ToolCall> calls,
-            Map<String, ToolCallback> callbacks,
-            BooleanSupplier cancelled,
-            RunStreamSink sink) {
+        Long runId,
+        List<ToolCall> calls,
+        Map<String, ToolCallback> callbacks,
+        BooleanSupplier cancelled,
+        RunStreamSink sink) {
         return SandboxExecutionContext.within(
-                runId, () -> dispatch(runId, calls, callbacks, cancelled, sink));
+            runId, () -> dispatch(runId, calls, callbacks, cancelled, sink));
     }
 
     private Result dispatch(
-            Long runId,
-            List<ToolCall> calls,
-            Map<String, ToolCallback> callbacks,
-            BooleanSupplier cancelled,
-            RunStreamSink sink) {
+        Long runId,
+        List<ToolCall> calls,
+        Map<String, ToolCallback> callbacks,
+        BooleanSupplier cancelled,
+        RunStreamSink sink) {
         List<ToolResponse> results = new ArrayList<>(Collections.nCopies(calls.size(), null));
         Map<String, String> context = MDC.getCopyOfContextMap();
         try (ExecutorService pool =
-                Executors.newFixedThreadPool(
-                        maxParallel, Thread.ofVirtual().name("agent-tool-", 0).factory())) {
+                 Executors.newFixedThreadPool(
+                     maxParallel, Thread.ofVirtual().name("agent-tool-", 0).factory())) {
             for (int next = 0; next < calls.size(); ) {
                 if (stopped(cancelled)) return new Result(results, true);
                 if (!(callbacks.get(calls.get(next).name()) instanceof ParallelToolCallback)) {
@@ -70,10 +69,10 @@ final class ToolCallExecutor {
                 }
                 int end = next;
                 while (end < calls.size()
-                        && callbacks.get(calls.get(end).name()) instanceof ParallelToolCallback)
+                    && callbacks.get(calls.get(end).name()) instanceof ParallelToolCallback)
                     end++;
                 if (parallel(
-                        pool, calls, callbacks, next, end, results, cancelled, runId, context, sink))
+                    pool, calls, callbacks, next, end, results, cancelled, runId, context, sink))
                     return new Result(results, true);
                 next = end;
             }
@@ -82,16 +81,16 @@ final class ToolCallExecutor {
     }
 
     private boolean parallel(
-            ExecutorService pool,
-            List<ToolCall> calls,
-            Map<String, ToolCallback> callbacks,
-            int start,
-            int end,
-            List<ToolResponse> results,
-            BooleanSupplier cancelled,
-            Long runId,
-            Map<String, String> context,
-            RunStreamSink sink) {
+        ExecutorService pool,
+        List<ToolCall> calls,
+        Map<String, ToolCallback> callbacks,
+        int start,
+        int end,
+        List<ToolResponse> results,
+        BooleanSupplier cancelled,
+        Long runId,
+        Map<String, String> context,
+        RunStreamSink sink) {
         var completed = new ExecutorCompletionService<CompletedCall>(pool);
         int next = start, active = 0;
         boolean stopped = false;
@@ -104,11 +103,11 @@ final class ToolCallExecutor {
                     setMdc(context);
                     try {
                         return SandboxExecutionContext.within(
-                                runId,
-                                () ->
-                                        new CompletedCall(
-                                                index,
-                                                invoke(calls.get(index), callbacks, sink)));
+                            runId,
+                            () ->
+                                new CompletedCall(
+                                    index,
+                                    invoke(calls.get(index), callbacks, sink)));
                     } finally {
                         setMdc(previousContext);
                     }
@@ -135,7 +134,7 @@ final class ToolCallExecutor {
     }
 
     private ToolResponse invoke(
-            ToolCall call, Map<String, ToolCallback> callbacks, RunStreamSink sink) {
+        ToolCall call, Map<String, ToolCallback> callbacks, RunStreamSink sink) {
         sink.toolStarted(call.id(), call.name());
         // 未知工具与异常一定是失败；正常返回时只信 ToolResult 的 ok 字段，其他结果不声称成功。
         Boolean ok = false;
@@ -150,15 +149,15 @@ final class ToolCallExecutor {
                 } catch (RuntimeException exception) {
                     // 已知业务错误保留稳定错误码，便于模型按代码而不是文案判断处置方式
                     String code =
-                            exception instanceof qg.qgent.common.web.ApiException api
-                                    ? api.code()
-                                    : "TOOL_FAILED";
+                        exception instanceof qg.qgent.common.web.ApiException api
+                            ? api.code()
+                            : "TOOL_FAILED";
                     result =
-                            error(
-                                    code,
-                                    exception.getMessage() == null
-                                            ? "工具执行失败"
-                                            : exception.getMessage());
+                        error(
+                            code,
+                            exception.getMessage() == null
+                                ? "工具执行失败"
+                                : exception.getMessage());
                 }
             }
         } finally {
@@ -167,7 +166,9 @@ final class ToolCallExecutor {
         return new ToolResponse(call.id(), call.name(), result);
     }
 
-    /** 工具结果里显式的 ok 字段；不是 ToolResult 形状时返回 null，由前端中性展示。 */
+    /**
+     * 工具结果里显式的 ok 字段；不是 ToolResult 形状时返回 null，由前端中性展示。
+     */
     private Boolean resultOk(String result) {
         if (result == null) return null;
         try {
@@ -196,7 +197,9 @@ final class ToolCallExecutor {
         else MDC.setContextMap(context);
     }
 
-    record Result(List<ToolResponse> responses, boolean cancelled) {}
+    record Result(List<ToolResponse> responses, boolean cancelled) {
+    }
 
-    private record CompletedCall(int index, ToolResponse response) {}
+    private record CompletedCall(int index, ToolResponse response) {
+    }
 }

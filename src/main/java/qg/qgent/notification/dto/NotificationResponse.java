@@ -5,7 +5,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/** 通知列表响应，包含通知内容、已读状态与跳转资源。 */
+/**
+ * 通知列表响应，包含通知内容、已读状态与跳转资源。
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

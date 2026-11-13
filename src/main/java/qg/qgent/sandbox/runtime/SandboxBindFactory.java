@@ -1,10 +1,13 @@
 package qg.qgent.sandbox.runtime;
 
-import com.github.dockerjava.api.model.*;
-import java.util.List;
+import com.github.dockerjava.api.model.AccessMode;
+import com.github.dockerjava.api.model.Bind;
+import com.github.dockerjava.api.model.Volume;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import qg.qgent.sandbox.filesystem.service.WorkspacePathResolver;
+
+import java.util.List;
 
 /**
  * 挂载项目共享 Git 数据、当前 Workspace 和它的 /workspace 别名。
@@ -20,17 +23,17 @@ public class SandboxBindFactory {
     public List<Bind> create(SandboxAllocation allocation) {
         String key = allocation.getWorkspaceStorageKey();
         return List.of(
-                new Bind(
-                        paths.resolveDockerHostGit(key).toString(),
-                        new Volume("/qgents/project/.git"),
-                        AccessMode.rw),
-                new Bind(
-                        paths.resolveDockerHost(key).toString(),
-                        new Volume("/qgents/project/" + paths.relativeDirectory(key)),
-                        AccessMode.rw),
-                new Bind(
-                        paths.resolveDockerHost(key).toString(),
-                        new Volume("/workspace"),
-                        AccessMode.rw));
+            new Bind(
+                paths.resolveDockerHostGit(key).toString(),
+                new Volume("/qgents/project/.git"),
+                AccessMode.rw),
+            new Bind(
+                paths.resolveDockerHost(key).toString(),
+                new Volume("/qgents/project/" + paths.relativeDirectory(key)),
+                AccessMode.rw),
+            new Bind(
+                paths.resolveDockerHost(key).toString(),
+                new Volume("/workspace"),
+                AccessMode.rw));
     }
 }

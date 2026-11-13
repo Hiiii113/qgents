@@ -10,7 +10,9 @@ import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.service.MessageService;
 
-/** 消息提交后通知被提及的用户，与 Qgent 执行相互独立。 */
+/**
+ * 消息提交后通知被提及的用户，与 Qgent 执行相互独立。
+ */
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -23,19 +25,19 @@ public class UserMentionListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onMessageSent(MessageSentEvent event) {
         if (event.mentions() == null
-                || event.mentions().stream().noneMatch(m -> "USER".equals(m.getType()))) return;
+            || event.mentions().stream().noneMatch(m -> "USER".equals(m.getType()))) return;
         try {
             var message = messages.selectById(event.messageId());
             var group = groups.selectById(event.groupId());
             service.notifyMentionedUsersAfterCommit(
-                    event,
-                    group == null ? "群聊" : group.getName(),
-                    service.extractTextPreview(message));
+                event,
+                group == null ? "群聊" : group.getName(),
+                service.extractTextPreview(message));
         } catch (RuntimeException exception) {
             log.warn(
-                    "user mention post-processing skipped, messageId={}: {}",
-                    event.messageId(),
-                    exception.getMessage());
+                "user mention post-processing skipped, messageId={}: {}",
+                event.messageId(),
+                exception.getMessage());
         }
     }
 }

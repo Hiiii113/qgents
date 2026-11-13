@@ -4,9 +4,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import lombok.Data;
+
 import java.util.List;
 import java.util.Map;
-import lombok.Data;
 
 /**
  * 发送消息请求。
@@ -21,9 +22,9 @@ public class MessageSendRequest {
     @NotBlank
     @Size(max = 32)
     @Schema(
-            description = "消息类型：TEXT/CODE/IMAGE/FILE",
-            maxLength = 32,
-            requiredMode = Schema.RequiredMode.REQUIRED)
+        description = "消息类型：TEXT/CODE/IMAGE/FILE",
+        maxLength = 32,
+        requiredMode = Schema.RequiredMode.REQUIRED)
     private String type;
 
     // 按类型校验的结构化内容对象，不能为空。

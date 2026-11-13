@@ -1,12 +1,15 @@
 package qg.qgent.attachment.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/** 附件元数据与短期内容访问地址；不读取文件字节。 */
+import java.time.LocalDateTime;
+
+/**
+ * 附件元数据与短期内容访问地址；不读取文件字节。
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

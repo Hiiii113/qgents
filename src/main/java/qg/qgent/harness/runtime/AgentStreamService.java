@@ -1,22 +1,6 @@
 package qg.qgent.harness.runtime;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import java.io.IOException;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executor;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -29,6 +13,15 @@ import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.mapper.AgentRunMapper;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.realtime.transport.SseEmitterFactory;
+
+import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 一次 Agent 运行的可展示进度。
@@ -62,11 +55,11 @@ public class AgentStreamService {
     private final Map<Long, Set<GroupStream>> streams = new ConcurrentHashMap<>();
 
     public AgentStreamService(
-            EventService events,
-            AgentRunMapper runs,
-            GroupService groups,
-            SseEmitterFactory emitters,
-            @Qualifier("sseEventPumpExecutor") Executor pump) {
+        EventService events,
+        AgentRunMapper runs,
+        GroupService groups,
+        SseEmitterFactory emitters,
+        @Qualifier("sseEventPumpExecutor") Executor pump) {
         this.events = events;
         this.runs = runs;
         this.groups = groups;
@@ -74,7 +67,9 @@ public class AgentStreamService {
         this.pump = pump;
     }
 
-    /** 注册运行的实时状态，并以即将开始的轮次广播开始事件。 */
+    /**
+     * 注册运行的实时状态，并以即将开始的轮次广播开始事件。
+     */
     public RunStreamSink sink(AgentRunEntity run) {
         RootStream root = roots.computeIfAbsent(rootRunId(run), ignored -> new RootStream());
         LiveRun state = live.computeIfAbsent(run.getId(), ignored -> new LiveRun(run, root));
@@ -82,7 +77,9 @@ public class AgentStreamService {
         return new Sink(state, true);
     }
 
-    /** 发布即将开始的这一轮；loop 的第一次 roundStarted 不再重复递增。 */
+    /**
+     * 发布即将开始的这一轮；loop 的第一次 roundStarted 不再重复递增。
+     */
     private void beginRound(LiveRun state) {
         synchronized (state) {
             if (state.closed) return;
@@ -96,26 +93,28 @@ public class AgentStreamService {
         drainPublishes(state);
     }
 
-    /** 订阅一个群的 Agent 运行事件；建连时先下发全部活动运行快照。 */
+    /**
+     * 订阅一个群的 Agent 运行事件；建连时先下发全部活动运行快照。
+     */
     public SseEmitter openGroupStream(Long projectId, Long groupId, Long userId) {
         groups.requireGroupMember(projectId, groupId, userId);
         SseEmitter emitter = emitters.create(SSE_TIMEOUT_MS);
         if (connections.incrementAndGet() > MAX_STREAMS) {
             connections.decrementAndGet();
             throw new ApiException(
-                    HttpStatus.TOO_MANY_REQUESTS,
-                    "SSE_CONNECTION_LIMIT_EXCEEDED",
-                    "当前实时连接过多，请稍后重试");
+                HttpStatus.TOO_MANY_REQUESTS,
+                "SSE_CONNECTION_LIMIT_EXCEEDED",
+                "当前实时连接过多，请稍后重试");
         }
         GroupStream stream = new GroupStream(projectId, groupId, userId, emitter);
         streams.compute(
-                groupId,
-                (ignored, existing) -> {
-                    Set<GroupStream> updated =
-                            existing == null ? ConcurrentHashMap.newKeySet() : existing;
-                    updated.add(stream);
-                    return updated;
-                });
+            groupId,
+            (ignored, existing) -> {
+                Set<GroupStream> updated =
+                    existing == null ? ConcurrentHashMap.newKeySet() : existing;
+                updated.add(stream);
+                return updated;
+            });
         stream.emitter.onTimeout(() -> close(stream));
         stream.emitter.onError(error -> close(stream));
         stream.emitter.onCompletion(() -> close(stream));
@@ -128,19 +127,21 @@ public class AgentStreamService {
         return stream.emitter;
     }
 
-    /** 群内最近的运行（含子运行），用于刷新与断线恢复。 */
+    /**
+     * 群内最近的运行（含子运行），用于刷新与断线恢复。
+     */
     public List<AgentRunSnapshot> recentRuns(
-            Long projectId, Long groupId, Long userId, int limit) {
+        Long projectId, Long groupId, Long userId, int limit) {
         groups.requireGroupMember(projectId, groupId, userId);
         return runs.selectList(
-                        Wrappers.<AgentRunEntity>lambdaQuery()
-                                .eq(AgentRunEntity::getProjectId, projectId)
-                                .eq(AgentRunEntity::getGroupId, groupId)
-                                .orderByDesc(AgentRunEntity::getCreatedAt)
-                                .last("LIMIT " + limit))
-                .stream()
-                .map(this::snapshot)
-                .toList();
+                Wrappers.<AgentRunEntity>lambdaQuery()
+                    .eq(AgentRunEntity::getProjectId, projectId)
+                    .eq(AgentRunEntity::getGroupId, groupId)
+                    .orderByDesc(AgentRunEntity::getCreatedAt)
+                    .last("LIMIT " + limit))
+            .stream()
+            .map(this::snapshot)
+            .toList();
     }
 
     private void pump(GroupStream stream) {
@@ -198,15 +199,17 @@ public class AgentStreamService {
         }
     }
 
-    /** 终止一条连接并清理注册；重复调用安全。 */
+    /**
+     * 终止一条连接并清理注册；重复调用安全。
+     */
     private void close(GroupStream stream) {
         if (!stream.closed.compareAndSet(false, true)) return;
         streams.computeIfPresent(
-                stream.groupId,
-                (ignored, existing) -> {
-                    existing.remove(stream);
-                    return existing.isEmpty() ? null : existing;
-                });
+            stream.groupId,
+            (ignored, existing) -> {
+                existing.remove(stream);
+                return existing.isEmpty() ? null : existing;
+            });
         connections.decrementAndGet();
         try {
             stream.emitter.complete();
@@ -215,13 +218,15 @@ public class AgentStreamService {
         }
     }
 
-    /** 必须在 state 的监视器内调用；把缓冲正文追加到当前分段并按需发一帧。 */
+    /**
+     * 必须在 state 的监视器内调用；把缓冲正文追加到当前分段并按需发一帧。
+     */
     private void flush(LiveRun state, boolean force) {
         if (state.pending.isEmpty()) return;
         long now = System.currentTimeMillis();
         if (!force
-                && state.pending.length() < FLUSH_CHARS
-                && now - state.lastFlushAt < FLUSH_INTERVAL_MS) {
+            && state.pending.length() < FLUSH_CHARS
+            && now - state.lastFlushAt < FLUSH_INTERVAL_MS) {
             return;
         }
         String text = state.pending.toString();
@@ -241,7 +246,7 @@ public class AgentStreamService {
     }
 
     private Map<String, Object> updatedPayload(
-            LiveRun state, RunStatus status, long revision) {
+        LiveRun state, RunStatus status, long revision) {
         Map<String, Object> payload = basePayload(state.run);
         payload.put("status", status.name());
         payload.put("round", state.round);
@@ -251,13 +256,13 @@ public class AgentStreamService {
     }
 
     private Map<String, Object> toolPayload(
-            LiveRun state,
-            String phase,
-            String toolCallId,
-            String toolName,
-            int round,
-            Boolean ok,
-            long revision) {
+        LiveRun state,
+        String phase,
+        String toolCallId,
+        String toolName,
+        int round,
+        Boolean ok,
+        long revision) {
         Map<String, Object> payload = basePayload(state.run);
         payload.put("status", RunStatus.RUNNING.name());
         payload.put("round", round);
@@ -269,13 +274,17 @@ public class AgentStreamService {
         return payload;
     }
 
-    /** 必须在 state 监视器内调用：SSE 按 revision 顺序入队，数据库持久化在锁外按同一顺序执行。 */
+    /**
+     * 必须在 state 监视器内调用：SSE 按 revision 顺序入队，数据库持久化在锁外按同一顺序执行。
+     */
     private void emit(LiveRun state, String type, Map<String, Object> payload) {
         fanout(state.run.getGroupId(), type, payload);
         state.pendingPublishes.add(new PendingEvent(type, payload));
     }
 
-    /** 同一运行的事件串行落库并广播，避免并行工具通知反序；不持有 state 锁做 IO。 */
+    /**
+     * 同一运行的事件串行落库并广播，避免并行工具通知反序；不持有 state 锁做 IO。
+     */
     private void drainPublishes(LiveRun state) {
         synchronized (state.publishLock) {
             while (true) {
@@ -285,11 +294,11 @@ public class AgentStreamService {
                     if (event == null) return;
                 }
                 events.publish(
-                        state.run.getProjectId(),
-                        state.run.getGroupId(),
-                        event.type(),
-                        state.run.getId().toString(),
-                        event.payload());
+                    state.run.getProjectId(),
+                    state.run.getGroupId(),
+                    event.type(),
+                    state.run.getId().toString(),
+                    event.payload());
             }
         }
     }
@@ -335,45 +344,45 @@ public class AgentStreamService {
             }
         }
         return new AgentRunSnapshot(
-                run.getId().toString(),
-                id(run.getParentRunId()),
-                id(rootRunId(run)),
-                id(run.getProjectId()),
-                id(run.getGroupId()),
-                id(run.getAgentId()),
-                id(run.getTriggerMessageId()),
-                run.getStatus().name(),
-                round,
-                rounds(run),
-                seq,
-                revision,
-                segments,
-                tools,
-                run.getResult(),
-                iso(run.getCreatedAt()),
-                iso(run.getFinishedAt()));
+            run.getId().toString(),
+            id(run.getParentRunId()),
+            id(rootRunId(run)),
+            id(run.getProjectId()),
+            id(run.getGroupId()),
+            id(run.getAgentId()),
+            id(run.getTriggerMessageId()),
+            run.getStatus().name(),
+            round,
+            rounds(run),
+            seq,
+            revision,
+            segments,
+            tools,
+            run.getResult(),
+            iso(run.getCreatedAt()),
+            iso(run.getFinishedAt()));
     }
 
     private AgentRunSnapshot snapshot(LiveRun state) {
         synchronized (state) {
             return new AgentRunSnapshot(
-                    state.run.getId().toString(),
-                    id(state.run.getParentRunId()),
-                    id(state.rootRunId),
-                    id(state.run.getProjectId()),
-                    id(state.run.getGroupId()),
-                    id(state.run.getAgentId()),
-                    id(state.run.getTriggerMessageId()),
-                    state.run.getStatus().name(),
-                    state.round,
-                    rounds(state.run),
-                    state.root.seqValue(state.run.getId()),
-                    state.root.revisionValue(state.run.getId()),
-                    segments(state),
-                    tools(state),
-                    state.run.getResult(),
-                    iso(state.run.getCreatedAt()),
-                    iso(state.run.getFinishedAt()));
+                state.run.getId().toString(),
+                id(state.run.getParentRunId()),
+                id(state.rootRunId),
+                id(state.run.getProjectId()),
+                id(state.run.getGroupId()),
+                id(state.run.getAgentId()),
+                id(state.run.getTriggerMessageId()),
+                state.run.getStatus().name(),
+                state.round,
+                rounds(state.run),
+                state.root.seqValue(state.run.getId()),
+                state.root.revisionValue(state.run.getId()),
+                segments(state),
+                tools(state),
+                state.run.getResult(),
+                iso(state.run.getCreatedAt()),
+                iso(state.run.getFinishedAt()));
         }
     }
 
@@ -389,8 +398,8 @@ public class AgentStreamService {
 
     private List<AgentRunSnapshot.Tool> tools(LiveRun state) {
         return state.tools.values().stream()
-                .map(tool -> new AgentRunSnapshot.Tool(tool.toolCallId(), tool.tool(), tool.round()))
-                .toList();
+            .map(tool -> new AgentRunSnapshot.Tool(tool.toolCallId(), tool.tool(), tool.round()))
+            .toList();
     }
 
     private int rounds(AgentRunEntity run) {
@@ -399,8 +408,8 @@ public class AgentStreamService {
 
     private static String toolName(String name) {
         return name != null && name.length() > TOOL_NAME_LIMIT
-                ? name.substring(0, TOOL_NAME_LIMIT)
-                : name;
+            ? name.substring(0, TOOL_NAME_LIMIT)
+            : name;
     }
 
     private static Long rootRunId(AgentRunEntity run) {
@@ -415,7 +424,9 @@ public class AgentStreamService {
         return value == null ? null : value.toInstant(ZoneOffset.UTC).toString();
     }
 
-    /** 同一根运行共享的单调计数器。 */
+    /**
+     * 同一根运行共享的单调计数器。
+     */
     private static final class RootStream {
         private final Map<Long, AtomicInteger> rounds = new ConcurrentHashMap<>();
         private final Map<Long, AtomicLong> sequences = new ConcurrentHashMap<>();
@@ -449,7 +460,9 @@ public class AgentStreamService {
         }
     }
 
-    /** 单个运行的正文缓冲与当前工具；运行结束后从 live 中移除。 */
+    /**
+     * 单个运行的正文缓冲与当前工具；运行结束后从 live 中移除。
+     */
     private static final class LiveRun {
         private final AgentRunEntity run;
         private final Long rootRunId;
@@ -459,7 +472,7 @@ public class AgentStreamService {
         private final StringBuilder pending = new StringBuilder();
         private final Object publishLock = new Object();
         private final java.util.ArrayDeque<PendingEvent> pendingPublishes =
-                new java.util.ArrayDeque<>();
+            new java.util.ArrayDeque<>();
         private volatile int round;
         private long lastFlushAt = System.currentTimeMillis();
         private boolean closed;
@@ -480,9 +493,11 @@ public class AgentStreamService {
         }
     }
 
-    private record ActiveTool(String toolCallId, String tool, int round) {}
+    private record ActiveTool(String toolCallId, String tool, int round) {
+    }
 
-    private record PendingEvent(String type, Map<String, Object> payload) {}
+    private record PendingEvent(String type, Map<String, Object> payload) {
+    }
 
     private final class Sink implements RunStreamSink {
         private final LiveRun state;
@@ -519,20 +534,20 @@ public class AgentStreamService {
                 if (state.closed) return;
                 flush(state, true);
                 state.tools.put(
-                        toolCallId,
-                        new ActiveTool(toolCallId, toolName(toolName), state.round));
+                    toolCallId,
+                    new ActiveTool(toolCallId, toolName(toolName), state.round));
                 long revision = state.root.revision(state.run.getId()).incrementAndGet();
                 emit(
+                    state,
+                    "agent-run.tool",
+                    toolPayload(
                         state,
-                        "agent-run.tool",
-                        toolPayload(
-                                state,
-                                "started",
-                                toolCallId,
-                                toolName,
-                                state.round,
-                                null,
-                                revision));
+                        "started",
+                        toolCallId,
+                        toolName,
+                        state.round,
+                        null,
+                        revision));
             }
             drainPublishes(state);
         }
@@ -544,16 +559,16 @@ public class AgentStreamService {
                 state.tools.remove(toolCallId);
                 long revision = state.root.revision(state.run.getId()).incrementAndGet();
                 emit(
+                    state,
+                    "agent-run.tool",
+                    toolPayload(
                         state,
-                        "agent-run.tool",
-                        toolPayload(
-                                state,
-                                "finished",
-                                toolCallId,
-                                toolName,
-                                state.round,
-                                ok,
-                                revision));
+                        "finished",
+                        toolCallId,
+                        toolName,
+                        state.round,
+                        ok,
+                        revision));
             }
             drainPublishes(state);
         }
@@ -566,9 +581,9 @@ public class AgentStreamService {
                 state.tools.clear();
                 long revision = state.root.revision(state.run.getId()).incrementAndGet();
                 emit(
-                        state,
-                        "agent-run.updated",
-                        updatedPayload(state, state.run.getStatus(), revision));
+                    state,
+                    "agent-run.updated",
+                    updatedPayload(state, state.run.getStatus(), revision));
             }
             live.remove(state.run.getId(), state);
             drainPublishes(state);
@@ -595,5 +610,6 @@ public class AgentStreamService {
         }
     }
 
-    private record Frame(String type, Map<String, Object> payload) {}
+    private record Frame(String type, Map<String, Object> payload) {
+    }
 }

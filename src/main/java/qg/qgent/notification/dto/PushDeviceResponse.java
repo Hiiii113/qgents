@@ -4,7 +4,9 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
-/** 不含设备 Token 的推送设备视图。 */
+/**
+ * 不含设备 Token 的推送设备视图。
+ */
 @Data
 @AllArgsConstructor
 public class PushDeviceResponse {

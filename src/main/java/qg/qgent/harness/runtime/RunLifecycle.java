@@ -27,7 +27,9 @@ final class RunLifecycle {
         this.rootWorker = Thread.currentThread();
     }
 
-    /** 取消：仍在跑的命令立即取消，工作线程被打断；根运行还先停止全部子运行。 */
+    /**
+     * 取消：仍在跑的命令立即取消，工作线程被打断；根运行还先停止全部子运行。
+     */
     void cancelled(AgentRunEntity run) {
         if (isRoot(run)) {
             work.cancel();
@@ -71,7 +73,7 @@ final class RunLifecycle {
                 continue;
             }
             work.openedWorkspaces.forEach(
-                    workspaceId -> sessions.release(workspaceId, work.rootRunId));
+                workspaceId -> sessions.release(workspaceId, work.rootRunId));
             runs.finishRoot(run, status, result, rounds);
             return status;
         }

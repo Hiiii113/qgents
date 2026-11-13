@@ -1,19 +1,7 @@
 package qg.qgent.harness.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.BooleanSupplier;
-import java.util.function.Supplier;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.SystemMessage;
-import org.springframework.ai.chat.messages.ToolResponseMessage;
-import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.messages.*;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
@@ -25,7 +13,14 @@ import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-/** 所有 Agent 共用的循环：工具结果回给模型，普通文本结束本次运行。 */
+import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
+
+/**
+ * 所有 Agent 共用的循环：工具结果回给模型，普通文本结束本次运行。
+ */
 @Component
 public class AgentLoop {
     private final ChatModel model;
@@ -33,64 +28,74 @@ public class AgentLoop {
     private final int maxRounds;
 
     public AgentLoop(
-            ChatModel model,
-            ObjectMapper json,
-            @Value("${app.agent.max-rounds:30}") int maxRounds,
-            @Value("${app.agent.max-parallel-tool-calls:4}") int maxParallelToolCalls) {
+        ChatModel model,
+        ObjectMapper json,
+        @Value("${app.agent.max-rounds:30}") int maxRounds,
+        @Value("${app.agent.max-parallel-tool-calls:4}") int maxParallelToolCalls) {
         this.model = model;
         this.toolCalls = new ToolCallExecutor(json, maxParallelToolCalls);
         if (maxRounds < 1) throw new IllegalArgumentException("max-rounds 必须大于 0");
         this.maxRounds = maxRounds;
     }
 
-    /** Creates a reusable, independent model conversation for a delegated child run. */
+    /**
+     * Creates a reusable, independent model conversation for a delegated child run.
+     */
     public Conversation conversation(String systemPrompt, List<Message> initialHistory) {
         return new Conversation(systemPrompt, initialHistory);
     }
 
-    /** 逐轮调用模型，将工具结果加入历史；取消、轮次耗尽或模型异常回复时停止。 */
+    /**
+     * 逐轮调用模型，将工具结果加入历史；取消、轮次耗尽或模型异常回复时停止。
+     */
     public Result run(
-            Long runId,
-            String systemPrompt,
-            List<Message> initialHistory,
-            Supplier<List<ToolCallback>> availableTools,
-            BooleanSupplier cancelled) {
+        Long runId,
+        String systemPrompt,
+        List<Message> initialHistory,
+        Supplier<List<ToolCallback>> availableTools,
+        BooleanSupplier cancelled) {
         return run(
-                runId,
-                conversation(systemPrompt, initialHistory),
-                availableTools,
-                cancelled,
-                UpdateSource.NONE,
-                RunStreamSink.NONE);
+            runId,
+            conversation(systemPrompt, initialHistory),
+            availableTools,
+            cancelled,
+            UpdateSource.NONE,
+            RunStreamSink.NONE);
     }
 
-    /** Continues a saved conversation, retaining earlier user, assistant, and tool messages. */
+    /**
+     * Continues a saved conversation, retaining earlier user, assistant, and tool messages.
+     */
     public Result run(
-            Long runId,
-            Conversation conversation,
-            Supplier<List<ToolCallback>> availableTools,
-            BooleanSupplier cancelled) {
+        Long runId,
+        Conversation conversation,
+        Supplier<List<ToolCallback>> availableTools,
+        BooleanSupplier cancelled) {
         return run(runId, conversation, availableTools, cancelled, UpdateSource.NONE);
     }
 
-    /** Runs a conversation that can receive asynchronous completion notices from delegated work. */
+    /**
+     * Runs a conversation that can receive asynchronous completion notices from delegated work.
+     */
     public Result run(
-            Long runId,
-            Conversation conversation,
-            Supplier<List<ToolCallback>> availableTools,
-            BooleanSupplier cancelled,
-            UpdateSource updates) {
+        Long runId,
+        Conversation conversation,
+        Supplier<List<ToolCallback>> availableTools,
+        BooleanSupplier cancelled,
+        UpdateSource updates) {
         return run(runId, conversation, availableTools, cancelled, updates, RunStreamSink.NONE);
     }
 
-    /** 运行一段对话，并把可展示的正文和工具阶段同步给实时层。 */
+    /**
+     * 运行一段对话，并把可展示的正文和工具阶段同步给实时层。
+     */
     public Result run(
-            Long runId,
-            Conversation conversation,
-            Supplier<List<ToolCallback>> availableTools,
-            BooleanSupplier cancelled,
-            UpdateSource updates,
-            RunStreamSink sink) {
+        Long runId,
+        Conversation conversation,
+        Supplier<List<ToolCallback>> availableTools,
+        BooleanSupplier cancelled,
+        UpdateSource updates,
+        RunStreamSink sink) {
         try {
             for (int round = 1; round <= maxRounds; round++) {
                 if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
@@ -109,12 +114,11 @@ public class AgentLoop {
                     throw new IllegalStateException("当前模型需要 OpenAiChatOptions");
                 }
                 OpenAiChatOptions options =
-                        (OpenAiChatOptions)
-                                defaults.mutate()
-                                        .toolCallbacks(tools)
-                                        .toolChoice(tools.isEmpty() ? "none" : "auto")
-                                        .maxRetries(0)
-                                        .build();
+                    defaults.mutate()
+                        .toolCallbacks(tools)
+                        .toolChoice(tools.isEmpty() ? "none" : "auto")
+                        .maxRetries(0)
+                        .build();
                 List<Message> request = new ArrayList<>();
                 request.add(new SystemMessage(conversation.systemPrompt()));
                 request.addAll(conversation.history());
@@ -127,9 +131,9 @@ public class AgentLoop {
                     return new Result(false, "模型没有返回有效回复", round);
                 }
                 if (response.getResult().getMetadata() != null
-                        && "length"
-                                .equalsIgnoreCase(
-                                        response.getResult().getMetadata().getFinishReason())) {
+                    && "length"
+                    .equalsIgnoreCase(
+                        response.getResult().getMetadata().getFinishReason())) {
                     return new Result(false, "模型回复被截断，请缩小问题范围后重试", round);
                 }
                 AssistantMessage assistant = response.getResult().getOutput();
@@ -153,11 +157,11 @@ public class AgentLoop {
                 // 保留原始消息及供应商元数据，下一轮完整回传 tool_calls/reasoning_content。
                 conversation.append(assistant);
                 ToolCallExecutor.Result results =
-                        toolCalls.execute(
-                                runId, assistant.getToolCalls(), callbacks, cancelled, sink);
+                    toolCalls.execute(
+                        runId, assistant.getToolCalls(), callbacks, cancelled, sink);
                 if (results.cancelled()) return new Result(false, "Agent 运行已取消", round);
                 conversation.append(
-                        ToolResponseMessage.builder().responses(results.responses()).build());
+                    ToolResponseMessage.builder().responses(results.responses()).build());
                 // 图片必须在完整工具结果之后追加，且只在确实还有下一轮模型调用时发送。
                 if (round < maxRounds) conversation.appendAll(conversation.takeStagedImages());
             }
@@ -176,17 +180,17 @@ public class AgentLoop {
         AtomicReference<ChatResponse> completed = new AtomicReference<>();
         StringBuilder reasoning = new StringBuilder();
         model.stream(prompt)
-                .doOnNext(chunk -> forward(chunk, sink, cancelled, reasoning))
-                .transform(flux -> aggregator.aggregate(flux, completed::set))
-                .blockLast();
+            .doOnNext(chunk -> forward(chunk, sink, cancelled, reasoning))
+            .transform(flux -> aggregator.aggregate(flux, completed::set))
+            .blockLast();
         return withFullReasoning(completed.get(), reasoning);
     }
 
     private void forward(
-            ChatResponse chunk,
-            RunStreamSink sink,
-            BooleanSupplier cancelled,
-            StringBuilder reasoning) {
+        ChatResponse chunk,
+        RunStreamSink sink,
+        BooleanSupplier cancelled,
+        StringBuilder reasoning) {
         if (chunk.getResult() == null || chunk.getResult().getOutput() == null) return;
         AssistantMessage message = chunk.getResult().getOutput();
         if (message.getMetadata().get("reasoningContent") instanceof String thoughts) {
@@ -195,7 +199,7 @@ public class AgentLoop {
         // 思考内容不进正文流；取消后立即停止推送。
         if (cancelled.getAsBoolean()) return;
         if (Boolean.parseBoolean(
-                String.valueOf(message.getMetadata().getOrDefault("isThought", "false")))) return;
+            String.valueOf(message.getMetadata().getOrDefault("isThought", "false")))) return;
         String text = message.getText();
         if (text != null && !text.isEmpty()) sink.delta(text);
     }
@@ -206,37 +210,42 @@ public class AgentLoop {
         Map<String, Object> properties = new HashMap<>(message.getMetadata());
         properties.put("reasoningContent", reasoning.toString());
         AssistantMessage aggregated =
-                AssistantMessage.builder()
-                        .content(message.getText())
-                        .properties(properties)
-                        .toolCalls(message.getToolCalls())
-                        .build();
+            AssistantMessage.builder()
+                .content(message.getText())
+                .properties(properties)
+                .toolCalls(message.getToolCalls())
+                .build();
         return new ChatResponse(
-                List.of(new Generation(aggregated, response.getResult().getMetadata())),
-                response.getMetadata());
+            List.of(new Generation(aggregated, response.getResult().getMetadata())),
+            response.getMetadata());
     }
 
-    public record Result(boolean success, String text, int rounds) {}
+    public record Result(boolean success, String text, int rounds) {
+    }
 
-    /** Supplies child completion messages to the main loop without polling storage. */
+    /**
+     * Supplies child completion messages to the main loop without polling storage.
+     */
     public interface UpdateSource {
         UpdateSource NONE =
-                new UpdateSource() {
-                    public List<Message> drain() {
-                        return List.of();
-                    }
+            new UpdateSource() {
+                public List<Message> drain() {
+                    return List.of();
+                }
 
-                    public List<Message> awaitNext() {
-                        return List.of();
-                    }
-                };
+                public List<Message> awaitNext() {
+                    return List.of();
+                }
+            };
 
         List<Message> drain();
 
         List<Message> awaitNext();
     }
 
-    /** A conversation can be resumed during the current root run without copying another agent's history. */
+    /**
+     * A conversation can be resumed during the current root run without copying another agent's history.
+     */
     public static final class Conversation {
         private final String systemPrompt;
         private final List<Message> history;
@@ -251,7 +260,9 @@ public class AgentLoop {
             history.add(new UserMessage(text));
         }
 
-        /** 图片暂存在各自会话中，由 loop 在工具结果之后追加。 */
+        /**
+         * 图片暂存在各自会话中，由 loop 在工具结果之后追加。
+         */
         public synchronized void stageImage(String attachmentId, String fileName, Media media) {
             stagedImages.add(new StagedImage(attachmentId, fileName, media));
         }
@@ -276,7 +287,8 @@ public class AgentLoop {
             stagedImages.clear();
         }
 
-        private record StagedImage(String attachmentId, String fileName, Media media) {}
+        private record StagedImage(String attachmentId, String fileName, Media media) {
+        }
 
         private String systemPrompt() {
             return systemPrompt;

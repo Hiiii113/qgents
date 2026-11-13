@@ -2,8 +2,6 @@ package qg.qgent.common.web;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import java.util.List;
-import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -18,7 +16,12 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
-/** 将业务异常、请求校验错误和未预期异常转换为统一响应。 */
+import java.util.List;
+import java.util.Map;
+
+/**
+ * 将业务异常、请求校验错误和未预期异常转换为统一响应。
+ */
 @Slf4j
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -26,42 +29,42 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ApiException.class)
     ResponseEntity<?> api(ApiException ex, HttpServletRequest request) {
         log.warn(
-                "API Exception [{}]: {} - {}", request.getRequestURI(), ex.code(), ex.getMessage());
+            "API Exception [{}]: {} - {}", request.getRequestURI(), ex.code(), ex.getMessage());
         return ResponseEntity.status(ex.status())
-                .body(error(ex.code(), ex.getMessage(), ex.details(), request));
+            .body(error(ex.code(), ex.getMessage(), ex.details(), request));
     }
 
     // 处理请求参数校验异常
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<?> validation(MethodArgumentNotValidException ex, HttpServletRequest request) {
         var details =
-                ex.getBindingResult().getFieldErrors().stream()
-                        .map(f -> Map.of("field", f.getField(), "message", message(f)))
-                        .toList();
+            ex.getBindingResult().getFieldErrors().stream()
+                .map(f -> Map.of("field", f.getField(), "message", message(f)))
+                .toList();
         log.warn("Validation rejected [{}]: {}", request.getRequestURI(), details);
 
         return ResponseEntity.badRequest()
-                .body(error("INVALID_ARGUMENT", "请求参数不合法", details, request));
+            .body(error("INVALID_ARGUMENT", "请求参数不合法", details, request));
     }
 
     // 处理参数类型转换失败（如 path/query 中的数字 ID 格式错误）
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     ResponseEntity<?> typeMismatch(
-            MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
+        MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
         log.warn("Type mismatch [{}]: parameter={}", request.getRequestURI(), ex.getName());
         return ResponseEntity.badRequest()
-                .body(error("INVALID_ARGUMENT", "请求参数格式不正确", List.of(), request));
+            .body(error("INVALID_ARGUMENT", "请求参数格式不正确", List.of(), request));
     }
 
     // 处理请求体 JSON 解析失败
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ResponseEntity<?> unreadable(HttpMessageNotReadableException ex, HttpServletRequest request) {
         log.warn(
-                "Unreadable body [{}]: {}",
-                request.getRequestURI(),
-                ex.getMostSpecificCause().getMessage());
+            "Unreadable body [{}]: {}",
+            request.getRequestURI(),
+            ex.getMostSpecificCause().getMessage());
         return ResponseEntity.badRequest()
-                .body(error("INVALID_ARGUMENT", "请求体格式不正确", List.of(), request));
+            .body(error("INVALID_ARGUMENT", "请求体格式不正确", List.of(), request));
     }
 
     // 处理异步请求（SSE 流）客户端断开：连接已失效，响应无法再写入任何错误体。
@@ -69,18 +72,18 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(AsyncRequestNotUsableException.class)
     void asyncRequestNotUsable(AsyncRequestNotUsableException ex, HttpServletRequest request) {
         log.info(
-                "Async request (SSE) client disconnected [{}]: {}",
-                request.getRequestURI(),
-                ex.getMessage());
+            "Async request (SSE) client disconnected [{}]: {}",
+            request.getRequestURI(),
+            ex.getMessage());
     }
 
     // multipart 超过容器限制时在进入控制器前抛出；按上传超限返回 413，不落到 500 兜底。
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     ResponseEntity<?> uploadTooLarge(
-            MaxUploadSizeExceededException ex, HttpServletRequest request) {
+        MaxUploadSizeExceededException ex, HttpServletRequest request) {
         log.warn("Upload too large [{}]: {}", request.getRequestURI(), ex.getMessage());
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
-                .body(error("UPLOAD_TOO_LARGE", "上传文件超过大小限制", List.of(), request));
+            .body(error("UPLOAD_TOO_LARGE", "上传文件超过大小限制", List.of(), request));
     }
 
     // 未映射的路径/方法：路径不存在（404）或方法不匹配（405）。必须在 Exception 兜底之前命中，
@@ -88,42 +91,42 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(NoResourceFoundException.class)
     ResponseEntity<?> notFound(NoResourceFoundException ex, HttpServletRequest request) {
         log.warn(
-                "Resource not found [{}] {}: {}",
-                request.getMethod(),
-                request.getRequestURI(),
-                ex.getMessage());
+            "Resource not found [{}] {}: {}",
+            request.getMethod(),
+            request.getRequestURI(),
+            ex.getMessage());
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                .body(error("NOT_FOUND", "接口路径不存在", List.of(), request));
+            .body(error("NOT_FOUND", "接口路径不存在", List.of(), request));
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     ResponseEntity<?> methodNotSupported(
-            HttpRequestMethodNotSupportedException ex, HttpServletRequest request) {
+        HttpRequestMethodNotSupportedException ex, HttpServletRequest request) {
         log.warn(
-                "Method not supported [{}] {}: {}",
-                request.getMethod(),
-                request.getRequestURI(),
-                ex.getMessage());
+            "Method not supported [{}] {}: {}",
+            request.getMethod(),
+            request.getRequestURI(),
+            ex.getMessage());
         return ResponseEntity.status(HttpStatus.METHOD_NOT_ALLOWED)
-                .body(error("METHOD_NOT_ALLOWED", "请求方法不允许", List.of(), request));
+            .body(error("METHOD_NOT_ALLOWED", "请求方法不允许", List.of(), request));
     }
 
     // 处理其他异常
     @ExceptionHandler(Exception.class)
     ResponseEntity<?> unexpected(
-            Exception ex, HttpServletRequest request, HttpServletResponse response) {
+        Exception ex, HttpServletRequest request, HttpServletResponse response) {
         // SSE 等流式响应已提交后再抛出的异常：写 JSON 错误体只会引发二次
         // HttpMessageNotWritableException，因此只记录日志、不再写响应。
         if (response.isCommitted()) {
             log.info(
-                    "Exception after response committed [{}]: {}",
-                    request.getRequestURI(),
-                    ex.getMessage());
+                "Exception after response committed [{}]: {}",
+                request.getRequestURI(),
+                ex.getMessage());
             return null;
         }
         log.error("Unexpected error [{}]", request.getRequestURI(), ex);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                .body(error("INTERNAL_ERROR", "服务暂时不可用", List.of(), request));
+            .body(error("INTERNAL_ERROR", "服务暂时不可用", List.of(), request));
     }
 
     // 提取校验提示；未提供时使用默认文案。
@@ -132,11 +135,11 @@ public class GlobalExceptionHandler {
     }
 
     private Map<String, Object> error(
-            String code, String message, List<?> details, HttpServletRequest request) {
+        String code, String message, List<?> details, HttpServletRequest request) {
         return Map.of(
-                "error",
-                Map.of("code", code, "message", message, "details", details),
-                "requestId",
-                request.getAttribute(RequestIdFilter.ATTRIBUTE));
+            "error",
+            Map.of("code", code, "message", message, "details", details),
+            "requestId",
+            request.getAttribute(RequestIdFilter.ATTRIBUTE));
     }
 }

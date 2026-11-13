@@ -1,14 +1,13 @@
 package qg.qgent.harness.entity;
 
-import com.baomidou.mybatisplus.annotation.FieldStrategy;
-import com.baomidou.mybatisplus.annotation.IdType;
-import com.baomidou.mybatisplus.annotation.TableField;
-import com.baomidou.mybatisplus.annotation.TableId;
-import com.baomidou.mybatisplus.annotation.TableName;
-import java.time.LocalDateTime;
+import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 
-/** 一次聊天执行；子执行通过 parentRunId 关联，关联触发消息、实际 Agent 身份和工作区。 */
+import java.time.LocalDateTime;
+
+/**
+ * 一次聊天执行；子执行通过 parentRunId 关联，关联触发消息、实际 Agent 身份和工作区。
+ */
 @Data
 @TableName("agent_runs")
 public class AgentRunEntity {

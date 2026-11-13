@@ -1,15 +1,16 @@
 package qg.qgent.team.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import java.util.List;
 import org.apache.ibatis.annotations.*;
 import qg.qgent.team.entity.TeamEntity;
 import qg.qgent.team.mapper.view.TeamMembershipView;
 
+import java.util.List;
+
 @Mapper
 public interface TeamMapper extends BaseMapper<TeamEntity> {
     @Select(
-            "SELECT id, owner_user_id, name, description, avatar_url, status, created_at FROM teams WHERE id = #{teamId} FOR UPDATE")
+        "SELECT id, owner_user_id, name, description, avatar_url, status, created_at FROM teams WHERE id = #{teamId} FOR UPDATE")
     @Results({
         @Result(column = "id", property = "id"),
         @Result(column = "owner_user_id", property = "ownerUserId"),
@@ -32,17 +33,17 @@ public interface TeamMapper extends BaseMapper<TeamEntity> {
         "</script>"
     })
     @Results(
-            id = "membership",
-            value = {
-                @Result(column = "id", property = "id"),
-                @Result(column = "owner_user_id", property = "ownerUserId"),
-                @Result(column = "name", property = "name"),
-                @Result(column = "description", property = "description"),
-                @Result(column = "avatar_url", property = "avatarUrl"),
-                @Result(column = "created_at", property = "createdAt"),
-                @Result(column = "role", property = "role"),
-                @Result(column = "member_count", property = "memberCount")
-            })
+        id = "membership",
+        value = {
+            @Result(column = "id", property = "id"),
+            @Result(column = "owner_user_id", property = "ownerUserId"),
+            @Result(column = "name", property = "name"),
+            @Result(column = "description", property = "description"),
+            @Result(column = "avatar_url", property = "avatarUrl"),
+            @Result(column = "created_at", property = "createdAt"),
+            @Result(column = "role", property = "role"),
+            @Result(column = "member_count", property = "memberCount")
+        })
     List<TeamMembershipView> selectMembershipPage(
-            @Param("userId") Long userId, @Param("anchor") Long anchor, @Param("limit") int limit);
+        @Param("userId") Long userId, @Param("anchor") Long anchor, @Param("limit") int limit);
 }

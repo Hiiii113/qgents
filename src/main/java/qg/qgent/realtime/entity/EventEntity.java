@@ -5,11 +5,14 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
-import java.time.LocalDateTime;
-import java.util.Map;
 import lombok.Data;
 
-/** 项目级实时事件存储（SSE 数据源）。 以项目内单调递增的 sequenceNo 作为游标支持断线续传；事件至少保留 24 小时。 payload 必须为已脱敏内容，禁止包含 Token、密码、私钥等敏感信息。 */
+import java.time.LocalDateTime;
+import java.util.Map;
+
+/**
+ * 项目级实时事件存储（SSE 数据源）。 以项目内单调递增的 sequenceNo 作为游标支持断线续传；事件至少保留 24 小时。 payload 必须为已脱敏内容，禁止包含 Token、密码、私钥等敏感信息。
+ */
 @Data
 @TableName(value = "events", autoResultMap = true)
 public class EventEntity {

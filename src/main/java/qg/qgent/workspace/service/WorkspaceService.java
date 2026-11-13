@@ -1,16 +1,19 @@
 package qg.qgent.workspace.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
 
-/** 管理工作区记录；实际目录及沙箱由 Sandbox 准备。 */
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
+
+/**
+ * 管理工作区记录；实际目录及沙箱由 Sandbox 准备。
+ */
 @Service
 @RequiredArgsConstructor
 public class WorkspaceService {
@@ -23,10 +26,10 @@ public class WorkspaceService {
      */
     public WorkspaceEntity defaultWorkspace(Long projectId) {
         WorkspaceEntity existing =
-                workspaceMapper.selectOne(
-                        Wrappers.<WorkspaceEntity>lambdaQuery()
-                                .eq(WorkspaceEntity::getProjectId, projectId)
-                                .eq(WorkspaceEntity::getIsDefault, true));
+            workspaceMapper.selectOne(
+                Wrappers.<WorkspaceEntity>lambdaQuery()
+                    .eq(WorkspaceEntity::getProjectId, projectId)
+                    .eq(WorkspaceEntity::getIsDefault, true));
         if (existing != null) {
             return existing;
         }
@@ -34,44 +37,50 @@ public class WorkspaceService {
             return insert(projectId, true);
         } catch (DuplicateKeyException exception) {
             return workspaceMapper.selectOne(
-                    Wrappers.<WorkspaceEntity>lambdaQuery()
-                            .eq(WorkspaceEntity::getProjectId, projectId)
-                            .eq(WorkspaceEntity::getIsDefault, true));
+                Wrappers.<WorkspaceEntity>lambdaQuery()
+                    .eq(WorkspaceEntity::getProjectId, projectId)
+                    .eq(WorkspaceEntity::getIsDefault, true));
         }
     }
 
-    /** 用户明确要求隔离时创建的额外 Workspace。 */
+    /**
+     * 用户明确要求隔离时创建的额外 Workspace。
+     */
     public WorkspaceEntity create(Long projectId) {
         return insert(projectId, false);
     }
 
     public List<WorkspaceEntity> list(Long projectId) {
         return workspaceMapper.selectList(
-                Wrappers.<WorkspaceEntity>lambdaQuery()
-                        .eq(WorkspaceEntity::getProjectId, projectId)
-                        .orderByDesc(WorkspaceEntity::getIsDefault)
-                        .orderByAsc(WorkspaceEntity::getId));
+            Wrappers.<WorkspaceEntity>lambdaQuery()
+                .eq(WorkspaceEntity::getProjectId, projectId)
+                .orderByDesc(WorkspaceEntity::getIsDefault)
+                .orderByAsc(WorkspaceEntity::getId));
     }
 
     public WorkspaceEntity require(Long projectId, Long workspaceId) {
         WorkspaceEntity workspace = workspaceMapper.selectById(workspaceId);
         if (workspace == null
-                || !projectId.equals(workspace.getProjectId())
-                || "ARCHIVED".equals(workspace.getStatus()))
+            || !projectId.equals(workspace.getProjectId())
+            || "ARCHIVED".equals(workspace.getStatus()))
             throw new IllegalArgumentException("工作区不存在或不可用");
         return workspace;
     }
 
-    /** 沙箱与目录层使用的存储标识：<projectId>/workspaces/<default|workspaceId>。 */
+    /**
+     * 沙箱与目录层使用的存储标识：<projectId>/workspaces/<default|workspaceId>。
+     */
     public static String storageKey(WorkspaceEntity workspace) {
         return workspace.getProjectId() + "/workspaces/" + directoryName(workspace);
     }
 
-    /** Workspace 目录名：默认 Workspace 固定为 default，其余使用 Workspace ID。 */
+    /**
+     * Workspace 目录名：默认 Workspace 固定为 default，其余使用 Workspace ID。
+     */
     public static String directoryName(WorkspaceEntity workspace) {
         return Boolean.TRUE.equals(workspace.getIsDefault())
-                ? "default"
-                : workspace.getId().toString();
+            ? "default"
+            : workspace.getId().toString();
     }
 
     private WorkspaceEntity insert(Long projectId, boolean isDefault) {

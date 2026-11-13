@@ -1,5 +1,11 @@
 package qg.qgent.sandbox.execution.handler;
 
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+import qg.qgent.sandbox.execution.dto.ToolArguments;
+import qg.qgent.sandbox.execution.dto.ToolContext;
+import qg.qgent.sandbox.execution.dto.ToolResult;
+
 import java.io.BufferedReader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -9,13 +15,10 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Component;
-import qg.qgent.sandbox.execution.dto.ToolArguments;
-import qg.qgent.sandbox.execution.dto.ToolContext;
-import qg.qgent.sandbox.execution.dto.ToolResult;
 
-/** 流式读取 UTF-8 文件，返回有行号的有界窗口和原始字节哈希。 */
+/**
+ * 流式读取 UTF-8 文件，返回有行号的有界窗口和原始字节哈希。
+ */
 @Component
 @RequiredArgsConstructor
 public class FileReadTool implements SandboxTool {
@@ -75,13 +78,13 @@ public class FileReadTool implements SandboxTool {
                             if (bytes + size > MAX_WINDOW_BYTES) windowFull = true;
                             else {
                                 lines.add(
-                                        Map.of(
-                                                "number",
-                                                total,
-                                                "text",
-                                                text,
-                                                "truncated",
-                                                lineClipped));
+                                    Map.of(
+                                        "number",
+                                        total,
+                                        "text",
+                                        text,
+                                        "truncated",
+                                        lineClipped));
                                 bytes += size;
                                 clipped |= lineClipped;
                             }
@@ -100,15 +103,15 @@ public class FileReadTool implements SandboxTool {
                     if (total >= start && lines.size() < count && !windowFull) {
                         String text = line.toString();
                         if (bytes + text.getBytes(StandardCharsets.UTF_8).length
-                                <= MAX_WINDOW_BYTES) {
+                            <= MAX_WINDOW_BYTES) {
                             lines.add(
-                                    Map.of(
-                                            "number",
-                                            total,
-                                            "text",
-                                            text,
-                                            "truncated",
-                                            lineClipped));
+                                Map.of(
+                                    "number",
+                                    total,
+                                    "text",
+                                    text,
+                                    "truncated",
+                                    lineClipped));
                             clipped |= lineClipped;
                         }
                     }
@@ -116,25 +119,25 @@ public class FileReadTool implements SandboxTool {
             }
             int next = start + lines.size();
             return ToolResult.value(
-                    Map.of(
-                            "path",
-                            path,
-                            "sha256",
-                            HexFormat.of().formatHex(digest.digest()),
-                            "startLine",
-                            start,
-                            "totalLines",
-                            total,
-                            "lines",
-                            lines,
-                            "truncated",
-                            clipped || next <= total,
-                            "nextLine",
-                            next,
-                            "endsWithNewline",
-                            previous == 10,
-                            "newlineStyle",
-                            hasCrlf ? "CRLF" : hasLf ? "LF" : "NONE"));
+                Map.of(
+                    "path",
+                    path,
+                    "sha256",
+                    HexFormat.of().formatHex(digest.digest()),
+                    "startLine",
+                    start,
+                    "totalLines",
+                    total,
+                    "lines",
+                    lines,
+                    "truncated",
+                    clipped || next <= total,
+                    "nextLine",
+                    next,
+                    "endsWithNewline",
+                    previous == 10,
+                    "newlineStyle",
+                    hasCrlf ? "CRLF" : hasLf ? "LF" : "NONE"));
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("读取已取消", exception);

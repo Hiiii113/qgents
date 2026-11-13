@@ -1,12 +1,15 @@
 package qg.qgent.memory.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/** 项目长期记忆 memory.md 的内容和最后修改时间。 */
+import java.time.LocalDateTime;
+
+/**
+ * 项目长期记忆 memory.md 的内容和最后修改时间。
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

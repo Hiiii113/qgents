@@ -1,5 +1,7 @@
 package qg.qgent.sandbox.execution.output;
 
+import qg.qgent.sandbox.runtime.CommandExecutionResult;
+
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -10,35 +12,39 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import qg.qgent.sandbox.runtime.CommandExecutionResult;
 
-/** 统一命令输出的流式保存、有界脱敏保存和读取窗口；输出位于工作区旁侧目录。 */
+/**
+ * 统一命令输出的流式保存、有界脱敏保存和读取窗口；输出位于工作区旁侧目录。
+ */
 public final class CommandOutput {
-    private CommandOutput() {}
+    private CommandOutput() {
+    }
 
     public static Path directory(Path workspace, Long id) {
         return workspace
-                .getParent()
-                .resolve(".qgents-output")
-                .resolve(workspace.getFileName())
-                .resolve(id.toString());
+            .getParent()
+            .resolve(".qgents-output")
+            .resolve(workspace.getFileName())
+            .resolve(id.toString());
     }
 
-    /** 非流式执行结束后保存结果；带凭证的命令只保存有界、脱敏后的输出。 */
+    /**
+     * 非流式执行结束后保存结果；带凭证的命令只保存有界、脱敏后的输出。
+     */
     public static void save(
-            Path directory, CommandExecutionResult result, Map<String, String> environment) {
+        Path directory, CommandExecutionResult result, Map<String, String> environment) {
         try {
             Files.createDirectories(directory);
             for (String stream : List.of("stdout", "stderr")) {
                 String text =
-                        String.join(
-                                "\n",
-                                "stdout".equals(stream)
-                                        ? result.getStandardOutput()
-                                        : result.getStandardError());
+                    String.join(
+                        "\n",
+                        "stdout".equals(stream)
+                            ? result.getStandardOutput()
+                            : result.getStandardError());
                 Files.writeString(
-                        directory.resolve(stream),
-                        (String) redact(Map.of("text", text), environment).get("text"));
+                    directory.resolve(stream),
+                    (String) redact(Map.of("text", text), environment).get("text"));
             }
         } catch (IOException exception) {
             throw new IllegalStateException("保存命令输出失败", exception);
@@ -46,7 +52,7 @@ public final class CommandOutput {
     }
 
     public static Map<String, Object> read(
-            Path directory, String stream, long offset, int maxBytes) {
+        Path directory, String stream, long offset, int maxBytes) {
         Path file = directory.resolve(stream);
         if (!Files.exists(file))
             return Map.of("text", "", "nextOffset", offset, "truncated", false);
@@ -54,15 +60,16 @@ public final class CommandOutput {
             long size = input.size();
             input.position(Math.min(offset, size));
             var buffer =
-                    java.nio.ByteBuffer.allocate(
-                            (int) Math.min(maxBytes, Math.max(0, size - offset)));
-            while (buffer.hasRemaining() && input.read(buffer) != -1) {}
+                java.nio.ByteBuffer.allocate(
+                    (int) Math.min(maxBytes, Math.max(0, size - offset)));
+            while (buffer.hasRemaining() && input.read(buffer) != -1) {
+            }
             buffer.flip();
             var text = java.nio.CharBuffer.allocate(buffer.remaining());
             var decoder =
-                    StandardCharsets.UTF_8
-                            .newDecoder()
-                            .onMalformedInput(java.nio.charset.CodingErrorAction.REPLACE);
+                StandardCharsets.UTF_8
+                    .newDecoder()
+                    .onMalformedInput(java.nio.charset.CodingErrorAction.REPLACE);
             decoder.decode(buffer, text, false);
             long next = offset + buffer.position();
             text.flip();
@@ -80,23 +87,24 @@ public final class CommandOutput {
             long offset = Math.max(0, size - 16000);
             input.position(offset);
             var buffer = java.nio.ByteBuffer.allocate((int) Math.min(size, 16000));
-            while (buffer.hasRemaining() && input.read(buffer) != -1) {}
+            while (buffer.hasRemaining() && input.read(buffer) != -1) {
+            }
             buffer.flip();
             if (offset > 0)
                 while (buffer.hasRemaining() && (buffer.get(buffer.position()) & 0xc0) == 0x80)
                     buffer.get();
             return Map.of(
-                    "text",
-                    StandardCharsets.UTF_8.decode(buffer).toString(),
-                    "truncated",
-                    offset > 0);
+                "text",
+                StandardCharsets.UTF_8.decode(buffer).toString(),
+                "truncated",
+                offset > 0);
         } catch (java.io.IOException exception) {
             throw new IllegalStateException("读取命令输出失败", exception);
         }
     }
 
     public static Map<String, Object> redact(
-            Map<String, Object> value, Map<String, String> environment) {
+        Map<String, Object> value, Map<String, String> environment) {
         Map<String, Object> result = new LinkedHashMap<>(value);
         String text = (String) result.getOrDefault("text", "");
         for (String secret : environment.values())
@@ -105,7 +113,9 @@ public final class CommandOutput {
         return result;
     }
 
-    /** 限制内存摘要，同时按需将完整字节流保存到输出文件。 */
+    /**
+     * 限制内存摘要，同时按需将完整字节流保存到输出文件。
+     */
     public static final class LimitedOutputStream extends OutputStream {
         private final int limit;
         private final ByteArrayOutputStream delegate;
@@ -117,9 +127,9 @@ public final class CommandOutput {
             try {
                 if (path != null) Files.createDirectories(path.getParent());
                 fullOutput =
-                        path == null
-                                ? OutputStream.nullOutputStream()
-                                : Files.newOutputStream(path);
+                    path == null
+                        ? OutputStream.nullOutputStream()
+                        : Files.newOutputStream(path);
             } catch (IOException exception) {
                 throw new IllegalStateException("无法创建输出文件", exception);
             }

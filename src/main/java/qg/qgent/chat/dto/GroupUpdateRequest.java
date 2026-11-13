@@ -4,7 +4,9 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
-/** 修改群标题；null 表示不修改，标题不能为空白。 */
+/**
+ * 修改群标题；null 表示不修改，标题不能为空白。
+ */
 @Data
 public class GroupUpdateRequest {
 

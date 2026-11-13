@@ -1,14 +1,17 @@
 package qg.qgent.sandbox.execution.dto;
 
-import java.time.Instant;
-import java.util.Map;
-import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import qg.qgent.sandbox.execution.entity.ExecutionStatus;
 
-/** 工具执行的持久化结果。 */
+import java.time.Instant;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * 工具执行的持久化结果。
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

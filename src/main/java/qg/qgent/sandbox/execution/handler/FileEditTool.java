@@ -1,10 +1,5 @@
 package qg.qgent.sandbox.execution.handler;
 
-import static org.springframework.http.HttpStatus.CONFLICT;
-
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import qg.qgent.sandbox.exception.SandboxException;
@@ -12,7 +7,15 @@ import qg.qgent.sandbox.execution.dto.ToolArguments;
 import qg.qgent.sandbox.execution.dto.ToolContext;
 import qg.qgent.sandbox.execution.dto.ToolResult;
 
-/** 唯一匹配的文本替换；不要求模型生成 Diff 行号，保持原始行尾。 */
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.Map;
+
+import static org.springframework.http.HttpStatus.CONFLICT;
+
+/**
+ * 唯一匹配的文本替换；不要求模型生成 Diff 行号，保持原始行尾。
+ */
 @Component
 @RequiredArgsConstructor
 public class FileEditTool implements SandboxTool {
@@ -49,27 +52,27 @@ public class FileEditTool implements SandboxTool {
                 throw new SandboxException(CONFLICT, "EDIT_TEXT_NOT_FOUND", "旧文本未匹配，请重新读取并提供准确文本");
             if (!replaceAll && before.indexOf(oldText, position + oldText.length()) >= 0)
                 throw new SandboxException(
-                        CONFLICT, "EDIT_TEXT_AMBIGUOUS", "旧文本匹配多处，请增加上下文或显式使用 replaceAll");
+                    CONFLICT, "EDIT_TEXT_AMBIGUOUS", "旧文本匹配多处，请增加上下文或显式使用 replaceAll");
             String after =
-                    replaceAll
-                            ? before.replace(oldText, newText)
-                            : before.substring(0, position)
-                                    + newText
-                                    + before.substring(position + oldText.length());
+                replaceAll
+                    ? before.replace(oldText, newText)
+                    : before.substring(0, position)
+                      + newText
+                      + before.substring(position + oldText.length());
             byte[] next = after.getBytes(StandardCharsets.UTF_8);
             if (!before.equals(after)) FileWriteTool.atomicReplace(target, next);
             return ToolResult.value(
-                    Map.of(
-                            "path",
-                            path,
-                            "sha256",
-                            FileReadTool.sha256(next),
-                            "changed",
-                            !before.equals(after),
-                            "oldText",
-                            oldText,
-                            "newText",
-                            newText));
+                Map.of(
+                    "path",
+                    path,
+                    "sha256",
+                    FileReadTool.sha256(next),
+                    "changed",
+                    !before.equals(after),
+                    "oldText",
+                    oldText,
+                    "newText",
+                    newText));
         } catch (SandboxException exception) {
             throw exception;
         } catch (Exception exception) {

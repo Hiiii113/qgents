@@ -3,10 +3,13 @@ package qg.qgent.workspace.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 项目中的持久化工作目录；目录名由项目 ID 与是否默认决定，见 WorkspacePaths。 */
+import java.time.LocalDateTime;
+
+/**
+ * 项目中的持久化工作目录；目录名由项目 ID 与是否默认决定，见 WorkspacePaths。
+ */
 @Data
 @TableName("workspaces")
 public class WorkspaceEntity {

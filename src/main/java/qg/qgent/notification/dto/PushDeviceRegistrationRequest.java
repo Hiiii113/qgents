@@ -6,7 +6,9 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
-/** 注册或刷新当前登录用户的移动端推送设备。 */
+/**
+ * 注册或刷新当前登录用户的移动端推送设备。
+ */
 @Data
 public class PushDeviceRegistrationRequest {
     @NotBlank
@@ -17,8 +19,8 @@ public class PushDeviceRegistrationRequest {
     @NotBlank
     @Pattern(regexp = "ANDROID|IOS")
     @Schema(
-            description = "客户端平台",
-            allowableValues = {"ANDROID", "IOS"})
+        description = "客户端平台",
+        allowableValues = {"ANDROID", "IOS"})
     private String platform;
 
     @NotBlank

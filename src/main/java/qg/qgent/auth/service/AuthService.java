@@ -1,12 +1,6 @@
 package qg.qgent.auth.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import java.nio.charset.StandardCharsets;
-import java.security.SecureRandom;
-import java.time.Duration;
-import java.util.*;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -36,6 +30,13 @@ import qg.qgent.user.dto.UserUpdateRequest;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
 
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.time.Duration;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
 @Service
 public class AuthService {
     // 注册验证码有效期（10 分钟）。
@@ -61,18 +62,18 @@ public class AuthService {
     private final String dummyPasswordHash;
 
     public AuthService(
-            UserMapper userMapper,
-            RefreshTokenStore refreshTokens,
-            VerificationCodeStore verificationCodes,
-            TeamMapper teamMapper,
-            TeamMemberMapper teamMemberMapper,
-            ProjectMapper projectMapper,
-            RsaPasswordDecryptor rsa,
-            PasswordEncoder passwords,
-            TokenService tokens,
-            VerificationCodeMailer mailer,
-            RateLimiter limiter,
-            AvatarStorageService avatarStorage) {
+        UserMapper userMapper,
+        RefreshTokenStore refreshTokens,
+        VerificationCodeStore verificationCodes,
+        TeamMapper teamMapper,
+        TeamMemberMapper teamMemberMapper,
+        ProjectMapper projectMapper,
+        RsaPasswordDecryptor rsa,
+        PasswordEncoder passwords,
+        TokenService tokens,
+        VerificationCodeMailer mailer,
+        RateLimiter limiter,
+        AvatarStorageService avatarStorage) {
         this.userMapper = userMapper;
         this.refreshTokens = refreshTokens;
         this.verificationCodes = verificationCodes;
@@ -94,10 +95,10 @@ public class AuthService {
         String password = validated(rsa.decrypt(input.getPasswordKeyId(), input.getPassword()));
         // 注册必须通过邮箱验证码校验，防止假邮箱注册
         verifyCode(
-                VerificationCodeStore.Purpose.REGISTER,
-                email,
-                input.getVerificationCode(),
-                fingerprint);
+            VerificationCodeStore.Purpose.REGISTER,
+            email,
+            input.getVerificationCode(),
+            fingerprint);
 
         UserEntity user = new UserEntity();
         user.setEmail(email);
@@ -116,7 +117,8 @@ public class AuthService {
      * 发送注册邮箱验证码：校验邮箱未注册后生成 6 位数字验证码并异步发送邮件。
      * 已注册邮箱不发送，直接返回 409（与注册时的 EMAIL_ALREADY_REGISTERED 一致）。
      * 限流按 IP+邮箱计，防止验证码轰炸。
-     * @param rawEmail   原始邮箱
+     *
+     * @param rawEmail    原始邮箱
      * @param fingerprint 请求指纹（IP）
      */
     @Transactional
@@ -130,20 +132,22 @@ public class AuthService {
         }
         String code = sixDigitCode();
         verificationCodes.save(
-                VerificationCodeStore.Purpose.REGISTER, email, code, VERIFICATION_TTL);
+            VerificationCodeStore.Purpose.REGISTER, email, code, VERIFICATION_TTL);
         mailer.sendRegistration(email, code, VERIFICATION_TTL);
     }
 
-    /** 校验并消费验证码；尝试次数先按邮箱和来源限流。 */
+    /**
+     * 校验并消费验证码；尝试次数先按邮箱和来源限流。
+     */
     private void verifyCode(
-            VerificationCodeStore.Purpose purpose, String email, String code, String fingerprint) {
+        VerificationCodeStore.Purpose purpose, String email, String code, String fingerprint) {
         String scope = purpose.key() + "-verify";
         if (!limiter.allow(scope + "-email", email, CODE_ATTEMPTS_BY_EMAIL, CODE_ATTEMPT_WINDOW)
-                || !limiter.allow(
-                        scope + "-source",
-                        fingerprint,
-                        CODE_ATTEMPTS_BY_SOURCE,
-                        CODE_ATTEMPT_WINDOW)) {
+            || !limiter.allow(
+            scope + "-source",
+            fingerprint,
+            CODE_ATTEMPTS_BY_SOURCE,
+            CODE_ATTEMPT_WINDOW)) {
             throw new ApiException(HttpStatus.TOO_MANY_REQUESTS, "RATE_LIMITED", "验证码尝试过于频繁，请稍后再试");
         }
         if (!verificationCodes.consume(purpose, email, code)) {
@@ -153,7 +157,7 @@ public class AuthService {
 
     private ApiException verificationCodeInvalid() {
         return new ApiException(
-                HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_VERIFICATION_CODE", "验证码无效或已过期，请重新获取");
+            HttpStatus.UNPROCESSABLE_ENTITY, "INVALID_VERIFICATION_CODE", "验证码无效或已过期，请重新获取");
     }
 
     @Transactional
@@ -167,7 +171,7 @@ public class AuthService {
         UserEntity user = findByEmail(email);
         // 用户不存在时仍执行密码哈希校验，减少登录耗时的差异。
         boolean passwordMatches =
-                passwords.matches(plain, user == null ? dummyPasswordHash : user.getPasswordHash());
+            passwords.matches(plain, user == null ? dummyPasswordHash : user.getPasswordHash());
         if (user == null || !"ACTIVE".equals(user.getStatus()) || !passwordMatches) {
             throw badCredentials();
         }
@@ -186,7 +190,9 @@ public class AuthService {
         return issue(user);
     }
 
-    /** 退出登录：按提交的 refresh token 撤销，不依赖 access token。 */
+    /**
+     * 退出登录：按提交的 refresh token 撤销，不依赖 access token。
+     */
     public void logout(String raw) {
         refreshTokens.revoke(raw);
     }
@@ -202,7 +208,7 @@ public class AuthService {
         }
         String code = sixDigitCode();
         verificationCodes.save(
-                VerificationCodeStore.Purpose.PASSWORD_RESET, email, code, tokens.resetTtl());
+            VerificationCodeStore.Purpose.PASSWORD_RESET, email, code, tokens.resetTtl());
         mailer.sendPasswordReset(user.getEmail(), code, tokens.resetTtl());
     }
 
@@ -219,14 +225,14 @@ public class AuthService {
             throw verificationCodeInvalid();
         }
         verifyCode(
-                VerificationCodeStore.Purpose.PASSWORD_RESET, email, input.getToken(), fingerprint);
+            VerificationCodeStore.Purpose.PASSWORD_RESET, email, input.getToken(), fingerprint);
         refreshTokens.revokeAll(user.getId());
         // 只更新密码字段，避免覆盖并发写入的最近团队选择
         userMapper.update(
-                null,
-                Wrappers.<UserEntity>lambdaUpdate()
-                        .set(UserEntity::getPasswordHash, passwords.encode(password))
-                        .eq(UserEntity::getId, user.getId()));
+            null,
+            Wrappers.<UserEntity>lambdaUpdate()
+                .set(UserEntity::getPasswordHash, passwords.encode(password))
+                .eq(UserEntity::getId, user.getId()));
     }
 
     @Transactional
@@ -234,30 +240,30 @@ public class AuthService {
         UserEntity user = requireUser(userId);
         List<TeamResponse> availableTeams = teams(userId);
         Long currentTeamId =
-                availableTeams.stream()
-                        .map(team -> Long.valueOf(team.getId()))
-                        .filter(id -> id.equals(user.getLastTeamId()))
-                        .findFirst()
-                        .orElseGet(() ->
-                                availableTeams.isEmpty()
-                                        ? null
-                                        : Long.valueOf(availableTeams.getFirst().getId()));
+            availableTeams.stream()
+                .map(team -> Long.valueOf(team.getId()))
+                .filter(id -> id.equals(user.getLastTeamId()))
+                .findFirst()
+                .orElseGet(() ->
+                    availableTeams.isEmpty()
+                        ? null
+                        : Long.valueOf(availableTeams.getFirst().getId()));
         if (!Objects.equals(currentTeamId, user.getLastTeamId())) {
             saveTeam(userId, currentTeamId);
         }
         return new CurrentUserResponse(
-                view(user),
-                availableTeams,
-                projects(userId),
-                currentTeamId == null ? null : currentTeamId.toString());
+            view(user),
+            availableTeams,
+            projects(userId),
+            currentTeamId == null ? null : currentTeamId.toString());
     }
 
     @Transactional
     public void selectTeam(Long userId, Long teamId) {
         TeamEntity team = teamMapper.selectById(teamId);
         if (team == null
-                || !"ACTIVE".equals(team.getStatus())
-                || teamMemberMapper.selectByTeamAndUser(teamId, userId) == null) {
+            || !"ACTIVE".equals(team.getStatus())
+            || teamMemberMapper.selectByTeamAndUser(teamId, userId) == null) {
             throw new ApiException(HttpStatus.FORBIDDEN, "TEAM_ACCESS_DENIED", "暂无团队访问权限");
         }
         saveTeam(userId, teamId);
@@ -267,7 +273,9 @@ public class AuthService {
         userMapper.updateLastTeam(userId, teamId);
     }
 
-    /** 修改昵称或清空头像；头像只能通过上传确认接口设置，这里拒绝外链地址。 */
+    /**
+     * 修改昵称或清空头像；头像只能通过上传确认接口设置，这里拒绝外链地址。
+     */
     @Transactional
     public UserResponse updateMe(Long userId, UserUpdateRequest input) {
         if (input.getDisplayName() == null && input.getAvatarUrl() == null) {
@@ -280,19 +288,19 @@ public class AuthService {
         String avatar = input.getAvatarUrl() == null ? null : input.getAvatarUrl().trim();
         if (avatar != null && !avatar.isEmpty()) {
             throw new ApiException(
-                    HttpStatus.BAD_REQUEST, "AVATAR_URL_NOT_ALLOWED", "头像只能通过头像上传接口设置");
+                HttpStatus.BAD_REQUEST, "AVATAR_URL_NOT_ALLOWED", "头像只能通过头像上传接口设置");
         }
         // 只改目标字段，避免覆盖并发写入的最近团队选择
         String previousAvatar = avatar == null ? null : requireUser(userId).getAvatarUrl();
         userMapper.update(
-                null,
-                Wrappers.<UserEntity>lambdaUpdate()
-                        .set(name != null, UserEntity::getDisplayName, name)
-                        .set(
-                                avatar != null,
-                                UserEntity::getAvatarUrl,
-                                avatar == null || avatar.isEmpty() ? null : avatar)
-                        .eq(UserEntity::getId, userId));
+            null,
+            Wrappers.<UserEntity>lambdaUpdate()
+                .set(name != null, UserEntity::getDisplayName, name)
+                .set(
+                    avatar != null,
+                    UserEntity::getAvatarUrl,
+                    avatar == null || avatar.isEmpty() ? null : avatar)
+                .eq(UserEntity::getId, userId));
         if (avatar != null) {
             avatarStorage.deleteReplacedAfterCommit("avatars", userId, previousAvatar, null);
         }
@@ -303,16 +311,16 @@ public class AuthService {
         String refresh = tokens.opaque();
         refreshTokens.save(user.getId(), refresh);
         return new AuthTokensResponse(
-                tokens.access(user.getId()),
-                tokens.accessSeconds(),
-                refresh,
-                tokens.refreshSeconds(),
-                view(user));
+            tokens.access(user.getId()),
+            tokens.accessSeconds(),
+            refresh,
+            tokens.refreshSeconds(),
+            view(user));
     }
 
     private UserEntity findByEmail(String email) {
         return userMapper.selectOne(
-                Wrappers.<UserEntity>lambdaQuery().eq(UserEntity::getEmail, email));
+            Wrappers.<UserEntity>lambdaQuery().eq(UserEntity::getEmail, email));
     }
 
     private UserEntity requireUser(Long userId) {
@@ -329,48 +337,50 @@ public class AuthService {
             return Collections.emptyList();
         }
         Map<Long, TeamEntity> teams =
-                teamMapper
-                        .selectBatchIds(members.stream().map(TeamMemberEntity::getTeamId).toList())
-                        .stream()
-                        .filter(team -> "ACTIVE".equals(team.getStatus()))
-                        .collect(Collectors.toMap(TeamEntity::getId, Function.identity()));
+            teamMapper
+                .selectBatchIds(members.stream().map(TeamMemberEntity::getTeamId).toList())
+                .stream()
+                .filter(team -> "ACTIVE".equals(team.getStatus()))
+                .collect(Collectors.toMap(TeamEntity::getId, Function.identity()));
         Map<Long, Integer> memberCounts = memberCounts(teams.keySet());
         return members.stream()
-                .filter(member -> teams.containsKey(member.getTeamId()))
-                .map(member -> {
-                    TeamEntity team = teams.get(member.getTeamId());
-                    String role =
-                            ProjectAccessService.effectiveTeamRole(
-                                    team.getOwnerUserId(), userId, member.getRole());
-                    return TeamViews.response(
-                            team, role, memberCounts.getOrDefault(team.getId(), 0));
-                })
-                .toList();
+            .filter(member -> teams.containsKey(member.getTeamId()))
+            .map(member -> {
+                TeamEntity team = teams.get(member.getTeamId());
+                String role =
+                    ProjectAccessService.effectiveTeamRole(
+                        team.getOwnerUserId(), userId, member.getRole());
+                return TeamViews.response(
+                    team, role, memberCounts.getOrDefault(team.getId(), 0));
+            })
+            .toList();
     }
 
-    /** 一次查询取回所有团队的人数；逐团队 COUNT 会随团队数量线性增长。 */
+    /**
+     * 一次查询取回所有团队的人数；逐团队 COUNT 会随团队数量线性增长。
+     */
     private Map<Long, Integer> memberCounts(Set<Long> teamIds) {
         if (teamIds.isEmpty()) return Map.of();
         return teamMemberMapper.countByTeamIds(teamIds).stream()
-                .collect(
-                        Collectors.toMap(
-                                TeamMemberCountRow::getTeamId, TeamMemberCountRow::getMemberCount));
+            .collect(
+                Collectors.toMap(
+                    TeamMemberCountRow::getTeamId, TeamMemberCountRow::getMemberCount));
     }
 
     private List<ProjectResponse> projects(Long userId) {
         // 单次查询合并项目成员权限与 canonical Team Owner 兜底，并由 SQL 去重。
         // memberCount 由项目列表/详情接口补齐，此处不额外统计（前端缺失时隐藏）。
         return projectMapper.selectAccessibleByUser(userId).stream()
-                .map(ProjectViews::response)
-                .toList();
+            .map(ProjectViews::response)
+            .toList();
     }
 
     private UserResponse view(UserEntity user) {
         return new UserResponse(
-                user.getId().toString(),
-                user.getEmail(),
-                user.getDisplayName(),
-                user.getAvatarUrl());
+            user.getId().toString(),
+            user.getEmail(),
+            user.getDisplayName(),
+            user.getAvatarUrl());
     }
 
     private String normalize(String email) {
@@ -380,7 +390,7 @@ public class AuthService {
     private String validated(String value) {
         if (value.length() < 8 || value.getBytes(StandardCharsets.UTF_8).length > 72) {
             throw new ApiException(
-                    HttpStatus.BAD_REQUEST, "WEAK_PASSWORD", "密码至少8个字符且UTF-8编码不超过72字节");
+                HttpStatus.BAD_REQUEST, "WEAK_PASSWORD", "密码至少8个字符且UTF-8编码不超过72字节");
         }
         return value;
     }

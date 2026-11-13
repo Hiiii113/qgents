@@ -4,7 +4,9 @@ import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-/** 群记忆提炼的触发、重试和批量阈值。 */
+/**
+ * 群记忆提炼的触发、重试和批量阈值。
+ */
 @Getter
 @Setter
 @ConfigurationProperties(prefix = "app.memory.group")
@@ -26,12 +28,12 @@ public class GroupMemoryProperties {
 
     public void validate() {
         if (minMessages < 1
-                || idleMinutes < 1
-                || retryDelayMinutes < 1
-                || staleClaimMinutes < 1
-                || maxAttempts < 1
-                || maxMessagesPerRun < 1
-                || scanPageSize < 1) {
+            || idleMinutes < 1
+            || retryDelayMinutes < 1
+            || staleClaimMinutes < 1
+            || maxAttempts < 1
+            || maxMessagesPerRun < 1
+            || scanPageSize < 1) {
             throw new IllegalArgumentException("群记忆提炼配置要求所有阈值大于 0");
         }
     }

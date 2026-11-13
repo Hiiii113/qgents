@@ -1,15 +1,18 @@
 package qg.qgent.sandbox.runtime;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
+import qg.qgent.sandbox.dto.CreateSandboxRequest;
+
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.stereotype.Component;
-import qg.qgent.sandbox.dto.CreateSandboxRequest;
 
-/** 模拟沙箱生命周期，供不使用 Docker 的本地联调和测试使用。 */
+/**
+ * 模拟沙箱生命周期，供不使用 Docker 的本地联调和测试使用。
+ */
 @Component
 @ConditionalOnProperty(name = "sandbox.runtime", havingValue = "fake", matchIfMissing = true)
 public class FakeContainerRuntime implements ContainerRuntime {
@@ -37,7 +40,7 @@ public class FakeContainerRuntime implements ContainerRuntime {
     @Override
     public boolean isWorkspaceInUse(String workspaceStorageKey) {
         return allocations.values().stream()
-                .anyMatch(item -> item.getWorkspaceStorageKey().equals(workspaceStorageKey));
+            .anyMatch(item -> item.getWorkspaceStorageKey().equals(workspaceStorageKey));
     }
 
     @Override

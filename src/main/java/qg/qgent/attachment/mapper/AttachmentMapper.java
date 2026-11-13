@@ -5,4 +5,5 @@ import org.apache.ibatis.annotations.Mapper;
 import qg.qgent.attachment.entity.AttachmentEntity;
 
 @Mapper
-public interface AttachmentMapper extends BaseMapper<AttachmentEntity> {}
+public interface AttachmentMapper extends BaseMapper<AttachmentEntity> {
+}

@@ -5,11 +5,14 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
-import java.time.LocalDateTime;
-import java.util.Map;
 import lombok.Data;
 
-/** 团队级 SSE 事件实体。 */
+import java.time.LocalDateTime;
+import java.util.Map;
+
+/**
+ * 团队级 SSE 事件实体。
+ */
 @Data
 @TableName(value = "team_events", autoResultMap = true)
 public class TeamEventEntity {

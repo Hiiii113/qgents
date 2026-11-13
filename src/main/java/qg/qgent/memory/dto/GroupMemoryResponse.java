@@ -1,12 +1,15 @@
 package qg.qgent.memory.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import java.time.LocalDateTime;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/** 群聊记忆正文、归属和最后修改时间；只读，由后台提炼任务维护。 */
+import java.time.LocalDateTime;
+
+/**
+ * 群聊记忆正文、归属和最后修改时间；只读，由后台提炼任务维护。
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

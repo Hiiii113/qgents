@@ -1,7 +1,5 @@
 package qg.qgent.memory.service;
 
-import java.nio.file.Path;
-import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import qg.qgent.memory.dto.ProjectMemoryResponse;
@@ -9,6 +7,9 @@ import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.service.ProjectAccessService;
 import qg.qgent.project.storage.ProjectDirectoryService;
 import qg.qgent.realtime.service.EventService;
+
+import java.nio.file.Path;
+import java.util.Map;
 
 /**
  * 项目长期记忆：项目目录下的 memory.md 是正文唯一来源，整篇替换或按片段替换。
@@ -25,11 +26,11 @@ public class ProjectMemoryService {
     private final MemoryDocument document;
 
     public ProjectMemoryService(
-            ProjectAccessService access,
-            ProjectMapper projects,
-            ProjectDirectoryService directories,
-            EventService events,
-            MemoryDocument document) {
+        ProjectAccessService access,
+        ProjectMapper projects,
+        ProjectDirectoryService directories,
+        EventService events,
+        MemoryDocument document) {
         this.access = access;
         this.projects = projects;
         this.directories = directories;
@@ -37,7 +38,9 @@ public class ProjectMemoryService {
         this.document = document;
     }
 
-    /** 读取项目记忆；项目尚未写入时返回空正文。 */
+    /**
+     * 读取项目记忆；项目尚未写入时返回空正文。
+     */
     public ProjectMemoryResponse get(Long actor, Long projectId) {
         access.requireProjectMember(projectId, actor);
         return read(projectId);
@@ -60,41 +63,49 @@ public class ProjectMemoryService {
         return publishUpdated(projectId);
     }
 
-    /** 管理员确认后按片段替换 memory.md；原文找不到或不唯一时原文件不动。 */
+    /**
+     * 管理员确认后按片段替换 memory.md；原文找不到或不唯一时原文件不动。
+     */
     @Transactional
     public ProjectMemoryResponse edit(
-            Long actor, Long projectId, String anchor, String replacement) {
+        Long actor, Long projectId, String anchor, String replacement) {
         beginWrite(actor, projectId);
         document.edit(directories.projectRoot(projectId), anchor, replacement);
         return publishUpdated(projectId);
     }
 
-    /** 写入前的校验与行锁：同项目的读改写跨实例串行，并发的两次替换才不会互相吃掉对方的修改。 */
+    /**
+     * 写入前的校验与行锁：同项目的读改写跨实例串行，并发的两次替换才不会互相吃掉对方的修改。
+     */
     private void beginWrite(Long actor, Long projectId) {
         access.requireProjectAdmin(projectId, actor);
         projects.selectByIdForUpdate(projectId);
     }
 
-    /** 读回正文并广播更新。 */
+    /**
+     * 读回正文并广播更新。
+     */
     private ProjectMemoryResponse publishUpdated(Long projectId) {
         ProjectMemoryResponse saved = read(projectId);
         events.publish(
-                projectId,
-                null,
-                "memory.updated",
+            projectId,
+            null,
+            "memory.updated",
+            projectId.toString(),
+            Map.of(
+                "projectId",
                 projectId.toString(),
-                Map.of(
-                        "projectId",
-                        projectId.toString(),
-                        "updatedAt",
-                        saved.getUpdatedAt().toString()));
+                "updatedAt",
+                saved.getUpdatedAt().toString()));
         return saved;
     }
 
-    /** 读取正文与最后修改时间；不做权限检查，只给已通过成员校验的调用方和后台发现任务使用。 */
+    /**
+     * 读取正文与最后修改时间；不做权限检查，只给已通过成员校验的调用方和后台发现任务使用。
+     */
     ProjectMemoryResponse read(Long projectId) {
         Path directory = directories.projectRoot(projectId);
         return new ProjectMemoryResponse(
-                projectId.toString(), document.read(directory), document.updatedAt(directory));
+            projectId.toString(), document.read(directory), document.updatedAt(directory));
     }
 }

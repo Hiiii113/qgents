@@ -10,7 +10,8 @@ public class TeamMemberInviteRequest {
     @Size(max = 320)
     private String email;
 
-    @NotBlank private String role;
+    @NotBlank
+    private String role;
 
     @NotNull
     @Positive

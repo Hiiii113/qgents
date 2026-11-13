@@ -27,9 +27,9 @@ public class GitHubApiException extends ApiException {
             HttpHeaders headers = response.getResponseHeaders();
             Long retryAfter = retryAfter(headers);
             boolean exhausted =
-                    headers != null && "0".equals(headers.getFirst("x-ratelimit-remaining"));
+                headers != null && "0".equals(headers.getFirst("x-ratelimit-remaining"));
             return new GitHubApiException(
-                    response.getStatusCode().value(), retryAfter, retryAfter != null || exhausted);
+                response.getStatusCode().value(), retryAfter, retryAfter != null || exhausted);
         }
         return new GitHubApiException(null, null, false);
     }

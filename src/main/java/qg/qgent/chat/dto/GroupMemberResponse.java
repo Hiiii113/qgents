@@ -5,7 +5,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/** 群内用户和 Agent 的成员视图；默认群用户来自项目成员，新建群用户来自邀请名单。 */
+/**
+ * 群内用户和 Agent 的成员视图；默认群用户来自项目成员，新建群用户来自邀请名单。
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

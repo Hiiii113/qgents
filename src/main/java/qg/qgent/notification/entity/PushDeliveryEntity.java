@@ -3,10 +3,13 @@ package qg.qgent.notification.entity;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 一条通知到一个设备的可恢复推送记录。 */
+import java.time.LocalDateTime;
+
+/**
+ * 一条通知到一个设备的可恢复推送记录。
+ */
 @Data
 @TableName("push_deliveries")
 public class PushDeliveryEntity {

@@ -1,20 +1,23 @@
 package qg.qgent.notification.service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.SecureRandom;
-import java.util.Base64;
-import java.util.HexFormat;
-import javax.crypto.Cipher;
-import javax.crypto.spec.GCMParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.config.PushProperties;
 
-/** 对移动端设备 Token 做摘要和 AES-GCM 加密，防止明文进入数据库。 */
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.util.Base64;
+import java.util.HexFormat;
+
+/**
+ * 对移动端设备 Token 做摘要和 AES-GCM 加密，防止明文进入数据库。
+ */
 @Component
 @RequiredArgsConstructor
 public class PushTokenCipher {
@@ -25,9 +28,9 @@ public class PushTokenCipher {
     public String hash(String token) {
         try {
             return HexFormat.of()
-                    .formatHex(
-                            MessageDigest.getInstance("SHA-256")
-                                    .digest(token.getBytes(StandardCharsets.UTF_8)));
+                .formatHex(
+                    MessageDigest.getInstance("SHA-256")
+                        .digest(token.getBytes(StandardCharsets.UTF_8)));
         } catch (Exception e) {
             throw new IllegalStateException("SHA-256 unavailable", e);
         }
@@ -48,7 +51,7 @@ public class PushTokenCipher {
             throw e;
         } catch (Exception e) {
             throw new ApiException(
-                    HttpStatus.INTERNAL_SERVER_ERROR, "PUSH_TOKEN_ENCRYPT_FAILED", "设备推送凭证加密失败");
+                HttpStatus.INTERNAL_SERVER_ERROR, "PUSH_TOKEN_ENCRYPT_FAILED", "设备推送凭证加密失败");
         }
     }
 
@@ -65,7 +68,7 @@ public class PushTokenCipher {
             throw e;
         } catch (Exception e) {
             throw new ApiException(
-                    HttpStatus.INTERNAL_SERVER_ERROR, "PUSH_TOKEN_DECRYPT_FAILED", "设备推送凭证解密失败");
+                HttpStatus.INTERNAL_SERVER_ERROR, "PUSH_TOKEN_DECRYPT_FAILED", "设备推送凭证解密失败");
         }
     }
 
@@ -74,7 +77,7 @@ public class PushTokenCipher {
             String configured = properties.getTokenEncryptionKey();
             if (configured == null || configured.isBlank()) {
                 throw new ApiException(
-                        HttpStatus.SERVICE_UNAVAILABLE, "PUSH_NOT_CONFIGURED", "离线推送服务尚未配置");
+                    HttpStatus.SERVICE_UNAVAILABLE, "PUSH_NOT_CONFIGURED", "离线推送服务尚未配置");
             }
             byte[] key = Base64.getDecoder().decode(configured);
             if (key.length != 32) throw new IllegalArgumentException("key must be 32 bytes");
@@ -83,7 +86,7 @@ public class PushTokenCipher {
             throw e;
         } catch (Exception e) {
             throw new ApiException(
-                    HttpStatus.SERVICE_UNAVAILABLE, "PUSH_NOT_CONFIGURED", "离线推送加密密钥配置无效");
+                HttpStatus.SERVICE_UNAVAILABLE, "PUSH_NOT_CONFIGURED", "离线推送加密密钥配置无效");
         }
     }
 }

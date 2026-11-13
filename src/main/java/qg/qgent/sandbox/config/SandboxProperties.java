@@ -1,9 +1,10 @@
 package qg.qgent.sandbox.config;
 
-import java.time.Duration;
-import java.util.Map;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+
+import java.time.Duration;
+import java.util.Map;
 
 /**
  * 沙箱容器的运行时、资源上限和回收配置。

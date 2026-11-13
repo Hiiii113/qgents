@@ -1,8 +1,9 @@
 package qg.qgent.auth.service;
 
-import java.util.Set;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
+
+import java.util.Set;
 
 /**
  * Redis 保存 refresh token：auth:refresh:&lt;摘要&gt; → 用户 ID，并按用户维护摘要集合以支持撤销全部设备。
@@ -29,7 +30,9 @@ public class RefreshTokenStore {
         redis.expire(userKey, tokens.refreshTtl());
     }
 
-    /** 消费令牌并返回所属用户；同一令牌的并发刷新只有一次能取到值。 */
+    /**
+     * 消费令牌并返回所属用户；同一令牌的并发刷新只有一次能取到值。
+     */
     public Long consume(String token) {
         String digest = tokens.digest(token);
         String userId = redis.opsForValue().getAndDelete(TOKEN_PREFIX + digest);
@@ -40,7 +43,9 @@ public class RefreshTokenStore {
         return Long.valueOf(userId);
     }
 
-    /** 退出登录：撤销指定令牌。 */
+    /**
+     * 退出登录：撤销指定令牌。
+     */
     public void revoke(String token) {
         String digest = tokens.digest(token);
         String userId = redis.opsForValue().getAndDelete(TOKEN_PREFIX + digest);
@@ -49,7 +54,9 @@ public class RefreshTokenStore {
         }
     }
 
-    /** 撤销用户的全部 refresh token（如密码重置），已轮换的旧摘要直接忽略。 */
+    /**
+     * 撤销用户的全部 refresh token（如密码重置），已轮换的旧摘要直接忽略。
+     */
     public void revokeAll(Long userId) {
         String userKey = USER_PREFIX + userId;
         Set<String> digests = redis.opsForSet().members(userKey);

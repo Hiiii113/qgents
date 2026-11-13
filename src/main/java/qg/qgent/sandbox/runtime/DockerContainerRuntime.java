@@ -1,25 +1,10 @@
 package qg.qgent.sandbox.runtime;
 
-import static org.springframework.http.HttpStatus.BAD_GATEWAY;
-import static org.springframework.http.HttpStatus.CONFLICT;
-
 import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.model.Capability;
 import com.github.dockerjava.api.model.Container;
 import com.github.dockerjava.api.model.HostConfig;
 import jakarta.annotation.PostConstruct;
-import java.nio.file.Files;
-import java.nio.file.LinkOption;
-import java.nio.file.Path;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -28,6 +13,18 @@ import qg.qgent.sandbox.config.SandboxProperties;
 import qg.qgent.sandbox.dto.CreateSandboxRequest;
 import qg.qgent.sandbox.exception.SandboxException;
 import qg.qgent.sandbox.filesystem.service.WorkspacePathResolver;
+
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+
+import static org.springframework.http.HttpStatus.BAD_GATEWAY;
+import static org.springframework.http.HttpStatus.CONFLICT;
 
 /**
  * 通过 Docker Engine API 管理真实沙箱容器。
@@ -50,7 +47,7 @@ public class DockerContainerRuntime implements ContainerRuntime {
     private static final String EXPIRES_AT_LABEL = LABEL_PREFIX + "expires-at";
     private static final String MAX_EXPIRES_AT_LABEL = LABEL_PREFIX + "max-expires-at";
     private static final String EXECUTION_TIMEOUT_LABEL =
-            LABEL_PREFIX + "execution-timeout-seconds";
+        LABEL_PREFIX + "execution-timeout-seconds";
     // 沙箱容器运行用户（与 sandbox-images/dev-tools Dockerfile 的 USER_ID 一致），
     // workspace 目录属主需与之一致，非 root 沙箱才能读写 git 检出的文件。
     private static final int SANDBOX_UID = 10001;
@@ -68,61 +65,61 @@ public class DockerContainerRuntime implements ContainerRuntime {
      */
     @Override
     public synchronized SandboxAllocation create(
-            CreateSandboxRequest request, SandboxAllocation allocation) {
+        CreateSandboxRequest request, SandboxAllocation allocation) {
         SandboxAllocation existing = allocations.get(request.getSandboxId());
         if (existing != null) {
             throw new SandboxException(CONFLICT, "SANDBOX_ID_CONFLICT", "沙箱编号已经存在");
         }
 
         grantSandboxOwnership(
-                allocation.getId(), paths.resolveLocal(request.getWorkspaceStorageKey()));
+            allocation.getId(), paths.resolveLocal(request.getWorkspaceStorageKey()));
         grantSandboxOwnership(
-                allocation.getId(), paths.resolveLocalGit(request.getWorkspaceStorageKey()));
+            allocation.getId(), paths.resolveLocalGit(request.getWorkspaceStorageKey()));
         String image =
-                Optional.ofNullable(properties.getImages().get(request.getImageProfile()))
-                        .orElseThrow(() ->
-                                new SandboxException(
-                                        CONFLICT, "IMAGE_PROFILE_NOT_CONFIGURED", "镜像配置尚未映射到镜像"));
+            Optional.ofNullable(properties.getImages().get(request.getImageProfile()))
+                .orElseThrow(() ->
+                    new SandboxException(
+                        CONFLICT, "IMAGE_PROFILE_NOT_CONFIGURED", "镜像配置尚未映射到镜像"));
         HostConfig hostConfig =
-                HostConfig.newHostConfig()
-                        .withBinds(bindFactory.create(allocation))
-                        .withReadonlyRootfs(false)
-                        .withNetworkMode(networkMode())
-                        .withCapDrop(Capability.ALL)
-                        .withSecurityOpts(List.of("no-new-privileges:true"))
-                        .withMemory(properties.getMemoryBytes())
-                        .withNanoCPUs(properties.getNanoCpus())
-                        .withPidsLimit(properties.getPidsLimit())
-                        .withTmpFs(tmpfsMounts());
+            HostConfig.newHostConfig()
+                .withBinds(bindFactory.create(allocation))
+                .withReadonlyRootfs(false)
+                .withNetworkMode(networkMode())
+                .withCapDrop(Capability.ALL)
+                .withSecurityOpts(List.of("no-new-privileges:true"))
+                .withMemory(properties.getMemoryBytes())
+                .withNanoCPUs(properties.getNanoCpus())
+                .withPidsLimit(properties.getPidsLimit())
+                .withTmpFs(tmpfsMounts());
 
         String containerId = null;
         try {
             containerId =
-                    docker.createContainerCmd(image)
-                            .withName("qgents-sandbox-" + request.getSandboxId())
-                            .withUser("10001:10001")
-                            .withWorkingDir("/workspace")
-                            .withLabels(labels(allocation))
-                            .withHostConfig(hostConfig)
-                            .withCmd("sleep", "infinity")
-                            .exec()
-                            .getId();
+                docker.createContainerCmd(image)
+                    .withName("qgents-sandbox-" + request.getSandboxId())
+                    .withUser("10001:10001")
+                    .withWorkingDir("/workspace")
+                    .withLabels(labels(allocation))
+                    .withHostConfig(hostConfig)
+                    .withCmd("sleep", "infinity")
+                    .exec()
+                    .getId();
             docker.startContainerCmd(containerId).exec();
             allocation.setRuntimeHandle(containerId);
             allocations.put(allocation.getId(), allocation);
             log.info(
-                    "sandbox container started sandboxId={} agentRunId={} workspace={} containerId={}",
-                    allocation.getId(),
-                    allocation.getAgentRunId(),
-                    allocation.getWorkspaceStorageKey(),
-                    containerId);
+                "sandbox container started sandboxId={} agentRunId={} workspace={} containerId={}",
+                allocation.getId(),
+                allocation.getAgentRunId(),
+                allocation.getWorkspaceStorageKey(),
+                containerId);
             return allocation;
         } catch (RuntimeException exception) {
             log.warn(
-                    "DOCKER_CREATE_FAILED sandboxId={} workspace={} category={}",
-                    allocation.getId(),
-                    allocation.getWorkspaceStorageKey(),
-                    exception.getClass().getSimpleName());
+                "DOCKER_CREATE_FAILED sandboxId={} workspace={} category={}",
+                allocation.getId(),
+                allocation.getWorkspaceStorageKey(),
+                exception.getClass().getSimpleName());
             removeContainerQuietly(containerId);
             throw new SandboxException(BAD_GATEWAY, "DOCKER_CREATE_FAILED", "Docker Engine 创建沙箱失败");
         }
@@ -137,7 +134,7 @@ public class DockerContainerRuntime implements ContainerRuntime {
         try (var stream = Files.walk(repository)) {
             int failed = 0;
             for (Path path :
-                    stream.filter(p -> Files.exists(p, LinkOption.NOFOLLOW_LINKS)).toList()) {
+                stream.filter(p -> Files.exists(p, LinkOption.NOFOLLOW_LINKS)).toList()) {
                 try {
                     Files.setAttribute(path, "unix:uid", SANDBOX_UID, LinkOption.NOFOLLOW_LINKS);
                     Files.setAttribute(path, "unix:gid", SANDBOX_GID, LinkOption.NOFOLLOW_LINKS);
@@ -147,15 +144,15 @@ public class DockerContainerRuntime implements ContainerRuntime {
             }
             if (failed > 0) {
                 log.warn(
-                        "sandbox ownership partially granted sandboxId={}, {} paths skipped",
-                        sandboxId,
-                        failed);
+                    "sandbox ownership partially granted sandboxId={}, {} paths skipped",
+                    sandboxId,
+                    failed);
             }
         } catch (Exception e) {
             log.warn(
-                    "grant sandbox ownership failed sandboxId={} category={}",
-                    sandboxId,
-                    e.getClass().getSimpleName());
+                "grant sandbox ownership failed sandboxId={} category={}",
+                sandboxId,
+                e.getClass().getSimpleName());
         }
     }
 
@@ -170,15 +167,15 @@ public class DockerContainerRuntime implements ContainerRuntime {
         // Docker tmpfs 默认包含 noexec，必须显式声明 exec；HOME 本身仍保持 noexec。
         String executableCacheOptions = "rw,exec,nosuid,nodev,uid=10001,gid=10001,mode=700,size=";
         return Map.of(
-                "/tmp", "rw,noexec,nosuid,size=512m",
-                "/var/tmp", "rw,noexec,nosuid,size=512m",
-                "/run", "rw,noexec,nosuid,size=64m",
-                "/home/developer", developerHomeOptions + properties.getDeveloperHomeSize(),
-                "/home/developer/.m2", executableCacheOptions + properties.getMavenCacheSize(),
-                "/home/developer/.gradle", executableCacheOptions + properties.getGradleCacheSize(),
-                "/home/developer/.npm", developerHomeOptions + properties.getNpmCacheSize(),
-                "/home/developer/.cache", executableCacheOptions + "512m",
-                "/opt/pnpm", executableCacheOptions + "1g");
+            "/tmp", "rw,noexec,nosuid,size=512m",
+            "/var/tmp", "rw,noexec,nosuid,size=512m",
+            "/run", "rw,noexec,nosuid,size=64m",
+            "/home/developer", developerHomeOptions + properties.getDeveloperHomeSize(),
+            "/home/developer/.m2", executableCacheOptions + properties.getMavenCacheSize(),
+            "/home/developer/.gradle", executableCacheOptions + properties.getGradleCacheSize(),
+            "/home/developer/.npm", developerHomeOptions + properties.getNpmCacheSize(),
+            "/home/developer/.cache", executableCacheOptions + "512m",
+            "/opt/pnpm", executableCacheOptions + "1g");
     }
 
     @Override
@@ -191,21 +188,25 @@ public class DockerContainerRuntime implements ContainerRuntime {
         return List.copyOf(allocations.values());
     }
 
-    /** 从 Docker daemon 全局查询所有 Sandbox 创建的运行中容器，避免只检查当前 JVM 内存。 */
+    /**
+     * 从 Docker daemon 全局查询所有 Sandbox 创建的运行中容器，避免只检查当前 JVM 内存。
+     */
     @Override
     public boolean isWorkspaceInUse(String workspaceStorageKey) {
         return docker
-                .listContainersCmd()
-                .withShowAll(false)
-                .withLabelFilter(
-                        Map.of(MANAGED_LABEL, "true", WORKSPACE_LABEL, workspaceStorageKey))
-                .exec()
-                .stream()
-                .findAny()
-                .isPresent();
+            .listContainersCmd()
+            .withShowAll(false)
+            .withLabelFilter(
+                Map.of(MANAGED_LABEL, "true", WORKSPACE_LABEL, workspaceStorageKey))
+            .exec()
+            .stream()
+            .findAny()
+            .isPresent();
     }
 
-    /** 销毁 Sandbox 容器。Workspace 是独立宿主机挂载目录，不会随容器删除。 */
+    /**
+     * 销毁 Sandbox 容器。Workspace 是独立宿主机挂载目录，不会随容器删除。
+     */
     @Override
     public synchronized void destroy(UUID sandboxId) {
         SandboxAllocation allocation = allocations.remove(sandboxId);
@@ -214,18 +215,18 @@ public class DockerContainerRuntime implements ContainerRuntime {
         }
         try {
             docker.removeContainerCmd(allocation.getRuntimeHandle())
-                    .withForce(true)
-                    .withRemoveVolumes(true)
-                    .exec();
+                .withForce(true)
+                .withRemoveVolumes(true)
+                .exec();
             log.info(
-                    "sandbox container removed sandboxId={} agentRunId={} containerId={}",
-                    sandboxId,
-                    allocation.getAgentRunId(),
-                    allocation.getRuntimeHandle());
+                "sandbox container removed sandboxId={} agentRunId={} containerId={}",
+                sandboxId,
+                allocation.getAgentRunId(),
+                allocation.getRuntimeHandle());
         } catch (RuntimeException exception) {
             allocations.putIfAbsent(sandboxId, allocation);
             throw new SandboxException(
-                    BAD_GATEWAY, "DOCKER_DESTROY_FAILED", "Docker Engine 销毁沙箱失败");
+                BAD_GATEWAY, "DOCKER_DESTROY_FAILED", "Docker Engine 销毁沙箱失败");
         }
     }
 
@@ -238,15 +239,15 @@ public class DockerContainerRuntime implements ContainerRuntime {
         List<Container> containers;
         try {
             containers =
-                    docker.listContainersCmd()
-                            .withShowAll(true)
-                            .withLabelFilter(
-                                    Map.of(
-                                            MANAGED_LABEL,
-                                            "true",
-                                            INSTANCE_LABEL,
-                                            properties.getInstanceId()))
-                            .exec();
+                docker.listContainersCmd()
+                    .withShowAll(true)
+                    .withLabelFilter(
+                        Map.of(
+                            MANAGED_LABEL,
+                            "true",
+                            INSTANCE_LABEL,
+                            properties.getInstanceId()))
+                    .exec();
         } catch (RuntimeException exception) {
             // Docker 暂不可用不阻断聊天启动；实际代码工具调用仍会返回容器操作失败。
             log.warn("暂时无法扫描 Docker 受管容器", exception);
@@ -258,10 +259,10 @@ public class DockerContainerRuntime implements ContainerRuntime {
             try {
                 SandboxAllocation allocation = allocationFrom(container);
                 Boolean running =
-                        docker.inspectContainerCmd(container.getId())
-                                .exec()
-                                .getState()
-                                .getRunning();
+                    docker.inspectContainerCmd(container.getId())
+                        .exec()
+                        .getState()
+                        .getRunning();
                 if (!Boolean.TRUE.equals(running) || !now.isBefore(allocation.getMaxExpiresAt())) {
                     removeContainerQuietly(container.getId());
                     continue;
@@ -286,18 +287,18 @@ public class DockerContainerRuntime implements ContainerRuntime {
             recoveredExpiresAt = maxExpiresAt;
         }
         return new SandboxAllocation(
-                sandboxId,
-                agentRunId,
-                requiredLabel(labels, WORKSPACE_LABEL),
-                requiredLabel(labels, IMAGE_PROFILE_LABEL),
-                "READY",
-                "DOCKER",
-                createdAt,
-                recoveredAt,
-                recoveredExpiresAt,
-                maxExpiresAt,
-                Duration.ofSeconds(Long.parseLong(requiredLabel(labels, EXECUTION_TIMEOUT_LABEL))),
-                container.getId());
+            sandboxId,
+            agentRunId,
+            requiredLabel(labels, WORKSPACE_LABEL),
+            requiredLabel(labels, IMAGE_PROFILE_LABEL),
+            "READY",
+            "DOCKER",
+            createdAt,
+            recoveredAt,
+            recoveredExpiresAt,
+            maxExpiresAt,
+            Duration.ofSeconds(Long.parseLong(requiredLabel(labels, EXECUTION_TIMEOUT_LABEL))),
+            container.getId());
     }
 
     private Map<String, String> labels(SandboxAllocation allocation) {
@@ -315,8 +316,8 @@ public class DockerContainerRuntime implements ContainerRuntime {
         labels.put(EXPIRES_AT_LABEL, allocation.getExpiresAt().toString());
         labels.put(MAX_EXPIRES_AT_LABEL, allocation.getMaxExpiresAt().toString());
         labels.put(
-                EXECUTION_TIMEOUT_LABEL,
-                Long.toString(allocation.getExecutionTimeout().toSeconds()));
+            EXECUTION_TIMEOUT_LABEL,
+            Long.toString(allocation.getExecutionTimeout().toSeconds()));
         return labels;
     }
 
@@ -348,9 +349,8 @@ public class DockerContainerRuntime implements ContainerRuntime {
         return switch (properties.getNetworkPolicy()) {
             case "none" -> "none";
             case "outbound" -> "bridge";
-            default ->
-                    throw new SandboxException(
-                            CONFLICT, "NETWORK_POLICY_INVALID", "Sandbox 网络策略配置不合法");
+            default -> throw new SandboxException(
+                CONFLICT, "NETWORK_POLICY_INVALID", "Sandbox 网络策略配置不合法");
         };
     }
 }

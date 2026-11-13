@@ -48,9 +48,9 @@ class LocalAttachmentStorageTest {
 
         assertThat(storage.objectSize(objectKey)).hasValue(payload.length);
         AttachmentContent content = storage.loadContent(objectKey, "notes.txt", "text/plain");
-        assertThat(content.getFileName()).isEqualTo("notes.txt");
-        assertThat(content.getContentType()).isEqualTo("text/plain");
-        try (var stream = content.getStream()) {
+        assertThat(content.fileName()).isEqualTo("notes.txt");
+        assertThat(content.contentType()).isEqualTo("text/plain");
+        try (var stream = content.stream()) {
             assertThat(stream.readAllBytes()).isEqualTo(payload);
         }
     }

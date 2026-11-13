@@ -1,6 +1,5 @@
 package qg.qgent.harness.integration;
 
-import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -15,7 +14,11 @@ import qg.qgent.chat.service.GroupService;
 import qg.qgent.chat.service.MessageService;
 import qg.qgent.harness.runtime.AgentChatService;
 
-/** 将已提交的 Agent 提及适配为 Harness 运行；普通聊天和用户提及不调用模型。 */
+import java.util.List;
+
+/**
+ * 将已提交的 Agent 提及适配为 Harness 运行；普通聊天和用户提及不调用模型。
+ */
 @Component
 public class MessageSentListener {
     private static final Logger log = LoggerFactory.getLogger(MessageSentListener.class);
@@ -26,10 +29,10 @@ public class MessageSentListener {
     private final GroupService groupService;
 
     public MessageSentListener(
-            MessageMapper messageMapper,
-            AgentChatService agentChatService,
-            MessageService messageService,
-            GroupService groupService) {
+        MessageMapper messageMapper,
+        AgentChatService agentChatService,
+        MessageService messageService,
+        GroupService groupService) {
         this.messageMapper = messageMapper;
         this.agentChatService = agentChatService;
         this.messageService = messageService;
@@ -50,11 +53,11 @@ public class MessageSentListener {
             return;
         }
         List<Long> agentIds =
-                mentions.stream()
-                        .filter(mention -> "AGENT".equals(mention.getType()))
-                        .map(Mention::getId)
-                        .distinct()
-                        .toList();
+            mentions.stream()
+                .filter(mention -> "AGENT".equals(mention.getType()))
+                .map(Mention::getId)
+                .distinct()
+                .toList();
         if (agentIds.isEmpty()) {
             return;
         }
@@ -66,26 +69,28 @@ public class MessageSentListener {
             String instruction = messageService.agentInstruction(message);
             List<Long> groupAgentIds = groupService.groupAgentIds(event.groupId());
             agentIds.stream()
-                    .filter(groupAgentIds::contains)
-                    .forEach(agentId -> runOne(event, agentId, instruction));
+                .filter(groupAgentIds::contains)
+                .forEach(agentId -> runOne(event, agentId, instruction));
         } catch (RuntimeException e) {
             log.warn(
-                    "message sent post-processing skipped, messageId={}: {}",
-                    messageId,
-                    e.getMessage());
+                "message sent post-processing skipped, messageId={}: {}",
+                messageId,
+                e.getMessage());
         }
     }
 
-    /** 一个 Agent 的运行失败不能连坐其余被提及的 Agent，每个提及各自兜住异常。 */
+    /**
+     * 一个 Agent 的运行失败不能连坐其余被提及的 Agent，每个提及各自兜住异常。
+     */
     private void runOne(MessageSentEvent event, Long agentId, String instruction) {
         try {
             agentChatService.replyToMention(event, agentId, instruction);
         } catch (RuntimeException e) {
             log.warn(
-                    "agent run skipped, groupId={}, agentId={}: {}",
-                    event.groupId(),
-                    agentId,
-                    e.getMessage());
+                "agent run skipped, groupId={}, agentId={}: {}",
+                event.groupId(),
+                agentId,
+                e.getMessage());
         }
     }
 }

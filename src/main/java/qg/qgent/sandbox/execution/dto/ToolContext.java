@@ -1,12 +1,15 @@
 package qg.qgent.sandbox.execution.dto;
 
-import java.nio.file.Path;
-import java.time.Duration;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import qg.qgent.sandbox.runtime.SandboxAllocation;
 
-/** 工具执行时使用的受控上下文。 */
+import java.nio.file.Path;
+import java.time.Duration;
+
+/**
+ * 工具执行时使用的受控上下文。
+ */
 @Data
 @AllArgsConstructor
 public class ToolContext {
@@ -15,13 +18,14 @@ public class ToolContext {
     private String containerWorkspace;
     private Duration timeout;
     private Long executionId;
-    @lombok.Setter private java.util.Map<String, String> environment = java.util.Map.of();
+    @lombok.Setter
+    private java.util.Map<String, String> environment = java.util.Map.of();
 
     public ToolContext(
-            SandboxAllocation sandbox,
-            Path localWorkspace,
-            String containerWorkspace,
-            Duration timeout) {
+        SandboxAllocation sandbox,
+        Path localWorkspace,
+        String containerWorkspace,
+        Duration timeout) {
         this.sandbox = sandbox;
         this.localWorkspace = localWorkspace;
         this.containerWorkspace = containerWorkspace;

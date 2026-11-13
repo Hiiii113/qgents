@@ -5,7 +5,9 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/** 标记已读接口响应：进群全读后返回推进后的已读游标与清零的未读数。 */
+/**
+ * 标记已读接口响应：进群全读后返回推进后的已读游标与清零的未读数。
+ */
 @Data
 @NoArgsConstructor
 @AllArgsConstructor

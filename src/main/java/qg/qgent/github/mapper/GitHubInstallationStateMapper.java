@@ -5,4 +5,5 @@ import org.apache.ibatis.annotations.Mapper;
 import qg.qgent.github.entity.GitHubInstallationStateEntity;
 
 @Mapper
-public interface GitHubInstallationStateMapper extends BaseMapper<GitHubInstallationStateEntity> {}
+public interface GitHubInstallationStateMapper extends BaseMapper<GitHubInstallationStateEntity> {
+}

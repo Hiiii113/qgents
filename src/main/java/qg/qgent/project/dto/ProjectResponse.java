@@ -4,7 +4,9 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-/** 项目资料、当前用户角色、成员数和头像。 */
+/**
+ * 项目资料、当前用户角色、成员数和头像。
+ */
 @Data
 @NoArgsConstructor
 public class ProjectResponse {
@@ -24,13 +26,13 @@ public class ProjectResponse {
     private String avatarUrl;
 
     public ProjectResponse(
-            String id,
-            String teamId,
-            String name,
-            String description,
-            String role,
-            String status,
-            Long memberCount) {
+        String id,
+        String teamId,
+        String name,
+        String description,
+        String role,
+        String status,
+        Long memberCount) {
         this.id = id;
         this.teamId = teamId;
         this.name = name;
