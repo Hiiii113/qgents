@@ -27,11 +27,27 @@
 - 未实施但已认可的事项记入 `docs/pending.md`，区分已确定与待决定；实施后同步更新。
 - 提交按标准格式，一次提交只做一件事，可以拆成多次。
 
+## 模块地图
+
+`src/main/java/qg/qgent/` 下按业务分包，每包自带 `controller / service / mapper / entity / dto`，缺哪层说明这层不需要。
+
+- `agent/` 自定义 Agent 的申请与审批，`tool/AgentApplicationTools` 是审批工具。
+- `harness/` 自研工具循环与运行生命周期：`runtime/` 是主循环与并行工具回调，`briefing/` 管上下文组装、注入顺序与字符预算。
+- `memory/` 三种记忆：项目 `memory.md`、群 `groups/<groupId>/memory.md`、Agent 私有 `agent-memory/<agentId>/<groupId>.md`，统一由 `MemoryDocument` 表示；`ProjectMemoryDiscovery` 是后台发现。
+- `sandbox/` Docker 沙箱生命周期、文件系统与命令执行，`tool/CodingTools` 是给模型的编码工具。
+- `workspace/` 项目仓库的 worktree、写租约与操作锁。
+- `chat/` 群聊、提及、已读与跨群检索，`CrossGroupAccessService` 决定一次跨群读取是否被允许。
+- `project/ team/ user/ auth/` 组织与人，`ProjectAccess` 是项目内的权限判定。
+- `skill/` 项目 Skill；`attachment/` 附件与对象存储；`github/` GitHub App、仓库导入与 PR/Issue 读取。
+- `realtime/` SSE 与 WebSocket 事件出口；`notification/` 站内通知与 FCM 推送。
+- `common/` 跨包基础设施（`web/ApiException`、数据库连接监控、存储）。
+
+表结构在 `src/main/resources/db/qgents_schema.sql`，配置入口只有 `src/main/resources/application.yaml`。测试镜像同一套包名，放在 `src/test/java/qg/qgent/<包>/`。
+
 ## 并行编排
 
 - 加载 `herdr-core` skill 时用 `hc` 编排：可以派 subagent，也可以并行开发。
 - 并行开发用 `git worktree` 隔离改动，按依赖顺序调度，不让两个 agent 改同一份工作区。
-- 派出去的 agent 尽量在当前窗口分屏显示（半页给它），别只丢在后台。
 - agent 跑完就收尾：结束终端、关掉分屏，不留后台进程。
 
 ## Agent skills
