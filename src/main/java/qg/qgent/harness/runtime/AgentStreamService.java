@@ -9,8 +9,10 @@ import qg.qgent.chat.service.GroupService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.harness.dto.AgentRunSnapshot;
 import qg.qgent.harness.entity.AgentRunEntity;
+import qg.qgent.harness.entity.AgentRunToolEntity;
 import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.mapper.AgentRunMapper;
+import qg.qgent.harness.mapper.AgentRunToolMapper;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.realtime.transport.SseEmitterFactory;
 
@@ -22,13 +24,15 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 /**
  * 一次 Agent 运行的可展示进度。
  * <p>
- * 正文增量只走群级 SSE 的进程内队列，不写数据库；轮次、工具阶段等低频状态仍通过
- * {@link EventService} 持久化，供现有项目 SSE/WS 与刷新兜底。运行状态只保存在当前进程，
- * 重启后的部分正文不可恢复，以数据库终态和最终消息为准。
+ * 正文增量只走群级 SSE 的进程内队列，不写数据库；工具明细写入 {@code agent_run_tools}，
+ * 快照以数据库为准，运行结束后或进程重启后仍能回看。轮次等低频状态仍通过
+ * {@link EventService} 持久化，供现有项目 SSE/WS 与刷新兜底。正文只保存在当前进程，
+ * 重启后不可恢复，以数据库终态、工具明细和最终消息为准。
  */
 @Service
 public class AgentStreamService {
@@ -42,9 +46,12 @@ public class AgentStreamService {
     private static final long ACCESS_RECHECK_MS = 10_000;
     private static final int MAX_STREAMS = 128;
     private static final int TOOL_NAME_LIMIT = 64;
+    // 工具入参与结果只保留前 2000 字，截断时末尾加省略号。
+    private static final int TOOL_TEXT_LIMIT = 2000;
 
     private final EventService events;
     private final AgentRunMapper runs;
+    private final AgentRunToolMapper toolRuns;
     private final GroupService groups;
     private final Executor pump;
     private final SseEmitterFactory emitters;
@@ -57,11 +64,13 @@ public class AgentStreamService {
     public AgentStreamService(
         EventService events,
         AgentRunMapper runs,
+        AgentRunToolMapper toolRuns,
         GroupService groups,
         SseEmitterFactory emitters,
         @Qualifier("sseEventPumpExecutor") Executor pump) {
         this.events = events;
         this.runs = runs;
+        this.toolRuns = toolRuns;
         this.groups = groups;
         this.emitters = emitters;
         this.pump = pump;
@@ -133,22 +142,31 @@ public class AgentStreamService {
     public List<AgentRunSnapshot> recentRuns(
         Long projectId, Long groupId, Long userId, int limit) {
         groups.requireGroupMember(projectId, groupId, userId);
-        return runs.selectList(
-                Wrappers.<AgentRunEntity>lambdaQuery()
-                    .eq(AgentRunEntity::getProjectId, projectId)
-                    .eq(AgentRunEntity::getGroupId, groupId)
-                    .orderByDesc(AgentRunEntity::getCreatedAt)
-                    .last("LIMIT " + limit))
-            .stream()
-            .map(this::snapshot)
+        List<AgentRunEntity> found =
+            runs.selectList(
+                    Wrappers.<AgentRunEntity>lambdaQuery()
+                        .eq(AgentRunEntity::getProjectId, projectId)
+                        .eq(AgentRunEntity::getGroupId, groupId)
+                        .orderByDesc(AgentRunEntity::getCreatedAt)
+                        .last("LIMIT " + limit));
+        Map<Long, List<AgentRunToolEntity>> rows = toolRows(found);
+        return found.stream()
+            .map(run -> snapshot(run, rows.getOrDefault(run.getId(), List.of())))
             .toList();
     }
 
     private void pump(GroupStream stream) {
         try {
-            for (LiveRun state : live.values()) {
-                if (!state.run.getGroupId().equals(stream.groupId)) continue;
-                if (!send(stream, "agent-run.snapshot", Map.of("run", snapshot(state)))) return;
+            List<AgentRunEntity> groupRuns =
+                live.values().stream()
+                    .map(state -> state.run)
+                    .filter(run -> run.getGroupId().equals(stream.groupId))
+                    .toList();
+            Map<Long, List<AgentRunToolEntity>> rows = toolRows(groupRuns);
+            for (AgentRunEntity run : groupRuns) {
+                Map<String, Object> payload =
+                    Map.of("run", snapshot(run, rows.getOrDefault(run.getId(), List.of())));
+                if (!send(stream, "agent-run.snapshot", payload)) return;
             }
             long lastHeartbeat = System.currentTimeMillis();
             long lastAccessCheck = lastHeartbeat;
@@ -262,6 +280,7 @@ public class AgentStreamService {
         String toolName,
         int round,
         Boolean ok,
+        String text,
         long revision) {
         Map<String, Object> payload = basePayload(state.run);
         payload.put("status", RunStatus.RUNNING.name());
@@ -271,6 +290,7 @@ public class AgentStreamService {
         payload.put("toolCallId", toolCallId);
         payload.put("tool", toolName(toolName));
         payload.put("ok", ok);
+        payload.put("started".equals(phase) ? "input" : "output", text);
         return payload;
     }
 
@@ -325,22 +345,20 @@ public class AgentStreamService {
         }
     }
 
-    private AgentRunSnapshot snapshot(AgentRunEntity run) {
+    private AgentRunSnapshot snapshot(AgentRunEntity run, List<AgentRunToolEntity> rows) {
         LiveRun state = live.get(run.getId());
         RootStream root = roots.get(rootRunId(run));
         int round = root == null ? 0 : root.roundValue(run.getId());
         long revision = root == null ? 0 : root.revisionValue(run.getId());
         long seq = root == null ? 0 : root.seqValue(run.getId());
         List<AgentRunSnapshot.Segment> segments = List.of();
-        List<AgentRunSnapshot.Tool> tools = List.of();
         if (state != null) {
-            // 与 segments/tools 在同一把锁内取版本号，避免迟到的快照把已完成工具改回执行中。
+            // 与 segments 在同一把锁内取版本号，避免迟到的快照把已有正文改回空。
             synchronized (state) {
                 round = state.round;
                 revision = state.root.revisionValue(run.getId());
                 seq = state.root.seqValue(run.getId());
                 segments = segments(state);
-                tools = tools(state);
             }
         }
         return new AgentRunSnapshot(
@@ -357,33 +375,10 @@ public class AgentStreamService {
             seq,
             revision,
             segments,
-            tools,
+            tools(run, rows),
             run.getResult(),
             iso(run.getCreatedAt()),
             iso(run.getFinishedAt()));
-    }
-
-    private AgentRunSnapshot snapshot(LiveRun state) {
-        synchronized (state) {
-            return new AgentRunSnapshot(
-                state.run.getId().toString(),
-                id(state.run.getParentRunId()),
-                id(state.rootRunId),
-                id(state.run.getProjectId()),
-                id(state.run.getGroupId()),
-                id(state.run.getAgentId()),
-                id(state.run.getTriggerMessageId()),
-                state.run.getStatus().name(),
-                state.round,
-                rounds(state.run),
-                state.root.seqValue(state.run.getId()),
-                state.root.revisionValue(state.run.getId()),
-                segments(state),
-                tools(state),
-                state.run.getResult(),
-                iso(state.run.getCreatedAt()),
-                iso(state.run.getFinishedAt()));
-        }
     }
 
     private List<AgentRunSnapshot.Segment> segments(LiveRun state) {
@@ -396,10 +391,37 @@ public class AgentStreamService {
         return result;
     }
 
-    private List<AgentRunSnapshot.Tool> tools(LiveRun state) {
-        return state.tools.values().stream()
-            .map(tool -> new AgentRunSnapshot.Tool(tool.toolCallId(), tool.tool(), tool.round()))
-            .toList();
+    /**
+     * 按 run_id 一次取回工具明细，避免最近运行列表逐条查询。
+     */
+    private Map<Long, List<AgentRunToolEntity>> toolRows(List<AgentRunEntity> found) {
+        if (found.isEmpty()) return Map.of();
+        return toolRuns.byRunIds(found.stream().map(AgentRunEntity::getId).toList()).stream()
+            .collect(Collectors.groupingBy(AgentRunToolEntity::getRunId));
+    }
+
+    private static List<AgentRunSnapshot.Tool> tools(
+        AgentRunEntity run, List<AgentRunToolEntity> rows) {
+        List<AgentRunSnapshot.Tool> result = new ArrayList<>(rows.size());
+        for (AgentRunToolEntity row : rows) {
+            result.add(
+                new AgentRunSnapshot.Tool(
+                    row.getToolCallId(),
+                    row.getTool(),
+                    row.getRound() == null ? 0 : row.getRound(),
+                    toolState(row.getState(), run.getStatus()),
+                    row.getInput(),
+                    row.getOutput()));
+        }
+        return result;
+    }
+
+    /**
+     * 运行已结束时不会再有工具事件，库里残留的 running 按中性的“结束”返回。
+     */
+    private static String toolState(String state, RunStatus runStatus) {
+        boolean terminal = runStatus != RunStatus.RUNNING && runStatus != RunStatus.CANCELLING;
+        return terminal && "running".equals(state) ? "done" : state;
     }
 
     private int rounds(AgentRunEntity run) {
@@ -410,6 +432,12 @@ public class AgentStreamService {
         return name != null && name.length() > TOOL_NAME_LIMIT
             ? name.substring(0, TOOL_NAME_LIMIT)
             : name;
+    }
+
+    private static String truncate(String text) {
+        return text == null || text.length() <= TOOL_TEXT_LIMIT
+            ? text
+            : text.substring(0, TOOL_TEXT_LIMIT) + "…";
     }
 
     private static Long rootRunId(AgentRunEntity run) {
@@ -461,21 +489,20 @@ public class AgentStreamService {
     }
 
     /**
-     * 单个运行的正文缓冲与当前工具；运行结束后从 live 中移除。
+     * 单个运行的正文缓冲与轮次；运行结束后从 live 中移除，工具明细以库为准。
      */
     private static final class LiveRun {
         private final AgentRunEntity run;
         private final Long rootRunId;
         private final RootStream root;
         private final List<Segment> segments = new ArrayList<>();
-        private final Map<String, ActiveTool> tools = new LinkedHashMap<>();
         private final StringBuilder pending = new StringBuilder();
         private final Object publishLock = new Object();
         private final java.util.ArrayDeque<PendingEvent> pendingPublishes =
             new java.util.ArrayDeque<>();
         private volatile int round;
         private long lastFlushAt = System.currentTimeMillis();
-        private boolean closed;
+        private volatile boolean closed;
 
         LiveRun(AgentRunEntity run, RootStream root) {
             this.run = run;
@@ -491,9 +518,6 @@ public class AgentStreamService {
         Segment(int round) {
             this.round = round;
         }
-    }
-
-    private record ActiveTool(String toolCallId, String tool, int round) {
     }
 
     private record PendingEvent(String type, Map<String, Object> payload) {
@@ -529,34 +553,46 @@ public class AgentStreamService {
             }
         }
 
-        public void toolStarted(String toolCallId, String toolName) {
+        public void toolStarted(String toolCallId, String toolName, String input) {
+            if (state.closed) return;
+            int round = state.round;
+            String text = truncate(input);
+            AgentRunToolEntity row = new AgentRunToolEntity();
+            row.setRunId(state.run.getId());
+            row.setToolCallId(toolCallId);
+            row.setTool(toolName(toolName));
+            row.setRound(round);
+            row.setState("running");
+            row.setInput(text);
+            row.setStartedAt(LocalDateTime.now(ZoneOffset.UTC));
+            // 先落库再广播：随后读库的快照不会把这个工具当成不存在。
+            toolRuns.insert(row);
             synchronized (state) {
                 if (state.closed) return;
                 flush(state, true);
-                state.tools.put(
-                    toolCallId,
-                    new ActiveTool(toolCallId, toolName(toolName), state.round));
                 long revision = state.root.revision(state.run.getId()).incrementAndGet();
                 emit(
                     state,
                     "agent-run.tool",
                     toolPayload(
-                        state,
-                        "started",
-                        toolCallId,
-                        toolName,
-                        state.round,
-                        null,
-                        revision));
+                        state, "started", toolCallId, toolName, round, null, text, revision));
             }
             drainPublishes(state);
         }
 
-        public void toolFinished(String toolCallId, String toolName, Boolean ok) {
+        public void toolFinished(String toolCallId, String toolName, Boolean ok, String output) {
+            String text = truncate(output);
+            // 运行已结束也要结算：库里残留 running 的会按 done 展示，这里能给出真实结果。
+            toolRuns.finish(
+                state.run.getId(),
+                toolCallId,
+                ok == null ? "done" : ok ? "ok" : "failed",
+                text,
+                LocalDateTime.now(ZoneOffset.UTC));
+            if (state.closed) return;
             synchronized (state) {
                 if (state.closed) return;
                 flush(state, true);
-                state.tools.remove(toolCallId);
                 long revision = state.root.revision(state.run.getId()).incrementAndGet();
                 emit(
                     state,
@@ -568,6 +604,7 @@ public class AgentStreamService {
                         toolName,
                         state.round,
                         ok,
+                        text,
                         revision));
             }
             drainPublishes(state);
@@ -578,7 +615,6 @@ public class AgentStreamService {
                 if (state.closed) return;
                 flush(state, true);
                 state.closed = true;
-                state.tools.clear();
                 long revision = state.root.revision(state.run.getId()).incrementAndGet();
                 emit(
                     state,

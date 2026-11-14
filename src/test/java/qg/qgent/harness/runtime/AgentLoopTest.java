@@ -610,11 +610,11 @@ class AgentLoopTest {
             deltas.add(text);
         }
 
-        public void toolStarted(String toolCallId, String toolName) {
+        public void toolStarted(String toolCallId, String toolName, String input) {
             events.add("tool:started:" + toolCallId + ":" + toolName);
         }
 
-        public void toolFinished(String toolCallId, String toolName, Boolean ok) {
+        public void toolFinished(String toolCallId, String toolName, Boolean ok, String output) {
             events.add("tool:finished:" + toolCallId + ":" + toolName + ":" + ok);
         }
 

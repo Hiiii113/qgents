@@ -251,6 +251,22 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     KEY idx_agent_run_message (trigger_message_id, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent loop 根运行及 subagent 运行';
 
+-- 工具调用明细落库：运行结束或进程重启后，聊天里的工具列表仍可回看。
+CREATE TABLE IF NOT EXISTS agent_run_tools (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    run_id BIGINT NOT NULL COMMENT '所属 agent_runs',
+    tool_call_id VARCHAR(128) NOT NULL COMMENT '模型给出的工具调用 ID',
+    tool VARCHAR(64) NOT NULL COMMENT '工具名',
+    round INT NOT NULL COMMENT '开始时的模型轮次',
+    state VARCHAR(16) NOT NULL COMMENT 'running/ok/failed/done',
+    input TEXT NULL COMMENT '模型入参，超过 2000 字截断',
+    output TEXT NULL COMMENT '工具结果，超过 2000 字截断',
+    started_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    finished_at DATETIME(6) NULL,
+    UNIQUE KEY uk_agent_run_tool (run_id, tool_call_id),
+    CONSTRAINT fk_agent_run_tool_run FOREIGN KEY (run_id) REFERENCES agent_runs (id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent 运行内的工具调用明细';
+
 CREATE TABLE IF NOT EXISTS workspaces (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, project_id BIGINT NOT NULL,
     is_default TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否项目默认 Workspace；每个项目唯一',
@@ -402,7 +418,7 @@ CREATE TABLE IF NOT EXISTS
 
 -- 已存在的库不会重建表（README 第 2 步：数据卷初始化过的库不会重跑本脚本）；从上一个版本升级时手工执行：
 -- 1. 先执行本文件中新增的建表语句（CREATE TABLE IF NOT EXISTS，已存在则跳过）：
---    agents、group_agents、group_memory_state。
+--    agents、group_agents、group_memory_state、agent_run_tools。
 -- 2. 再补已有表上新增的列、索引与约束；重复执行会报 Duplicate column/key，跳过即可：
 -- ALTER TABLE messages
 --     ADD COLUMN sender_agent_id BIGINT NULL COMMENT '发送 Agent ID；AGENT 消息必填，其余为空' AFTER author_user_id,

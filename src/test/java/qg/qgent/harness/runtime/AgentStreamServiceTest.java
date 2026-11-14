@@ -2,6 +2,8 @@ package qg.qgent.harness.runtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -9,7 +11,10 @@ import static org.mockito.Mockito.when;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Collection;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
@@ -21,8 +26,10 @@ import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.service.GroupService;
 import qg.qgent.harness.dto.AgentRunSnapshot;
 import qg.qgent.harness.entity.AgentRunEntity;
+import qg.qgent.harness.entity.AgentRunToolEntity;
 import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.mapper.AgentRunMapper;
+import qg.qgent.harness.mapper.AgentRunToolMapper;
 import qg.qgent.realtime.service.EventService;
 import qg.qgent.support.TestIds;
 
@@ -30,10 +37,48 @@ class AgentStreamServiceTest {
     private final ExecutorService pump = Executors.newSingleThreadExecutor();
     private final EventService events = mock(EventService.class);
     private final AgentRunMapper runs = mock(AgentRunMapper.class);
+    private final AgentRunToolMapper toolRuns = mock(AgentRunToolMapper.class);
     private final GroupService groups = mock(GroupService.class);
     private final SseEmitter emitter = mock(SseEmitter.class);
     private final AgentStreamService service =
-            new AgentStreamService(events, runs, groups, timeout -> emitter, pump);
+            new AgentStreamService(events, runs, toolRuns, groups, timeout -> emitter, pump);
+    // agent_run_tools 的内存替身：insert/finish/byRunIds 走真实写入路径。
+    private final List<AgentRunToolEntity> toolRows = new CopyOnWriteArrayList<>();
+
+    {
+        when(toolRuns.insert(any(AgentRunToolEntity.class)))
+                .thenAnswer(
+                        invocation -> {
+                            AgentRunToolEntity row = invocation.getArgument(0);
+                            row.setId((long) toolRows.size() + 1);
+                            toolRows.add(row);
+                            return 1;
+                        });
+        when(toolRuns.byRunIds(any()))
+                .thenAnswer(
+                        invocation -> {
+                            Collection<Long> runIds = invocation.getArgument(0);
+                            return toolRows.stream()
+                                    .filter(row -> runIds.contains(row.getRunId()))
+                                    .toList();
+                        });
+        doAnswer(
+                        invocation -> {
+                            Long runId = invocation.getArgument(0);
+                            String toolCallId = invocation.getArgument(1);
+                            for (AgentRunToolEntity row : toolRows) {
+                                if (row.getRunId().equals(runId)
+                                        && row.getToolCallId().equals(toolCallId)) {
+                                    row.setState(invocation.getArgument(2));
+                                    row.setOutput(invocation.getArgument(3));
+                                    row.setFinishedAt(invocation.getArgument(4));
+                                }
+                            }
+                            return null;
+                        })
+                .when(toolRuns)
+                .finish(any(), any(), any(), any(), any());
+    }
 
     @AfterEach
     void stopPump() {
@@ -47,9 +92,11 @@ class AgentStreamServiceTest {
         RunStreamSink sink = service.sink(run);
         sink.roundStarted();
         service.openGroupStream(run.getProjectId(), run.getGroupId(), TestIds.next());
+        // 等首帧快照落地再发事件，否则 pump 线程可能在运行结束后才启动。
+        verify(emitter, timeout(3000).atLeastOnce()).send(any(SseEmitter.SseEventBuilder.class));
         sink.delta("正在检查仓库结构。");
-        sink.toolStarted("call-a", "run_command");
-        sink.toolFinished("call-a", "run_command", true);
+        sink.toolStarted("call-a", "run_command", "{\"cmd\":\"ls\"}");
+        sink.toolFinished("call-a", "run_command", true, "{\"ok\":true}");
         sink.delta("工具返回后继续输出。");
         sink.roundStarted();
         sink.delta("最终答复。");
@@ -57,7 +104,8 @@ class AgentStreamServiceTest {
         run.setRounds(2);
         sink.finished();
 
-        verify(emitter, timeout(3000).atLeast(5)).send(any(SseEmitter.SseEventBuilder.class));
+        // 共 8 帧：快照、两段正文、两次工具、轮次与终态；等最后一帧发出再断言。
+        verify(emitter, timeout(3000).atLeast(8)).send(any(SseEmitter.SseEventBuilder.class));
         String frames = sentFrames();
         assertThat(frames)
                 .contains("event:agent-run.snapshot")
@@ -66,7 +114,9 @@ class AgentStreamServiceTest {
                 .contains("event:agent-run.tool")
                 .contains("toolCallId=call-a")
                 .contains("phase=started")
+                .contains("input={\"cmd\":\"ls\"}")
                 .contains("phase=finished")
+                .contains("output={\"ok\":true}")
                 .contains("text=正在检查仓库结构。")
                 .contains("status=SUCCEEDED")
                 .contains("rounds=2")
@@ -90,7 +140,7 @@ class AgentStreamServiceTest {
         assertThat(beforeFlush.getSegments()).isEmpty();
         assertThat(beforeFlush.getSeq()).isZero();
 
-        sink.toolStarted("call-1", "run_command");
+        sink.toolStarted("call-1", "run_command", null);
         AgentRunSnapshot running = recent(run);
         assertThat(running.getRound()).isEqualTo(1);
         assertThat(running.getSeq()).isEqualTo(1);
@@ -98,10 +148,10 @@ class AgentStreamServiceTest {
                 .extracting(AgentRunSnapshot.Segment::text)
                 .containsExactly("a");
         assertThat(running.getTools())
-                .extracting(AgentRunSnapshot.Tool::toolCallId)
-                .containsExactly("call-1");
+                .extracting(AgentRunSnapshot.Tool::toolCallId, AgentRunSnapshot.Tool::state)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("call-1", "running"));
 
-        sink.toolFinished("call-1", "run_command", true);
+        sink.toolFinished("call-1", "run_command", true, null);
         run.setStatus(RunStatus.SUCCEEDED);
         run.setResult("a");
         run.setRounds(1);
@@ -112,14 +162,16 @@ class AgentStreamServiceTest {
         assertThat(finished.getResult()).isEqualTo("a");
         assertThat(finished.getRound()).isEqualTo(1);
         assertThat(finished.getSegments()).isEmpty();
-        assertThat(finished.getTools()).isEmpty();
+        assertThat(finished.getTools())
+                .extracting(AgentRunSnapshot.Tool::toolCallId, AgentRunSnapshot.Tool::state)
+                .containsExactly(org.assertj.core.groups.Tuple.tuple("call-1", "ok"));
 
         // 续接同一子运行：round 与 seq 到根运行结束前继续递增，前端不会把增量当过期。
         run.setStatus(RunStatus.RUNNING);
         RunStreamSink resumed = service.sink(run);
         resumed.roundStarted();
         resumed.delta("b");
-        resumed.toolStarted("call-2", "run_command");
+        resumed.toolStarted("call-2", "run_command", null);
         AgentRunSnapshot afterResume = recent(run);
         assertThat(afterResume.getRound()).isEqualTo(2);
         assertThat(afterResume.getSeq()).isEqualTo(2);
@@ -128,7 +180,7 @@ class AgentStreamServiceTest {
                 .extracting(AgentRunSnapshot.Segment::text)
                 .containsExactly("b");
 
-        resumed.toolFinished("call-2", "run_command", false);
+        resumed.toolFinished("call-2", "run_command", false, null);
         resumed.finished();
         ArgumentCaptor<java.util.Map<String, Object>> payload =
                 ArgumentCaptor.forClass(java.util.Map.class);
@@ -199,14 +251,16 @@ class AgentStreamServiceTest {
 
         sink.roundStarted();
         sink.delta("a");
-        sink.toolStarted("call-1", "run_command");
+        sink.toolStarted("call-1", "run_command", null);
         AgentRunSnapshot toolStarted = recent(child);
         assertThat(toolStarted.getTools())
                 .extracting(AgentRunSnapshot.Tool::toolCallId)
                 .containsExactly("call-1");
-        sink.toolFinished("call-1", "run_command", true);
+        sink.toolFinished("call-1", "run_command", true, null);
         AgentRunSnapshot toolFinished = recent(child);
-        assertThat(toolFinished.getTools()).isEmpty();
+        assertThat(toolFinished.getTools())
+                .extracting(AgentRunSnapshot.Tool::state)
+                .containsExactly("ok");
         assertThat(toolFinished.getRevision()).isGreaterThan(toolStarted.getRevision());
         assertThat(toolStarted.getRevision()).isGreaterThan(started.getRevision());
 
@@ -272,7 +326,8 @@ class AgentStreamServiceTest {
     @Test
     void slowClientIsDisconnectedInsteadOfAccumulatingFrames() throws Exception {
         when(groups.requireGroupMember(any(), any(), any())).thenReturn(new ChatGroupEntity());
-        AgentStreamService blocked = new AgentStreamService(events, runs, groups, timeout -> emitter, task -> {});
+        AgentStreamService blocked =
+                new AgentStreamService(events, runs, toolRuns, groups, timeout -> emitter, task -> {});
         AgentRunEntity run = run();
         blocked.openGroupStream(run.getProjectId(), run.getGroupId(), TestIds.next());
         RunStreamSink sink = blocked.sink(run);
@@ -282,6 +337,68 @@ class AgentStreamServiceTest {
         }
 
         verify(emitter, timeout(2000)).complete();
+    }
+
+    @Test
+    void keepsToolDetailsInRecentRunsAfterTheLiveRunIsCleanedUp() {
+        when(groups.requireGroupMember(any(), any(), any())).thenReturn(new ChatGroupEntity());
+        AgentRunEntity run = run();
+        when(runs.selectList(any())).thenReturn(List.of(run));
+        RunStreamSink sink = service.sink(run);
+        sink.roundStarted();
+        sink.toolStarted("call-1", "run_command", "{\"cmd\":\"ls\"}");
+        sink.toolFinished("call-1", "run_command", true, "{\"ok\":true,\"stdout\":\"a\"}");
+        sink.toolStarted("call-2", "read_file", "{\"path\":\"a.txt\"}");
+        run.setStatus(RunStatus.SUCCEEDED);
+        run.setResult("done");
+        sink.finished();
+
+        AgentRunSnapshot snapshot = recent(run);
+        assertThat(snapshot.getStatus()).isEqualTo("SUCCEEDED");
+        assertThat(snapshot.getTools())
+                .containsExactly(
+                        new AgentRunSnapshot.Tool(
+                                "call-1",
+                                "run_command",
+                                1,
+                                "ok",
+                                "{\"cmd\":\"ls\"}",
+                                "{\"ok\":true,\"stdout\":\"a\"}"),
+                        // 运行结束时仍 running 的工具按 done 返回。
+                        new AgentRunSnapshot.Tool(
+                                "call-2", "read_file", 1, "done", "{\"path\":\"a.txt\"}", null));
+
+        ArgumentCaptor<Map<String, Object>> payload = ArgumentCaptor.forClass(Map.class);
+        verify(events, org.mockito.Mockito.atLeastOnce())
+                .publish(any(), any(), eq("agent-run.tool"), any(), payload.capture());
+        assertThat(payload.getAllValues())
+                .anySatisfy(
+                        value -> {
+                            assertThat(value.get("phase")).isEqualTo("started");
+                            assertThat(value.get("input")).isEqualTo("{\"cmd\":\"ls\"}");
+                        })
+                .anySatisfy(
+                        value -> {
+                            assertThat(value.get("phase")).isEqualTo("finished");
+                            assertThat(value.get("output"))
+                                    .isEqualTo("{\"ok\":true,\"stdout\":\"a\"}");
+                        });
+    }
+
+    @Test
+    void truncatesToolInputAndOutputToTwoThousandCharacters() {
+        when(groups.requireGroupMember(any(), any(), any())).thenReturn(new ChatGroupEntity());
+        AgentRunEntity run = run();
+        when(runs.selectList(any())).thenReturn(List.of(run));
+        RunStreamSink sink = service.sink(run);
+        sink.roundStarted();
+        sink.toolStarted("call-1", "run_command", "x".repeat(2500));
+        sink.toolFinished("call-1", "run_command", false, "y".repeat(2500));
+
+        AgentRunSnapshot.Tool tool = recent(run).getTools().getFirst();
+        assertThat(tool.state()).isEqualTo("failed");
+        assertThat(tool.input()).isEqualTo("x".repeat(2000) + "…");
+        assertThat(tool.output()).isEqualTo("y".repeat(2000) + "…");
     }
 
     private AgentRunSnapshot recent(AgentRunEntity run) {

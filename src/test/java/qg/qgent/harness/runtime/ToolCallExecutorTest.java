@@ -239,18 +239,21 @@ class ToolCallExecutorTest {
     @Test
     void reportsToolLifecycleWithCallIdsAndFailureOutcome() {
         var events = new java.util.ArrayList<String>();
+        var outputs = new java.util.HashMap<String, String>();
         RunStreamSink sink =
                 new RunStreamSink() {
                     public void roundStarted() {}
 
                     public void delta(String text) {}
 
-                    public void toolStarted(String toolCallId, String toolName) {
-                        events.add("started:" + toolCallId + ":" + toolName);
+                    public void toolStarted(String toolCallId, String toolName, String input) {
+                        events.add("started:" + toolCallId + ":" + toolName + ":" + input);
                     }
 
-                    public void toolFinished(String toolCallId, String toolName, Boolean ok) {
+                    public void toolFinished(
+                            String toolCallId, String toolName, Boolean ok, String output) {
                         events.add("finished:" + toolCallId + ":" + toolName + ":" + ok);
+                        outputs.put(toolCallId, output);
                     }
 
                     public void finished() {}
@@ -286,14 +289,19 @@ class ToolCallExecutorTest {
         assertThat(result.responses().get(3).responseData()).contains("\"ok\":true");
         assertThat(events)
                 .containsExactly(
-                        "started:call-x:boom",
+                        "started:call-x:boom:{}",
                         "finished:call-x:boom:false",
-                        "started:call-y:missing",
+                        "started:call-y:missing:{}",
                         "finished:call-y:missing:false",
-                        "started:call-z:soft",
+                        "started:call-z:soft:{}",
                         "finished:call-z:soft:false",
-                        "started:call-w:good",
+                        "started:call-w:good:{}",
                         "finished:call-w:good:true");
+        assertThat(outputs)
+                .containsEntry("call-z", "{\"ok\":false,\"errorCode\":\"X\"}")
+                .containsEntry("call-w", "{\"ok\":true}");
+        assertThat(outputs.get("call-x")).contains("TOOL_FAILED");
+        assertThat(outputs.get("call-y")).contains("TOOL_NOT_FOUND");
     }
 
     @Test

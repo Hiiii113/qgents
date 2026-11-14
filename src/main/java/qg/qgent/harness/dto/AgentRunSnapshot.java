@@ -45,7 +45,7 @@ public class AgentRunSnapshot {
     @Schema(description = "已 flush 的可展示正文分段")
     private List<Segment> segments;
 
-    @Schema(description = "当前仍在执行的工具调用")
+    @Schema(description = "运行内的工具调用，按开始顺序，含已结束的工具")
     private List<Tool> tools;
 
     @Schema(description = "数据库中的最终结果文本")
@@ -57,6 +57,7 @@ public class AgentRunSnapshot {
     public record Segment(int round, String text) {
     }
 
-    public record Tool(String toolCallId, String tool, int round) {
+    public record Tool(
+        String toolCallId, String tool, int round, String state, String input, String output) {
     }
 }

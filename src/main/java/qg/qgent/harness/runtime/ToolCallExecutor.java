@@ -135,10 +135,11 @@ final class ToolCallExecutor {
 
     private ToolResponse invoke(
         ToolCall call, Map<String, ToolCallback> callbacks, RunStreamSink sink) {
-        sink.toolStarted(call.id(), call.name());
+        sink.toolStarted(call.id(), call.name(), call.arguments());
         // 未知工具与异常一定是失败；正常返回时只信 ToolResult 的 ok 字段，其他结果不声称成功。
         Boolean ok = false;
-        String result;
+        // 声明在 try 之外：finally 要用到最后的结果，未正常返回时按空结果上报。
+        String result = null;
         try {
             ToolCallback callback = callbacks.get(call.name());
             if (callback == null) result = error("TOOL_NOT_FOUND", "本轮没有工具：" + call.name());
@@ -161,7 +162,7 @@ final class ToolCallExecutor {
                 }
             }
         } finally {
-            sink.toolFinished(call.id(), call.name(), ok);
+            sink.toolFinished(call.id(), call.name(), ok, result);
         }
         return new ToolResponse(call.id(), call.name(), result);
     }
