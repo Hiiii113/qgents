@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>Architecture review — qgents</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+</script>
+<style>
+  .seam { stroke-dasharray: 4 4; }
+  .leak { stroke: #dc2626; }
+  .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+  .chip { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .mermaid { display: flex; justify-content: center; }
+</style>
+</head>
+<body class="bg-stone-50 text-slate-900 font-sans">
+<main class="max-w-5xl mx-auto px-6 py-12 space-y-12">
+
+  <header class="space-y-4 border-b border-slate-200 pb-8">
+    <h1 class="font-serif text-4xl tracking-tight">Architecture review — <span class="font-mono text-3xl">qgents</span></h1>
+    <p class="text-sm text-slate-500">2026-11-09 · 后端 <span class="font-mono">src/main/java/qg/qgent</span> · 18.7k 行 · 92 个测试类 · 无 GLOSSARY.md / ADR</p>
+    <div class="flex flex-wrap gap-4 text-xs text-slate-600 pt-2">
+      <span class="flex items-center gap-2"><span class="inline-block w-6 h-4 border-2 border-slate-800"></span>module</span>
+      <span class="flex items-center gap-2"><span class="inline-block w-6 h-0 border-t-2 border-dashed border-slate-800"></span>seam</span>
+      <span class="flex items-center gap-2"><span class="inline-block w-6 h-0 border-t-2 border-red-600"></span>leakage</span>
+      <span class="flex items-center gap-2"><span class="inline-block w-6 h-4 deep"></span>deep module</span>
+    </div>
+    <p class="text-xs text-slate-500 pt-1">热区（近 60 次提交的改动密度）：sandbox 146 · chat 103 · auth 81 · team 80 · project 71 · attachment 69 · harness 65。</p>
+  </header>
+
+  <section id="candidates" class="space-y-14">
+
+    <!-- ============ C1 ============ -->
+    <article id="c1" class="bg-white rounded-xl border border-slate-200 p-8 space-y-6">
+      <div class="flex items-start justify-between gap-4">
+        <h2 class="font-serif text-2xl">1 · 工具结果只留一个形状：<span class="font-mono text-xl">ToolResult</span></h2>
+        <span class="shrink-0 text-xs uppercase tracking-wider bg-emerald-100 text-emerald-800 rounded-full px-3 py-1">Strong</span>
+      </div>
+      <div class="text-xs font-mono text-slate-500 space-y-0.5">
+        harness/runtime/ToolCallExecutor.java · sandbox/tool/CodingTools.java · sandbox/service/SandboxFiles.java ·
+        sandbox/service/SandboxCommands.java · memory/tool/MemoryTools.java · chat/tool/ChatHistorySearchTool.java ·
+        skill/tool/ActivateSkillTool.java · attachment/tool/ReadAttachmentTool.java · workspace/tool/WorkspaceTools.java ·
+        github/tool/GitHubTools.java · harness/runtime/AgentChatService.java
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="rounded-lg border border-slate-200 p-4 bg-stone-50">
+          <div class="text-xs uppercase tracking-wider text-slate-500 mb-3">Before — 4 种失败形状</div>
+          <div class="space-y-2">
+            <div class="chip text-[11px] bg-white border border-slate-300 rounded p-2">
+              <div class="text-emerald-700">ToolCallExecutor / CodingTools / SandboxFiles</div>
+              {"ok":false,"errorCode":"FILE_NOT_READ","error":"…"}
+            </div>
+            <div class="chip text-[11px] bg-white border border-slate-300 rounded p-2">
+              <div class="text-emerald-700">MemoryTools / ChatHistorySearchTool / ActivateSkillTool</div>
+              {"ok":false,"error":"…"}
+            </div>
+            <div class="chip text-[11px] bg-white border border-slate-300 rounded p-2">
+              <div class="text-emerald-700">GitHubTools</div>
+              {"ok":false,"error":{"code","message","nextAction","httpStatus"}}
+            </div>
+            <div class="chip text-[11px] bg-white border border-slate-300 rounded p-2">
+              <div class="text-emerald-700">WorkspaceTools.createWorkspace</div>
+              {"ok":true,"workspaceId":"12","error":null,"repositories":[…]}
+            </div>
+          </div>
+          <div class="mt-3 text-[11px] text-red-700">模型（唯一消费者）必须认识全部四种。</div>
+        </div>
+
+        <div class="rounded-lg border-2 border-slate-800 p-4 deep text-slate-100 relative">
+          <div class="text-xs uppercase tracking-wider text-slate-400 mb-3">After — 一个 module，一个 envelope</div>
+          <div class="bg-slate-800/70 border border-slate-600 rounded p-3 space-y-2">
+            <div class="text-sm font-mono">ToolResult</div>
+            <div class="text-[11px] font-mono text-slate-300 leading-relaxed">
+              ok(value…) · error(code, message, details…) · running(executionId…)<br/>
+              → {ok, errorCode, error, details}
+            </div>
+          </div>
+          <div class="mt-3 text-[11px] text-slate-400">序列化只在 ToolCallExecutor 一处；异常→错误码的映射也在这里。</div>
+          <svg class="absolute -left-6 top-1/2 w-5 h-0" viewBox="0 0 20 0"></svg>
+        </div>
+      </div>
+
+      <p class="text-sm"><span class="font-semibold">Problem:</span> 面向模型的 interface 是 <span class="font-mono">Map&lt;String,Object&gt;</span>，<span class="font-mono">ok/errorCode/error</span> 的约定在 8 个模块里各写一遍，形状已经分叉。</p>
+      <p class="text-sm"><span class="font-semibold">Solution:</span> 一个 <span class="font-mono">ToolResult</span> module，工具返回它；ToolCallExecutor 负责序列化和兜底错误码。</p>
+      <ul class="text-sm grid sm:grid-cols-2 gap-1 list-disc pl-5 text-slate-700">
+        <li>locality：失败形状只定义一次</li>
+        <li>leverage：30+ 工具共用一个 interface</li>
+        <li>interface 收窄，implementation 吸收 6 份 <span class="font-mono">error()</span></li>
+        <li>2 份重复的 <span class="font-mono">safeMessage(Throwable)</span> 一并消失</li>
+      </ul>
+    </article>
+
+    <!-- ============ C2 ============ -->
+    <article id="c2" class="bg-white rounded-xl border border-slate-200 p-8 space-y-6">
+      <div class="flex items-start justify-between gap-4">
+        <h2 class="font-serif text-2xl">2 · 委派子 Agent 的生命周期收进 <span class="font-mono text-xl">ChildRuns</span></h2>
+        <span class="shrink-0 text-xs uppercase tracking-wider bg-amber-100 text-amber-800 rounded-full px-3 py-1">Worth exploring</span>
+      </div>
+      <div class="text-xs font-mono text-slate-500 space-y-0.5">
+        harness/runtime/WorkContext.java · harness/runtime/AgentChatService.java · harness/service/AgentRunService.java ·
+        sandbox/service/SandboxSessionManager.java · test/harness/runtime/AgentChatServiceTest.java (833 行)
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="rounded-lg border border-slate-200 p-4 bg-white">
+          <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Before — 状态机两个主人</div>
+          <pre class="mermaid">
+flowchart TB
+  T1["start_subagent / wait / stop 工具"] --> WC
+  T2["取消信号 (replyToMention)"] --> WC
+  T3["finishChild / finishChildAfterBegin"] --> WC
+  T4["sandbox 取消命令"] --> WC
+  subgraph WC["WorkContext（15 个包内成员）"]
+    F1["activeChildren"]
+    F2["busy / stopRequested"]
+    F3["finishing / turnFinished"]
+    F4["reservationHeld"]
+    F5["notifications"]
+  end
+  WC -.leak.-> ARS["AgentRunService（状态落库）"]
+  WC -.leak.-> SSM["SandboxSessionManager（取消命令）"]
+  classDef leak stroke:#dc2626,stroke-width:2px;
+  class ARS,SSM leak
+          </pre>
+        </div>
+
+        <div class="rounded-lg border-2 border-slate-800 p-4 deep text-slate-100 flex flex-col justify-center">
+          <div class="text-xs uppercase tracking-wider text-slate-400 mb-3">After — 5 个方法一个 seam</div>
+          <div class="space-y-2">
+            <div class="font-mono text-sm">ChildRuns</div>
+            <div class="font-mono text-[11px] text-slate-300 leading-relaxed border-t border-slate-600 pt-2">
+              start(instruction) → runId<br/>
+              continue(runId, text)<br/>
+              stop(runId) · cancelAll()<br/>
+              status(runId) · awaitIdle()
+            </div>
+            <div class="text-[11px] text-slate-400 pt-1">loop、conversation、取消信号从外面传进来；三对 synchronized 留在里面。</div>
+          </div>
+        </div>
+      </div>
+
+      <p class="text-sm"><span class="font-semibold">Problem:</span> 一次委派的状态分散在 WorkContext 与 AgentChatService 两边，三对嵌套 synchronized 由 4 个不同入口驱动；AgentChatService 因此有 17 个构造参数，测试要 mock 10 个协作者。</p>
+      <p class="text-sm"><span class="font-semibold">Solution:</span> <span class="font-mono">ChildRuns</span> 拥有「预约 → 运行 → 结算 → 通知 → 停止」全过程，harness 只保留工具与提示词。</p>
+      <ul class="text-sm grid sm:grid-cols-2 gap-1 list-disc pl-5 text-slate-700">
+        <li>locality：竞态与通知逻辑一处</li>
+        <li>interface：15 → 5</li>
+        <li>测试跨同一个 seam 验证取消与续接</li>
+        <li>删掉 AgentChatService 里 4 个结算方法</li>
+      </ul>
+      <div class="text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded p-3">
+        这是六个候选里风险最高、也最能改变形状的一个：并发状态可以重构，竞态语义不能变；现有的 mock 测试无法证明并发正确，先把状态机搬到 seam 后面再补测试。
+      </div>
+    </article>
+
+    <!-- ============ C3 ============ -->
+    <article id="c3" class="bg-white rounded-xl border border-slate-200 p-8 space-y-6">
+      <div class="flex items-start justify-between gap-4">
+        <h2 class="font-serif text-2xl">3 · 消息视图与游标只留一份：<span class="font-mono text-xl">MessageViews</span></h2>
+        <span class="shrink-0 text-xs uppercase tracking-wider bg-emerald-100 text-emerald-800 rounded-full px-3 py-1">Strong</span>
+      </div>
+      <div class="text-xs font-mono text-slate-500 space-y-0.5">
+        chat/service/MessageService.java (535 行) · common/dto/KeysetPagination.java · attachment/service/AttachmentService.java
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="rounded-lg border border-slate-200 p-4 bg-white">
+          <div class="text-xs uppercase tracking-wider text-slate-500 mb-3">Before — 4 条路径，1 条 N+1</div>
+          <div class="grid grid-cols-4 gap-2 text-[10px] text-center">
+            <div class="border border-slate-300 rounded py-2">send</div>
+            <div class="border border-slate-300 rounded py-2">list</div>
+            <div class="border border-slate-300 rounded py-2">getMessage</div>
+            <div class="border border-slate-300 rounded py-2">listAfter</div>
+          </div>
+          <svg viewBox="0 0 300 40" class="w-full h-8"><g stroke="#94a3b8" stroke-width="1">
+            <line x1="38" y1="0" x2="38" y2="38"/><line x1="112" y1="0" x2="112" y2="38"/>
+            <line x1="187" y1="0" x2="187" y2="38"/><line x1="262" y1="0" x2="262" y2="38"/></g></svg>
+          <div class="space-y-1.5 text-[11px]">
+            <div class="chip bg-stone-50 border border-slate-300 rounded px-2 py-1">toResponse(m) / toResponse(m, names) / toResponse(m, senderName)</div>
+            <div class="chip bg-stone-50 border border-slate-300 rounded px-2 py-1">enrichAttachmentPreview ← 每条附件消息查一次库</div>
+            <div class="chip bg-stone-50 border border-slate-300 rounded px-2 py-1 text-red-700">cursor_… (MessageService 私有) ✗ scope|id (KeysetPagination)</div>
+            <div class="chip bg-stone-50 border border-slate-300 rounded px-2 py-1">pageSize = min(max(limit,1),100) 重复 2 次</div>
+          </div>
+        </div>
+
+        <div class="rounded-lg border-2 border-slate-800 p-4 deep text-slate-100 flex flex-col justify-center">
+          <div class="text-xs uppercase tracking-wider text-slate-400 mb-3">After — 组装一次</div>
+          <div class="font-mono text-sm">MessageViews</div>
+          <div class="font-mono text-[11px] text-slate-300 leading-relaxed border-t border-slate-600 mt-2 pt-2">
+            assemble(rows, projectId) → List&lt;MessageResponse&gt;<br/>
+            <span class="text-slate-400">批量取发送者名 + 批量取附件预览</span>
+          </div>
+          <div class="mt-3 border border-slate-600 rounded p-2 text-[11px] font-mono text-slate-300">
+            KeysetPagination.keysetPage(rows, size, "group-messages:"+groupId, …)
+          </div>
+        </div>
+      </div>
+
+      <p class="text-sm"><span class="font-semibold">Problem:</span> 三个 <span class="font-mono">toResponse</span> 重载和附件预览在 4 条路径各走一遍；列表路径每条附件消息单独查库（N+1）；消息游标是 MessageService 私有的一套 base64，和共享的 KeysetPagination 不通用。</p>
+      <p class="text-sm"><span class="font-semibold">Solution:</span> 一个 <span class="font-mono">MessageViews</span> module 承担行→视图的全部组装并批量取依赖；分页改用 KeysetPagination，scope 绑定 groupId。</p>
+      <ul class="text-sm grid sm:grid-cols-2 gap-1 list-disc pl-5 text-slate-700">
+        <li>一次批量查询代替 N 次</li>
+        <li>一个游标规则，附件/团队/项目通用</li>
+        <li>发送、列表、单条共用同一组装</li>
+        <li>测试只对 assemble 断言一次</li>
+      </ul>
+    </article>
+
+    <!-- ============ C4 ============ -->
+    <article id="c4" class="bg-white rounded-xl border border-slate-200 p-8 space-y-6">
+      <div class="flex items-start justify-between gap-4">
+        <h2 class="font-serif text-2xl">4 · 团队/项目角色只在一个 module 里推导</h2>
+        <span class="shrink-0 text-xs uppercase tracking-wider bg-amber-100 text-amber-800 rounded-full px-3 py-1">Worth exploring</span>
+      </div>
+      <div class="text-xs font-mono text-slate-500 space-y-0.5">
+        project/service/ProjectAccessService.java · project/service/ProjectService.java · team/service/TeamService.java ·
+        auth/service/AuthService.java · skill/service/SkillService.java · github/service/GitHubRepositoryService.java ·
+        chat/service/GroupService.java · memory/service/ProjectMemoryService.java · attachment/service/AttachmentService.java
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="rounded-lg border border-slate-200 p-4 bg-white">
+          <div class="text-xs uppercase tracking-wider text-slate-500 mb-2">Before — 四个推导点</div>
+          <pre class="mermaid">
+flowchart TB
+  TS["TeamService<br/>effectiveRole / requireManager / requireOwner"] --> C1["SkillService"]
+  PS["ProjectService<br/>requireTeamManager / requireTeam*"] --> C2["GroupService"]
+  PAS["ProjectAccessService<br/>isCanonicalTeamOwner / requireAdmin"] --> C3["GitHubRepositoryService"]
+  AS["AuthService<br/>内联角色三元表达式"] --> C4["MemoryService / AttachmentService"]
+  classDef leak stroke:#dc2626,stroke-width:2px;
+  class PS,AS leak
+          </pre>
+        </div>
+
+        <div class="rounded-lg border-2 border-slate-800 p-4 deep text-slate-100 flex flex-col justify-center">
+          <div class="text-xs uppercase tracking-wider text-slate-400 mb-3">After — 一个 module 回答「他是什么角色」</div>
+          <div class="font-mono text-sm">Access</div>
+          <div class="font-mono text-[11px] text-slate-300 leading-relaxed border-t border-slate-600 mt-2 pt-2">
+            roleInTeam(teamId, userId) → TEAM_OWNER | TEAM_ADMIN | TEAM_MEMBER<br/>
+            requireTeamManager / requireProjectAdmin<br/>
+            teamForUpdate(teamId) <span class="text-slate-400">（锁顺序）</span>
+          </div>
+          <div class="text-[11px] text-slate-400 mt-3">TeamService、ProjectService、AuthService 都调它。</div>
+        </div>
+      </div>
+
+      <p class="text-sm"><span class="font-semibold">Problem:</span> 角色推导写了两份（TeamService、AuthService），ProjectService 又复制了一套团队查询与管理员校验；18 个类提到 <span class="font-mono">TEAM_OWNER / PROJECT_ADMIN</span>，没有一个 module 能回答「这个人在这个团队/项目里是什么角色」。</p>
+      <p class="text-sm"><span class="font-semibold">Solution:</span> 一个 <span class="font-mono">Access</span> module 拥有角色推导、canonical owner 兜底和团队行锁顺序；ProjectAccessService 只保留项目成员查询。</p>
+      <ul class="text-sm grid sm:grid-cols-2 gap-1 list-disc pl-5 text-slate-700">
+        <li>locality：角色规则一处，改一次全生效</li>
+        <li>ProjectAccessServiceTest 成为唯一 seam</li>
+        <li>删掉 ProjectService 里 5 个复制的团队方法</li>
+        <li>团队管理员边界有单一测试面</li>
+      </ul>
+      <div class="text-xs bg-amber-50 border border-amber-200 text-amber-900 rounded p-3">
+        最近三次提交（团队管理员、项目管理员、权限边界）都在这一片；这也是它值得先于其他团队/项目重构的原因。
+      </div>
+    </article>
+
+    <!-- ============ C5 ============ -->
+    <article id="c5" class="bg-white rounded-xl border border-slate-200 p-8 space-y-6">
+      <div class="flex items-start justify-between gap-4">
+        <h2 class="font-serif text-2xl">5 · <span class="font-mono text-xl">WorkspaceTools</span> 的 4 个回调换成一个 <span class="font-mono text-xl">WorkSession</span> seam</h2>
+        <span class="shrink-0 text-xs uppercase tracking-wider bg-slate-200 text-slate-700 rounded-full px-3 py-1">Speculative</span>
+      </div>
+      <div class="text-xs font-mono text-slate-500 space-y-0.5">
+        workspace/tool/WorkspaceTools.java · sandbox/tool/CodingTools.java · harness/runtime/AgentChatService.java ·
+        workspace/service/WorkspaceSelection.java
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="rounded-lg border border-slate-200 p-4 bg-white">
+          <div class="text-xs uppercase tracking-wider text-slate-500 mb-3">Before — interface 是 6 个 lambda</div>
+          <div class="flex items-stretch gap-3">
+            <div class="flex-1 border border-slate-400 rounded p-2 text-[10px] leading-tight">
+              WorkspaceTools<br/><span class="font-mono">Supplier&lt;Long&gt; environment<br/>Supplier&lt;Long&gt; initializedEnvironment<br/>Function&lt;Long,Long&gt; environmentFor<br/>Consumer&lt;Long&gt; selectionChanged</span>
+            </div>
+            <div class="flex-1 border border-slate-400 rounded p-2 text-[10px] leading-tight">
+              CodingTools<br/><span class="font-mono">Supplier&lt;Long&gt; workspace<br/>Supplier&lt;String&gt; directory</span>
+            </div>
+          </div>
+          <div class="mt-3 text-[11px] text-red-700">harness 每次都要知道「先 ensureCodeEnvironment 再 runService.save」。</div>
+          <div class="mt-2 chip text-[10px] bg-stone-50 border border-slate-300 rounded px-2 py-1">测试里：() -&gt; 11L, () -&gt; 11L, id -&gt; id, id -&gt; { }</div>
+        </div>
+
+        <div class="rounded-lg border-2 border-slate-800 p-4 deep text-slate-100 flex flex-col justify-center">
+          <div class="text-xs uppercase tracking-wider text-slate-400 mb-3">After — 一个会话 seam</div>
+          <div class="font-mono text-sm">WorkSession <span class="text-slate-400 text-xs">（WorkContext 持有）</span></div>
+          <div class="font-mono text-[11px] text-slate-300 leading-relaxed border-t border-slate-600 mt-2 pt-2">
+            workspaceId() · directory()<br/>
+            ensure() → workspaceId<br/>
+            select(workspaceId) · setDirectory(path)
+          </div>
+          <div class="text-[11px] text-slate-400 mt-3">WorkspaceTools 与 CodingTools 只认识它。</div>
+        </div>
+      </div>
+
+      <p class="text-sm"><span class="font-semibold">Problem:</span> 两个工具类从 harness 收 6 个 lambda，harness 必须知道「准备环境后把 workspaceId 落库」这一内部约定；测试也要手搓 lambda。</p>
+      <p class="text-sm"><span class="font-semibold">Solution:</span> <span class="font-mono">WorkContext</span> 持有 <span class="font-mono">WorkSession</span>，工具收一个对象而不是 4 个回调。</p>
+      <ul class="text-sm grid sm:grid-cols-2 gap-1 list-disc pl-5 text-slate-700">
+        <li>interface 从 6 个 lambda 变 1 个 seam</li>
+        <li>「选择变化要落库」留在 harness 内</li>
+        <li>测试直接断言会话状态</li>
+        <li>合并 WorkspaceSelection 这一层薄包装</li>
+      </ul>
+    </article>
+
+    <!-- ============ C6 ============ -->
+    <article id="c6" class="bg-white rounded-xl border border-slate-200 p-8 space-y-6">
+      <div class="flex items-start justify-between gap-4">
+        <h2 class="font-serif text-2xl">6 · 附件类型从字符串变能力：<span class="font-mono text-xl">AttachmentKind</span></h2>
+        <span class="shrink-0 text-xs uppercase tracking-wider bg-amber-100 text-amber-800 rounded-full px-3 py-1">Worth exploring</span>
+      </div>
+      <div class="text-xs font-mono text-slate-500 space-y-0.5">
+        attachment/service/AttachmentService.java · attachment/tool/ReadAttachmentTool.java ·
+        attachment/web/AttachmentResponseFactory.java · chat/service/MessageService.java
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-6">
+        <div class="rounded-lg border border-slate-200 p-4 bg-white">
+          <div class="text-xs uppercase tracking-wider text-slate-500 mb-3">Before — 一个集合，四道分散判断</div>
+          <div class="flex flex-wrap gap-1 mb-3">
+            <span class="chip text-[10px] border border-slate-400 rounded px-2 py-0.5">IMAGE</span>
+            <span class="chip text-[10px] border border-slate-400 rounded px-2 py-0.5">TEXT</span>
+            <span class="chip text-[10px] border border-slate-400 rounded px-2 py-0.5">CODE</span>
+            <span class="chip text-[10px] border border-slate-400 rounded px-2 py-0.5">PDF</span>
+            <span class="chip text-[10px] border border-slate-400 rounded px-2 py-0.5">UNSUPPORTED</span>
+          </div>
+          <div class="space-y-1.5 text-[11px]">
+            <div class="border-l-4 border-slate-300 pl-2">classifyPreviewType → <span class="text-slate-500">AttachmentService（唯一产出点）</span></div>
+            <div class="border-l-4 border-red-400 pl-2">"IMAGE".equals → ReadAttachmentTool 分支</div>
+            <div class="border-l-4 border-red-400 pl-2">"TEXT"/"CODE" → AttachmentResponseFactory 的 Content-Type</div>
+            <div class="border-l-4 border-red-400 pl-2">"UNSUPPORTED" → previewable 判定（info / messagePreview 各一次）</div>
+            <div class="border-l-4 border-red-400 pl-2">"TEXT"/"CODE" → readTextChunk 的守卫</div>
+          </div>
+          <div class="mt-3 text-[11px] text-red-700">新增一种类型要改 4 个文件。</div>
+        </div>
+
+        <div class="rounded-lg border-2 border-slate-800 p-4 deep text-slate-100 flex flex-col justify-center">
+          <div class="text-xs uppercase tracking-wider text-slate-400 mb-3">After — 枚举带能力</div>
+          <div class="font-mono text-sm">AttachmentKind</div>
+          <div class="font-mono text-[11px] text-slate-300 leading-relaxed border-t border-slate-600 mt-2 pt-2">
+            readableAsText · readableAsImage<br/>
+            previewable · responseContentType
+          </div>
+          <div class="text-[11px] text-slate-400 mt-3">callers 只问 kind，不再比对字符串。</div>
+        </div>
+      </div>
+
+      <p class="text-sm"><span class="font-semibold">Problem:</span> 类型是 5 个字符串常量，但「能不能当图片读／响应用什么 Content-Type／能不能预览」的判断分散在三个模块；新增类型要同时改 4 处。</p>
+      <p class="text-sm"><span class="font-semibold">Solution:</span> <span class="font-mono">AttachmentKind</span> enum 带能力，分类与能力判断一起收进这个 module，调用方只问 kind。</p>
+      <ul class="text-sm grid sm:grid-cols-2 gap-1 list-disc pl-5 text-slate-700">
+        <li>locality：类型集合与能力一处</li>
+        <li>新增类型只改枚举</li>
+        <li>预览判定不再重复两次</li>
+        <li>ReadAttachmentTool 的 if 分支消失</li>
+      </ul>
+    </article>
+
+  </section>
+
+  <section id="top-recommendation" class="bg-white rounded-xl border-2 border-slate-800 p-8 space-y-3">
+    <div class="text-xs uppercase tracking-wider text-slate-500">Top recommendation</div>
+    <h2 class="font-serif text-2xl">先做 <a href="#c1" class="underline decoration-emerald-500 decoration-2 underline-offset-4">1 · ToolResult</a></h2>
+    <p class="text-sm text-slate-700">六个候选里唯一「一天能落地、之后每个候选都变小」的一个：它先把面向模型的 interface 收成一处，后续 ChildRuns 的 ConversationTools、MessageViews、WorkspaceTools 都少写一份错误形状。C2 改变形状最多，等 C1 落地后再动。</p>
+  </section>
+
+</main>
+</body>
+</html>
