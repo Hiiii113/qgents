@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.KeyPairGenerator;
 import java.util.Base64;
+import org.bouncycastle.openssl.jcajce.JcaPEMWriter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.http.HttpMethod;
@@ -80,13 +81,10 @@ class GitHubAppClientTest {
         var generator = KeyPairGenerator.getInstance("RSA");
         generator.initialize(2048);
         var key = temp.resolve("app.pem");
-        Files.writeString(
-                key,
-                "-----BEGIN PRIVATE KEY-----\n"
-                        + Base64.getMimeEncoder(64, new byte[] {'\n'})
-                                .encodeToString(
-                                        generator.generateKeyPair().getPrivate().getEncoded())
-                        + "\n-----END PRIVATE KEY-----\n");
+        // 每次运行现生成密钥，仓库里不存私钥。
+        try (var writer = new JcaPEMWriter(Files.newBufferedWriter(key))) {
+            writer.writeObject(generator.generateKeyPair().getPrivate());
+        }
         var result = new GitHubAppProperties();
         result.setAppId("123");
         result.setSlug("qgents");

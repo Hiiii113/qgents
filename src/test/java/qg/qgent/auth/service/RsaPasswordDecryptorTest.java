@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.util.Base64;
 import javax.crypto.Cipher;
@@ -18,12 +19,7 @@ class RsaPasswordDecryptorTest {
         pairGenerator.initialize(2048);
         var pair = pairGenerator.generateKeyPair();
         Path privatePem = Files.createTempFile("qgents-test-private", ".pem");
-        Files.writeString(
-                privatePem,
-                "-----BEGIN PRIVATE KEY-----\n"
-                        + Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
-                                .encodeToString(pair.getPrivate().getEncoded())
-                        + "\n-----END PRIVATE KEY-----\n");
+        Files.writeString(privatePem, pem(pair));
         var decryptor = new RsaPasswordDecryptor(new FileSystemResource(privatePem), "rsa-test");
         Cipher cipher = Cipher.getInstance("RSA/ECB/PKCS1Padding");
         cipher.init(Cipher.ENCRYPT_MODE, pair.getPublic());
@@ -40,18 +36,18 @@ class RsaPasswordDecryptorTest {
         var pairGenerator = KeyPairGenerator.getInstance("RSA");
         pairGenerator.initialize(2048);
         Path privatePem = Files.createTempFile("qgents-test-private", ".pem");
-        Files.writeString(
-                privatePem,
-                "-----BEGIN PRIVATE KEY-----\n"
-                        + Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
-                                .encodeToString(
-                                        pairGenerator.generateKeyPair().getPrivate().getEncoded())
-                        + "\n-----END PRIVATE KEY-----\n");
+        Files.writeString(privatePem, pem(pairGenerator.generateKeyPair()));
         var decryptor = new RsaPasswordDecryptor(new FileSystemResource(privatePem), "rsa-test");
         assertThatThrownBy(() -> decryptor.decrypt("rsa-test", "not-base64"))
                 .isInstanceOf(qg.qgent.common.web.ApiException.class);
         assertThatThrownBy(() -> decryptor.decrypt("wrong-key", "not-base64"))
                 .isInstanceOf(qg.qgent.common.web.ApiException.class);
         Files.deleteIfExists(privatePem);
+    }
+
+    /** 每次运行现生成密钥，仓库里不存私钥；解密器会忽略 PEM 头尾和所有空白。 */
+    private static String pem(KeyPair pair) {
+        return Base64.getMimeEncoder(64, "\n".getBytes(StandardCharsets.US_ASCII))
+                .encodeToString(pair.getPrivate().getEncoded());
     }
 }

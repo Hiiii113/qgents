@@ -52,8 +52,8 @@ public class FixedAccountAuthIntegrationTest {
     @Test
     public void testFixedAccountAuthFlow() throws Exception {
         // 1. 设置固定测试账号
-        String fixedEmail = "dev_fixed_user@qgents.com";
-        String rawPassword = "password123456";
+        String fixedEmail = "dev-fixed-user@example.com";
+        String rawPassword = "qgents-integration-test-pw";
 
         // 读取私钥，并动态推导出公钥，用于给密码加密
         String pem =
