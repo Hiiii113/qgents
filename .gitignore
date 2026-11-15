@@ -76,3 +76,7 @@ nul
 
 # 内部文档只在本地保留，不公开。
 docs/
+
+# 内部规范与领域词只在本地保留，不公开。
+AGENTS.md
+GLOSSARY.md

@@ -179,9 +179,7 @@ Web 默认发到宿主机 80 端口，反代 `/api` 和 WebSocket；API 只发�
 
 ## 文档
 
-- `GLOSSARY.md`：项目自己的领域词，写代码和 issue 时以它为准
 - `sandbox-images/dev-tools/README.md`：沙箱镜像的构建与内置工具
-- `AGENTS.md`：开发规范与提交约定
 
 ## 安全
 
