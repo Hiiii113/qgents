@@ -1,6 +1,17 @@
+<div align="center">
+
 # Qgents
 
-在项目群聊里 @ 一个 Agent，它读完上下文，在 Docker 沙箱里改代码、跑命令，把分支推回 GitHub。
+**在项目群聊里 @ 一个 Agent，它在 Docker 沙箱里把活干完，把分支推回 GitHub。**
+
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/projects/jdk/21/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1-6DB33F.svg)](https://spring.io/projects/spring-boot)
+[![MySQL](https://img.shields.io/badge/MySQL-8.4-4479A1.svg)](https://www.mysql.com/)
+
+[快速开始](#快速开始) · [功能](#功能) · [架构](#架构) · [配置 GitHub App](#配置-github-app) · [部署](#部署)
+
+</div>
 
 ## 这是什么
 
@@ -56,7 +67,7 @@ Docker 连不上时后端照样能启动，只有需要沙箱的工具会失败�
 - 沙箱：用户命令跑在临时容器里，默认 2 核 / 4 GiB，空闲 30 分钟回收、最长闲置 2 小时，单条命令默认 15 分钟超时、上限 1 小时。
 - 三层记忆：项目共享的 `memory.md`、群记忆 `groups/<groupId>/memory.md`、Agent 私有记忆 `agent-memory/<agentId>/<groupId>.md`，都存在项目数据目录里，不是数据库表单。
 - 项目知识：项目 Skill、跨群历史检索、图片与文本附件（单个上限 50 MB，存本地磁盘或阿里云 OSS）。
-- GitHub App（可选）：团队安装，项目管理员导入仓库；Agent 能读 PR 和 Issue、拉代码、推分支，不会自动创建或合并 PR。
+- GitHub App（可选）：团队安装，项目管理员导入仓库；Agent 能读 PR 和 Issue、拉代码、推分支，不会自动创建或合并 PR。配置步骤见[配置 GitHub App](#配置-github-app)。
 - 实时与通知：项目事件走 SSE（可用 `Last-Event-ID` 续传）与 WebSocket；站内通知可选接 FCM 推到手机。
 
 ## 架构
@@ -126,6 +137,59 @@ docker-compose.yml          本地依赖、生产部署与可选 profile
 Linux 和 macOS 要把 `.env` 的 `SANDBOX_DOCKER_HOST` 改成 `unix:///var/run/docker.sock`，并让 `PROJECT_DATA_ROOT` 与 `PROJECT_DATA_DOCKER_HOST_ROOT` 指向同一个宿主机目录。Windows 用默认的 named pipe，路径写正斜杠。
 
 数据库表只在数据卷第一次初始化时创建。之后 `qgents_schema.sql` 新增了表，要么手动补进库，要么 `docker compose down -v` 重建（会清数据）。
+
+## 配置 GitHub App
+
+不配也能建项目、聊天、用沙箱，只是不能导入仓库、不能推分支。配一次，团队里所有的项目都在同一份授权下工作。
+
+### 1. 建一个 GitHub App
+
+到 `github.com/settings/apps` → New GitHub App（装在组织下就进组织设置建）。填三项：
+
+- Homepage URL：你的站点地址
+- Setup URL（Post installation）：`https://<你的域名>/api/integrations/github/callback`
+- Webhook URL：`https://<你的域名>/api/integrations/github/webhook`，填一个自己生成的随机串做 Webhook secret
+
+Setup URL 是安装完跳回来的地址，GitHub 只认 App 设置里的这个值，代码改不了。走 nginx 时外部路径是 `/api/...`（反代会改写成 `/api/v1/...`）；本地开发直连后端就写 `http://localhost:8080/api/v1/integrations/github/callback`。
+
+Webhook 只用来同步安装、卸载和仓库授权变化。本地没法让 GitHub 访问到你的机器时，可以先不配，App 照样能用，只是这类变化要手动点「刷新授权」。
+
+### 2. 开权限
+
+Repository permissions 里勾这几个：
+
+| 权限 | 级别 | 用来做什么 |
+| --- | --- | --- |
+| Contents | Read and write | 克隆、拉取、推送分支 |
+| Pull requests | Read and write | 读 PR 列表与详情；`github_request` 建 PR、留评论 |
+| Issues | Read and write | 读 Issue；建 Issue、改标签 |
+| Metadata | Read-only | 必选，GitHub 自动勾上，改不掉 |
+
+只想让 Agent 读不想让它写，把 Pull requests 和 Issues 设成 Read-only 就行，写操作会拿到 GitHub 的 403。
+
+### 3. 订阅事件
+
+Subscribe to events 只勾 `Installation` 和 `Installation repositories`。别的都不需要，这个 App 不接收 push、PR、Issue 事件。
+
+### 4. 私钥和 .env
+
+App 页面最下面点 Generate a private key，下载的 `.pem` 放到宿主机上（生产是 `$QGENTS_DATA_ROOT/github-app/private-key.pem`），然后把 `.env` 里这几项填上：
+
+```sh
+GITHUB_APP_ID=1234567                     # App 页面最上面的 App ID
+GITHUB_APP_SLUG=your-app-slug             # App 地址 /apps/ 后面那段
+GITHUB_APP_PRIVATE_KEY_PATH=/srv/qgents/github-app/private-key.pem
+GITHUB_WEBHOOK_SECRET=你刚填的随机串
+FRONTEND_URL_WEB=https://<你的域名>        # 安装完跳回的前端地址
+```
+
+三项缺一（App ID、slug、私钥）后端就当没配 GitHub，团队页面上的连接按钮会直接报未配置。
+
+### 5. 用起来
+
+团队页面 → GitHub → 连接，跳到 `github.com/apps/<slug>/installations/new`；选好仓库装完自动跳回前端。之后项目管理员在项目的「仓库」页导入需要的仓库。
+
+Agent 拿到的安装令牌只对当前项目已导入的那几个仓库有效，不是整个安装范围。
 
 ## 测试
 
