@@ -164,13 +164,13 @@ public class GroupService {
     }
 
     public GroupResponse get(Long actor, Long projectId, Long groupId) {
-        ChatGroupEntity group = requireGroupMember(projectId, groupId, actor);
+        ChatGroupEntity group = requireChatGroup(projectId, groupId, actor);
         return groupResponses(List.of(group), actor).getFirst();
     }
 
     @Transactional
     public GroupResponse update(Long actor, Long projectId, Long groupId, GroupUpdateRequest body) {
-        ChatGroupEntity group = requireGroupMember(projectId, groupId, actor);
+        ChatGroupEntity group = requireChatGroup(projectId, groupId, actor);
         if (!group.getCreatedBy().equals(actor)) {
             access.requireProjectAdmin(projectId, actor);
         }
@@ -196,7 +196,7 @@ public class GroupService {
     }
 
     public List<GroupMemberResponse> members(Long actor, Long projectId, Long groupId) {
-        ChatGroupEntity group = requireGroupMember(projectId, groupId, actor);
+        ChatGroupEntity group = requireChatGroup(projectId, groupId, actor);
         List<GroupMemberResponse> members = new ArrayList<>();
         boolean defaultGroup = isDefault(group);
         var userMembers =
@@ -225,19 +225,35 @@ public class GroupService {
     }
 
     /**
-     * Agent 在本项目里的群；它可能在提问题的人不在的群里。
+     * Agent 在本项目里的群；它可能在提问题的人不在的群里。私聊不是群，不会出现在跨群候选里。
      */
     public List<ChatGroupEntity> groupsOfAgent(Long projectId, Long agentId) {
         return groupAgentMapper.selectGroupIds(agentId).stream()
             .map(groupMapper::selectById)
             .filter(group -> group != null && group.getProjectId().equals(projectId))
+            .filter(group -> !group.isDirect())
             .toList();
     }
 
+    /**
+     * 会话参与者校验：群聊和私聊共用同一条 chat_groups 行与 group_users 成员关系。
+     * 项目管理员没有越过参与者的入口。
+     */
     public ChatGroupEntity requireGroupMember(Long projectId, Long groupId, Long actor) {
         access.requireProjectMember(projectId, actor);
         ChatGroupEntity group = requireGroupInProject(projectId, groupId);
         if (!isDefault(group) && !groupUserMapper.selectUserIds(groupId).contains(actor)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
+        }
+        return group;
+    }
+
+    /**
+     * 群专属能力（成员、资料、群记忆、跨群来源）的入口：私聊会话在这里按不存在处理。
+     */
+    public ChatGroupEntity requireChatGroup(Long projectId, Long groupId, Long actor) {
+        ChatGroupEntity group = requireGroupMember(projectId, groupId, actor);
+        if (group.isDirect()) {
             throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
         }
         return group;
@@ -266,11 +282,19 @@ public class GroupService {
 
     @Transactional
     public GroupReadResponse markRead(Long actor, Long projectId, Long groupId) {
-        requireGroupMember(projectId, groupId, actor);
+        requireChatGroup(projectId, groupId, actor);
+        return advanceRead(actor, groupId);
+    }
+
+    /**
+     * 把一个会话的已读游标推进到最新消息，群聊和私聊共用同一张游标表。
+     */
+    @Transactional
+    public GroupReadResponse advanceRead(Long actor, Long conversationId) {
         // 游标写入由 GREATEST 保证并发幂等。
-        long latest = nextReadSequence(groupId);
-        groupReadStateMapper.upsertSequence(actor, groupId, latest);
-        return new GroupReadResponse(id(groupId), latest, 0L);
+        long latest = nextReadSequence(conversationId);
+        groupReadStateMapper.upsertSequence(actor, conversationId, latest);
+        return new GroupReadResponse(id(conversationId), latest, 0L);
     }
 
     private long nextReadSequence(Long groupId) {
@@ -280,7 +304,7 @@ public class GroupService {
 
     @Transactional
     public GroupPinResponse setPinned(Long actor, Long projectId, Long groupId, boolean pinned) {
-        requireGroupMember(projectId, groupId, actor);
+        requireChatGroup(projectId, groupId, actor);
         userGroupPreferenceMapper.upsertPin(actor, groupId, pinned);
         return new GroupPinResponse(id(groupId), pinned);
     }
@@ -360,7 +384,7 @@ public class GroupService {
     @Transactional
     public List<GroupMemberResponse> invite(
         Long actor, Long projectId, Long groupId, GroupInviteRequest body) {
-        ChatGroupEntity group = requireGroupMember(projectId, groupId, actor);
+        ChatGroupEntity group = requireChatGroup(projectId, groupId, actor);
         validateInvites(projectId, body.getUserIds(), body.getAgentIds());
         // 默认群的用户随项目同步，只需追加 Agent。
         addMembers(groupId, isDefault(group) ? List.of() : body.getUserIds());

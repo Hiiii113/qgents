@@ -119,6 +119,7 @@ CREATE TABLE IF NOT EXISTS
         project_id BIGINT NOT NULL COMMENT '所属项目ID',
         created_by BIGINT NOT NULL COMMENT '创建用户ID',
         default_group TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否为项目自动创建的默认群',
+        kind VARCHAR(16) NOT NULL DEFAULT 'GROUP' COMMENT '会话类型枚举：GROUP 群聊 / DIRECT 私聊',
         name VARCHAR(255) NOT NULL COMMENT '群聊名称',
         last_message_at DATETIME (6) NULL COMMENT '最近消息时间（UTC）',
         created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
@@ -128,8 +129,9 @@ CREATE TABLE IF NOT EXISTS
         UNIQUE KEY uk_chat_default_project (default_project_id),
         KEY idx_rg_creator (created_by),
         CONSTRAINT fk_rg_project FOREIGN KEY (project_id) REFERENCES projects (id),
-        CONSTRAINT fk_rg_creator FOREIGN KEY (created_by) REFERENCES users (id)
-    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目需求讨论与协作上下文群';
+        CONSTRAINT fk_rg_creator FOREIGN KEY (created_by) REFERENCES users (id),
+        CONSTRAINT chk_chat_kind CHECK (kind IN ('GROUP', 'DIRECT'))
+    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目需求讨论与协作上下文群与私聊会话';
 
 CREATE TABLE IF NOT EXISTS group_users (
     group_id BIGINT NOT NULL,
@@ -146,6 +148,28 @@ CREATE TABLE IF NOT EXISTS group_agents (
     CONSTRAINT fk_ga_group FOREIGN KEY (group_id) REFERENCES chat_groups(id) ON DELETE CASCADE,
     CONSTRAINT fk_ga_agent FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '群聊的 Agent 成员；邀请即加入';
+
+-- 私聊会话：复用 chat_groups/messages 的行（group_id 即会话 ID），参与者固定为两位。
+-- 参与者按类型（USER 在前）与 ID 升序规范化存储，唯一键保证同一项目同一对端只有一条会话。
+CREATE TABLE IF NOT EXISTS direct_conversations (
+    group_id BIGINT NOT NULL PRIMARY KEY COMMENT '私聊会话ID，等于 chat_groups.id',
+    project_id BIGINT NOT NULL COMMENT '所属项目ID',
+    participant_a_type VARCHAR(16) NOT NULL COMMENT '参与者A类型，固定为 USER',
+    participant_a_id BIGINT NOT NULL COMMENT '参与者A ID（用户）',
+    participant_b_type VARCHAR(16) NOT NULL COMMENT '参与者B类型：USER/AGENT',
+    participant_b_id BIGINT NOT NULL COMMENT '参与者B ID',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '创建时间（UTC）',
+    UNIQUE KEY uk_direct_pair (project_id, participant_a_type, participant_a_id, participant_b_type, participant_b_id),
+    KEY idx_direct_a (participant_a_id),
+    KEY idx_direct_b (participant_b_id),
+    CONSTRAINT fk_direct_group FOREIGN KEY (group_id) REFERENCES chat_groups (id) ON DELETE CASCADE,
+    CONSTRAINT fk_direct_project FOREIGN KEY (project_id) REFERENCES projects (id),
+    CONSTRAINT chk_direct_pair CHECK (
+        participant_a_type = 'USER'
+        AND participant_b_type IN ('USER', 'AGENT')
+        AND (participant_b_type = 'AGENT' OR participant_a_id < participant_b_id)
+    )
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '一对一会话参与者（人与人、人与Agent）';
 
 CREATE TABLE IF NOT EXISTS
     messages (
@@ -441,6 +465,10 @@ CREATE TABLE IF NOT EXISTS
 -- DROP TABLE IF EXISTS project_memory_proposals;
 -- -- 项目 Agent 审批改为按申请 ID 进行，不再把申请绑定到 Agent 公布消息：
 -- ALTER TABLE agents DROP INDEX uk_agent_announced_message, DROP COLUMN announced_message_id;
+-- -- 私聊复用 chat_groups 行，新增会话类型列（direct_conversations 由上方建表语句创建）：
+-- ALTER TABLE chat_groups
+--     ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'GROUP' COMMENT '会话类型枚举：GROUP 群聊 / DIRECT 私聊' AFTER default_group,
+--     ADD CONSTRAINT chk_chat_kind CHECK (kind IN ('GROUP', 'DIRECT'));
 -- 已经在这个分支的早期构建上跑过的库（group_memory_state 缺列）不单独补：
 -- README 第 2 步的 docker compose down -v 重建就是支持路径。
 

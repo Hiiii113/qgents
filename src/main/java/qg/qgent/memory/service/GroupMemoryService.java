@@ -35,7 +35,8 @@ public class GroupMemoryService {
      */
     public GroupMemoryResponse get(Long actor, Long projectId, Long groupId) {
         access.requireProjectAdmin(projectId, actor);
-        groups.requireGroupMember(projectId, groupId, actor);
+        // 私聊没有群记忆，也不给管理员留越过双方的入口。
+        groups.requireChatGroup(projectId, groupId, actor);
         return read(projectId, groupId);
     }
 

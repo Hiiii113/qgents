@@ -581,7 +581,7 @@ class GroupMemoryExtractionServiceTest {
         Long groupId = TestIds.next();
         doThrow(new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问"))
                 .when(groups)
-                .requireGroupMember(projectId, groupId, actor);
+                .requireChatGroup(projectId, groupId, actor);
 
         assertThatThrownBy(() -> service.requestCorrection(actor, projectId, groupId, "结论应为 B"))
                 .isInstanceOf(ApiException.class);
