@@ -186,24 +186,27 @@ public class DirectMessageService {
     }
 
     /**
-     * 对端必须是本项目成员或已启用的本项目 Agent；不能和自己私聊。
+     * 对端必须是本项目成员或已启用的本项目 Agent；只有人与人会话才拒绝自己
+     * （用户与 Agent 的自增 ID 各自独立，重号不代表是同一个人）。
      */
     private DirectConversationEntity.Peer requirePeer(
         Long projectId, Long actor, DirectConversationCreateRequest body) {
         String type = body.getPeerType().trim().toUpperCase(Locale.ROOT);
         Long peerId = body.getPeerId();
-        if (peerId.equals(actor)) {
-            throw invalidPeer("不能和自己私聊");
-        }
         if (DirectConversationEntity.TYPE_AGENT.equals(type)) {
             agents.requireActiveProjectAgent(projectId, peerId);
             return new DirectConversationEntity.Peer(DirectConversationEntity.TYPE_AGENT, peerId);
         }
-        if (DirectConversationEntity.TYPE_USER.equals(type)
-            && projectMembers.selectByProjectAndUser(projectId, peerId) != null) {
-            return new DirectConversationEntity.Peer(DirectConversationEntity.TYPE_USER, peerId);
+        if (!DirectConversationEntity.TYPE_USER.equals(type)) {
+            throw invalidPeer("对端必须是本项目成员或已启用的 Agent");
         }
-        throw invalidPeer("对端必须是本项目成员或已启用的 Agent");
+        if (peerId.equals(actor)) {
+            throw invalidPeer("不能和自己私聊");
+        }
+        if (projectMembers.selectByProjectAndUser(projectId, peerId) == null) {
+            throw invalidPeer("对端必须是本项目成员或已启用的 Agent");
+        }
+        return new DirectConversationEntity.Peer(DirectConversationEntity.TYPE_USER, peerId);
     }
 
     /**

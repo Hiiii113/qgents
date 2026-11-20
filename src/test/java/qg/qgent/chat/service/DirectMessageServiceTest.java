@@ -195,6 +195,46 @@ class DirectMessageServiceTest {
     }
 
     @Test
+    void anAgentWhoseIdCollidesWithTheUsersIdIsStillAValidPeer() {
+        // users 与 agents 各自 AUTO_INCREMENT，第一个用户和默认 Agent 常常都是 1。
+        Long sharedId = 1L;
+        AtomicReference<ChatGroupEntity> storedGroup = new AtomicReference<>();
+        AtomicReference<DirectConversationEntity> storedConversation = new AtomicReference<>();
+        when(groups.insert(any(ChatGroupEntity.class)))
+                .thenAnswer(
+                        call -> {
+                            ChatGroupEntity group = call.getArgument(0);
+                            group.setId(conversationId);
+                            storedGroup.set(group);
+                            return 1;
+                        });
+        when(conversations.insert(any(DirectConversationEntity.class)))
+                .thenAnswer(
+                        call -> {
+                            storedConversation.set(call.getArgument(0));
+                            return 1;
+                        });
+        when(conversations.selectOne(any())).thenReturn(null);
+        when(conversations.selectById(any())).thenAnswer(call -> storedConversation.get());
+        when(groups.selectById(any())).thenAnswer(call -> storedGroup.get());
+        when(agents.requireActiveProjectAgent(projectId, sharedId))
+                .thenReturn(activeAgent(sharedId));
+        when(agentRows.selectBatchIds(any())).thenReturn(List.of(activeAgent(sharedId)));
+
+        DirectConversationResponse response =
+                service.create(sharedId, projectId, request("AGENT", sharedId));
+
+        assertThat(storedConversation.get().getParticipantAType())
+                .isEqualTo(DirectConversationEntity.TYPE_USER);
+        assertThat(storedConversation.get().getParticipantAId()).isEqualTo(sharedId);
+        assertThat(storedConversation.get().getParticipantBType())
+                .isEqualTo(DirectConversationEntity.TYPE_AGENT);
+        assertThat(storedConversation.get().getParticipantBId()).isEqualTo(sharedId);
+        assertThat(response.getPeer().type()).isEqualTo("AGENT");
+        verify(groupUsers).insertUser(conversationId, sharedId);
+    }
+
+    @Test
     void userUserConversationStoresThePairInCanonicalOrder() {
         Long peer = actor + 10;
         AtomicReference<DirectConversationEntity> stored = new AtomicReference<>();
