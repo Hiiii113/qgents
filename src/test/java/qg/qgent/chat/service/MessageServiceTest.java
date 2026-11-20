@@ -32,6 +32,7 @@ import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.event.GroupMessageCreatedEvent;
 import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.mapper.ChatGroupMapper;
+import qg.qgent.chat.mapper.DirectConversationMapper;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
@@ -82,6 +83,7 @@ class MessageServiceTest {
                 new MessageService(
                         messages,
                         groups,
+                        mock(DirectConversationMapper.class),
                         mock(UserMapper.class),
                         groupService,
                         new ObjectMapper(),
@@ -109,6 +111,7 @@ class MessageServiceTest {
                 new MessageService(
                         messages,
                         groups,
+                        mock(DirectConversationMapper.class),
                         mock(UserMapper.class),
                         mock(GroupService.class),
                         new ObjectMapper(),
@@ -154,6 +157,7 @@ class MessageServiceTest {
                 new MessageService(
                         messages,
                         groups,
+                        mock(DirectConversationMapper.class),
                         mock(UserMapper.class),
                         groupService,
                         new ObjectMapper(),
@@ -210,6 +214,7 @@ class MessageServiceTest {
                 new MessageService(
                         messages,
                         groups,
+                        mock(DirectConversationMapper.class),
                         mock(UserMapper.class),
                         mock(GroupService.class),
                         new ObjectMapper(),
@@ -263,6 +268,7 @@ class MessageServiceTest {
                 new MessageService(
                         messages,
                         groups,
+                        mock(DirectConversationMapper.class),
                         mock(UserMapper.class),
                         mock(GroupService.class),
                         new ObjectMapper(),
@@ -335,6 +341,7 @@ class MessageServiceTest {
                 new MessageService(
                         messages,
                         groups,
+                        mock(DirectConversationMapper.class),
                         mock(UserMapper.class),
                         mock(GroupService.class),
                         new ObjectMapper(),
@@ -382,6 +389,7 @@ class MessageServiceTest {
                 new MessageService(
                         messages,
                         groups,
+                        mock(DirectConversationMapper.class),
                         mock(UserMapper.class),
                         mock(GroupService.class),
                         new ObjectMapper(),
@@ -436,6 +444,7 @@ class MessageServiceTest {
                 new MessageService(
                         messages,
                         groups,
+                        mock(DirectConversationMapper.class),
                         mock(UserMapper.class),
                         mock(GroupService.class),
                         new ObjectMapper(),
@@ -481,6 +490,7 @@ class MessageServiceTest {
                 new MessageService(
                         messages,
                         groups,
+                        mock(DirectConversationMapper.class),
                         mock(UserMapper.class),
                         groupService,
                         new ObjectMapper(),
@@ -499,7 +509,7 @@ class MessageServiceTest {
                 .extracting(MessageResponse::getSequence)
                 .containsExactly(11L, 12L);
         assertThat(page.getPage().isHasMore()).isFalse();
-        verify(groupService).requireGroupMember(projectId, groupId, actor);
+        verify(groupService).requireChatGroup(projectId, groupId, actor);
         verify(messages).selectAfterSequence(groupId, 10L, 3);
     }
 
@@ -517,6 +527,7 @@ class MessageServiceTest {
                 new MessageService(
                         messages,
                         groups,
+                        mock(DirectConversationMapper.class),
                         mock(UserMapper.class),
                         mock(GroupService.class),
                         new ObjectMapper(),
@@ -567,6 +578,7 @@ class MessageServiceTest {
                 new MessageService(
                         messages,
                         mock(ChatGroupMapper.class),
+                        mock(DirectConversationMapper.class),
                         users,
                         groupService,
                         new ObjectMapper(),

@@ -36,6 +36,7 @@ import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.mapper.ChatGroupMapper;
+import qg.qgent.chat.mapper.DirectConversationMapper;
 import qg.qgent.chat.mapper.GroupAgentMapper;
 import qg.qgent.chat.mapper.GroupReadStateMapper;
 import qg.qgent.chat.mapper.GroupUserMapper;
@@ -107,6 +108,7 @@ class ProjectMemoryDiscoveryServiceTest {
                 new MessageService(
                         messageMapper,
                         chatGroups,
+                        mock(DirectConversationMapper.class),
                         mock(UserMapper.class),
                         chatGroupsService,
                         new ObjectMapper(),

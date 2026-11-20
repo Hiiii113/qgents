@@ -100,7 +100,7 @@ class AgentRunServiceTest {
 
     @Test
     void inaccessibleMessageCannotCancelAnyRun() {
-        when(messages.getMessage(actor, projectId, groupId, messageId))
+        when(messages.getParticipantMessage(actor, projectId, groupId, messageId))
                 .thenThrow(new ApiException(HttpStatus.NOT_FOUND, "MESSAGE_NOT_FOUND", "消息不存在"));
         assertThatThrownBy(() -> service.cancel(actor, projectId, groupId, messageId))
                 .isInstanceOf(ApiException.class);
@@ -244,7 +244,7 @@ class AgentRunServiceTest {
     private void messageFrom(Long sender) {
         MessageResponse message = new MessageResponse();
         message.setSenderId(sender.toString());
-        when(messages.getMessage(actor, projectId, groupId, messageId)).thenReturn(message);
+        when(messages.getParticipantMessage(actor, projectId, groupId, messageId)).thenReturn(message);
     }
 
     private AgentRunEntity runningRoot() {

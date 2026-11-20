@@ -2,6 +2,9 @@ package qg.qgent.harness.briefing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
 import java.time.LocalDateTime;
@@ -118,12 +121,47 @@ class BriefingServiceTest {
                 .doesNotContain("负责代码评审", "你只评审 Pull Request");
     }
 
+    @Test
+    void directContextRendersTheConversationWithoutGroupMemory() {
+        Long actor = TestIds.next(),
+                projectId = TestIds.next(),
+                conversationId = TestIds.next(),
+                agentId = TestIds.next(),
+                skillId = TestIds.next();
+        givenContext(actor, projectId, conversationId, agentId);
+        when(skills.publishedCatalog(actor, projectId))
+                .thenReturn(List.of(new ContextSkill(skillId, "登录", "登录规范")));
+
+        String briefing =
+                service.context(actor, projectId, conversationId, agentId, Scope.ROOT, true);
+
+        assertThat(briefing)
+                .contains("当前私聊", "# 项目记忆", "# 分工", "近期私聊消息")
+                .doesNotContain("当前群", "当前群记忆", "# 群记忆");
+        verify(groupMemories, never()).read(any(), any());
+    }
+
+    @Test
+    void directSystemPromptTellsTheAgentPrivateChatContentOnlyGoesToItsOwnMemoryOnRequest() {
+        AgentEntity agent = new AgentEntity();
+        agent.setName("评审助手");
+
+        String prompt = service.systemPrompt(agent, Scope.ROOT, true);
+
+        assertThat(prompt)
+                .startsWith("你是 评审助手，项目里的助手。")
+                .contains("这是一对一私聊", "用户明确要求时才写入你的私有记忆", "不要在这里更新项目记忆或群记忆");
+        assertThat(service.systemPrompt(agent, Scope.ROOT))
+                .startsWith("你是 评审助手，项目群聊中的助手。")
+                .doesNotContain("这是一对一私聊");
+    }
+
     private void givenContext(Long actor, Long projectId, Long groupId, Long agentId) {
         ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setProjectId(projectId);
         group.setName("登录改造");
-        when(groups.requireGroupMember(projectId, groupId, actor)).thenReturn(group);
+        when(groups.requireChatGroup(projectId, groupId, actor)).thenReturn(group);
         when(projectMemories.get(actor, projectId))
                 .thenReturn(
                         new ProjectMemoryResponse(

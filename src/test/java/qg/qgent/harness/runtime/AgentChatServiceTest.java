@@ -44,6 +44,7 @@ import qg.qgent.agent.service.AgentService;
 import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.chat.dto.ContextMessage;
 import qg.qgent.chat.entity.ChatGroupEntity;
+import qg.qgent.chat.event.DirectMessageSentEvent;
 import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.service.ChatHistoryService;
 import qg.qgent.chat.service.CrossGroupAccessService;
@@ -136,8 +137,46 @@ class AgentChatServiceTest {
 
         fixture.service().replyToMention(fixture.event(), agent, "你好");
 
-        verify(fixture.runs()).startRoot(agent, fixture.event(), "你好");
+        verify(fixture.runs())
+                .startRoot(agent, project, group, message, actor, "你好");
         verify(fixture.messages()).sendAsAgent(eq(agent), eq(group), any());
+    }
+
+    @Test
+    void directMessageRunRepliesIntoTheConversationWithoutGroupMemoryOrSharedMemoryWrites() {
+        Long actor = TestIds.next(),
+                project = TestIds.next(),
+                conversation = TestIds.next(),
+                message = TestIds.next();
+        ChatModel model = model();
+        when(model.call(any(Prompt.class))).thenReturn(reply("在私聊里回复"));
+        var fixture = fixture(model, actor, project, conversation, message, childExecutor);
+
+        fixture.service()
+                .replyToDirectMessage(
+                        new DirectMessageSentEvent(
+                                actor, project, conversation, message, fixture.agentId()),
+                        "你好");
+
+        verify(fixture.messages())
+                .replyInConversation(eq(fixture.agentId()), eq(conversation), any());
+        verify(fixture.messages(), never()).sendAsAgent(anyLong(), anyLong(), any());
+        verify(fixture.groupMemory(), never()).read(any(), any());
+
+        org.mockito.ArgumentCaptor<Prompt> prompts =
+                org.mockito.ArgumentCaptor.forClass(Prompt.class);
+        verify(model).call(prompts.capture());
+        Prompt prompt = prompts.getValue();
+        assertThat(prompt.getInstructions())
+                .anySatisfy(
+                        item ->
+                                assertThat(item.getText())
+                                        .contains("当前私聊")
+                                        .doesNotContain("当前群记忆", "当前群："));
+        assertThat(((OpenAiChatOptions) prompt.getOptions()).getToolCallbacks())
+                .extracting(callback -> callback.getToolDefinition().name())
+                .contains("read_agent_memory", "read_project_memory")
+                .doesNotContain("write_project_memory", "request_group_memory_correction");
     }
 
     @Test
@@ -207,7 +246,7 @@ class AgentChatServiceTest {
                         fixture.service().replyToMention(fixture.event(), fixture.agentId(), "你好"))
                 .isInstanceOf(ApiException.class);
 
-        verify(fixture.runs(), never()).startRoot(any(), any(), any());
+        verify(fixture.runs(), never()).startRoot(any(), any(), any(), any(), any(), any());
         verify(fixture.messages(), never()).sendAsAgent(any(), any(), any());
         verify(model, never()).call(any(Prompt.class));
     }
@@ -1322,7 +1361,7 @@ class AgentChatServiceTest {
         groupEntity.setId(group);
         groupEntity.setProjectId(project);
         groupEntity.setName("root-only 群名");
-        when(groups.requireGroupMember(project, group, actor)).thenReturn(groupEntity);
+        when(groups.requireChatGroup(project, group, actor)).thenReturn(groupEntity);
         when(history.recentMessages(actor, project, group, 30)).thenReturn(List.of());
         AgentRunEntity root = new AgentRunEntity();
         root.setId(TestIds.next());
@@ -1332,7 +1371,7 @@ class AgentChatServiceTest {
         root.setTriggerMessageId(message);
         root.setCreatedBy(actor);
         root.setStatus(RunStatus.RUNNING);
-        when(runs.startRoot(any(), any(), any())).thenReturn(root);
+        when(runs.startRoot(any(), any(), any(), any(), any(), any())).thenReturn(root);
         when(runs.startChild(any(), any(), any()))
                 .thenAnswer(
                         invocation -> run(invocation.getArgument(0), invocation.getArgument(1)));
@@ -1438,6 +1477,7 @@ class AgentChatServiceTest {
                 replyMessageId,
                 groups,
                 history,
+                groupMemory,
                 agentMemories,
                 agents,
                 agentApplications);
@@ -1556,6 +1596,7 @@ class AgentChatServiceTest {
             Long replyMessageId,
             GroupService groups,
             ChatHistoryService history,
+            GroupMemoryService groupMemory,
             AgentMemoryService agentMemories,
             AgentService agents,
             AgentApplicationService agentApplications) {}

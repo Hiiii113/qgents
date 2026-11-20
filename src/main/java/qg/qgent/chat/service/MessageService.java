@@ -14,10 +14,13 @@ import qg.qgent.chat.dto.Mention;
 import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.dto.MessageSendRequest;
 import qg.qgent.chat.entity.ChatGroupEntity;
+import qg.qgent.chat.entity.DirectConversationEntity;
 import qg.qgent.chat.entity.MessageEntity;
+import qg.qgent.chat.event.DirectMessageSentEvent;
 import qg.qgent.chat.event.GroupMessageCreatedEvent;
 import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.mapper.ChatGroupMapper;
+import qg.qgent.chat.mapper.DirectConversationMapper;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.common.dto.KeysetPagination;
 import qg.qgent.common.dto.PageInfo;
@@ -47,6 +50,7 @@ public class MessageService {
 
     private final MessageMapper messageMapper;
     private final ChatGroupMapper groupMapper;
+    private final DirectConversationMapper directConversations;
     private final UserMapper userMapper;
     private final GroupService groupService;
     private final ObjectMapper mapper;
@@ -58,6 +62,7 @@ public class MessageService {
     public MessageService(
         MessageMapper messageMapper,
         ChatGroupMapper groupMapper,
+        DirectConversationMapper directConversations,
         UserMapper userMapper,
         GroupService groupService,
         ObjectMapper mapper,
@@ -67,6 +72,7 @@ public class MessageService {
         ApplicationEventPublisher eventPublisher) {
         this.messageMapper = messageMapper;
         this.groupMapper = groupMapper;
+        this.directConversations = directConversations;
         this.userMapper = userMapper;
         this.groupService = groupService;
         this.mapper = mapper;
@@ -90,19 +96,47 @@ public class MessageService {
      */
     @Transactional
     public MessageResponse send(Long actor, Long projectId, Long groupId, MessageSendRequest body) {
-        // 默认群对项目成员开放，新建群要求受邀成员身份。
-        groupService.requireGroupMember(projectId, groupId, actor);
-        ChatGroupEntity group = lockGroup(groupId);
+        // 默认群对项目成员开放，新建群要求受邀成员身份；私聊不是群，不走群接口。
+        groupService.requireChatGroup(projectId, groupId, actor);
+        ChatGroupEntity group = lockGroupById(groupId);
         if (group == null || !group.getProjectId().equals(projectId)) {
             throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
         }
-        for (Mention mention :
-            body.getMentions() == null ? List.<Mention>of() : body.getMentions()) {
+        for (Mention mention : mentions(body)) {
             if ("AGENT".equals(mention.getType())) {
                 groupService.requireGroupAgent(groupId, mention.getId());
             }
         }
-        return doSend(projectId, groupId, actor, null, body);
+        return doSend(group, actor, null, body);
+    }
+
+    /**
+     * 私聊里用户发出的消息；参与者校验由 {@code DirectMessageService} 完成。
+     */
+    @Transactional
+    public MessageResponse sendInConversation(
+        Long actor, ChatGroupEntity conversation, MessageSendRequest body) {
+        return doSend(lockGroupById(conversation.getId()), actor, null, body);
+    }
+
+    /**
+     * 私聊里 Agent 的回复：只有这条会话的对端 Agent 能写，其他 Agent 无权进入。
+     */
+    @Transactional
+    public MessageResponse replyInConversation(
+        Long agentId, Long conversationId, MessageSendRequest body) {
+        ChatGroupEntity conversation = lockGroupById(conversationId);
+        if (conversation == null || !conversation.isDirect()) {
+            throw new ApiException(
+                HttpStatus.NOT_FOUND, "DIRECT_CONVERSATION_NOT_FOUND", "私聊会话不存在或无权访问");
+        }
+        if (directConversations.countAgentPeer(conversationId, agentId) == 0) {
+            throw new ApiException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "AGENT_NOT_IN_CONVERSATION",
+                "Agent 不是这条私聊的参与者");
+        }
+        return doSend(conversation, null, agentId, body);
     }
 
     /**
@@ -238,15 +272,15 @@ public class MessageService {
      */
     @Transactional
     public MessageResponse sendAsAgent(Long agentId, Long groupId, MessageSendRequest body) {
-        ChatGroupEntity group = lockGroup(groupId);
+        ChatGroupEntity group = lockGroupById(groupId);
         if (group == null) {
             throw new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问");
         }
         groupService.requireGroupAgent(groupId, agentId);
-        return doSend(group.getProjectId(), groupId, null, agentId, body);
+        return doSend(group, null, agentId, body);
     }
 
-    private ChatGroupEntity lockGroup(Long groupId) {
+    private ChatGroupEntity lockGroupById(Long groupId) {
         return groupMapper.selectOne(
             Wrappers.<ChatGroupEntity>lambdaQuery()
                 .eq(ChatGroupEntity::getId, groupId)
@@ -254,14 +288,18 @@ public class MessageService {
     }
 
     private MessageResponse doSend(
-        Long projectId,
-        Long groupId,
-        Long authorUserId,
-        Long senderAgentId,
-        MessageSendRequest body) {
+        ChatGroupEntity group, Long authorUserId, Long senderAgentId, MessageSendRequest body) {
+        Long projectId = group.getProjectId();
+        Long groupId = group.getId();
         String type = normalizeType(body.getType());
         validateContent(type, body.getContent());
-        List<Mention> mentions = body.getMentions() == null ? List.of() : body.getMentions();
+        List<Mention> mentions = mentions(body);
+        if (group.isDirect() && !mentions.isEmpty()) {
+            throw new ApiException(
+                HttpStatus.UNPROCESSABLE_ENTITY,
+                "DIRECT_MENTION_NOT_SUPPORTED",
+                "私聊不支持提及，直接发消息即可");
+        }
         String clientMessageId = trimmed(body.getClientMessageId());
 
         // clientMessageId 去重：重试命中后返回原消息，不重复写入或触发提及。
@@ -324,15 +362,40 @@ public class MessageService {
                 id(message.getId()),
                 "sequence",
                 message.getSequenceNo()));
-        // 每条新消息都维护群记忆的活跃状态；与消息同事务，回滚时一起回滚。
-        eventPublisher.publishEvent(new GroupMessageCreatedEvent(projectId, groupId));
-        // 仅新建用户消息触发提及处理；幂等返回不重复通知或启动 Agent。
-        if (authorUserId != null && !mentions.isEmpty()) {
-            eventPublisher.publishEvent(
-                new MessageSentEvent(
-                    authorUserId, projectId, groupId, message.getId(), mentions));
+        // 群消息在这里维护群记忆的活跃状态并处理提及，与消息同事务，回滚时一起回滚；
+        // 私聊不产生群记忆、站内通知或提及，只按对端 Agent 触发一次回复。
+        if (group.isDirect()) {
+            Long agentId = authorUserId == null ? null : directAgentPeer(groupId);
+            if (agentId != null) {
+                eventPublisher.publishEvent(
+                    new DirectMessageSentEvent(
+                        authorUserId, projectId, groupId, message.getId(), agentId));
+            }
+        } else {
+            eventPublisher.publishEvent(new GroupMessageCreatedEvent(projectId, groupId));
+            // 仅新建用户消息触发提及处理；幂等返回不重复通知或启动 Agent。
+            if (authorUserId != null && !mentions.isEmpty()) {
+                eventPublisher.publishEvent(
+                    new MessageSentEvent(
+                        authorUserId, projectId, groupId, message.getId(), mentions));
+            }
         }
         return views.assemble(List.of(message), projectId).getFirst();
+    }
+
+    /**
+     * 私聊对端 Agent；会话行存在但参与者缺失说明数据已损坏，直接暴露。
+     */
+    private Long directAgentPeer(Long conversationId) {
+        DirectConversationEntity conversation = directConversations.selectById(conversationId);
+        if (conversation == null) {
+            throw new IllegalStateException("私聊会话缺少参与者, conversationId=" + conversationId);
+        }
+        return conversation.agentPeerId();
+    }
+
+    private List<Mention> mentions(MessageSendRequest body) {
+        return body.getMentions() == null ? List.of() : body.getMentions();
     }
 
     private String id(Long value) {
@@ -351,8 +414,21 @@ public class MessageService {
      */
     public PageSlice<MessageResponse> list(
         Long actor, Long projectId, Long groupId, String cursor, int limit) {
-        // 默认群对项目成员开放，新建群要求受邀成员身份。
-        groupService.requireGroupMember(projectId, groupId, actor);
+        // 默认群对项目成员开放，新建群要求受邀成员身份；私聊不是群，不走群接口。
+        groupService.requireChatGroup(projectId, groupId, actor);
+        return pageMessages(projectId, groupId, cursor, limit);
+    }
+
+    /**
+     * 私聊分页；参与者校验由 {@code DirectMessageService} 完成。
+     */
+    public PageSlice<MessageResponse> listConversation(
+        ChatGroupEntity conversation, String cursor, int limit) {
+        return pageMessages(conversation.getProjectId(), conversation.getId(), cursor, limit);
+    }
+
+    private PageSlice<MessageResponse> pageMessages(
+        Long projectId, Long groupId, String cursor, int limit) {
         int pageSize = KeysetPagination.pageSize(limit);
         String scope = "group-messages:" + groupId;
         Long before = KeysetPagination.decodeCursor(cursor, scope);
@@ -382,7 +458,21 @@ public class MessageService {
      */
     public PageSlice<MessageResponse> listAfterSequence(
         Long actor, Long projectId, Long groupId, long afterSequence, int limit) {
-        groupService.requireGroupMember(projectId, groupId, actor);
+        groupService.requireChatGroup(projectId, groupId, actor);
+        return pageMessagesAfterSequence(projectId, groupId, afterSequence, limit);
+    }
+
+    /**
+     * 私聊增量；参与者校验由 {@code DirectMessageService} 完成。
+     */
+    public PageSlice<MessageResponse> listConversationAfterSequence(
+        ChatGroupEntity conversation, long afterSequence, int limit) {
+        return pageMessagesAfterSequence(
+            conversation.getProjectId(), conversation.getId(), afterSequence, limit);
+    }
+
+    private PageSlice<MessageResponse> pageMessagesAfterSequence(
+        Long projectId, Long groupId, long afterSequence, int limit) {
         if (afterSequence < 0) {
             throw new ApiException(
                 HttpStatus.BAD_REQUEST, "INVALID_MESSAGE_CURSOR", "afterSequence 必须为非负数");
@@ -411,8 +501,28 @@ public class MessageService {
      * @return 消息视图（含发送者名称）
      */
     public MessageResponse getMessage(Long actor, Long projectId, Long groupId, Long messageId) {
-        // 默认群对项目成员开放，新建群要求受邀成员身份。
-        groupService.requireGroupMember(projectId, groupId, actor);
+        // 默认群对项目成员开放，新建群要求受邀成员身份；私聊不是群，不走群接口。
+        groupService.requireChatGroup(projectId, groupId, actor);
+        return readMessage(projectId, groupId, messageId);
+    }
+
+    /**
+     * 私聊单条消息；参与者校验由 {@code DirectMessageService} 完成。
+     */
+    public MessageResponse getConversationMessage(ChatGroupEntity conversation, Long messageId) {
+        return readMessage(conversation.getProjectId(), conversation.getId(), messageId);
+    }
+
+    /**
+     * 会话参与者可读的单条消息：群聊与私聊共用的成员校验，管理员没有越过参与者的入口。
+     */
+    public MessageResponse getParticipantMessage(
+        Long actor, Long projectId, Long conversationId, Long messageId) {
+        groupService.requireGroupMember(projectId, conversationId, actor);
+        return readMessage(projectId, conversationId, messageId);
+    }
+
+    private MessageResponse readMessage(Long projectId, Long groupId, Long messageId) {
         MessageEntity message = messageMapper.selectById(messageId);
         if (message == null || !groupId.equals(message.getGroupId())) {
             throw new ApiException(HttpStatus.NOT_FOUND, "MESSAGE_NOT_FOUND", "消息不存在或不属于该群");

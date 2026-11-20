@@ -172,7 +172,8 @@ public class GroupMemoryExtractionService {
      * 记录用户提出的记忆纠错，由后台提炼应用；Agent 不能直接写群记忆。
      */
     public void requestCorrection(Long actor, Long projectId, Long groupId, String correction) {
-        groups.requireGroupMember(projectId, groupId, actor);
+        // 私聊没有群记忆，纠错只能提到真实的群。
+        groups.requireChatGroup(projectId, groupId, actor);
         states.requestCorrection(projectId, groupId, correction.strip(), MemorySupport.now());
     }
 

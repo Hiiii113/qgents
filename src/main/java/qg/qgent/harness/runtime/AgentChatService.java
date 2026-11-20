@@ -14,6 +14,7 @@ import qg.qgent.agent.tool.AgentApplicationTools;
 import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.attachment.tool.ReadAttachmentTool;
 import qg.qgent.chat.dto.MessageSendRequest;
+import qg.qgent.chat.event.DirectMessageSentEvent;
 import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.service.ChatHistoryService;
 import qg.qgent.chat.service.CrossGroupAccessService;
@@ -144,11 +145,33 @@ public class AgentChatService {
      * Runs one conversation for a committed @Agent message and replies as that same Agent.
      */
     public void replyToMention(MessageSentEvent event, Long agentId, String instruction) {
+        reply(event, agentId, instruction, false);
+    }
+
+    /**
+     * 私聊里用户直接发来的消息：不需要提及，也只会回给这条会话的双方。
+     */
+    public void replyToDirectMessage(DirectMessageSentEvent event, String instruction) {
+        MessageSentEvent trigger =
+            new MessageSentEvent(
+                event.actor(), event.projectId(), event.conversationId(), event.messageId(), List.of());
+        reply(trigger, event.agentId(), instruction, true);
+    }
+
+    private void reply(
+        MessageSentEvent event, Long agentId, String instruction, boolean direct) {
         // 未启用或不属于本项目的 Agent 不产生运行，也不产生回复。
         AgentEntity agent = agents.requireActiveProjectAgent(event.projectId(), agentId);
-        AgentRunEntity root = runService.startRoot(agentId, event, instruction);
+        AgentRunEntity root =
+            runService.startRoot(
+                agentId,
+                event.projectId(),
+                event.groupId(),
+                event.messageId(),
+                event.actor(),
+                instruction);
         RunStreamSink sink = streams.sink(root);
-        WorkContext work = new WorkContext(event, agentId, agent, root.getId());
+        WorkContext work = new WorkContext(event, agentId, agent, root.getId(), direct);
         RunLifecycle lifecycle = new RunLifecycle(runService, sessions, work);
         work.children =
             new ChildRuns(
@@ -176,10 +199,11 @@ public class AgentChatService {
                     event.groupId(),
                     agentId,
                     Scope.ROOT,
-                    instruction);
+                    instruction,
+                    direct);
             UserMessage user = new UserMessage(input);
             AgentLoop.Conversation conversation =
-                loop.conversation(briefing.systemPrompt(agent, Scope.ROOT), List.of(user));
+                loop.conversation(briefing.systemPrompt(agent, Scope.ROOT, direct), List.of(user));
             ChildRuns.Execution execution = new ChildRuns.Execution(root, conversation, null, ".");
             ConversationTools tools = conversationTools(work, execution, true);
             AgentLoop.Result result =
@@ -209,7 +233,11 @@ public class AgentChatService {
         reply.setContent(Map.of("text", answer(root)));
         reply.setReplyToId(event.messageId());
         reply.setClientMessageId("qgent-reply:" + root.getId());
-        messages.sendAsAgent(agentId, event.groupId(), reply);
+        if (direct) {
+            messages.replyInConversation(agentId, event.groupId(), reply);
+        } else {
+            messages.sendAsAgent(agentId, event.groupId(), reply);
+        }
     }
 
     private List<ToolCallback> callbacks(
@@ -236,8 +264,11 @@ public class AgentChatService {
         Long groupId,
         Long agentId,
         Scope scope,
-        String instruction) {
-        return instruction + "\n\n" + briefing.context(actor, projectId, groupId, agentId, scope);
+        String instruction,
+        boolean direct) {
+        return instruction
+            + "\n\n"
+            + briefing.context(actor, projectId, groupId, agentId, scope, direct);
     }
 
     private String answer(AgentRunEntity root) {
@@ -317,17 +348,19 @@ public class AgentChatService {
                     work.event.projectId(),
                     execution.conversation::stageImage);
             this.memory = new MemoryTools(memories, work.event.actor(), work.event.projectId());
+            // 私聊没有群记忆：不装配群记忆工具，避免把私聊内容当群结论或提交到不存在的群。
             this.groupMemoryTools =
-                new GroupMemoryTools(
-                    groupMemoryMaintenance,
-                    work.event.actor(),
-                    work.event.projectId(),
-                    work.event.groupId());
-            // 子 Agent 只读项目记忆：写入只在主 Agent 的对话里由管理员确认后发生。
+                work.direct
+                    ? null
+                    : new GroupMemoryTools(
+                        groupMemoryMaintenance,
+                        work.event.actor(),
+                        work.event.projectId(),
+                        work.event.groupId());
+            // 子 Agent 只读项目记忆；私聊不写共享的项目记忆。
             this.memoryWrite =
-                canDelegate
-                    ? new MemoryWriteTools(
-                    memories, work.event.actor(), work.event.projectId())
+                canDelegate && !work.direct
+                    ? new MemoryWriteTools(memories, work.event.actor(), work.event.projectId())
                     : null;
             this.agentMemory =
                 new AgentMemoryTools(agentMemories, work.event.projectId(), work.agentId);
@@ -361,11 +394,11 @@ public class AgentChatService {
                         crossGroupTools,
                         attachmentTools,
                         memory,
-                        groupMemoryTools,
                         agentMemory,
                         workspaceTools,
                         githubTools,
                         codingTools));
+            if (groupMemoryTools != null) tools.add(groupMemoryTools);
             if (memoryWrite != null) tools.add(memoryWrite);
             if (applicationTools != null) tools.add(applicationTools);
             List<ToolCallback> result =
@@ -405,7 +438,7 @@ public class AgentChatService {
                 childDirectory,
                 text ->
                     loop.conversation(
-                        briefing.systemPrompt(work.agent, Scope.CHILD),
+                        briefing.systemPrompt(work.agent, Scope.CHILD, work.direct),
                         List.of(
                             new UserMessage(
                                 userInput(
@@ -414,7 +447,8 @@ public class AgentChatService {
                                     work.event.groupId(),
                                     work.agentId,
                                     Scope.CHILD,
-                                    text)))));
+                                    text,
+                                    work.direct)))));
         }
 
         @Tool(name = "wait_subagent", description = "等待指定子 Agent 最多 30 秒；等待超时返回当前状态，可再次等待。")

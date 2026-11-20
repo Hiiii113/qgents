@@ -40,7 +40,8 @@ public class CrossGroupAccessService {
      */
     public Denial check(Long projectId, Long sourceGroupId, Long actor, Long agentId) {
         try {
-            groups.requireGroupMember(projectId, sourceGroupId, actor);
+            // 私聊不是群，不能作为跨群读取的来源。
+            groups.requireChatGroup(projectId, sourceGroupId, actor);
         } catch (ApiException denied) {
             // 群不存在、属于其他项目或用户不在群里都归到同一侧，不让模型据此探测群成员。
             return Denial.REQUESTER_NOT_IN_GROUP;

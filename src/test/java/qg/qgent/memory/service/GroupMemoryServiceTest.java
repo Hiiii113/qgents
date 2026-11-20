@@ -95,7 +95,7 @@ class GroupMemoryServiceTest {
                 .isInstanceOf(ApiException.class)
                 .extracting(error -> ((ApiException) error).code())
                 .isEqualTo("PROJECT_ADMIN_REQUIRED");
-        verify(groups, never()).requireGroupMember(projectId, groupId, actor);
+        verify(groups, never()).requireChatGroup(projectId, groupId, actor);
     }
 
     @Test
@@ -105,7 +105,7 @@ class GroupMemoryServiceTest {
         Long actor = TestIds.next();
         doThrow(new ApiException(HttpStatus.NOT_FOUND, "GROUP_NOT_FOUND", "群不存在或无权访问"))
                 .when(groups)
-                .requireGroupMember(projectId, groupId, actor);
+                .requireChatGroup(projectId, groupId, actor);
 
         assertThatThrownBy(() -> service.get(actor, projectId, groupId))
                 .isInstanceOf(ApiException.class)
@@ -125,6 +125,6 @@ class GroupMemoryServiceTest {
         assertThat(memory.getContent()).isEqualTo("# 群记忆");
         assertThat(memory.getProjectId()).isEqualTo(projectId.toString());
         verify(access).requireProjectAdmin(projectId, actor);
-        verify(groups).requireGroupMember(projectId, groupId, actor);
+        verify(groups).requireChatGroup(projectId, groupId, actor);
     }
 }
