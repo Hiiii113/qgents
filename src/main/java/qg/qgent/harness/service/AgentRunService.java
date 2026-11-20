@@ -7,7 +7,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
-import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.service.MessageService;
 import qg.qgent.harness.entity.AgentRunEntity;
 import qg.qgent.harness.entity.RunStatus;
@@ -54,13 +53,22 @@ public class AgentRunService {
         }
     }
 
-    public AgentRunEntity startRoot(Long agentId, MessageSentEvent event, String instruction) {
+    /**
+     * 一次根运行由一条已提交的用户消息触发；群聊与私聊共用同一条记录，group_id 就是会话 ID。
+     */
+    public AgentRunEntity startRoot(
+        Long agentId,
+        Long projectId,
+        Long conversationId,
+        Long triggerMessageId,
+        Long actor,
+        String instruction) {
         AgentRunEntity run = new AgentRunEntity();
-        run.setProjectId(event.projectId());
-        run.setGroupId(event.groupId());
+        run.setProjectId(projectId);
+        run.setGroupId(conversationId);
         run.setAgentId(agentId);
-        run.setTriggerMessageId(event.messageId());
-        run.setCreatedBy(event.actor());
+        run.setTriggerMessageId(triggerMessageId);
+        run.setCreatedBy(actor);
         run.setInstruction(instruction);
         run.setStatus(RunStatus.RUNNING);
         run.setRounds(0);
@@ -185,7 +193,7 @@ public class AgentRunService {
     }
 
     public int cancel(Long actor, Long projectId, Long groupId, Long messageId) {
-        var message = messages.getMessage(actor, projectId, groupId, messageId);
+        var message = messages.getParticipantMessage(actor, projectId, groupId, messageId);
         if (!actor.toString().equals(message.getSenderId()))
             access.requireProjectAdmin(projectId, actor);
         List<AgentRunEntity> activeRoots =
