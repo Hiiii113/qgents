@@ -11,8 +11,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @Setter
 @ConfigurationProperties(prefix = "qgents.executor.agent")
 public class AgentExecutorProperties {
-    // 常驻线程数
-    private int coreSize = 2;
+    // 常驻线程数与 YAML 默认值一致
+    private int coreSize = 4;
     // 最大线程数
     private int maxSize = 4;
     // 等待队列长度
