@@ -182,6 +182,15 @@ class GitHubRepositoryServiceTest {
     }
 
     @Test
+    void projectRepositoryListRequiresMembership() {
+        when(repositories.selectList(any())).thenReturn(List.of());
+
+        service.listProjectRepositories(actor, project);
+
+        verify(access).requireProjectMember(project, actor);
+    }
+
+    @Test
     void projectCatalogListsImportsByProviderIdAndKeepsConnectionStatus() {
         var installation = installation();
         when(installations.selectList(any())).thenReturn(List.of(installation));

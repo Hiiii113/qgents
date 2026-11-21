@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.util.UriComponentsBuilder;
 import qg.qgent.common.web.ApiResponse;
 import qg.qgent.common.web.RequestIdFilter;
+import qg.qgent.github.service.GitHubItemService;
 import qg.qgent.github.service.GitHubRepositoryService;
 
 /**
@@ -22,14 +23,17 @@ import qg.qgent.github.service.GitHubRepositoryService;
 @RequestMapping("/api/v1")
 public class GitHubRepositoryController {
     private final GitHubRepositoryService service;
+    private final GitHubItemService items;
     private final String frontendWeb;
     private final String frontendMobile;
 
     public GitHubRepositoryController(
         GitHubRepositoryService service,
+        GitHubItemService items,
         @Value("${app.frontend-url-web}") String frontendWeb,
         @Value("${app.frontend-url-mobile}") String frontendMobile) {
         this.service = service;
+        this.items = items;
         this.frontendWeb = frontendWeb;
         this.frontendMobile = frontendMobile;
     }
@@ -113,6 +117,26 @@ public class GitHubRepositoryController {
         @PathVariable Long projectId,
         @PathVariable Long repositoryId) {
         service.removeRepository(actor, projectId, repositoryId);
+    }
+
+    @GetMapping("/projects/{projectId}/github/pull-requests")
+    public ApiResponse<?> pullRequests(
+        @AuthenticationPrincipal Long actor,
+        @PathVariable Long projectId,
+        @RequestParam(required = false) Long repositoryId,
+        @RequestParam(required = false) String state,
+        HttpServletRequest request) {
+        return ok(items.pullRequests(actor, projectId, repositoryId, state), request);
+    }
+
+    @GetMapping("/projects/{projectId}/github/issues")
+    public ApiResponse<?> issues(
+        @AuthenticationPrincipal Long actor,
+        @PathVariable Long projectId,
+        @RequestParam(required = false) Long repositoryId,
+        @RequestParam(required = false) String state,
+        HttpServletRequest request) {
+        return ok(items.issues(actor, projectId, repositoryId, state), request);
     }
 
     private ApiResponse<?> ok(Object value, HttpServletRequest request) {
