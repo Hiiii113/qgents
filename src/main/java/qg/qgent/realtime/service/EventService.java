@@ -37,6 +37,7 @@ import java.sql.SQLException;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -412,16 +413,21 @@ public class EventService {
             "project",
             projectId,
             cursor,
-            after ->
-                eventMapper.listAfter(projectId, after, BATCH_SIZE).stream()
+            after -> {
+                // 同一批里同群事件共用一次成员查询；下一批重新判断，权限变化能在下一次轮询生效。
+                Map<Long, Boolean> visibleGroups = new HashMap<>();
+                return eventMapper.listAfter(projectId, after, BATCH_SIZE).stream()
                     .map(event ->
                         new SseEventTransport.SseEvent(
                             event.getSequenceNo(),
                             event.getEventType(),
                             event.getPayload(),
                             event.getGroupId() == null
-                                || canSeeGroup(event.getGroupId(), userId)))
-                    .toList(),
+                                || visibleGroups.computeIfAbsent(
+                                    event.getGroupId(),
+                                    groupId -> canSeeGroup(groupId, userId))))
+                    .toList();
+            },
             true);
     }
 

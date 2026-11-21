@@ -133,18 +133,20 @@ class EventServiceTest {
     }
 
     @Test
-    void projectStreamRechecksGroupMembershipForEachLoadedBatch() {
+    void projectStreamQueriesEachGroupOncePerLoadedBatchAndRechecksTheNextBatch() {
         Fixture fixture = new Fixture();
         Long projectId = TestIds.next();
         Long groupId = TestIds.next();
         Long userId = TestIds.next();
         when(fixture.events.maxSequence(projectId)).thenReturn(3L);
-        EventEntity groupEvent = new EventEntity();
-        groupEvent.setSequenceNo(4L);
-        groupEvent.setGroupId(groupId);
-        groupEvent.setEventType("message.created");
         when(fixture.events.listAfter(eq(projectId), anyLong(), anyInt()))
-                .thenReturn(List.of(groupEvent));
+                .thenAnswer(
+                        load -> {
+                            long after = load.getArgument(1);
+                            return List.of(
+                                    groupEvent(after + 1, groupId),
+                                    groupEvent(after + 2, groupId));
+                        });
         ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setDefaultGroup(false);
@@ -157,11 +159,34 @@ class EventServiceTest {
         verify(fixture.sse).open(eq("project"), eq(projectId), eq(3L), loader.capture(), eq(true));
         @SuppressWarnings("unchecked")
         LongFunction<List<SseEventTransport.SseEvent>> loadEvents = loader.getValue();
-        assertEquals(4L, loadEvents.apply(3L).getFirst().sequenceNo());
-        assertEquals(false, loadEvents.apply(3L).getFirst().visible());
+        List<SseEventTransport.SseEvent> firstBatch = loadEvents.apply(3L);
+        assertEquals(
+                List.of(4L, 5L),
+                firstBatch.stream().map(SseEventTransport.SseEvent::sequenceNo).toList());
+        assertEquals(
+                List.of(false, false),
+                firstBatch.stream().map(SseEventTransport.SseEvent::visible).toList());
+        verify(fixture.groups, org.mockito.Mockito.times(1)).selectById(groupId);
+        verify(fixture.groups, org.mockito.Mockito.times(1)).selectUserIds(groupId);
 
+        // 下一批重新判断：期间加入群要立刻反映到同一连接上。
         when(fixture.groups.selectUserIds(groupId)).thenReturn(List.of(userId));
-        assertEquals(true, loadEvents.apply(4L).getFirst().visible());
+        List<SseEventTransport.SseEvent> secondBatch = loadEvents.apply(5L);
+        assertEquals(
+                List.of(6L, 7L),
+                secondBatch.stream().map(SseEventTransport.SseEvent::sequenceNo).toList());
+        assertEquals(
+                List.of(true, true),
+                secondBatch.stream().map(SseEventTransport.SseEvent::visible).toList());
+        verify(fixture.groups, org.mockito.Mockito.times(2)).selectUserIds(groupId);
+    }
+
+    private static EventEntity groupEvent(Long sequenceNo, Long groupId) {
+        EventEntity event = new EventEntity();
+        event.setSequenceNo(sequenceNo);
+        event.setGroupId(groupId);
+        event.setEventType("message.created");
+        return event;
     }
 
     @ParameterizedTest
