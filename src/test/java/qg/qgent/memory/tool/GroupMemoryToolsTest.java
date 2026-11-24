@@ -7,11 +7,12 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.http.HttpStatus;
 import qg.qgent.common.web.ApiException;
+import qg.qgent.harness.tool.ToolRegistry;
 import qg.qgent.memory.service.GroupMemoryExtractionService;
 import qg.qgent.support.TestIds;
 
@@ -27,8 +28,10 @@ class GroupMemoryToolsTest {
 
     @Test
     void exposesOnlyCorrectionRequestWithoutDirectWrite() {
-        assertThat(ToolCallbacks.from(tools))
-                .extracting(callback -> callback.getToolDefinition().name())
+        ToolRegistry registry = new ToolRegistry(new ObjectMapper());
+        registry.register(tools);
+        assertThat(registry.callbacks())
+                .extracting(callback -> callback.name())
                 .containsExactly("request_group_memory_correction");
     }
 

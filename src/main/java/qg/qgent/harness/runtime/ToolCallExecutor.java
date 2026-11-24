@@ -3,10 +3,9 @@ package qg.qgent.harness.runtime;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.MDC;
-import org.springframework.ai.chat.messages.AssistantMessage.ToolCall;
-import org.springframework.ai.chat.messages.ToolResponseMessage.ToolResponse;
-import org.springframework.ai.tool.ToolCallback;
-import qg.qgent.harness.tool.ParallelToolCallback;
+import qg.qgent.harness.model.ModelMessage.ToolCall;
+import qg.qgent.harness.model.ModelMessage.ToolResponse;
+import qg.qgent.harness.tool.ToolCallback;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.sandbox.dto.SandboxExecutionContext;
 
@@ -62,15 +61,13 @@ final class ToolCallExecutor {
                      maxParallel, Thread.ofVirtual().name("agent-tool-", 0).factory())) {
             for (int next = 0; next < calls.size(); ) {
                 if (stopped(cancelled)) return new Result(results, true);
-                if (!(callbacks.get(calls.get(next).name()) instanceof ParallelToolCallback)) {
+                if (!parallel(callbacks, calls.get(next))) {
                     results.set(next, invoke(calls.get(next), callbacks, sink));
                     next++;
                     continue;
                 }
                 int end = next;
-                while (end < calls.size()
-                    && callbacks.get(calls.get(end).name()) instanceof ParallelToolCallback)
-                    end++;
+                while (end < calls.size() && parallel(callbacks, calls.get(end))) end++;
                 if (parallel(
                     pool, calls, callbacks, next, end, results, cancelled, runId, context, sink))
                     return new Result(results, true);
@@ -187,6 +184,12 @@ final class ToolCallExecutor {
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("无法编码工具结果", exception);
         }
+    }
+
+    private static boolean parallel(
+        Map<String, ToolCallback> callbacks, ToolCall call) {
+        ToolCallback callback = callbacks.get(call.name());
+        return callback != null && callback.parallel();
     }
 
     private static boolean stopped(BooleanSupplier cancelled) {

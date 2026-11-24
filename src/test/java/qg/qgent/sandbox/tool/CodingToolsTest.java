@@ -4,12 +4,12 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.support.ToolCallbacks;
-import qg.qgent.harness.tool.ParallelToolCallback;
+import qg.qgent.harness.tool.ToolRegistry;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.sandbox.service.SandboxFiles;
 import qg.qgent.support.TestIds;
@@ -34,6 +34,12 @@ class CodingToolsTest {
         return new CodingTools(nested, files);
     }
 
+    private ToolRegistry registry(Object... tools) {
+        ToolRegistry registry = new ToolRegistry(new ObjectMapper());
+        registry.register(tools);
+        return registry;
+    }
+
     private ToolResult ok(Map<String, Object> fields) {
         ToolResult result = ToolResult.ok();
         result.putAll(fields);
@@ -47,12 +53,9 @@ class CodingToolsTest {
 
     @Test
     void modelSchemaUsesWindowsAndHidesInternalHashesAndOldTools() {
-        var definitions =
-                java.util.Arrays.stream(ToolCallbacks.from(tools))
-                        .map(t -> t.getToolDefinition())
-                        .toList();
-        assertThat(definitions)
-                .extracting(d -> d.name())
+        var callbacks = registry(tools).callbacks();
+        assertThat(callbacks)
+                .extracting(callback -> callback.name())
                 .containsExactlyInAnyOrder(
                         "read_file",
                         "glob_files",
@@ -60,11 +63,14 @@ class CodingToolsTest {
                         "write_file",
                         "edit_file",
                         "apply_patch");
-        assertThat(definitions)
-                .allSatisfy(d -> assertThat(d.inputSchema()).doesNotContain("expectedHash"));
+        assertThat(callbacks)
+                .allSatisfy(
+                        callback ->
+                                assertThat(callback.inputSchema())
+                                        .doesNotContain("expectedHash"));
         assertThat(
-                        definitions.stream()
-                                .filter(d -> d.name().equals("read_file"))
+                        callbacks.stream()
+                                .filter(callback -> callback.name().equals("read_file"))
                                 .findFirst()
                                 .orElseThrow()
                                 .inputSchema())
@@ -72,23 +78,12 @@ class CodingToolsTest {
     }
 
     @Test
-    void parallelMetadataPreservesSchemaAndLeavesWritesExclusive() {
-        var nativeCallbacks = ToolCallbacks.from(tools);
-        var classified = ParallelToolCallback.from(tools);
-        for (var callback : classified) {
-            var original =
-                    java.util.Arrays.stream(nativeCallbacks)
-                            .filter(c ->
-                                    c.getToolDefinition()
-                                            .name()
-                                            .equals(callback.getToolDefinition().name()))
-                            .findFirst()
-                            .orElseThrow();
-            assertThat(callback.getToolDefinition()).isEqualTo(original.getToolDefinition());
+    void parallelMetadataMarksReadsAndLeavesWritesExclusive() {
+        for (var callback : registry(tools).callbacks()) {
             boolean read =
                     java.util.Set.of("read_file", "glob_files", "search_code")
-                            .contains(callback.getToolDefinition().name());
-            assertThat(callback instanceof ParallelToolCallback).isEqualTo(read);
+                            .contains(callback.name());
+            assertThat(callback.parallel()).isEqualTo(read);
         }
     }
 

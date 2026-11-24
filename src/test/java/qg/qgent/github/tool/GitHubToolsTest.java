@@ -19,6 +19,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -29,6 +30,7 @@ import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.github.service.GitHubRepositoryService;
+import qg.qgent.harness.tool.ToolRegistry;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.sandbox.service.SandboxCommands;
 import qg.qgent.support.TestIds;
@@ -54,14 +56,16 @@ class GitHubToolsTest {
     }
 
     @Test
-    void springAiCallbacksExposeAllToolsAndSerializeIdsAsStrings() {
+    void toolCallbacksExposeAllToolsAndSerializeIdsAsStrings() {
         when(repositories.catalog(actor, project, false))
                 .thenReturn(
                         new GitHubRepositoryService.Catalog(
                                 "ACTIVE", List.of(repository(1234567890123L, "owner/big", true))));
-        var callbacks = org.springframework.ai.support.ToolCallbacks.from(tools);
+        ToolRegistry registry = new ToolRegistry(new ObjectMapper());
+        registry.register(tools);
+        var callbacks = registry.callbacks();
         assertThat(callbacks)
-                .extracting(callback -> callback.getToolDefinition().name())
+                .extracting(callback -> callback.name())
                 .contains(
                         "github_list_repositories",
                         "github_list_pull_requests",
@@ -72,13 +76,12 @@ class GitHubToolsTest {
                         "github_push",
                         "github_git");
         var callback =
-                java.util.Arrays.stream(callbacks)
-                        .filter(item ->
-                                item.getToolDefinition().name().equals("github_list_repositories"))
+                callbacks.stream()
+                        .filter(item -> item.name().equals("github_list_repositories"))
                         .findFirst()
                         .orElseThrow();
 
-        // 可选参数可省略，结果按 Spring AI 的实际序列化输出
+        // 可选参数可省略，结果按工具注册器的实际序列化输出
         String result = callback.call("{}");
 
         assertThat(result)

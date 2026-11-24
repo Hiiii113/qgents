@@ -1,7 +1,7 @@
 package qg.qgent.memory.tool;
 
-import org.springframework.ai.tool.annotation.Tool;
 import qg.qgent.harness.tool.ParallelTool;
+import qg.qgent.harness.tool.Tool;
 import qg.qgent.harness.tool.ToolErrors;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.memory.dto.ProjectMemoryResponse;

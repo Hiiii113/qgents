@@ -7,8 +7,10 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -28,8 +30,8 @@ class ReadAttachmentToolTest {
                     attachments,
                     1L,
                     2L,
-                    (attachmentId, fileName, media) ->
-                            staged.add(new Staged(attachmentId, fileName, media)));
+                    (attachmentId, fileName, imageUri) ->
+                            staged.add(new Staged(attachmentId, fileName, imageUri)));
 
     @Test
     void textAttachmentReturnsChunkWithContinuationCursor() {
@@ -67,7 +69,10 @@ class ReadAttachmentToolTest {
         assertThat(staged).hasSize(1);
         assertThat(staged.getFirst().attachmentId()).isEqualTo("9");
         assertThat(staged.getFirst().fileName()).isEqualTo("photo.png");
-        assertThat(staged.getFirst().media().getMimeType().toString()).isEqualTo("image/png");
+        assertThat(staged.getFirst().imageUri().toString())
+                .isEqualTo(
+                        "data:image/png;base64,"
+                                + Base64.getEncoder().encodeToString(bytes));
     }
 
     @Test
@@ -115,6 +120,5 @@ class ReadAttachmentToolTest {
         verify(attachments).readTextChunk(1L, 2L, 9L, 5L, ReadAttachmentTool.TEXT_CHUNK_BYTES);
     }
 
-    private record Staged(
-            String attachmentId, String fileName, org.springframework.ai.content.Media media) {}
+    private record Staged(String attachmentId, String fileName, URI imageUri) {}
 }

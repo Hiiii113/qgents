@@ -1,11 +1,11 @@
 package qg.qgent.harness.runtime;
 
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.tool.ToolCallback;
 import qg.qgent.harness.entity.AgentRunEntity;
 import qg.qgent.harness.entity.RunStatus;
+import qg.qgent.harness.model.ModelMessage;
+import qg.qgent.harness.model.ModelMessage.UserMessage;
 import qg.qgent.harness.service.AgentRunService;
+import qg.qgent.harness.tool.ToolCallback;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.workspace.service.WorkspaceSelection;
 
@@ -35,7 +35,7 @@ final class ChildRuns {
     private final Set<Long> cancelledCommands = ConcurrentHashMap.newKeySet();
 
     private final Object lock = new Object();
-    private final Map<Long, Message> notifications = new LinkedHashMap<>();
+    private final Map<Long, ModelMessage> notifications = new LinkedHashMap<>();
     // 与 notifications 同一把锁，保证最终通知与“没有活动子 Agent”同时可见。
     private int active;
     private volatile boolean closing;
@@ -181,11 +181,11 @@ final class ChildRuns {
      */
     AgentLoop.UpdateSource updates() {
         return new AgentLoop.UpdateSource() {
-            public List<Message> drain() {
+            public List<ModelMessage> drain() {
                 return drainNotifications();
             }
 
-            public List<Message> awaitNext() {
+            public List<ModelMessage> awaitNext() {
                 synchronized (lock) {
                     while (notifications.isEmpty()
                         && active > 0
@@ -206,14 +206,13 @@ final class ChildRuns {
 
     AgentLoop.UpdateSource updates(Execution child) {
         return new AgentLoop.UpdateSource() {
-            public List<Message> drain() {
+            public List<ModelMessage> drain() {
                 return child.drainMessages().stream()
-                    .map(UserMessage::new)
-                    .map(Message.class::cast)
+                    .<ModelMessage>map(UserMessage::new)
                     .toList();
             }
 
-            public List<Message> awaitNext() {
+            public List<ModelMessage> awaitNext() {
                 return List.of();
             }
         };
@@ -397,10 +396,10 @@ final class ChildRuns {
         }
     }
 
-    private List<Message> drainNotifications() {
+    private List<ModelMessage> drainNotifications() {
         synchronized (lock) {
             if (notifications.isEmpty()) return List.of();
-            List<Message> result = new ArrayList<>(notifications.values());
+            List<ModelMessage> result = new ArrayList<>(notifications.values());
             notifications.clear();
             return result;
         }

@@ -1,20 +1,17 @@
 package qg.qgent.harness.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.ai.chat.messages.*;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.model.Generation;
-import org.springframework.ai.chat.model.MessageAggregator;
-import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.content.Media;
-import org.springframework.ai.openai.OpenAiChatOptions;
-import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import qg.qgent.harness.model.ModelClient;
+import qg.qgent.harness.model.ModelMessage;
+import qg.qgent.harness.tool.ToolCallback;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
+import java.net.URI;
+import java.time.Duration;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
@@ -23,25 +20,31 @@ import java.util.function.Supplier;
  */
 @Component
 public class AgentLoop {
-    private final ChatModel model;
+    private static final Duration CANCELLATION_CHECK_INTERVAL = Duration.ofMillis(100);
+    private final ModelClient model;
     private final ToolCallExecutor toolCalls;
     private final int maxRounds;
+    private final Duration modelCallTimeout;
 
     public AgentLoop(
-        ChatModel model,
+        ModelClient model,
         ObjectMapper json,
         @Value("${app.agent.max-rounds:30}") int maxRounds,
-        @Value("${app.agent.max-parallel-tool-calls:4}") int maxParallelToolCalls) {
+        @Value("${app.agent.max-parallel-tool-calls:4}") int maxParallelToolCalls,
+        @Value("${app.agent.model-call-timeout:5m}") Duration modelCallTimeout) {
         this.model = model;
         this.toolCalls = new ToolCallExecutor(json, maxParallelToolCalls);
         if (maxRounds < 1) throw new IllegalArgumentException("max-rounds 必须大于 0");
+        if (modelCallTimeout.isZero() || modelCallTimeout.isNegative())
+            throw new IllegalArgumentException("model-call-timeout 必须大于 0");
         this.maxRounds = maxRounds;
+        this.modelCallTimeout = modelCallTimeout;
     }
 
     /**
      * Creates a reusable, independent model conversation for a delegated child run.
      */
-    public Conversation conversation(String systemPrompt, List<Message> initialHistory) {
+    public Conversation conversation(String systemPrompt, List<ModelMessage> initialHistory) {
         return new Conversation(systemPrompt, initialHistory);
     }
 
@@ -51,7 +54,7 @@ public class AgentLoop {
     public Result run(
         Long runId,
         String systemPrompt,
-        List<Message> initialHistory,
+        List<ModelMessage> initialHistory,
         Supplier<List<ToolCallback>> availableTools,
         BooleanSupplier cancelled) {
         return run(
@@ -105,46 +108,37 @@ public class AgentLoop {
                 List<ToolCallback> tools = availableTools.get();
                 Map<String, ToolCallback> callbacks = new LinkedHashMap<>();
                 for (ToolCallback tool : tools) {
-                    String name = tool.getToolDefinition().name();
-                    if (callbacks.putIfAbsent(name, tool) != null) {
-                        throw new IllegalArgumentException("重复工具名：" + name);
+                    if (callbacks.putIfAbsent(tool.name(), tool) != null) {
+                        throw new IllegalArgumentException("重复工具名：" + tool.name());
                     }
                 }
-                if (!(model.getOptions() instanceof OpenAiChatOptions defaults)) {
-                    throw new IllegalStateException("当前模型需要 OpenAiChatOptions");
-                }
-                OpenAiChatOptions options =
-                    defaults.mutate()
-                        .toolCallbacks(tools)
-                        .toolChoice(tools.isEmpty() ? "none" : "auto")
-                        .maxRetries(0)
-                        .build();
-                List<Message> request = new ArrayList<>();
-                request.add(new SystemMessage(conversation.systemPrompt()));
-                request.addAll(conversation.history());
+                List<ModelMessage> messages = new ArrayList<>();
+                messages.add(new ModelMessage.SystemMessage(conversation.systemPrompt()));
+                messages.addAll(conversation.history());
                 sink.roundStarted();
-                ChatResponse response = chat(new Prompt(request, options), sink, cancelled);
+                ModelClient.Reply reply;
+                try {
+                    reply = chat(request(tools, messages), sink, cancelled);
+                } catch (ModelCallTimeoutException exception) {
+                    return new Result(false, "模型调用超时，请稍后重试", round);
+                }
                 if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
                     return new Result(false, "Agent 运行已取消", round);
                 }
-                if (response == null || response.getResult() == null) {
+                if (reply == null || reply.message() == null) {
                     return new Result(false, "模型没有返回有效回复", round);
                 }
-                if (response.getResult().getMetadata() != null
-                    && "length"
-                    .equalsIgnoreCase(
-                        response.getResult().getMetadata().getFinishReason())) {
+                if ("length".equalsIgnoreCase(reply.finishReason())) {
                     return new Result(false, "模型回复被截断，请缩小问题范围后重试", round);
                 }
-                AssistantMessage assistant = response.getResult().getOutput();
-                if (assistant == null) return new Result(false, "模型没有返回有效回复", round);
-                if (!assistant.hasToolCalls()) {
-                    String text = assistant.getText();
+                ModelMessage.AssistantMessage assistant = reply.message();
+                if (assistant.toolCalls().isEmpty()) {
+                    String text = assistant.text();
                     if (text == null || text.isBlank()) return new Result(false, "模型返回了空回复", round);
                     conversation.append(assistant);
-                    List<Message> arrivedBeforeWait = updates.drain();
+                    List<ModelMessage> arrivedBeforeWait = updates.drain();
                     conversation.appendAll(arrivedBeforeWait);
-                    List<Message> completedWork = updates.awaitNext();
+                    List<ModelMessage> completedWork = updates.awaitNext();
                     if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
                         return new Result(false, "Agent 运行已取消", round);
                     }
@@ -154,14 +148,12 @@ public class AgentLoop {
                     }
                     return new Result(true, text, round);
                 }
-                // 保留原始消息及供应商元数据，下一轮完整回传 tool_calls/reasoning_content。
                 conversation.append(assistant);
                 ToolCallExecutor.Result results =
                     toolCalls.execute(
-                        runId, assistant.getToolCalls(), callbacks, cancelled, sink);
+                        runId, assistant.toolCalls(), callbacks, cancelled, sink);
                 if (results.cancelled()) return new Result(false, "Agent 运行已取消", round);
-                conversation.append(
-                    ToolResponseMessage.builder().responses(results.responses()).build());
+                conversation.append(new ModelMessage.ToolResponseMessage(results.responses()));
                 // 图片必须在完整工具结果之后追加，且只在确实还有下一轮模型调用时发送。
                 if (round < maxRounds) conversation.appendAll(conversation.takeStagedImages());
             }
@@ -171,54 +163,36 @@ public class AgentLoop {
         }
     }
 
+    private ModelClient.Request request(List<ToolCallback> tools, List<ModelMessage> messages) {
+        return new ModelClient.Request(
+            messages,
+            tools.stream()
+                .map(tool -> new ModelClient.ToolDefinition(
+                    tool.name(), tool.description(), tool.inputSchema()))
+                .toList());
+    }
+
     /**
-     * 逐步消费模型流：正文增量交给实时层，结束时用聚合结果保留完整 tool calls 与供应商元数据。
-     * reasoning 增量按 chunk 拼接，避免聚合器只保留最后一段。
+     * 消费模型流：正文增量交给实时层，聚合后的助手消息与结束原因由模型客户端给出。
      */
-    private ChatResponse chat(Prompt prompt, RunStreamSink sink, BooleanSupplier cancelled) {
-        MessageAggregator aggregator = new MessageAggregator();
-        AtomicReference<ChatResponse> completed = new AtomicReference<>();
-        StringBuilder reasoning = new StringBuilder();
-        model.stream(prompt)
-            .doOnNext(chunk -> forward(chunk, sink, cancelled, reasoning))
-            .transform(flux -> aggregator.aggregate(flux, completed::set))
-            .blockLast();
-        return withFullReasoning(completed.get(), reasoning);
+    private ModelClient.Reply chat(
+        ModelClient.Request request, RunStreamSink sink, BooleanSupplier cancelled) {
+        Mono<Long> cancellation = Flux.interval(CANCELLATION_CHECK_INTERVAL)
+            .filter(tick -> cancelled.getAsBoolean())
+            .next();
+        return model.stream(
+                request,
+                text -> {
+                    // 思考内容不进正文流；取消后立即停止推送。
+                    if (!cancelled.getAsBoolean()) sink.delta(text);
+                })
+            // 约束的是整轮调用，不会被新分片重置。
+            .timeout(modelCallTimeout, Mono.error(ModelCallTimeoutException::new))
+            .takeUntilOther(cancellation)
+            .block();
     }
 
-    private void forward(
-        ChatResponse chunk,
-        RunStreamSink sink,
-        BooleanSupplier cancelled,
-        StringBuilder reasoning) {
-        if (chunk.getResult() == null || chunk.getResult().getOutput() == null) return;
-        AssistantMessage message = chunk.getResult().getOutput();
-        if (message.getMetadata().get("reasoningContent") instanceof String thoughts) {
-            reasoning.append(thoughts);
-        }
-        // 思考内容不进正文流；取消后立即停止推送。
-        if (cancelled.getAsBoolean()) return;
-        if (Boolean.parseBoolean(
-            String.valueOf(message.getMetadata().getOrDefault("isThought", "false")))) return;
-        String text = message.getText();
-        if (text != null && !text.isEmpty()) sink.delta(text);
-    }
-
-    private ChatResponse withFullReasoning(ChatResponse response, StringBuilder reasoning) {
-        if (response == null || response.getResult() == null || reasoning.isEmpty()) return response;
-        AssistantMessage message = response.getResult().getOutput();
-        Map<String, Object> properties = new HashMap<>(message.getMetadata());
-        properties.put("reasoningContent", reasoning.toString());
-        AssistantMessage aggregated =
-            AssistantMessage.builder()
-                .content(message.getText())
-                .properties(properties)
-                .toolCalls(message.getToolCalls())
-                .build();
-        return new ChatResponse(
-            List.of(new Generation(aggregated, response.getResult().getMetadata())),
-            response.getMetadata());
-    }
+    private static final class ModelCallTimeoutException extends RuntimeException {}
 
     public record Result(boolean success, String text, int rounds) {
     }
@@ -229,18 +203,18 @@ public class AgentLoop {
     public interface UpdateSource {
         UpdateSource NONE =
             new UpdateSource() {
-                public List<Message> drain() {
+                public List<ModelMessage> drain() {
                     return List.of();
                 }
 
-                public List<Message> awaitNext() {
+                public List<ModelMessage> awaitNext() {
                     return List.of();
                 }
             };
 
-        List<Message> drain();
+        List<ModelMessage> drain();
 
-        List<Message> awaitNext();
+        List<ModelMessage> awaitNext();
     }
 
     /**
@@ -248,61 +222,61 @@ public class AgentLoop {
      */
     public static final class Conversation {
         private final String systemPrompt;
-        private final List<Message> history;
+        private final List<ModelMessage> history;
         private final List<StagedImage> stagedImages = new ArrayList<>();
 
-        private Conversation(String systemPrompt, List<Message> initialHistory) {
+        private Conversation(String systemPrompt, List<ModelMessage> initialHistory) {
             this.systemPrompt = systemPrompt;
             this.history = new ArrayList<>(initialHistory);
         }
 
         public synchronized void addUserMessage(String text) {
-            history.add(new UserMessage(text));
+            history.add(new ModelMessage.UserMessage(text));
         }
 
         /**
          * 图片暂存在各自会话中，由 loop 在工具结果之后追加。
          */
-        public synchronized void stageImage(String attachmentId, String fileName, Media media) {
-            stagedImages.add(new StagedImage(attachmentId, fileName, media));
+        public synchronized void stageImage(String attachmentId, String fileName, URI imageUri) {
+            stagedImages.add(new StagedImage(attachmentId, fileName, imageUri));
         }
 
-        private synchronized List<Message> takeStagedImages() {
+        private synchronized List<ModelMessage> takeStagedImages() {
             if (stagedImages.isEmpty()) return List.of();
             StringBuilder text = new StringBuilder("以下图片由 read_attachment 读取，按工具调用顺序附在本消息中：\n");
-            List<Media> media = new ArrayList<>();
+            List<URI> images = new ArrayList<>();
             for (StagedImage image : stagedImages) {
                 text.append("- 附件 ").append(image.attachmentId());
                 if (image.fileName() != null && !image.fileName().isBlank()) {
                     text.append(' ').append(image.fileName());
                 }
                 text.append('\n');
-                media.add(image.media());
+                images.add(image.imageUri());
             }
             stagedImages.clear();
-            return List.of(UserMessage.builder().text(text.toString()).media(media).build());
+            return List.of(new ModelMessage.UserMessage(text.toString(), images));
         }
 
         private synchronized void clearStagedImages() {
             stagedImages.clear();
         }
 
-        private record StagedImage(String attachmentId, String fileName, Media media) {
+        private record StagedImage(String attachmentId, String fileName, URI imageUri) {
         }
 
         private String systemPrompt() {
             return systemPrompt;
         }
 
-        private synchronized List<Message> history() {
+        private synchronized List<ModelMessage> history() {
             return List.copyOf(history);
         }
 
-        private synchronized void append(Message message) {
+        private synchronized void append(ModelMessage message) {
             history.add(message);
         }
 
-        private synchronized void appendAll(List<Message> messages) {
+        private synchronized void appendAll(List<ModelMessage> messages) {
             history.addAll(messages);
         }
     }

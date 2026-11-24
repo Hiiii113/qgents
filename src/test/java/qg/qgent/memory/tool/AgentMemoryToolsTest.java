@@ -5,9 +5,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.support.ToolCallbacks;
+import qg.qgent.harness.tool.ToolRegistry;
 import qg.qgent.memory.service.AgentMemoryService;
 import qg.qgent.support.TestIds;
 
@@ -21,15 +22,17 @@ class AgentMemoryToolsTest {
 
     @Test
     void exposesOnlyAgentMemoryToolsBoundToTheRunIdentity() {
-        var callbacks = ToolCallbacks.from(tools);
+        ToolRegistry registry = new ToolRegistry(new ObjectMapper());
+        registry.register(tools);
+        var callbacks = registry.callbacks();
 
         assertThat(callbacks)
-                .extracting(callback -> callback.getToolDefinition().name())
+                .extracting(callback -> callback.name())
                 .containsExactlyInAnyOrder(
                         "read_agent_memory", "write_agent_memory", "edit_agent_memory");
         assertThat(callbacks)
                 .allSatisfy(callback ->
-                        assertThat(callback.getToolDefinition().inputSchema())
+                        assertThat(callback.inputSchema())
                                 .doesNotContain("agentId", "projectId", "groupId"));
     }
 

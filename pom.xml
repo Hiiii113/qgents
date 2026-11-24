@@ -21,7 +21,7 @@
     <properties>
         <java.version>21</java.version>
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
-        <spring-ai.version>2.0.0</spring-ai.version>
+        <openai-java.version>4.39.1</openai-java.version>
         <springdoc.version>3.0.3</springdoc.version>
         <aliyun-oss.version>3.18.1</aliyun-oss.version>
         <google-auth.version>1.33.1</google-auth.version>
@@ -34,14 +34,6 @@
     <!-- 此处统一依赖版本，实际使用的库在 dependencies 中声明。 -->
     <dependencyManagement>
         <dependencies>
-            <!-- BOM 统一 Spring AI 各组件的版本，避免逐个配置。 -->
-            <dependency>
-                <groupId>org.springframework.ai</groupId>
-                <artifactId>spring-ai-bom</artifactId>
-                <version>${spring-ai.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
             <dependency>
                 <groupId>com.baomidou</groupId>
                 <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
@@ -51,11 +43,6 @@
                 <groupId>com.baomidou</groupId>
                 <artifactId>mybatis-plus-jsqlparser</artifactId>
                 <version>${mybatis-plus.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.springframework.ai</groupId>
-                <artifactId>spring-ai-starter-model-openai</artifactId>
-                <version>${spring-ai.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.springdoc</groupId>
@@ -105,10 +92,11 @@
             <groupId>org.yaml</groupId>
             <artifactId>snakeyaml</artifactId>
         </dependency>
-        <!-- 模型接入：使用 OpenAI 兼容协议连接 DeepSeek，Agent loop 由项目自行控制。 -->
+        <!-- 模型接入：官方 OpenAI Java SDK 直连兼容接口，Agent loop 由项目自行控制。 -->
         <dependency>
-            <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-model-openai</artifactId>
+            <groupId>com.openai</groupId>
+            <artifactId>openai-java-client-okhttp</artifactId>
+            <version>${openai-java.version}</version>
             <exclusions>
                 <!-- OpenAI SDK 的同名 Swagger 注解会覆盖 Springdoc 使用的 Jakarta 注解。 -->
                 <exclusion>
@@ -116,6 +104,11 @@
                     <artifactId>swagger-annotations</artifactId>
                 </exclusion>
             </exclusions>
+        </dependency>
+        <!-- 模型流式结果直接以 Reactor 序列返回。 -->
+        <dependency>
+            <groupId>io.projectreactor</groupId>
+            <artifactId>reactor-core</artifactId>
         </dependency>
         <!-- HTTP API：Spring MVC 控制器和 JSON 请求响应。 -->
         <dependency>

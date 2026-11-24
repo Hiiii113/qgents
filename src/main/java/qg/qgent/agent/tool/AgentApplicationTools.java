@@ -1,13 +1,13 @@
 package qg.qgent.agent.tool;
 
-import org.springframework.ai.tool.annotation.Tool;
-import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.http.HttpStatus;
 import qg.qgent.agent.dto.AgentApplicationRequest;
 import qg.qgent.agent.entity.AgentEntity;
 import qg.qgent.agent.service.AgentApplicationService;
 import qg.qgent.common.web.ApiException;
+import qg.qgent.harness.tool.Tool;
 import qg.qgent.harness.tool.ToolErrors;
+import qg.qgent.harness.tool.ToolParam;
 import qg.qgent.harness.tool.ToolResult;
 
 import java.util.List;
