@@ -3,13 +3,11 @@ package qg.qgent.harness.controller;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.common.web.ApiResponse;
 import qg.qgent.common.web.RequestIdFilter;
@@ -19,7 +17,7 @@ import qg.qgent.harness.runtime.AgentStreamService;
 import java.util.List;
 
 /**
- * 群内 Agent 运行的实时增量与刷新快照。
+ * 群内 Agent 运行的快照接口；实时增量经 WebSocket 推送。
  */
 @RestController
 @RequiredArgsConstructor
@@ -29,20 +27,7 @@ public class AgentRunController {
     private final AgentStreamService streams;
 
     /**
-     * 订阅群级 Agent 运行事件；建连即收到活动运行快照，断线后重连以快照恢复。
-     */
-    @GetMapping(
-        value = "/api/v1/projects/{projectId}/groups/{groupId}/agent-events",
-        produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter stream(
-        @AuthenticationPrincipal Long userId,
-        @PathVariable Long projectId,
-        @PathVariable Long groupId) {
-        return streams.openGroupStream(projectId, groupId, userId);
-    }
-
-    /**
-     * 群内最近的运行（含子运行），用于刷新和降级轮询。
+     * 群内最近的运行（含子运行），用于刷新、断线恢复与降级轮询。
      */
     @GetMapping("/api/v1/projects/{projectId}/agent-runs")
     public ApiResponse<List<AgentRunSnapshot>> recent(

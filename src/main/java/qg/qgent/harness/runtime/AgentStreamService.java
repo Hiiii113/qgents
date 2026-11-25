@@ -1,27 +1,23 @@
 package qg.qgent.harness.runtime;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.http.HttpStatus;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import qg.qgent.chat.service.GroupService;
-import qg.qgent.common.web.ApiException;
 import qg.qgent.harness.dto.AgentRunSnapshot;
 import qg.qgent.harness.entity.AgentRunEntity;
 import qg.qgent.harness.entity.AgentRunToolEntity;
 import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.mapper.AgentRunMapper;
 import qg.qgent.harness.mapper.AgentRunToolMapper;
-import qg.qgent.realtime.service.EventService;
-import qg.qgent.realtime.transport.SseEmitterFactory;
+import qg.qgent.realtime.service.RealtimeHub;
+import qg.qgent.realtime.websocket.RealtimeFrame;
 
-import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.*;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
@@ -29,51 +25,41 @@ import java.util.stream.Collectors;
 /**
  * 一次 Agent 运行的可展示进度。
  * <p>
- * 正文增量只走群级 SSE 的进程内队列，不写数据库；工具明细写入 {@code agent_run_tools}，
- * 快照以数据库为准，运行结束后或进程重启后仍能回看。轮次等低频状态仍通过
- * {@link EventService} 持久化，供现有项目 SSE/WS 与刷新兜底。正文只保存在当前进程，
- * 重启后不可恢复，以数据库终态、工具明细和最终消息为准。
+ * 正文增量只保存在当前进程，按 120ms/200 字聚合后经 WebSocket 推送给群成员，不写数据库；
+ * 工具明细写入 {@code agent_run_tools}，快照以数据库为准，运行结束后或进程重启后仍能回看。
+ * 正文重启后不可恢复，以数据库终态、工具明细和最终消息为准。
  */
 @Service
 public class AgentStreamService {
+    private static final Logger log = LoggerFactory.getLogger(AgentStreamService.class);
+
     // 正文增量聚合：最多 120ms 或 200 字发一帧，避免逐 token 推送。
     private static final long FLUSH_INTERVAL_MS = 120;
     private static final int FLUSH_CHARS = 200;
-    // 单条 SSE 连接允许积压的帧数；慢客户端溢出直接断开，由快照恢复。
-    private static final int QUEUE_CAPACITY = 256;
-    private static final long SSE_TIMEOUT_MS = 30 * 60 * 1000L;
-    private static final long HEARTBEAT_MS = 15_000;
-    private static final long ACCESS_RECHECK_MS = 10_000;
-    private static final int MAX_STREAMS = 128;
+    // 群成员推送目标缓存：每条增量都查库会成为热点，短暂缓存足以覆盖成员变动。
+    private static final long MEMBER_CACHE_MS = 10_000;
     private static final int TOOL_NAME_LIMIT = 64;
     // 工具入参与结果只保留前 2000 字，截断时末尾加省略号。
     private static final int TOOL_TEXT_LIMIT = 2000;
 
-    private final EventService events;
     private final AgentRunMapper runs;
     private final AgentRunToolMapper toolRuns;
     private final GroupService groups;
-    private final Executor pump;
-    private final SseEmitterFactory emitters;
-    private final AtomicInteger connections = new AtomicInteger();
+    private final RealtimeHub realtime;
     private final Map<Long, LiveRun> live = new ConcurrentHashMap<>();
     // 根运行生命周期内的 seq/round 计数器：子运行结束后续接也不重置。
     private final Map<Long, RootStream> roots = new ConcurrentHashMap<>();
-    private final Map<Long, Set<GroupStream>> streams = new ConcurrentHashMap<>();
+    private final Map<Long, GroupMembers> groupMembers = new ConcurrentHashMap<>();
 
     public AgentStreamService(
-        EventService events,
         AgentRunMapper runs,
         AgentRunToolMapper toolRuns,
         GroupService groups,
-        SseEmitterFactory emitters,
-        @Qualifier("sseEventPumpExecutor") Executor pump) {
-        this.events = events;
+        RealtimeHub realtime) {
         this.runs = runs;
         this.toolRuns = toolRuns;
         this.groups = groups;
-        this.emitters = emitters;
-        this.pump = pump;
+        this.realtime = realtime;
     }
 
     /**
@@ -99,41 +85,7 @@ public class AgentStreamService {
             long revision = state.root.revision(state.run.getId()).incrementAndGet();
             emit(state, "agent-run.updated", updatedPayload(state, RunStatus.RUNNING, revision));
         }
-        drainPublishes(state);
-    }
-
-    /**
-     * 订阅一个群的 Agent 运行事件；建连时先下发全部活动运行快照。
-     */
-    public SseEmitter openGroupStream(Long projectId, Long groupId, Long userId) {
-        groups.requireGroupMember(projectId, groupId, userId);
-        SseEmitter emitter = emitters.create(SSE_TIMEOUT_MS);
-        if (connections.incrementAndGet() > MAX_STREAMS) {
-            connections.decrementAndGet();
-            throw new ApiException(
-                HttpStatus.TOO_MANY_REQUESTS,
-                "SSE_CONNECTION_LIMIT_EXCEEDED",
-                "当前实时连接过多，请稍后重试");
-        }
-        GroupStream stream = new GroupStream(projectId, groupId, userId, emitter);
-        streams.compute(
-            groupId,
-            (ignored, existing) -> {
-                Set<GroupStream> updated =
-                    existing == null ? ConcurrentHashMap.newKeySet() : existing;
-                updated.add(stream);
-                return updated;
-            });
-        stream.emitter.onTimeout(() -> close(stream));
-        stream.emitter.onError(error -> close(stream));
-        stream.emitter.onCompletion(() -> close(stream));
-        try {
-            pump.execute(() -> pump(stream));
-        } catch (RuntimeException failure) {
-            close(stream);
-            throw failure;
-        }
-        return stream.emitter;
+        drainFrames(state);
     }
 
     /**
@@ -153,87 +105,6 @@ public class AgentStreamService {
         return found.stream()
             .map(run -> snapshot(run, rows.getOrDefault(run.getId(), List.of())))
             .toList();
-    }
-
-    private void pump(GroupStream stream) {
-        try {
-            List<AgentRunEntity> groupRuns =
-                live.values().stream()
-                    .map(state -> state.run)
-                    .filter(run -> run.getGroupId().equals(stream.groupId))
-                    .toList();
-            Map<Long, List<AgentRunToolEntity>> rows = toolRows(groupRuns);
-            for (AgentRunEntity run : groupRuns) {
-                Map<String, Object> payload =
-                    Map.of("run", snapshot(run, rows.getOrDefault(run.getId(), List.of())));
-                if (!send(stream, "agent-run.snapshot", payload)) return;
-            }
-            long lastHeartbeat = System.currentTimeMillis();
-            long lastAccessCheck = lastHeartbeat;
-            while (!stream.closed.get()) {
-                Frame frame = stream.queue.poll(1, TimeUnit.SECONDS);
-                if (frame != null && !send(stream, frame.type(), frame.payload())) return;
-                long now = System.currentTimeMillis();
-                if (now - lastHeartbeat >= HEARTBEAT_MS) {
-                    if (!sendComment(stream)) return;
-                    lastHeartbeat = now;
-                }
-                if (now - lastAccessCheck >= ACCESS_RECHECK_MS) {
-                    lastAccessCheck = now;
-                    if (!stillMember(stream)) return;
-                }
-            }
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-        } finally {
-            close(stream);
-        }
-    }
-
-    private boolean stillMember(GroupStream stream) {
-        try {
-            groups.requireGroupMember(stream.projectId, stream.groupId, stream.userId);
-            return true;
-        } catch (ApiException exception) {
-            return false;
-        }
-    }
-
-    private boolean send(GroupStream stream, String type, Map<String, Object> payload) {
-        try {
-            stream.emitter.send(SseEmitter.event().name(type).data(payload));
-            return true;
-        } catch (IOException | IllegalStateException exception) {
-            return false;
-        }
-    }
-
-    private boolean sendComment(GroupStream stream) {
-        try {
-            stream.emitter.send(SseEmitter.event().comment("heartbeat"));
-            return true;
-        } catch (IOException | IllegalStateException exception) {
-            return false;
-        }
-    }
-
-    /**
-     * 终止一条连接并清理注册；重复调用安全。
-     */
-    private void close(GroupStream stream) {
-        if (!stream.closed.compareAndSet(false, true)) return;
-        streams.computeIfPresent(
-            stream.groupId,
-            (ignored, existing) -> {
-                existing.remove(stream);
-                return existing.isEmpty() ? null : existing;
-            });
-        connections.decrementAndGet();
-        try {
-            stream.emitter.complete();
-        } catch (Exception ignored) {
-            // 连接可能已经关闭。
-        }
     }
 
     /**
@@ -260,7 +131,7 @@ public class AgentStreamService {
         payload.put("seq", sequence);
         payload.put("revision", revision);
         payload.put("text", text);
-        fanout(state.run.getGroupId(), "agent-run.delta", payload);
+        emit(state, "agent-run.delta", payload);
     }
 
     private Map<String, Object> updatedPayload(
@@ -295,32 +166,67 @@ public class AgentStreamService {
     }
 
     /**
-     * 必须在 state 监视器内调用：SSE 按 revision 顺序入队，数据库持久化在锁外按同一顺序执行。
+     * 必须在 state 监视器内调用：按 revision 顺序入队，锁外按同一顺序推送。
      */
     private void emit(LiveRun state, String type, Map<String, Object> payload) {
-        fanout(state.run.getGroupId(), type, payload);
-        state.pendingPublishes.add(new PendingEvent(type, payload));
+        state.pendingFrames.add(new PendingFrame(type, payload));
     }
 
     /**
-     * 同一运行的事件串行落库并广播，避免并行工具通知反序；不持有 state 锁做 IO。
+     * 同一运行的事件串行广播，避免并行工具通知反序；不持有 state 锁做 IO。
      */
-    private void drainPublishes(LiveRun state) {
-        synchronized (state.publishLock) {
+    private void drainFrames(LiveRun state) {
+        synchronized (state.frameLock) {
             while (true) {
-                PendingEvent event;
+                PendingFrame frame;
                 synchronized (state) {
-                    event = state.pendingPublishes.poll();
-                    if (event == null) return;
+                    frame = state.pendingFrames.poll();
+                    if (frame == null) return;
                 }
-                events.publish(
-                    state.run.getProjectId(),
-                    state.run.getGroupId(),
-                    event.type(),
-                    state.run.getId().toString(),
-                    event.payload());
+                broadcast(state.run, frame.type(), frame.payload());
             }
         }
+    }
+
+    /**
+     * 推送给该群在线成员；帧结构与项目级实时事件一致，resourceId 为运行 ID。
+     */
+    private void broadcast(AgentRunEntity run, String type, Map<String, Object> payload) {
+        realtime.broadcastToUsers(
+            members(run.getGroupId()),
+            RealtimeFrame.of(
+                type,
+                "project",
+                run.getProjectId().toString(),
+                run.getGroupId().toString(),
+                null,
+                null,
+                run.getId().toString(),
+                payload));
+    }
+
+    /**
+     * 群成员推送目标；解析失败时沿用上一批缓存，推送问题不能影响 Agent 运行。
+     */
+    private Set<Long> members(Long groupId) {
+        long now = System.currentTimeMillis();
+        GroupMembers cached = groupMembers.get(groupId);
+        if (cached != null && now - cached.loadedAt() < MEMBER_CACHE_MS) {
+            return cached.userIds();
+        }
+        Set<Long> resolved;
+        try {
+            Set<Long> userIds = groups.memberUserIds(groupId);
+            resolved = userIds == null ? Set.of() : Set.copyOf(userIds);
+        } catch (RuntimeException failure) {
+            log.warn(
+                "agent run fan-out members unavailable, groupId={}: {}",
+                groupId,
+                failure.getMessage());
+            return cached == null ? Set.of() : cached.userIds();
+        }
+        groupMembers.put(groupId, new GroupMembers(resolved, now));
+        return resolved;
     }
 
     private Map<String, Object> basePayload(AgentRunEntity run) {
@@ -333,16 +239,6 @@ public class AgentStreamService {
         payload.put("agentId", run.getAgentId().toString());
         payload.put("triggerMessageId", id(run.getTriggerMessageId()));
         return payload;
-    }
-
-    private void fanout(Long groupId, String type, Map<String, Object> payload) {
-        Set<GroupStream> groupStreams = streams.get(groupId);
-        if (groupStreams == null) return;
-        Frame frame = new Frame(type, payload);
-        for (GroupStream stream : groupStreams) {
-            // 慢客户端不阻塞模型线程：队列满直接断开，重连后以快照恢复。
-            if (!stream.queue.offer(frame)) close(stream);
-        }
     }
 
     private AgentRunSnapshot snapshot(AgentRunEntity run, List<AgentRunToolEntity> rows) {
@@ -497,8 +393,8 @@ public class AgentStreamService {
         private final RootStream root;
         private final List<Segment> segments = new ArrayList<>();
         private final StringBuilder pending = new StringBuilder();
-        private final Object publishLock = new Object();
-        private final java.util.ArrayDeque<PendingEvent> pendingPublishes =
+        private final Object frameLock = new Object();
+        private final java.util.ArrayDeque<PendingFrame> pendingFrames =
             new java.util.ArrayDeque<>();
         private volatile int round;
         private long lastFlushAt = System.currentTimeMillis();
@@ -520,7 +416,10 @@ public class AgentStreamService {
         }
     }
 
-    private record PendingEvent(String type, Map<String, Object> payload) {
+    private record PendingFrame(String type, Map<String, Object> payload) {
+    }
+
+    private record GroupMembers(Set<Long> userIds, long loadedAt) {
     }
 
     private final class Sink implements RunStreamSink {
@@ -577,7 +476,7 @@ public class AgentStreamService {
                     toolPayload(
                         state, "started", toolCallId, toolName, round, null, text, revision));
             }
-            drainPublishes(state);
+            drainFrames(state);
         }
 
         public void toolFinished(String toolCallId, String toolName, Boolean ok, String output) {
@@ -607,7 +506,7 @@ public class AgentStreamService {
                         text,
                         revision));
             }
-            drainPublishes(state);
+            drainFrames(state);
         }
 
         public void finished() {
@@ -622,30 +521,11 @@ public class AgentStreamService {
                     updatedPayload(state, state.run.getStatus(), revision));
             }
             live.remove(state.run.getId(), state);
-            drainPublishes(state);
+            drainFrames(state);
             if (state.run.getParentRunId() == null) {
                 roots.remove(state.rootRunId, state.root);
             }
         }
 
-    }
-
-    private static final class GroupStream {
-        private final Long projectId;
-        private final Long groupId;
-        private final Long userId;
-        private final SseEmitter emitter;
-        private final BlockingQueue<Frame> queue = new ArrayBlockingQueue<>(QUEUE_CAPACITY);
-        private final AtomicBoolean closed = new AtomicBoolean();
-
-        GroupStream(Long projectId, Long groupId, Long userId, SseEmitter emitter) {
-            this.projectId = projectId;
-            this.groupId = groupId;
-            this.userId = userId;
-            this.emitter = emitter;
-        }
-    }
-
-    private record Frame(String type, Map<String, Object> payload) {
     }
 }

@@ -308,22 +308,6 @@ CREATE TABLE IF NOT EXISTS workspaces (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Persistent project development workspace';
 
 CREATE TABLE IF NOT EXISTS
-    events (
-        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '事件ID',
-        project_id BIGINT NOT NULL COMMENT '所属项目ID',
-        group_id BIGINT NULL COMMENT '可选关联项目群聊ID',
-        sequence_no BIGINT UNSIGNED NOT NULL COMMENT '项目内单调递增事件序号，作为SSE游标',
-        event_type VARCHAR(64) NOT NULL COMMENT '事件类型，如message.created/agent-run.updated',
-        resource_id VARCHAR(128) NULL COMMENT '关联资源ID字符串，如agentRunId',
-        payload JSON NOT NULL COMMENT '脱敏事件载荷JSON，禁止包含凭证',
-        created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '产生时间（UTC）',
-        UNIQUE KEY uk_event_seq (project_id, sequence_no),
-        KEY idx_event_type (event_type, created_at),
-        CONSTRAINT fk_event_project FOREIGN KEY (project_id) REFERENCES projects (id),
-        CONSTRAINT fk_event_group FOREIGN KEY (group_id) REFERENCES chat_groups (id)
-    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目级实时事件存储，至少保留24小时';
-
-CREATE TABLE IF NOT EXISTS
     notifications (
         id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '通知ID',
         recipient_user_id BIGINT NOT NULL COMMENT '接收通知的用户ID',
@@ -381,30 +365,6 @@ CREATE TABLE IF NOT EXISTS push_deliveries (
     CONSTRAINT fk_push_delivery_device FOREIGN KEY (device_id) REFERENCES push_devices(id) ON DELETE CASCADE,
     CONSTRAINT chk_push_delivery_status CHECK (status IN ('PENDING', 'SENDING', 'SENT', 'FAILED'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='可恢复、幂等的移动端推送投递Outbox';
-
-CREATE TABLE IF NOT EXISTS notification_events (
-    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '事件ID',
-    recipient_user_id BIGINT NOT NULL COMMENT '接收通知的用户ID',
-    sequence_no BIGINT NOT NULL COMMENT '用户内单调递增事件序号（SSE 游标）',
-    notification_id BIGINT NULL COMMENT '关联通知ID',
-    kind VARCHAR(32) NULL COMMENT '通知类型（MENTIONED/INVITED 等）',
-    payload JSON NULL COMMENT '脱敏事件载荷',
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '产生时间（UTC）',
-    UNIQUE KEY uk_ne_recipient_seq (recipient_user_id, sequence_no),
-    CONSTRAINT fk_ne_notification FOREIGN KEY (notification_id) REFERENCES notifications(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='通知级 SSE 事件（用户维度游标）';
-
-CREATE TABLE IF NOT EXISTS team_events (
-    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '事件ID',
-    team_id BIGINT NOT NULL COMMENT '所属团队ID',
-    sequence_no BIGINT NOT NULL COMMENT '团队内单调递增事件序号（SSE 游标）',
-    event_type VARCHAR(64) NOT NULL COMMENT '事件类型（project.member.added/team.member.updated/activity.created）',
-    resource_id VARCHAR(64) NULL COMMENT '关联资源ID（projectId 等）',
-    payload JSON NULL COMMENT '脱敏事件载荷',
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '产生时间（UTC）',
-    UNIQUE KEY uk_te_team_seq (team_id, sequence_no),
-    CONSTRAINT fk_te_team FOREIGN KEY (team_id) REFERENCES teams(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='团队级 SSE 事件（团队维度游标）';
 
 CREATE TABLE IF NOT EXISTS
     group_read_state (

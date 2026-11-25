@@ -21,8 +21,6 @@ import qg.qgent.notification.mapper.NotificationMapper;
 import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.storage.ProjectDirectoryService;
-import qg.qgent.realtime.entity.EventEntity;
-import qg.qgent.realtime.mapper.EventMapper;
 import qg.qgent.sandbox.service.SandboxService;
 import qg.qgent.skill.entity.SkillEntity;
 import qg.qgent.skill.mapper.SkillMapper;
@@ -41,7 +39,6 @@ import java.util.List;
 public class TeamDisbandService {
     private final ProjectMapper projectMapper;
     private final NotificationMapper notificationMapper;
-    private final EventMapper eventMapper;
     private final ChatGroupMapper chatGroupMapper;
     private final MessageMapper messageMapper;
     private final AgentRunMapper agentRuns;
@@ -112,9 +109,6 @@ public class TeamDisbandService {
         notificationMapper.delete(
             Wrappers.<NotificationEntity>lambdaQuery()
                 .eq(NotificationEntity::getProjectId, projectId));
-        eventMapper.delete(
-            Wrappers.<EventEntity>lambdaQuery().eq(EventEntity::getProjectId, projectId));
-
         List<Long> groupIds =
             chatGroupMapper
                 .selectList(
@@ -147,7 +141,7 @@ public class TeamDisbandService {
                 .eq(AttachmentEntity::getProjectId, projectId));
 
         // chat_groups 引用 project，
-        // 须在 messages/events/notifications 之后删除；group_memory_state 由外键级联删除
+        // 须在 messages/notifications 之后删除；group_memory_state 由外键级联删除
         chatGroupMapper.delete(
             Wrappers.<ChatGroupEntity>lambdaQuery()
                 .eq(ChatGroupEntity::getProjectId, projectId));

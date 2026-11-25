@@ -1,6 +1,7 @@
 package qg.qgent.memory.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -8,6 +9,7 @@ import java.nio.file.Path;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.storage.ProjectDirectoryService;
 import qg.qgent.support.TestIds;
 
@@ -26,6 +28,7 @@ class AgentMemoryServiceTest {
     void setUp() {
         service =
                 new AgentMemoryService(
+                        mock(ProjectMapper.class),
                         new ProjectDirectoryService(root.toString(), root.toString()),
                         new MemoryDocument(MAX_CHARS));
     }

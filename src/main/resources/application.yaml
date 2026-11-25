@@ -160,9 +160,10 @@ management:
 
 qgents:
   # 后端 Agent 执行线程池：线程数和排队容量，与模型单步工具并行数分别配置。
+  # core 与 max 相等：core 小于 max 时任务先进队列，队列没满就不会扩到 max，实际并发只有 core。
   executor:
     agent:
-      core-size: ${QGENTS_AGENT_CORE_SIZE:2}
+      core-size: ${QGENTS_AGENT_CORE_SIZE:4}
       max-size: ${QGENTS_AGENT_MAX_SIZE:4}
       queue-capacity: ${QGENTS_AGENT_QUEUE_CAPACITY:100}
   push:
