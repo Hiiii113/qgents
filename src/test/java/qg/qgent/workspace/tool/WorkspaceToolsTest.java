@@ -51,8 +51,6 @@ class WorkspaceToolsTest {
                                 "11",
                                 "isDefault",
                                 true,
-                                "status",
-                                "READY",
                                 "selected",
                                 true),
                         Map.of(
@@ -60,8 +58,6 @@ class WorkspaceToolsTest {
                                 "12",
                                 "isDefault",
                                 false,
-                                "status",
-                                "READY",
                                 "selected",
                                 false));
     }
@@ -286,7 +282,6 @@ class WorkspaceToolsTest {
         workspace.setId(id);
         workspace.setProjectId(projectId);
         workspace.setIsDefault(isDefault);
-        workspace.setStatus("READY");
         return workspace;
     }
 }

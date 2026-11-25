@@ -78,7 +78,6 @@ class SandboxCommandsTest {
             .containsEntry("running", true)
             .containsKey("stdout");
         verify(executions).output(execution, 30, 40, 16000);
-        verify(sessions).renewWriteLease(id);
         verify(executions, never())
             .start(any(), any(), any(), any(), any(), any(), anyMap());
     }

@@ -19,7 +19,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 
 /**
- * Workspace 文件操作入口：校验并续期工作区会话后直接调用进程内文件处理器，
+ * Workspace 文件操作入口：校验工作区会话后直接调用进程内文件处理器，
  * 统一保留读取窗口、写入版本、执行结果和失败码。
  */
 @Slf4j
@@ -86,7 +86,7 @@ public class SandboxFiles {
     }
 
     /**
-     * 写入类操作把会话/租约问题也转换为模型可见的失败结果，读取类操作直接抛出。
+     * 写入类操作把会话问题也转换为模型可见的失败结果，读取类操作直接抛出。
      */
     private ToolResult mutate(Long id, FileOperation operation) {
         try {
@@ -100,7 +100,6 @@ public class SandboxFiles {
 
     private ToolResult execute(Long id, FileOperation operation) {
         SandboxSession session = sessions.require(id);
-        sessions.renewWriteLease(id);
         Path workspace = paths.resolveLocal(session.storageKey());
         try {
             return operation.apply(session, workspace);

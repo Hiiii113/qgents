@@ -28,9 +28,11 @@ import com.openai.models.chat.completions.ChatCompletionFunctionTool;
 import com.openai.models.chat.completions.ChatCompletionMessage;
 import com.openai.models.chat.completions.ChatCompletionMessageFunctionToolCall;
 import com.openai.models.chat.completions.ChatCompletionMessageToolCall;
+import com.openai.models.chat.completions.ChatCompletionStreamOptions;
 import com.openai.models.chat.completions.ChatCompletionTool;
 import com.openai.models.chat.completions.ChatCompletionToolChoiceOption;
 import com.openai.models.chat.completions.ChatCompletionToolMessageParam;
+import com.openai.models.completions.CompletionUsage;
 import java.net.URI;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -43,7 +45,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.springframework.beans.factory.DisposableBean;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
@@ -57,6 +59,7 @@ public class OpenAiModelClient implements ModelClient, DisposableBean {
         List.of("reasoning_content", "reasoning");
     private static final String REASONING_CONTENT_FIELD = "reasoning_content";
 
+    private final String baseUrl;
     private final String model;
     private final double temperature;
     private final long maxTokens;
@@ -65,13 +68,25 @@ public class OpenAiModelClient implements ModelClient, DisposableBean {
     private final OkHttpClient transport;
     private final OpenAIClientAsync client;
 
+    @Autowired
+    public OpenAiModelClient(AiModelProperties properties, ObjectMapper objectMapper) {
+        this(
+            properties.getApiKey(),
+            properties.getBaseUrl(),
+            properties.getModel(),
+            properties.getTemperature(),
+            properties.getMaxTokens(),
+            objectMapper);
+    }
+
     public OpenAiModelClient(
-        @Value("${app.ai.api-key}") String apiKey,
-        @Value("${app.ai.base-url}") String baseUrl,
-        @Value("${app.ai.model}") String model,
-        @Value("${app.ai.temperature}") double temperature,
-        @Value("${app.ai.max-tokens}") long maxTokens,
+        String apiKey,
+        String baseUrl,
+        String model,
+        double temperature,
+        long maxTokens,
         ObjectMapper objectMapper) {
+        this.baseUrl = baseUrl;
         this.model = model;
         this.temperature = temperature;
         this.maxTokens = maxTokens;
@@ -87,6 +102,26 @@ public class OpenAiModelClient implements ModelClient, DisposableBean {
                     .timeout(Duration.ofSeconds(60))
                     .maxRetries(3)
                     .build());
+    }
+
+    public static OpenAiModelClient forEndpoint(
+        String baseUrl,
+        String apiKey,
+        String model,
+        double temperature,
+        long maxTokens,
+        ObjectMapper objectMapper) {
+        return new OpenAiModelClient(apiKey, baseUrl, model, temperature, maxTokens, objectMapper);
+    }
+
+    @Override
+    public String modelName() {
+        return model;
+    }
+
+    @Override
+    public String baseUrl() {
+        return baseUrl;
     }
 
     @Override
@@ -117,6 +152,7 @@ public class OpenAiModelClient implements ModelClient, DisposableBean {
                 sink.onCancel(connection::cancel);
                 ChatCompletionAccumulator accumulator = ChatCompletionAccumulator.create();
                 StringBuilder reasoning = new StringBuilder();
+                AtomicReference<Usage> capturedUsage = new AtomicReference<>(Usage.ZERO);
                 AsyncStreamResponse<ChatCompletionChunk> stream =
                     client.withOptions(
                             options ->
@@ -128,12 +164,15 @@ public class OpenAiModelClient implements ModelClient, DisposableBean {
                                         Timeout.builder().request(Duration.ZERO).build()))
                         .chat()
                         .completions()
-                        .createStreaming(params(request));
+                        .createStreaming(streamParams(request));
                 stream.subscribe(
                     new AsyncStreamResponse.Handler<>() {
                         @Override
                         public void onNext(ChatCompletionChunk chunk) {
-                            if (connection.cancelled.get() || chunk.choices().isEmpty()) return;
+                            if (connection.cancelled.get()) return;
+                            // 标准 OpenAI 流在尾帧返回空 choices + usage，DeepSeek 可能与 finish_reason 同帧。
+                            chunk.usage().ifPresent(usage -> capturedUsage.set(extractUsage(usage)));
+                            if (chunk.choices().isEmpty()) return;
                             appendReasoning(chunk, reasoning);
                             // DeepSeek 可把 usage 和 finish_reason 放在同一帧。SDK 聚合器把含 usage 的帧当成独立尾帧。
                             accumulator.accumulate(chunk.usage().isPresent()
@@ -151,7 +190,7 @@ public class OpenAiModelClient implements ModelClient, DisposableBean {
                                 return;
                             }
                             try {
-                                sink.success(reply(accumulator, reasoning));
+                                sink.success(reply(accumulator, reasoning, capturedUsage.get()));
                             } catch (RuntimeException truncated) {
                                 // 没有结束原因的流不完整，截断的工具调用不能交给上层执行。
                                 sink.error(truncated);
@@ -167,6 +206,16 @@ public class OpenAiModelClient implements ModelClient, DisposableBean {
     }
 
     private ChatCompletionCreateParams params(Request request) {
+        return paramsBuilder(request).build();
+    }
+
+    private ChatCompletionCreateParams streamParams(Request request) {
+        return paramsBuilder(request)
+            .streamOptions(ChatCompletionStreamOptions.builder().includeUsage(true).build())
+            .build();
+    }
+
+    private ChatCompletionCreateParams.Builder paramsBuilder(Request request) {
         ChatCompletionCreateParams.Builder builder =
             ChatCompletionCreateParams.builder()
                 .model(model)
@@ -180,7 +229,7 @@ public class OpenAiModelClient implements ModelClient, DisposableBean {
                 .tools(request.tools().stream().map(this::tool).toList())
                 .toolChoice(ChatCompletionToolChoiceOption.Auto.AUTO);
         }
-        return builder.build();
+        return builder;
     }
 
     private static void addMessage(
@@ -286,7 +335,7 @@ public class OpenAiModelClient implements ModelClient, DisposableBean {
     }
 
     private static Reply reply(
-        ChatCompletionAccumulator accumulator, CharSequence reasoning) {
+        ChatCompletionAccumulator accumulator, CharSequence reasoning, Usage usage) {
         // 流在结束原因之前断掉时 chatCompletion() 会抛异常，回复整体失败而不是交出半份工具调用。
         ChatCompletion.Choice choice = accumulator.chatCompletion().choices().get(0);
         ChatCompletionMessage message = choice.message();
@@ -306,7 +355,27 @@ public class OpenAiModelClient implements ModelClient, DisposableBean {
                 message.content().orElse(""),
                 toolCalls,
                 reasoning.isEmpty() ? null : reasoning.toString()),
-            choice.finishReason().asString());
+            choice.finishReason().asString(),
+            usage);
+    }
+
+    private static Usage extractUsage(CompletionUsage usage) {
+        long cached =
+            usage.promptTokensDetails()
+                .flatMap(CompletionUsage.PromptTokensDetails::cachedTokens)
+                .orElseGet(() -> additionalLong(usage, "prompt_cache_hit_tokens"));
+        long reasoning =
+            usage.completionTokensDetails()
+                .flatMap(CompletionUsage.CompletionTokensDetails::reasoningTokens)
+                .orElse(0L);
+        return new Usage(usage.promptTokens(), usage.completionTokens(), cached, reasoning);
+    }
+
+    private static long additionalLong(CompletionUsage usage, String field) {
+        JsonValue value = usage._additionalProperties().get(field);
+        if (value == null) return 0L;
+        Object raw = value.asNumber().orElse(null);
+        return raw instanceof Number n ? n.longValue() : 0L;
     }
 
     private static void appendReasoning(
