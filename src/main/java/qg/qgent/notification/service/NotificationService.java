@@ -75,7 +75,7 @@ public class NotificationService {
         entity.setIsRead(false);
         entity.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
         notificationMapper.insert(entity);
-        // 保存实时事件，在线客户端通过 SSE 或 WebSocket 接收。
+        // 实时通知只推送给在线客户端，历史记录以 notifications 表为准。
         eventService.publishNotification(
             recipientUserId,
             entity.getId(),

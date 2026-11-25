@@ -6,7 +6,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.time.Duration;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
-import qg.qgent.sandbox.dto.CreateSandboxRequest;
 import qg.qgent.support.TestIds;
 
 class FakeContainerRuntimeTest {
@@ -14,40 +13,38 @@ class FakeContainerRuntimeTest {
 
     @Test
     void duplicateSandboxIdIsRejected() {
-        CreateSandboxRequest request = request();
-        SandboxAllocation allocation = allocation(request);
-        runtime.create(request, allocation);
+        SandboxAllocation allocation = allocation();
+        runtime.create(allocation);
 
-        assertThrows(IllegalStateException.class, () -> runtime.create(request, allocation));
+        assertThrows(IllegalStateException.class, () -> runtime.create(allocation));
     }
 
     @Test
     void destroyIsIdempotent() {
-        CreateSandboxRequest request = request();
-        runtime.create(request, allocation(request));
+        SandboxAllocation allocation = allocation();
+        runtime.create(allocation);
 
-        runtime.destroy(request.getSandboxId());
-        runtime.destroy(request.getSandboxId());
+        runtime.destroy(allocation.getId());
+        runtime.destroy(allocation.getId());
 
-        assertTrue(runtime.find(request.getSandboxId()).isEmpty());
+        assertTrue(runtime.find(allocation.getId()).isEmpty());
     }
 
-    private CreateSandboxRequest request() {
-        CreateSandboxRequest request = new CreateSandboxRequest();
-        request.setSandboxId(java.util.UUID.randomUUID());
-        request.setAgentRunId(TestIds.next());
-        request.setWorkspaceStorageKey("workspaces/example");
-        request.setImageProfile("dev-tools");
-        return request;
+    @Test
+    void workspaceUseTracksRegisteredSandbox() {
+        SandboxAllocation allocation = allocation();
+        runtime.create(allocation);
+
+        assertTrue(runtime.isWorkspaceInUse(allocation.getWorkspaceStorageKey()));
     }
 
-    private SandboxAllocation allocation(CreateSandboxRequest request) {
+    private SandboxAllocation allocation() {
         Instant now = Instant.parse("2026-08-12T00:00:00Z");
         return new SandboxAllocation(
-                request.getSandboxId(),
-                request.getAgentRunId(),
-                request.getWorkspaceStorageKey(),
-                request.getImageProfile(),
+                java.util.UUID.randomUUID(),
+                TestIds.next(),
+                TestIds.next() + "/workspaces/default",
+                "dev-tools",
                 "READY",
                 "FAKE",
                 now,

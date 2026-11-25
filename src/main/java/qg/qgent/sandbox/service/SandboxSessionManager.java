@@ -6,9 +6,8 @@ import org.springframework.stereotype.Service;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.storage.ProjectDirectoryService;
 import qg.qgent.sandbox.config.SandboxProperties;
-import qg.qgent.sandbox.dto.CreateSandboxRequest;
-import qg.qgent.sandbox.dto.SandboxResponse;
-import qg.qgent.sandbox.execution.service.ToolExecutionService;
+import qg.qgent.sandbox.execution.service.CommandExecutionService;
+import qg.qgent.sandbox.runtime.SandboxAllocation;
 import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
 import qg.qgent.workspace.service.WorkspaceService;
@@ -29,7 +28,7 @@ public class SandboxSessionManager {
 
     private final SandboxService sandboxes;
     private final ProjectDirectoryService projectDirectories;
-    private final ToolExecutionService executions;
+    private final CommandExecutionService executions;
     private final SandboxProperties properties;
     private final WorkspaceMapper workspaceMapper;
     private final WorkspaceWriteLeaseService writeLeases;
@@ -40,7 +39,7 @@ public class SandboxSessionManager {
     public SandboxSessionManager(
         SandboxService sandboxes,
         ProjectDirectoryService projectDirectories,
-        ToolExecutionService executions,
+        CommandExecutionService executions,
         SandboxProperties properties,
         WorkspaceMapper workspaceMapper,
         WorkspaceWriteLeaseService writeLeases) {
@@ -210,12 +209,9 @@ public class SandboxSessionManager {
         // 目录按需建立；同一项目同一仓库的 Git 数据在首次准备 worktree 时创建。
         projectDirectories.workspace(projectId, WorkspaceService.directoryName(workspace));
         String storageKey = WorkspaceService.storageKey(workspace);
-        CreateSandboxRequest request = new CreateSandboxRequest();
-        request.setSandboxId(UUID.randomUUID());
-        request.setAgentRunId(agentRunId);
-        request.setWorkspaceStorageKey(storageKey);
-        request.setImageProfile(properties.getImageProfile());
-        SandboxResponse sandbox = sandboxes.create(request);
+        SandboxAllocation sandbox =
+            sandboxes.create(
+                UUID.randomUUID(), agentRunId, storageKey, properties.getImageProfile());
         workspace.setStatus("READY");
         workspaceMapper.updateById(workspace);
         return new SandboxSession(agentRunId, workspaceId, sandbox.getId(), storageKey);

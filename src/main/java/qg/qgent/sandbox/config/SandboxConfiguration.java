@@ -14,7 +14,7 @@ import java.util.concurrent.Executors;
 @EnableConfigurationProperties(SandboxProperties.class)
 public class SandboxConfiguration {
     /**
-     * 创建结构化工具异步执行使用的固定大小线程池。
+     * 创建异步命令执行使用的固定大小线程池。
      */
     @Bean(destroyMethod = "shutdownNow")
     ExecutorService sandboxExecutionPool(SandboxProperties properties) {

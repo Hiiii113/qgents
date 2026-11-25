@@ -9,13 +9,11 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
-import java.util.Map;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.sandbox.exception.SandboxException;
-import qg.qgent.sandbox.execution.dto.ToolContext;
-import qg.qgent.sandbox.execution.dto.ToolResult;
 
 class FileWriteToolTest {
     @TempDir Path repository;
@@ -28,23 +26,12 @@ class FileWriteToolTest {
         String expectedHash = FileReadTool.sha256(Files.readAllBytes(file));
 
         ToolResult result =
-                tool.execute(
-                        context(),
-                        Map.of(
-                                "mode",
-                                "replace",
-                                "path",
-                                "example.txt",
-                                "expectedHash",
-                                expectedHash,
-                                "content",
-                                "新内容"));
+            tool.write(repository, "example.txt", expectedHash, "新内容", "replace");
 
         assertEquals("新内容", Files.readString(file));
         assertEquals(
-                FileReadTool.sha256("新内容".getBytes(StandardCharsets.UTF_8)),
-                result.getResult().get("sha256"));
-        assertEquals(true, result.getResult().get("changed"));
+            FileReadTool.sha256("新内容".getBytes(StandardCharsets.UTF_8)), result.get("sha256"));
+        assertEquals(true, result.get("changed"));
     }
 
     @Test
@@ -55,19 +42,9 @@ class FileWriteToolTest {
         String expectedHash = FileReadTool.sha256(Files.readAllBytes(file));
 
         ToolResult result =
-                tool.execute(
-                        context(),
-                        Map.of(
-                                "mode",
-                                "replace",
-                                "path",
-                                "example.txt",
-                                "expectedHash",
-                                expectedHash,
-                                "content",
-                                "原内容"));
+            tool.write(repository, "example.txt", expectedHash, "原内容", "replace");
 
-        assertEquals(false, result.getResult().get("changed"));
+        assertEquals(false, result.get("changed"));
     }
 
     @Test
@@ -75,22 +52,12 @@ class FileWriteToolTest {
         FileWriteTool tool = new FileWriteTool(new RepositoryFileResolver());
 
         ToolResult result =
-                tool.execute(
-                        context(),
-                        Map.of(
-                                "mode",
-                                "create",
-                                "path",
-                                "empty.txt",
-                                "expectedHash",
-                                FileReadTool.sha256(new byte[0]),
-                                "content",
-                                ""));
+            tool.write(repository, "empty.txt", FileReadTool.sha256(new byte[0]), "", "create");
 
         // 新建空文件：previous 与 next 都为空字节数组，但存在性已变化，必须记为真实变更
         assertTrue(Files.exists(repository.resolve("empty.txt")));
         assertEquals(0, Files.size(repository.resolve("empty.txt")));
-        assertEquals(true, result.getResult().get("changed"));
+        assertEquals(true, result.get("changed"));
     }
 
     @Test
@@ -98,20 +65,15 @@ class FileWriteToolTest {
         FileWriteTool tool = new FileWriteTool(new RepositoryFileResolver());
 
         ToolResult result =
-                tool.execute(
-                        context(),
-                        Map.of(
-                                "mode",
-                                "create",
-                                "path",
-                                "src/main/App.java",
-                                "expectedHash",
-                                FileReadTool.sha256(new byte[0]),
-                                "content",
-                                "class App {}"));
+            tool.write(
+                repository,
+                "src/main/App.java",
+                FileReadTool.sha256(new byte[0]),
+                "class App {}",
+                "create");
 
         assertEquals("class App {}", Files.readString(repository.resolve("src/main/App.java")));
-        assertEquals(true, result.getResult().get("changed"));
+        assertEquals(true, result.get("changed"));
     }
 
     @Test
@@ -120,27 +82,22 @@ class FileWriteToolTest {
         try {
             Files.createSymbolicLink(repository.resolve("linked"), outside);
         } catch (UnsupportedOperationException
-                | java.io.IOException
-                | SecurityException exception) {
+                 | java.io.IOException
+                 | SecurityException exception) {
             return;
         }
 
         FileWriteTool tool = new FileWriteTool(new RepositoryFileResolver());
         SandboxException error =
-                assertThrows(
-                        SandboxException.class,
-                        () ->
-                                tool.execute(
-                                        context(),
-                                        Map.of(
-                                                "mode",
-                                                "replace",
-                                                "path",
-                                                "linked/escape.txt",
-                                                "expectedHash",
-                                                FileReadTool.sha256(new byte[0]),
-                                                "content",
-                                                "must not escape")));
+            assertThrows(
+                SandboxException.class,
+                () ->
+                    tool.write(
+                        repository,
+                        "linked/escape.txt",
+                        FileReadTool.sha256(new byte[0]),
+                        "must not escape",
+                        "replace"));
 
         assertEquals("TOOL_PATH_INVALID", error.getCode());
         org.junit.jupiter.api.Assertions.assertFalse(Files.exists(outside.resolve("escape.txt")));
@@ -152,55 +109,41 @@ class FileWriteToolTest {
         FileWriteTool tool = new FileWriteTool(new RepositoryFileResolver());
 
         assertThrows(
-                SandboxException.class,
-                () ->
-                        tool.execute(
-                                context(),
-                                Map.of(
-                                        "mode",
-                                        "replace",
-                                        "path",
-                                        "example.txt",
-                                        "expectedHash",
-                                        FileReadTool.sha256("旧内容".getBytes(StandardCharsets.UTF_8)),
-                                        "content",
-                                        "新内容")));
+            SandboxException.class,
+            () ->
+                tool.write(
+                    repository,
+                    "example.txt",
+                    FileReadTool.sha256("旧内容".getBytes(StandardCharsets.UTF_8)),
+                    "新内容",
+                    "replace"));
     }
 
     @Test
     void assignsSandboxOwnershipAfterAtomicReplacementWhenRunningAsRoot() throws Exception {
         assumeTrue(
-                Files.getFileAttributeView(
-                                repository, java.nio.file.attribute.PosixFileAttributeView.class)
-                        != null);
+            Files.getFileAttributeView(
+                    repository, java.nio.file.attribute.PosixFileAttributeView.class)
+                != null);
         assumeTrue(((Number) Files.getAttribute(repository, "unix:uid")).longValue() == 0);
 
         Path file = repository.resolve("example.txt");
         Files.writeString(file, "old", StandardCharsets.UTF_8);
         Files.setPosixFilePermissions(
-                file, Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
+            file, Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE));
         FileWriteTool tool = new FileWriteTool(new RepositoryFileResolver());
 
-        tool.execute(
-                context(),
-                Map.of(
-                        "mode",
-                        "replace",
-                        "path",
-                        "example.txt",
-                        "expectedHash",
-                        FileReadTool.sha256(Files.readAllBytes(file)),
-                        "content",
-                        "new"));
+        tool.write(
+            repository,
+            "example.txt",
+            FileReadTool.sha256(Files.readAllBytes(file)),
+            "new",
+            "replace");
 
         assertEquals(10001L, ((Number) Files.getAttribute(file, "unix:uid")).longValue());
         assertEquals(10001L, ((Number) Files.getAttribute(file, "unix:gid")).longValue());
         assertEquals(
-                Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
-                Files.getPosixFilePermissions(file));
-    }
-
-    private ToolContext context() {
-        return new ToolContext(null, repository, "/workspace/example", null);
+            Set.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
+            Files.getPosixFilePermissions(file));
     }
 }

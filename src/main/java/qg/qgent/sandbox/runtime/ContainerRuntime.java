@@ -1,7 +1,5 @@
 package qg.qgent.sandbox.runtime;
 
-import qg.qgent.sandbox.dto.CreateSandboxRequest;
-
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -15,11 +13,10 @@ public interface ContainerRuntime {
     /**
      * 创建一个新的 Sandbox。
      *
-     * @param request    经过接口校验的创建请求
      * @param allocation 服务层计算完成的租约和资源元数据
      * @return 已受运行时管理的沙箱状态
      */
-    SandboxAllocation create(CreateSandboxRequest request, SandboxAllocation allocation);
+    SandboxAllocation create(SandboxAllocation allocation);
 
     /**
      * @param sandboxId 沙箱编号

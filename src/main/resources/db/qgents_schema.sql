@@ -113,6 +113,46 @@ CREATE TABLE IF NOT EXISTS agents (
     CONSTRAINT chk_agent_status CHECK (status IN ('PENDING', 'ACTIVE', 'REJECTED'))
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目内 Agent：默认 Agent 与经管理员审批的自定义 Agent';
 
+CREATE TABLE IF NOT EXISTS mcp_servers (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    project_id BIGINT NOT NULL,
+    name VARCHAR(120) NOT NULL,
+    endpoint VARCHAR(2048) NOT NULL,
+    scope VARCHAR(16) NOT NULL,
+    auth_mode VARCHAR(16) NOT NULL,
+    enabled TINYINT(1) NOT NULL DEFAULT 1,
+    oauth_client TEXT NULL,
+    KEY idx_mcp_servers_project (project_id),
+    CONSTRAINT fk_mcp_servers_project FOREIGN KEY (project_id) REFERENCES projects (id) ON DELETE CASCADE,
+    CONSTRAINT chk_mcp_scope CHECK (scope IN ('SHARED', 'PERSONAL')),
+    CONSTRAINT chk_mcp_auth_mode CHECK (auth_mode IN ('BEARER', 'OAUTH'))
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目共享 MCP 连接与个人 MCP 选项';
+
+CREATE TABLE IF NOT EXISTS mcp_credentials (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    server_id BIGINT NOT NULL,
+    owner_user_id BIGINT NULL,
+    -- 项目共享凭证占 0 槽位。个人凭证每位成员占一个槽位。
+    owner_slot BIGINT GENERATED ALWAYS AS (COALESCE(owner_user_id, 0)) VIRTUAL,
+    access_token TEXT NULL COMMENT 'AES-GCM 加密后的访问凭证',
+    refresh_token TEXT NULL COMMENT 'AES-GCM 加密后的刷新凭证',
+    expires_at DATETIME(6) NULL COMMENT '访问凭证过期时间（UTC）',
+    reauth_required TINYINT(1) NOT NULL DEFAULT 0,
+    revision BIGINT NOT NULL DEFAULT 0,
+    UNIQUE KEY uk_mcp_credential_owner (server_id, owner_slot),
+    CONSTRAINT fk_mcp_credential_server FOREIGN KEY (server_id) REFERENCES mcp_servers (id) ON DELETE CASCADE,
+    CONSTRAINT fk_mcp_credential_user FOREIGN KEY (owner_user_id) REFERENCES users (id) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '共享凭证与成员各自的个人 MCP 凭证';
+
+CREATE TABLE IF NOT EXISTS mcp_agent_assignments (
+    credential_id BIGINT NOT NULL,
+    agent_id BIGINT NOT NULL,
+    PRIMARY KEY (credential_id, agent_id),
+    KEY idx_mcp_assignment_agent (agent_id, credential_id),
+    CONSTRAINT fk_mcp_assignment_credential FOREIGN KEY (credential_id) REFERENCES mcp_credentials (id) ON DELETE CASCADE,
+    CONSTRAINT fk_mcp_assignment_agent FOREIGN KEY (agent_id) REFERENCES agents (id) ON DELETE CASCADE
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目共享和个人 MCP 连接的 Agent 分配';
+
 CREATE TABLE IF NOT EXISTS
     chat_groups (
         id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '项目群聊ID',
@@ -308,22 +348,6 @@ CREATE TABLE IF NOT EXISTS workspaces (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Persistent project development workspace';
 
 CREATE TABLE IF NOT EXISTS
-    events (
-        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '事件ID',
-        project_id BIGINT NOT NULL COMMENT '所属项目ID',
-        group_id BIGINT NULL COMMENT '可选关联项目群聊ID',
-        sequence_no BIGINT UNSIGNED NOT NULL COMMENT '项目内单调递增事件序号，作为SSE游标',
-        event_type VARCHAR(64) NOT NULL COMMENT '事件类型，如message.created/agent-run.updated',
-        resource_id VARCHAR(128) NULL COMMENT '关联资源ID字符串，如agentRunId',
-        payload JSON NOT NULL COMMENT '脱敏事件载荷JSON，禁止包含凭证',
-        created_at DATETIME (6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '产生时间（UTC）',
-        UNIQUE KEY uk_event_seq (project_id, sequence_no),
-        KEY idx_event_type (event_type, created_at),
-        CONSTRAINT fk_event_project FOREIGN KEY (project_id) REFERENCES projects (id),
-        CONSTRAINT fk_event_group FOREIGN KEY (group_id) REFERENCES chat_groups (id)
-    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目级实时事件存储，至少保留24小时';
-
-CREATE TABLE IF NOT EXISTS
     notifications (
         id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '通知ID',
         recipient_user_id BIGINT NOT NULL COMMENT '接收通知的用户ID',
@@ -343,30 +367,6 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT fk_notif_project FOREIGN KEY (project_id) REFERENCES projects (id),
         CONSTRAINT fk_notif_group FOREIGN KEY (group_id) REFERENCES chat_groups (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '用户通知中心';
-
-CREATE TABLE IF NOT EXISTS notification_events (
-    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '事件ID',
-    recipient_user_id BIGINT NOT NULL COMMENT '接收通知的用户ID',
-    sequence_no BIGINT NOT NULL COMMENT '用户内单调递增事件序号（SSE 游标）',
-    notification_id BIGINT NULL COMMENT '关联通知ID',
-    kind VARCHAR(32) NULL COMMENT '通知类型（MENTIONED/INVITED 等）',
-    payload JSON NULL COMMENT '脱敏事件载荷',
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '产生时间（UTC）',
-    UNIQUE KEY uk_ne_recipient_seq (recipient_user_id, sequence_no),
-    CONSTRAINT fk_ne_notification FOREIGN KEY (notification_id) REFERENCES notifications(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='通知级 SSE 事件（用户维度游标）';
-
-CREATE TABLE IF NOT EXISTS team_events (
-    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '事件ID',
-    team_id BIGINT NOT NULL COMMENT '所属团队ID',
-    sequence_no BIGINT NOT NULL COMMENT '团队内单调递增事件序号（SSE 游标）',
-    event_type VARCHAR(64) NOT NULL COMMENT '事件类型（project.member.added/team.member.updated/activity.created）',
-    resource_id VARCHAR(64) NULL COMMENT '关联资源ID（projectId 等）',
-    payload JSON NULL COMMENT '脱敏事件载荷',
-    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) COMMENT '产生时间（UTC）',
-    UNIQUE KEY uk_te_team_seq (team_id, sequence_no),
-    CONSTRAINT fk_te_team FOREIGN KEY (team_id) REFERENCES teams(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='团队级 SSE 事件（团队维度游标）';
 
 CREATE TABLE IF NOT EXISTS
     group_read_state (

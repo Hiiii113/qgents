@@ -57,6 +57,7 @@ import qg.qgent.harness.briefing.BriefingService;
 import qg.qgent.harness.entity.AgentRunEntity;
 import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.service.AgentRunService;
+import qg.qgent.mcp.tool.McpToolCallbacks;
 import qg.qgent.memory.dto.GroupMemoryResponse;
 import qg.qgent.memory.dto.ProjectMemoryResponse;
 import qg.qgent.memory.service.AgentMemoryService;
@@ -1460,6 +1461,7 @@ class AgentChatServiceTest {
                         new CrossGroupAccessService(groups),
                         agents,
                         agentApplications,
+                        mock(McpToolCallbacks.class),
                         childExecutor,
                         maxSubagents);
         MessageSentEvent event = new MessageSentEvent(actor, project, group, message, List.of());

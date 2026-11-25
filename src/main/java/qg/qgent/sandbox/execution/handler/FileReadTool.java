@@ -2,9 +2,7 @@ package qg.qgent.sandbox.execution.handler;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-import qg.qgent.sandbox.execution.dto.ToolArguments;
-import qg.qgent.sandbox.execution.dto.ToolContext;
-import qg.qgent.sandbox.execution.dto.ToolResult;
+import qg.qgent.harness.tool.ToolResult;
 
 import java.io.BufferedReader;
 import java.nio.charset.StandardCharsets;
@@ -21,20 +19,21 @@ import java.util.Map;
  */
 @Component
 @RequiredArgsConstructor
-public class FileReadTool implements SandboxTool {
+public class FileReadTool {
     private static final int MAX_WINDOW_BYTES = 64 * 1024;
     private static final int MAX_LINE_CHARS = 4000;
     private final RepositoryFileResolver files;
 
-    public String name() {
-        return "file.read";
-    }
-
-    public ToolResult execute(ToolContext context, Map<String, Object> arguments) {
-        String path = ToolArguments.string(arguments, "path", 1024);
-        int start = ToolArguments.integer(arguments, "startLine", 1, 1, Integer.MAX_VALUE);
-        int count = ToolArguments.integer(arguments, "lineCount", 200, 1, 1000);
-        Path file = files.resolveExisting(context.getLocalWorkspace(), path);
+    /**
+     * 读取窗口；startLine 从 1 开始，只返回本次请求的行数。
+     */
+    public ToolResult read(Path workspace, String path, int startLine, int lineCount) {
+        if (path == null || path.isBlank() || path.length() > 1024)
+            throw new IllegalArgumentException("工具参数不合法：path");
+        if (startLine < 1) throw new IllegalArgumentException("工具参数不合法：startLine");
+        if (lineCount < 1 || lineCount > 1000)
+            throw new IllegalArgumentException("工具参数不合法：lineCount");
+        Path file = files.resolveExisting(workspace, path);
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             boolean hasLf = false, hasCrlf = false;
@@ -72,7 +71,7 @@ public class FileReadTool implements SandboxTool {
                     lastCr = value == '\r';
                     if (value == '\r' || value == '\n') {
                         total++;
-                        if (total >= start && lines.size() < count && !windowFull) {
+                        if (total >= startLine && lines.size() < lineCount && !windowFull) {
                             String text = line.toString();
                             int size = text.getBytes(StandardCharsets.UTF_8).length;
                             if (bytes + size > MAX_WINDOW_BYTES) windowFull = true;
@@ -100,7 +99,7 @@ public class FileReadTool implements SandboxTool {
                 }
                 if (any) {
                     total++;
-                    if (total >= start && lines.size() < count && !windowFull) {
+                    if (total >= startLine && lines.size() < lineCount && !windowFull) {
                         String text = line.toString();
                         if (bytes + text.getBytes(StandardCharsets.UTF_8).length
                             <= MAX_WINDOW_BYTES) {
@@ -117,27 +116,18 @@ public class FileReadTool implements SandboxTool {
                     }
                 }
             }
-            int next = start + lines.size();
-            return ToolResult.value(
-                Map.of(
-                    "path",
-                    path,
-                    "sha256",
-                    HexFormat.of().formatHex(digest.digest()),
-                    "startLine",
-                    start,
-                    "totalLines",
-                    total,
-                    "lines",
-                    lines,
-                    "truncated",
-                    clipped || next <= total,
-                    "nextLine",
-                    next,
-                    "endsWithNewline",
-                    previous == 10,
-                    "newlineStyle",
-                    hasCrlf ? "CRLF" : hasLf ? "LF" : "NONE"));
+            int next = startLine + lines.size();
+            ToolResult result = ToolResult.ok();
+            result.put("path", path);
+            result.put("sha256", HexFormat.of().formatHex(digest.digest()));
+            result.put("startLine", startLine);
+            result.put("totalLines", total);
+            result.put("lines", lines);
+            result.put("truncated", clipped || next <= total);
+            result.put("nextLine", next);
+            result.put("endsWithNewline", previous == 10);
+            result.put("newlineStyle", hasCrlf ? "CRLF" : hasLf ? "LF" : "NONE");
+            return result;
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("读取已取消", exception);
