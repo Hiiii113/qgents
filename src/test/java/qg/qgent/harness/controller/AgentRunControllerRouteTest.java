@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 
 class AgentRunControllerRouteTest {
     @Test
-    void exposesGroupAgentStreamAndSnapshotRoutes() {
+    void exposesOnlyTheSnapshotRoute() {
         Set<String> routes = new HashSet<>();
         for (Method method : AgentRunController.class.getDeclaredMethods()) {
             if (method.isAnnotationPresent(GetMapping.class)) {
@@ -18,10 +18,6 @@ class AgentRunControllerRouteTest {
             }
         }
 
-        assertEquals(
-                Set.of(
-                        "GET /api/v1/projects/{projectId}/groups/{groupId}/agent-events",
-                        "GET /api/v1/projects/{projectId}/agent-runs"),
-                routes);
+        assertEquals(Set.of("GET /api/v1/projects/{projectId}/agent-runs"), routes);
     }
 }

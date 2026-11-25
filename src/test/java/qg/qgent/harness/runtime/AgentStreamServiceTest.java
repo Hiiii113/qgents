@@ -5,7 +5,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -14,14 +13,10 @@ import java.time.ZoneOffset;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.stream.Collectors;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.service.GroupService;
 import qg.qgent.harness.dto.AgentRunSnapshot;
@@ -30,18 +25,16 @@ import qg.qgent.harness.entity.AgentRunToolEntity;
 import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.mapper.AgentRunMapper;
 import qg.qgent.harness.mapper.AgentRunToolMapper;
-import qg.qgent.realtime.service.EventService;
+import qg.qgent.realtime.service.RealtimeHub;
+import qg.qgent.realtime.websocket.RealtimeFrame;
 import qg.qgent.support.TestIds;
 
 class AgentStreamServiceTest {
-    private final ExecutorService pump = Executors.newSingleThreadExecutor();
-    private final EventService events = mock(EventService.class);
     private final AgentRunMapper runs = mock(AgentRunMapper.class);
     private final AgentRunToolMapper toolRuns = mock(AgentRunToolMapper.class);
     private final GroupService groups = mock(GroupService.class);
-    private final SseEmitter emitter = mock(SseEmitter.class);
-    private final AgentStreamService service =
-            new AgentStreamService(events, runs, toolRuns, groups, timeout -> emitter, pump);
+    private final RealtimeHub realtime = mock(RealtimeHub.class);
+    private final AgentStreamService service = new AgentStreamService(runs, toolRuns, groups, realtime);
     // agent_run_tools 的内存替身：insert/finish/byRunIds 走真实写入路径。
     private final List<AgentRunToolEntity> toolRows = new CopyOnWriteArrayList<>();
 
@@ -80,20 +73,14 @@ class AgentStreamServiceTest {
                 .finish(any(), any(), any(), any(), any());
     }
 
-    @AfterEach
-    void stopPump() {
-        pump.shutdownNow();
-    }
-
     @Test
-    void streamsSnapshotsDeltasAndToolEventsWithCallIds() throws Exception {
+    void broadcastsSnapshotsDeltasAndToolFramesToTheGroupMembers() {
         when(groups.requireGroupMember(any(), any(), any())).thenReturn(new ChatGroupEntity());
         AgentRunEntity run = run();
+        Long member = TestIds.next();
+        when(groups.memberUserIds(run.getGroupId())).thenReturn(Set.of(member));
         RunStreamSink sink = service.sink(run);
         sink.roundStarted();
-        service.openGroupStream(run.getProjectId(), run.getGroupId(), TestIds.next());
-        // 等首帧快照落地再发事件，否则 pump 线程可能在运行结束后才启动。
-        verify(emitter, timeout(3000).atLeastOnce()).send(any(SseEmitter.SseEventBuilder.class));
         sink.delta("正在检查仓库结构。");
         sink.toolStarted("call-a", "run_command", "{\"cmd\":\"ls\"}");
         sink.toolFinished("call-a", "run_command", true, "{\"ok\":true}");
@@ -104,24 +91,41 @@ class AgentStreamServiceTest {
         run.setRounds(2);
         sink.finished();
 
-        // 共 8 帧：快照、两段正文、两次工具、轮次与终态；等最后一帧发出再断言。
-        verify(emitter, timeout(3000).atLeast(8)).send(any(SseEmitter.SseEventBuilder.class));
-        String frames = sentFrames();
+        verify(realtime, org.mockito.Mockito.atLeastOnce())
+                .broadcastToUsers(eq(Set.of(member)), any(RealtimeFrame.class));
+        List<RealtimeFrame> frames = frames();
         assertThat(frames)
-                .contains("event:agent-run.snapshot")
-                .contains("event:agent-run.updated")
-                .contains("event:agent-run.delta")
-                .contains("event:agent-run.tool")
-                .contains("toolCallId=call-a")
-                .contains("phase=started")
-                .contains("input={\"cmd\":\"ls\"}")
-                .contains("phase=finished")
-                .contains("output={\"ok\":true}")
-                .contains("text=正在检查仓库结构。")
-                .contains("status=SUCCEEDED")
-                .contains("rounds=2")
-                .contains("revision=");
-        assertThat(frames).doesNotContain("reasoning", "arguments");
+                .extracting(RealtimeFrame::type)
+                .containsExactly(
+                        "agent-run.updated",
+                        "agent-run.delta",
+                        "agent-run.tool",
+                        "agent-run.tool",
+                        "agent-run.delta",
+                        "agent-run.updated",
+                        "agent-run.delta",
+                        "agent-run.updated");
+        assertThat(frames).allSatisfy(frame -> {
+            assertThat(frame.scope()).isEqualTo("project");
+            assertThat(frame.projectId()).isEqualTo(run.getProjectId().toString());
+            assertThat(frame.groupId()).isEqualTo(run.getGroupId().toString());
+            assertThat(frame.resourceId()).isEqualTo(run.getId().toString());
+        });
+        assertThat(frames.stream().filter(frame -> "agent-run.delta".equals(frame.type())))
+                .extracting(frame -> frame.payload().get("text"))
+                .containsExactly("正在检查仓库结构。", "工具返回后继续输出。", "最终答复。");
+        assertThat(toolFrame(frames, "started").payload())
+                .containsEntry("toolCallId", "call-a")
+                .containsEntry("tool", "run_command")
+                .containsEntry("input", "{\"cmd\":\"ls\"}");
+        assertThat(toolFrame(frames, "finished").payload())
+                .containsEntry("toolCallId", "call-a")
+                .containsEntry("output", "{\"ok\":true}");
+        assertThat(frames.getLast().payload())
+                .containsEntry("status", "SUCCEEDED")
+                .containsEntry("rounds", 2);
+        assertThat(frames.getLast().payload().toString())
+                .doesNotContain("reasoning", "arguments");
     }
 
     @Test
@@ -182,20 +186,11 @@ class AgentStreamServiceTest {
 
         resumed.toolFinished("call-2", "run_command", false, null);
         resumed.finished();
-        ArgumentCaptor<java.util.Map<String, Object>> payload =
-                ArgumentCaptor.forClass(java.util.Map.class);
-        verify(events, org.mockito.Mockito.atLeastOnce())
-                .publish(
-                        any(),
-                        any(),
-                        org.mockito.ArgumentMatchers.eq("agent-run.updated"),
-                        any(),
-                        payload.capture());
-        assertThat(payload.getAllValues())
+        assertThat(updatesOf(run))
                 .anySatisfy(
                         value -> {
-                            assertThat(value.get("status")).isEqualTo("RUNNING");
-                            assertThat(value.get("round")).isEqualTo(2);
+                            assertThat(value).containsEntry("status", "RUNNING");
+                            assertThat(value).containsEntry("round", 2);
                         });
     }
 
@@ -209,7 +204,7 @@ class AgentStreamServiceTest {
         RunStreamSink sink = service.sink(child);
         sink.roundStarted();
 
-        List<java.util.Map<String, Object>> first = updatesOf(child);
+        List<Map<String, Object>> first = updatesOf(child);
         assertThat(first).hasSize(1);
         assertThat(first.getFirst())
                 .containsEntry("runId", child.getId().toString())
@@ -218,25 +213,9 @@ class AgentStreamServiceTest {
                 .containsEntry("revision", 1L);
 
         sink.roundStarted();
-        List<java.util.Map<String, Object>> second = updatesOf(child);
+        List<Map<String, Object>> second = updatesOf(child);
         assertThat(second).hasSize(2);
         assertThat(second.getLast()).containsEntry("round", 2).containsEntry("revision", 2L);
-    }
-
-    private List<java.util.Map<String, Object>> updatesOf(AgentRunEntity run) {
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<java.util.Map<String, Object>> payload =
-                ArgumentCaptor.forClass(java.util.Map.class);
-        org.mockito.Mockito.verify(events, org.mockito.Mockito.atLeastOnce())
-                .publish(
-                        any(),
-                        any(),
-                        org.mockito.ArgumentMatchers.eq("agent-run.updated"),
-                        any(),
-                        payload.capture());
-        return payload.getAllValues().stream()
-                .filter(value -> run.getId().toString().equals(value.get("runId")))
-                .toList();
     }
 
     @Test
@@ -267,19 +246,13 @@ class AgentStreamServiceTest {
         child.setStatus(RunStatus.SUCCEEDED);
         sink.finished();
 
-        ArgumentCaptor<java.util.Map<String, Object>> payload =
-                ArgumentCaptor.forClass(java.util.Map.class);
-        org.mockito.Mockito.verify(events, org.mockito.Mockito.atLeastOnce())
-                .publish(
-                        any(),
-                        any(),
-                        any(),
-                        any(),
-                        payload.capture());
         assertThat(
-                        payload.getAllValues().stream()
-                                .filter(value -> child.getId().toString().equals(value.get("runId")))
-                                .map(value -> ((Number) value.get("revision")).longValue())
+                        frames().stream()
+                                .filter(frame ->
+                                        child.getId()
+                                                .toString()
+                                                .equals(frame.payload().get("runId")))
+                                .map(frame -> ((Number) frame.payload().get("revision")).longValue())
                                 .toList())
                 .isSorted()
                 .doesNotHaveDuplicates();
@@ -295,48 +268,9 @@ class AgentStreamServiceTest {
         run.setResult("Agent 运行已取消");
         sink.finished();
 
-        ArgumentCaptor<java.util.Map<String, Object>> payload =
-                ArgumentCaptor.forClass(java.util.Map.class);
-        verify(events, org.mockito.Mockito.atLeastOnce())
-                .publish(
-                        any(),
-                        any(),
-                        org.mockito.ArgumentMatchers.eq("agent-run.updated"),
-                        any(),
-                        payload.capture());
-        assertThat(payload.getAllValues().getLast())
+        assertThat(updatesOf(run).getLast())
                 .containsEntry("status", "CANCELLED")
                 .containsEntry("runId", run.getId().toString());
-    }
-
-    @Test
-    void deniesGroupStreamForUsersOutsideTheGroup() {
-        when(groups.requireGroupMember(any(), any(), any()))
-                .thenThrow(
-                        new qg.qgent.common.web.ApiException(
-                                org.springframework.http.HttpStatus.NOT_FOUND,
-                                "GROUP_NOT_FOUND",
-                                "群不存在或无权访问"));
-
-        org.assertj.core.api.Assertions.assertThatThrownBy(
-                        () -> service.openGroupStream(TestIds.next(), TestIds.next(), TestIds.next()))
-                .isInstanceOf(qg.qgent.common.web.ApiException.class);
-    }
-
-    @Test
-    void slowClientIsDisconnectedInsteadOfAccumulatingFrames() throws Exception {
-        when(groups.requireGroupMember(any(), any(), any())).thenReturn(new ChatGroupEntity());
-        AgentStreamService blocked =
-                new AgentStreamService(events, runs, toolRuns, groups, timeout -> emitter, task -> {});
-        AgentRunEntity run = run();
-        blocked.openGroupStream(run.getProjectId(), run.getGroupId(), TestIds.next());
-        RunStreamSink sink = blocked.sink(run);
-        sink.roundStarted();
-        for (int i = 0; i < 400; i++) {
-            sink.delta("x".repeat(200));
-        }
-
-        verify(emitter, timeout(2000)).complete();
     }
 
     @Test
@@ -368,21 +302,12 @@ class AgentStreamServiceTest {
                         new AgentRunSnapshot.Tool(
                                 "call-2", "read_file", 1, "done", "{\"path\":\"a.txt\"}", null));
 
-        ArgumentCaptor<Map<String, Object>> payload = ArgumentCaptor.forClass(Map.class);
-        verify(events, org.mockito.Mockito.atLeastOnce())
-                .publish(any(), any(), eq("agent-run.tool"), any(), payload.capture());
-        assertThat(payload.getAllValues())
-                .anySatisfy(
-                        value -> {
-                            assertThat(value.get("phase")).isEqualTo("started");
-                            assertThat(value.get("input")).isEqualTo("{\"cmd\":\"ls\"}");
-                        })
-                .anySatisfy(
-                        value -> {
-                            assertThat(value.get("phase")).isEqualTo("finished");
-                            assertThat(value.get("output"))
-                                    .isEqualTo("{\"ok\":true,\"stdout\":\"a\"}");
-                        });
+        List<RealtimeFrame> frames = frames();
+        assertThat(toolFrame(frames, "started").payload())
+                .containsEntry("tool", "run_command")
+                .containsEntry("input", "{\"cmd\":\"ls\"}");
+        assertThat(toolFrame(frames, "finished").payload())
+                .containsEntry("output", "{\"ok\":true,\"stdout\":\"a\"}");
     }
 
     @Test
@@ -401,22 +326,52 @@ class AgentStreamServiceTest {
         assertThat(tool.output()).isEqualTo("y".repeat(2000) + "…");
     }
 
+    @Test
+    void memberLookupFailureKeepsTheRunAndPublishesNoAudience() {
+        when(groups.requireGroupMember(any(), any(), any())).thenReturn(new ChatGroupEntity());
+        AgentRunEntity run = run();
+        when(groups.memberUserIds(run.getGroupId()))
+                .thenThrow(new IllegalStateException("group removed"));
+        RunStreamSink sink = service.sink(run);
+        sink.roundStarted();
+        sink.delta("a");
+        run.setStatus(RunStatus.SUCCEEDED);
+        sink.finished();
+
+        verify(realtime, org.mockito.Mockito.atLeastOnce())
+                .broadcastToUsers(eq(Set.of()), any(RealtimeFrame.class));
+        assertThat(recent(run).getStatus()).isEqualTo("SUCCEEDED");
+    }
+
     private AgentRunSnapshot recent(AgentRunEntity run) {
+        when(groups.requireGroupMember(any(), any(), any())).thenReturn(new ChatGroupEntity());
+        when(runs.selectList(any())).thenReturn(List.of(run));
         return service.recentRuns(run.getProjectId(), run.getGroupId(), TestIds.next(), 20)
                 .getFirst();
     }
 
-    private String sentFrames() throws Exception {
-        ArgumentCaptor<SseEmitter.SseEventBuilder> sent =
-                ArgumentCaptor.forClass(SseEmitter.SseEventBuilder.class);
-        verify(emitter, org.mockito.Mockito.atLeastOnce()).send(sent.capture());
-        return sent.getAllValues().stream()
-                .map(
-                        builder ->
-                                builder.build().stream()
-                                        .map(item -> String.valueOf(item.getData()))
-                                        .collect(Collectors.joining()))
-                .collect(Collectors.joining("\n"));
+    @SuppressWarnings("unchecked")
+    private List<RealtimeFrame> frames() {
+        ArgumentCaptor<RealtimeFrame> sent = ArgumentCaptor.forClass(RealtimeFrame.class);
+        verify(realtime, org.mockito.Mockito.atLeastOnce())
+                .broadcastToUsers(any(), sent.capture());
+        return sent.getAllValues();
+    }
+
+    private static RealtimeFrame toolFrame(List<RealtimeFrame> frames, String phase) {
+        return frames.stream()
+                .filter(frame -> "agent-run.tool".equals(frame.type()))
+                .filter(frame -> phase.equals(frame.payload().get("phase")))
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private List<Map<String, Object>> updatesOf(AgentRunEntity run) {
+        return frames().stream()
+                .filter(frame -> "agent-run.updated".equals(frame.type()))
+                .map(RealtimeFrame::payload)
+                .filter(value -> run.getId().toString().equals(value.get("runId")))
+                .toList();
     }
 
     private AgentRunEntity childOf(AgentRunEntity root) {
