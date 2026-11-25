@@ -20,6 +20,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import qg.qgent.auth.security.JwtAuthenticationFilter;
+import qg.qgent.mcp.service.McpOAuthFlow;
 
 import java.util.Arrays;
 import java.util.List;
@@ -80,7 +81,7 @@ public class SecurityConfiguration {
                     .permitAll()
                     // App 回调通过一次性 state 识别安装发起人；Webhook 单独校验签名。
                     .requestMatchers(
-                        HttpMethod.GET, "/api/v1/integrations/github/callback")
+                        HttpMethod.GET, "/api/v1/integrations/github/callback", McpOAuthFlow.CALLBACK, McpOAuthFlow.CLIENT_METADATA)
                     .permitAll()
                     .requestMatchers(
                         HttpMethod.POST, "/api/v1/integrations/github/webhook")
