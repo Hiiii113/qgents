@@ -1,4 +1,4 @@
-package qg.qgent.common.dto;
+package qg.qgent.skill.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;

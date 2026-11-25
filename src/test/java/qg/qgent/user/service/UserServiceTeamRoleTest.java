@@ -1,4 +1,4 @@
-package qg.qgent.auth.service;
+package qg.qgent.user.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.anyCollection;
@@ -7,9 +7,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import qg.qgent.auth.mail.VerificationCodeMailer;
-import qg.qgent.common.storage.AvatarStorageService;
+import qg.qgent.attachment.storage.AvatarStorageService;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.mapper.view.ProjectMembershipView;
 import qg.qgent.support.TestIds;
@@ -20,7 +18,7 @@ import qg.qgent.team.mapper.TeamMemberMapper;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
 
-class AuthServiceTeamRoleTest {
+class UserServiceTeamRoleTest {
     @Test
     void meReturnsTeamAdminRole() {
         Long userId = TestIds.next();
@@ -28,21 +26,12 @@ class AuthServiceTeamRoleTest {
         UserMapper userMapper = mock(UserMapper.class);
         TeamMapper teamMapper = mock(TeamMapper.class);
         TeamMemberMapper memberMapper = mock(TeamMemberMapper.class);
-        PasswordEncoder passwords = mock(PasswordEncoder.class);
-        when(passwords.encode("qgents-dummy-password-not-used")).thenReturn("dummy");
-        AuthService service =
-                new AuthService(
+        UserService service =
+                new UserService(
                         userMapper,
-                        mock(RefreshTokenStore.class),
-                        mock(VerificationCodeStore.class),
                         teamMapper,
                         memberMapper,
                         mock(ProjectMapper.class),
-                        mock(RsaPasswordDecryptor.class),
-                        passwords,
-                        mock(TokenService.class),
-                        mock(VerificationCodeMailer.class),
-                        mock(RateLimiter.class),
                         mock(AvatarStorageService.class));
         UserEntity user = new UserEntity();
         user.setId(userId);
@@ -72,21 +61,12 @@ class AuthServiceTeamRoleTest {
         UserMapper userMapper = mock(UserMapper.class);
         TeamMapper teamMapper = mock(TeamMapper.class);
         TeamMemberMapper memberMapper = mock(TeamMemberMapper.class);
-        PasswordEncoder passwords = mock(PasswordEncoder.class);
-        when(passwords.encode("qgents-dummy-password-not-used")).thenReturn("dummy");
-        AuthService service =
-                new AuthService(
+        UserService service =
+                new UserService(
                         userMapper,
-                        mock(RefreshTokenStore.class),
-                        mock(VerificationCodeStore.class),
                         teamMapper,
                         memberMapper,
                         mock(ProjectMapper.class),
-                        mock(RsaPasswordDecryptor.class),
-                        passwords,
-                        mock(TokenService.class),
-                        mock(VerificationCodeMailer.class),
-                        mock(RateLimiter.class),
                         mock(AvatarStorageService.class));
         UserEntity user = new UserEntity();
         user.setId(userId);
@@ -117,21 +97,12 @@ class AuthServiceTeamRoleTest {
         TeamMapper teamMapper = mock(TeamMapper.class);
         TeamMemberMapper memberMapper = mock(TeamMemberMapper.class);
         ProjectMapper projectMapper = mock(ProjectMapper.class);
-        PasswordEncoder passwords = mock(PasswordEncoder.class);
-        when(passwords.encode("qgents-dummy-password-not-used")).thenReturn("dummy");
-        AuthService service =
-                new AuthService(
+        UserService service =
+                new UserService(
                         userMapper,
-                        mock(RefreshTokenStore.class),
-                        mock(VerificationCodeStore.class),
                         teamMapper,
                         memberMapper,
                         projectMapper,
-                        mock(RsaPasswordDecryptor.class),
-                        passwords,
-                        mock(TokenService.class),
-                        mock(VerificationCodeMailer.class),
-                        mock(RateLimiter.class),
                         mock(AvatarStorageService.class));
         UserEntity user = new UserEntity();
         user.setId(userId);

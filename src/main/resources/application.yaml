@@ -169,16 +169,6 @@ qgents:
       core-size: ${QGENTS_AGENT_CORE_SIZE:4}
       max-size: ${QGENTS_AGENT_MAX_SIZE:4}
       queue-capacity: ${QGENTS_AGENT_QUEUE_CAPACITY:100}
-  push:
-    # 移动端 FCM HTTP v1 离线推送默认关闭；服务账号密钥只允许由受控环境变量注入。
-    enabled: ${QGENTS_PUSH_ENABLED:false}
-    fcm-endpoint: ${QGENTS_PUSH_FCM_ENDPOINT:https://fcm.googleapis.com/v1/projects}
-    fcm-project-id: ${QGENTS_PUSH_FCM_PROJECT_ID:}
-    fcm-service-account-json-base64: ${QGENTS_PUSH_FCM_SERVICE_ACCOUNT_JSON_BASE64:}
-    token-encryption-key: ${QGENTS_PUSH_TOKEN_ENCRYPTION_KEY:}
-    # 推送最多尝试次数；待发送记录扫描间隔单位为毫秒。
-    max-attempts: ${QGENTS_PUSH_MAX_ATTEMPTS:5}
-    poll-interval-ms: ${QGENTS_PUSH_POLL_INTERVAL_MS:5000}
 
 # 数据库映射：下划线列名映射到 Java 驼峰属性。
 mybatis-plus:

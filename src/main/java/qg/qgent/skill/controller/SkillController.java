@@ -11,7 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import qg.qgent.common.dto.RejectRequest;
+import qg.qgent.skill.dto.RejectRequest;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.common.web.ApiResponse;
 import qg.qgent.common.web.RequestIdFilter;

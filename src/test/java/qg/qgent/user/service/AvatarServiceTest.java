@@ -12,7 +12,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import qg.qgent.attachment.dto.UploadCredential;
-import qg.qgent.common.storage.AvatarStorageService;
+import qg.qgent.attachment.storage.AvatarStorageService;
 import qg.qgent.support.TestIds;
 import qg.qgent.user.dto.AvatarConfirmRequest;
 import qg.qgent.user.dto.AvatarConfirmResponse;

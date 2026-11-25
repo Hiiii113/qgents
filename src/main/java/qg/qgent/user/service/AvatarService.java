@@ -5,7 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import qg.qgent.common.storage.AvatarStorageService;
+import qg.qgent.attachment.storage.AvatarStorageService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.user.dto.AvatarConfirmRequest;
 import qg.qgent.user.dto.AvatarConfirmResponse;

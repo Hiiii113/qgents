@@ -11,22 +11,8 @@ import qg.qgent.auth.dto.LoginRequest;
 import qg.qgent.auth.dto.RegisterRequest;
 import qg.qgent.auth.dto.ResetPasswordRequest;
 import qg.qgent.auth.mail.VerificationCodeMailer;
-import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.common.web.ApiException;
-import qg.qgent.project.dto.ProjectResponse;
-import qg.qgent.project.mapper.ProjectMapper;
-import qg.qgent.project.service.ProjectAccessService;
-import qg.qgent.project.service.ProjectViews;
-import qg.qgent.team.dto.TeamResponse;
-import qg.qgent.team.entity.TeamEntity;
-import qg.qgent.team.entity.TeamMemberEntity;
-import qg.qgent.team.mapper.TeamMapper;
-import qg.qgent.team.mapper.TeamMemberMapper;
-import qg.qgent.team.mapper.view.TeamMemberCountRow;
-import qg.qgent.team.service.TeamViews;
-import qg.qgent.user.dto.CurrentUserResponse;
 import qg.qgent.user.dto.UserResponse;
-import qg.qgent.user.dto.UserUpdateRequest;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
 
@@ -34,8 +20,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.*;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 @Service
 public class AuthService {
@@ -50,42 +34,30 @@ public class AuthService {
     private final UserMapper userMapper;
     private final RefreshTokenStore refreshTokens;
     private final VerificationCodeStore verificationCodes;
-    private final TeamMapper teamMapper;
-    private final TeamMemberMapper teamMemberMapper;
-    private final ProjectMapper projectMapper;
     private final RsaPasswordDecryptor rsa;
     private final PasswordEncoder passwords;
     private final TokenService tokens;
     private final VerificationCodeMailer mailer;
     private final RateLimiter limiter;
-    private final AvatarStorageService avatarStorage;
     private final String dummyPasswordHash;
 
     public AuthService(
         UserMapper userMapper,
         RefreshTokenStore refreshTokens,
         VerificationCodeStore verificationCodes,
-        TeamMapper teamMapper,
-        TeamMemberMapper teamMemberMapper,
-        ProjectMapper projectMapper,
         RsaPasswordDecryptor rsa,
         PasswordEncoder passwords,
         TokenService tokens,
         VerificationCodeMailer mailer,
-        RateLimiter limiter,
-        AvatarStorageService avatarStorage) {
+        RateLimiter limiter) {
         this.userMapper = userMapper;
         this.refreshTokens = refreshTokens;
         this.verificationCodes = verificationCodes;
-        this.teamMapper = teamMapper;
-        this.teamMemberMapper = teamMemberMapper;
-        this.projectMapper = projectMapper;
         this.rsa = rsa;
         this.passwords = passwords;
         this.tokens = tokens;
         this.mailer = mailer;
         this.limiter = limiter;
-        this.avatarStorage = avatarStorage;
         this.dummyPasswordHash = passwords.encode("qgents-dummy-password-not-used");
     }
 
@@ -235,78 +207,6 @@ public class AuthService {
                 .eq(UserEntity::getId, user.getId()));
     }
 
-    @Transactional
-    public CurrentUserResponse me(Long userId) {
-        UserEntity user = requireUser(userId);
-        List<TeamResponse> availableTeams = teams(userId);
-        Long currentTeamId =
-            availableTeams.stream()
-                .map(team -> Long.valueOf(team.getId()))
-                .filter(id -> id.equals(user.getLastTeamId()))
-                .findFirst()
-                .orElseGet(() ->
-                    availableTeams.isEmpty()
-                        ? null
-                        : Long.valueOf(availableTeams.getFirst().getId()));
-        if (!Objects.equals(currentTeamId, user.getLastTeamId())) {
-            saveTeam(userId, currentTeamId);
-        }
-        return new CurrentUserResponse(
-            view(user),
-            availableTeams,
-            projects(userId),
-            currentTeamId == null ? null : currentTeamId.toString());
-    }
-
-    @Transactional
-    public void selectTeam(Long userId, Long teamId) {
-        TeamEntity team = teamMapper.selectById(teamId);
-        if (team == null
-            || !"ACTIVE".equals(team.getStatus())
-            || teamMemberMapper.selectByTeamAndUser(teamId, userId) == null) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "TEAM_ACCESS_DENIED", "暂无团队访问权限");
-        }
-        saveTeam(userId, teamId);
-    }
-
-    private void saveTeam(Long userId, Long teamId) {
-        userMapper.updateLastTeam(userId, teamId);
-    }
-
-    /**
-     * 修改昵称或清空头像；头像只能通过上传确认接口设置，这里拒绝外链地址。
-     */
-    @Transactional
-    public UserResponse updateMe(Long userId, UserUpdateRequest input) {
-        if (input.getDisplayName() == null && input.getAvatarUrl() == null) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", "至少提供一个修改字段");
-        }
-        String name = input.getDisplayName() == null ? null : input.getDisplayName().trim();
-        if (name != null && name.isEmpty()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_ARGUMENT", "昵称不能为空");
-        }
-        String avatar = input.getAvatarUrl() == null ? null : input.getAvatarUrl().trim();
-        if (avatar != null && !avatar.isEmpty()) {
-            throw new ApiException(
-                HttpStatus.BAD_REQUEST, "AVATAR_URL_NOT_ALLOWED", "头像只能通过头像上传接口设置");
-        }
-        // 只改目标字段，避免覆盖并发写入的最近团队选择
-        String previousAvatar = avatar == null ? null : requireUser(userId).getAvatarUrl();
-        userMapper.update(
-            null,
-            Wrappers.<UserEntity>lambdaUpdate()
-                .set(name != null, UserEntity::getDisplayName, name)
-                .set(
-                    avatar != null,
-                    UserEntity::getAvatarUrl,
-                    avatar == null || avatar.isEmpty() ? null : avatar)
-                .eq(UserEntity::getId, userId));
-        if (avatar != null) {
-            avatarStorage.deleteReplacedAfterCommit("avatars", userId, previousAvatar, null);
-        }
-        return view(requireUser(userId));
-    }
-
     private AuthTokensResponse issue(UserEntity user) {
         String refresh = tokens.opaque();
         refreshTokens.save(user.getId(), refresh);
@@ -321,58 +221,6 @@ public class AuthService {
     private UserEntity findByEmail(String email) {
         return userMapper.selectOne(
             Wrappers.<UserEntity>lambdaQuery().eq(UserEntity::getEmail, email));
-    }
-
-    private UserEntity requireUser(Long userId) {
-        UserEntity user = userMapper.selectById(userId);
-        if (user == null) {
-            throw unauthorized("UNAUTHORIZED", "用户不存在");
-        }
-        return user;
-    }
-
-    private List<TeamResponse> teams(Long userId) {
-        List<TeamMemberEntity> members = teamMemberMapper.selectByUserId(userId);
-        if (members.isEmpty()) {
-            return Collections.emptyList();
-        }
-        Map<Long, TeamEntity> teams =
-            teamMapper
-                .selectBatchIds(members.stream().map(TeamMemberEntity::getTeamId).toList())
-                .stream()
-                .filter(team -> "ACTIVE".equals(team.getStatus()))
-                .collect(Collectors.toMap(TeamEntity::getId, Function.identity()));
-        Map<Long, Integer> memberCounts = memberCounts(teams.keySet());
-        return members.stream()
-            .filter(member -> teams.containsKey(member.getTeamId()))
-            .map(member -> {
-                TeamEntity team = teams.get(member.getTeamId());
-                String role =
-                    ProjectAccessService.effectiveTeamRole(
-                        team.getOwnerUserId(), userId, member.getRole());
-                return TeamViews.response(
-                    team, role, memberCounts.getOrDefault(team.getId(), 0));
-            })
-            .toList();
-    }
-
-    /**
-     * 一次查询取回所有团队的人数；逐团队 COUNT 会随团队数量线性增长。
-     */
-    private Map<Long, Integer> memberCounts(Set<Long> teamIds) {
-        if (teamIds.isEmpty()) return Map.of();
-        return teamMemberMapper.countByTeamIds(teamIds).stream()
-            .collect(
-                Collectors.toMap(
-                    TeamMemberCountRow::getTeamId, TeamMemberCountRow::getMemberCount));
-    }
-
-    private List<ProjectResponse> projects(Long userId) {
-        // 单次查询合并项目成员权限与 canonical Team Owner 兜底，并由 SQL 去重。
-        // memberCount 由项目列表/详情接口补齐，此处不额外统计（前端缺失时隐藏）。
-        return projectMapper.selectAccessibleByUser(userId).stream()
-            .map(ProjectViews::response)
-            .toList();
     }
 
     private UserResponse view(UserEntity user) {

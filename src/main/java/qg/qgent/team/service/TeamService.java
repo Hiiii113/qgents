@@ -10,7 +10,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import qg.qgent.auth.service.TokenService;
 import qg.qgent.common.dto.KeysetPagination;
 import qg.qgent.common.dto.PageSlice;
-import qg.qgent.common.storage.AvatarStorageService;
+import qg.qgent.attachment.storage.AvatarStorageService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.project.mapper.ProjectMemberMapper;

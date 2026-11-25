@@ -10,7 +10,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.context.ApplicationEventPublisher;
 import qg.qgent.agent.service.AgentService;
-import qg.qgent.common.storage.AvatarStorageService;
+import qg.qgent.attachment.storage.AvatarStorageService;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.project.dto.ProjectCreateRequest;
 import qg.qgent.project.dto.ProjectUpdateRequest;
