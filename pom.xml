@@ -24,7 +24,6 @@
         <spring-ai.version>2.0.0</spring-ai.version>
         <springdoc.version>3.0.3</springdoc.version>
         <aliyun-oss.version>3.18.1</aliyun-oss.version>
-        <google-auth.version>1.33.1</google-auth.version>
         <docker-java.version>3.7.1</docker-java.version>
         <java-jwt.version>4.4.0</java-jwt.version>
         <bouncycastle.version>1.84</bouncycastle.version>
@@ -76,11 +75,6 @@
                 <groupId>org.bouncycastle</groupId>
                 <artifactId>bcpkix-jdk18on</artifactId>
                 <version>${bouncycastle.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.google.auth</groupId>
-                <artifactId>google-auth-library-oauth2-http</artifactId>
-                <version>${google-auth.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.aliyun.oss</groupId>
@@ -206,11 +200,6 @@
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-crypto</artifactId>
-        </dependency>
-        <!-- FCM 推送使用的 Google 服务账号鉴权。 -->
-        <dependency>
-            <groupId>com.google.auth</groupId>
-            <artifactId>google-auth-library-oauth2-http</artifactId>
         </dependency>
         <!-- 阿里云 OSS 附件存储与头像直传支持。 -->
         <dependency>

@@ -19,20 +19,18 @@ class NotificationServiceTest {
     @Test
     void notificationPersistsAndPublishesToRecipient() {
         Long recipient = TestIds.next();
-        PushNotificationService push = mock(PushNotificationService.class);
         when(mapper.insert(any(NotificationEntity.class)))
                 .thenAnswer(invocation -> {
                     NotificationEntity entity = invocation.getArgument(0);
                     entity.setId(TestIds.next());
                     return 1;
                 });
-        NotificationService service = new NotificationService(mapper, events, push);
+        NotificationService service = new NotificationService(mapper, events);
         service.notify(recipient, TestIds.next(), null, "INVITED", "团队邀请", "欢迎", null);
         ArgumentCaptor<NotificationEntity> notification =
                 ArgumentCaptor.forClass(NotificationEntity.class);
         verify(mapper).insert(notification.capture());
         assertEquals("INVITED", notification.getValue().getKind());
         verify(events).publishNotification(eq(recipient), any(), eq("notification.created"), any());
-        verify(push).enqueue(notification.getValue());
     }
 }
