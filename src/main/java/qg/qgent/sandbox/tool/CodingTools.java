@@ -6,7 +6,6 @@ import qg.qgent.harness.tool.ToolParam;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.sandbox.service.SandboxFiles;
 import qg.qgent.workspace.service.WorkSession;
-import qg.qgent.workspace.service.WorkspaceSelection;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -143,7 +142,7 @@ public class CodingTools {
     }
 
     private String resolve(String value) {
-        return WorkspaceSelection.resolveDirectory(session.directory(), value);
+        return WorkSession.resolveDirectory(session.directory(), value);
     }
 
     private String resolveFile(String value) {

@@ -9,7 +9,6 @@ import qg.qgent.sandbox.service.SandboxCommands;
 import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.workspace.service.WorkSession;
 import qg.qgent.workspace.service.WorkspaceRepositoryService;
-import qg.qgent.workspace.service.WorkspaceSelection;
 import qg.qgent.workspace.service.WorkspaceService;
 
 import java.util.ArrayList;
@@ -213,7 +212,7 @@ public final class WorkspaceTools {
             "设置当前 Agent 在已选 Workspace 中的工作目录，路径相对 Workspace 根；传 . 返回根目录。每个 Agent 的目录独立保存。")
     public ToolResult setWorkingDirectory(
         @ToolParam(description = "相对 Workspace 根目录的路径；. 表示根目录") String directory) {
-        String resolved = WorkspaceSelection.resolveDirectory(".", directory);
+        String resolved = WorkSession.resolveDirectory(".", directory);
         session.setDirectory(resolved);
         ToolResult result = ToolResult.ok();
         result.put("directory", resolved);
@@ -230,7 +229,7 @@ public final class WorkspaceTools {
         @ToolParam(description = "执行超时秒数，1～3600，默认 600") Integer timeoutSeconds,
         @ToolParam(description = "本次等待秒数，0～30，默认 10") Integer waitSeconds) {
         if (command == null || command.isEmpty()) throw new IllegalArgumentException("命令不能为空");
-        String cwd = WorkspaceSelection.resolveDirectory(session.directory(), directory);
+        String cwd = WorkSession.resolveDirectory(session.directory(), directory);
         return workspaceCommands.start(
             session.ensure(),
             cwd,
