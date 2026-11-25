@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="qg.qgent.memory.mapper.GroupMemoryStateMapper">
+
+    <select id="selectCandidates" resultType="qg.qgent.memory.entity.GroupMemoryStateEntity">
+        SELECT group_id, project_id, last_processed_sequence, last_message_at, status, claim_token,
+               attempt_count, next_attempt_at, correction, last_error, updated_at
+        FROM group_memory_state
+        WHERE (status = 'IDLE' OR updated_at &lt; #{staleBefore})
+        <if test="afterGroupId != null">AND group_id &gt; #{afterGroupId}</if>
+        ORDER BY group_id LIMIT #{limit}
+    </select>
+
+    <insert id="recordActivity">
+        INSERT INTO group_memory_state
+            (group_id, project_id, last_message_at, last_processed_sequence, status, attempt_count, updated_at)
+        VALUES
+            (#{groupId}, #{projectId}, #{at}, 0, 'IDLE', 0, #{at})
+        ON DUPLICATE KEY UPDATE last_message_at = #{at}, attempt_count = 0,
+            next_attempt_at = NULL, updated_at = #{at}
+    </insert>
+
+    <insert id="requestCorrection">
+        INSERT INTO group_memory_state
+            (group_id, project_id, correction, last_message_at, last_processed_sequence, status, attempt_count, updated_at)
+        VALUES
+            (#{groupId}, #{projectId}, #{correction}, #{at}, 0, 'IDLE', 0, #{at})
+        ON DUPLICATE KEY UPDATE correction = CASE WHEN correction IS NULL OR correction = ''
+            THEN #{correction} ELSE CONCAT(correction, CHAR(10), #{correction}) END,
+            last_message_at = #{at}, attempt_count = 0, next_attempt_at = NULL, updated_at = #{at}
+    </insert>
+
+    <update id="claim">
+        UPDATE group_memory_state
+        SET status = 'RUNNING', claim_token = #{now}, updated_at = #{now}
+        WHERE group_id = #{groupId} AND (status = 'IDLE' OR updated_at &lt; #{staleBefore})
+    </update>
+
+    <update id="renewClaim">
+        UPDATE group_memory_state SET updated_at = #{now}
+        WHERE group_id = #{groupId} AND status = 'RUNNING' AND claim_token = #{claimToken}
+    </update>
+
+    <update id="finishSuccess">
+        UPDATE group_memory_state
+        SET status = 'IDLE', claim_token = NULL,
+            last_processed_sequence = GREATEST(last_processed_sequence, #{processedThrough}),
+            attempt_count = 0, next_attempt_at = NULL, last_error = NULL, updated_at = #{now},
+            discovery_attempt_count = 0,
+            correction = CASE WHEN correction = #{appliedCorrection,jdbcType=LONGVARCHAR} THEN NULL ELSE correction END
+        WHERE group_id = #{groupId} AND status = 'RUNNING' AND claim_token = #{claimToken}
+    </update>
+
+    <update id="recordFailure">
+        UPDATE group_memory_state
+        SET status = 'IDLE', claim_token = NULL,
+            attempt_count = attempt_count + 1, next_attempt_at = #{nextAttemptAt},
+            last_error = #{error}, updated_at = #{now}
+        WHERE group_id = #{groupId} AND status = 'RUNNING' AND claim_token = #{claimToken}
+    </update>
+
+    <select id="selectDiscoveryCandidates" resultType="qg.qgent.memory.entity.GroupMemoryStateEntity">
+        SELECT g.* FROM group_memory_state g
+        JOIN chat_groups cg ON cg.id = g.group_id
+        WHERE cg.default_group = 1 AND g.discovery_attempt_count &lt; #{maxAttempts}
+          AND (g.discovery_next_attempt_at IS NULL OR g.discovery_next_attempt_at &lt;= #{now})
+        ORDER BY g.group_id LIMIT #{limit}
+    </select>
+
+    <update id="claimDiscovery">
+        UPDATE group_memory_state
+        SET discovery_next_attempt_at = #{nextSlot}, updated_at = #{now}
+        WHERE group_id = #{groupId}
+          AND (discovery_next_attempt_at IS NULL OR discovery_next_attempt_at &lt;= #{now})
+    </update>
+
+    <update id="finishDiscovery">
+        UPDATE group_memory_state
+        SET discovered_version = #{version}, discovery_attempt_count = 0,
+            discovery_next_attempt_at = #{nextSlot}, discovery_error = NULL, updated_at = #{now}
+        WHERE group_id = #{groupId}
+    </update>
+
+    <update id="recordDiscoveryFailure">
+        UPDATE group_memory_state
+        SET discovery_attempt_count = discovery_attempt_count + 1,
+            discovery_next_attempt_at = #{nextAttemptAt}, discovery_error = #{error},
+            updated_at = #{now}
+        WHERE group_id = #{groupId}
+    </update>
+
+</mapper>

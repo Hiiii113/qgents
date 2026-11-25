@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="qg.qgent.sandbox.execution.mapper.ToolExecutionMapper">
+
+    <update id="markInterrupted">
+        UPDATE tool_executions
+        SET status = 'INTERRUPTED', failure_code = 'APPLICATION_RESTART_INTERRUPTED',
+            failure_reason = 'Sandbox 重启，执行状态已中断', finished_at = #{finishedAt}
+        WHERE owner_instance_id = #{instanceId} AND status IN ('QUEUED', 'RUNNING')
+    </update>
+
+    <update id="markRunning">
+        UPDATE tool_executions
+        SET status = 'RUNNING', started_at = #{startedAt}
+        WHERE id = #{id} AND owner_instance_id = #{instanceId} AND status = 'QUEUED'
+    </update>
+
+    <update id="markCancelled">
+        UPDATE tool_executions
+        SET status = 'CANCELLED', failure_code = 'EXECUTION_CANCELLED',
+            failure_reason = '执行已取消', finished_at = #{finishedAt}
+        WHERE id = #{id} AND owner_instance_id = #{instanceId} AND status IN ('QUEUED', 'RUNNING')
+    </update>
+
+    <update id="finishIfRunning">
+        UPDATE tool_executions
+        SET status = #{status}, exit_code = #{exitCode}, result_json = #{resultJson},
+            failure_code = #{failureCode}, failure_reason = #{failureReason}, finished_at = #{finishedAt}
+        WHERE id = #{id} AND owner_instance_id = #{instanceId} AND status = 'RUNNING'
+    </update>
+
+    <update id="rejectQueued">
+        UPDATE tool_executions
+        SET status = 'FAILED', failure_code = #{failureCode}, failure_reason = #{failureReason},
+            finished_at = #{finishedAt}
+        WHERE id = #{id} AND owner_instance_id = #{instanceId} AND status = 'QUEUED'
+    </update>
+
+    <select id="selectActiveIdsBySandbox" resultType="long">
+        SELECT id FROM tool_executions
+        WHERE sandbox_id = #{sandboxId} AND owner_instance_id = #{instanceId}
+          AND status IN ('QUEUED', 'RUNNING')
+    </select>
+
+    <select id="selectActiveIdsByAgentRun" resultType="long">
+        SELECT id FROM tool_executions
+        WHERE agent_run_id = #{agentRunId} AND owner_instance_id = #{instanceId}
+          AND status IN ('QUEUED', 'RUNNING')
+    </select>
+
+</mapper>

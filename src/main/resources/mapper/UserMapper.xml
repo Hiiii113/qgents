@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="qg.qgent.user.mapper.UserMapper">
+
+    <update id="updateLastTeam">
+        UPDATE users SET last_team_id = #{teamId,jdbcType=BIGINT} WHERE id = #{userId}
+    </update>
+
+    <select id="selectByIdForUpdate" resultType="qg.qgent.user.entity.UserEntity">
+        SELECT id, email, display_name, avatar_url, last_team_id, password_hash,
+               status, created_at, updated_at
+        FROM users WHERE id = #{userId} FOR UPDATE
+    </select>
+
+</mapper>

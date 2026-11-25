@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="qg.qgent.workspace.mapper.WorkspaceMapper">
+
+    <update id="claimWriteLease">
+        UPDATE workspaces
+        SET write_lease_agent_run_id = #{agentRunId}, write_lease_token = #{token},
+            write_lease_expires_at = DATE_ADD(UTC_TIMESTAMP(6), INTERVAL 30 MINUTE),
+            updated_at = UTC_TIMESTAMP(6)
+        WHERE id = #{workspaceId} AND project_id = #{projectId}
+          AND (write_lease_expires_at IS NULL
+            OR write_lease_expires_at &lt;= UTC_TIMESTAMP(6)
+            OR (write_lease_agent_run_id = #{agentRunId} AND write_lease_token = #{token})
+            OR EXISTS (
+                SELECT 1 FROM agent_runs owner_run
+                WHERE owner_run.id = write_lease_agent_run_id
+                  AND owner_run.project_id = #{projectId}
+                  AND owner_run.status IN ('SUCCEEDED', 'FAILED', 'CANCELLED')
+            ))
+    </update>
+
+    <update id="renewWriteLease">
+        UPDATE workspaces
+        SET write_lease_expires_at = DATE_ADD(UTC_TIMESTAMP(6), INTERVAL 30 MINUTE),
+            updated_at = UTC_TIMESTAMP(6)
+        WHERE id = #{workspaceId} AND project_id = #{projectId}
+          AND write_lease_agent_run_id = #{agentRunId} AND write_lease_token = #{token}
+          AND write_lease_expires_at &gt; UTC_TIMESTAMP(6)
+    </update>
+
+    <update id="releaseWriteLease">
+        UPDATE workspaces
+        SET write_lease_agent_run_id = NULL, write_lease_token = NULL, write_lease_expires_at = NULL,
+            updated_at = UTC_TIMESTAMP(6)
+        WHERE id = #{workspaceId} AND project_id = #{projectId}
+          AND write_lease_agent_run_id = #{agentRunId} AND write_lease_token = #{token}
+    </update>
+
+</mapper>

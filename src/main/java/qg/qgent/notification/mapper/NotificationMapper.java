@@ -1,10 +1,8 @@
 package qg.qgent.notification.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Param;
-import org.apache.ibatis.annotations.Select;
-import org.apache.ibatis.annotations.Update;
 import qg.qgent.notification.entity.NotificationEntity;
 
 import java.time.LocalDateTime;
@@ -19,26 +17,31 @@ public interface NotificationMapper extends BaseMapper<NotificationEntity> {
     /**
      * 查询指定用户的通知列表，按产生时间倒序，不分页。
      */
-    @Select(
-        "SELECT * FROM notifications WHERE recipient_user_id = #{recipientUserId} ORDER BY created_at DESC")
-    List<NotificationEntity> listByRecipient(@Param("recipientUserId") Long recipientUserId);
+    default List<NotificationEntity> listByRecipient(Long recipientUserId) {
+        return selectList(Wrappers.<NotificationEntity>lambdaQuery()
+            .eq(NotificationEntity::getRecipientUserId, recipientUserId)
+            .orderByDesc(NotificationEntity::getCreatedAt));
+    }
 
     /**
      * 将属于指定用户的一条通知标记为已读；不属于该用户时返回 0（幂等）。
      */
-    @Update(
-        "UPDATE notifications SET is_read = 1, read_at = #{readTime} "
-            + "WHERE id = #{id} AND recipient_user_id = #{userId}")
-    int markRead(
-        @Param("id") Long id,
-        @Param("userId") Long userId,
-        @Param("readTime") LocalDateTime readTime);
+    default int markRead(Long id, Long userId, LocalDateTime readTime) {
+        return update(null, Wrappers.<NotificationEntity>lambdaUpdate()
+            .set(NotificationEntity::getIsRead, true)
+            .set(NotificationEntity::getReadAt, readTime)
+            .eq(NotificationEntity::getId, id)
+            .eq(NotificationEntity::getRecipientUserId, userId));
+    }
 
     /**
      * 将指定用户的全部未读通知标记为已读（幂等）。
      */
-    @Update(
-        "UPDATE notifications SET is_read = 1, read_at = #{readTime} "
-            + "WHERE recipient_user_id = #{userId} AND is_read = 0")
-    int markAllRead(@Param("userId") Long userId, @Param("readTime") LocalDateTime readTime);
+    default int markAllRead(Long userId, LocalDateTime readTime) {
+        return update(null, Wrappers.<NotificationEntity>lambdaUpdate()
+            .set(NotificationEntity::getIsRead, true)
+            .set(NotificationEntity::getReadAt, readTime)
+            .eq(NotificationEntity::getRecipientUserId, userId)
+            .eq(NotificationEntity::getIsRead, false));
+    }
 }

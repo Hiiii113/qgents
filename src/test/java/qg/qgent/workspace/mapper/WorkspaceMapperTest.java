@@ -2,16 +2,15 @@ package qg.qgent.workspace.mapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import qg.qgent.support.MapperTestSupport;
 import qg.qgent.support.TestIds;
 
 class WorkspaceMapperTest {
     @Test
     void leaseUsesRootExecutionOwnershipAndOnlyTerminalRunsAllowTakeover() {
-        var configuration = new MybatisConfiguration();
-        configuration.addMapper(WorkspaceMapper.class);
+        var configuration = MapperTestSupport.configuration(WorkspaceMapper.class);
         var parameters =
                 Map.of(
                         "projectId",
@@ -29,10 +28,10 @@ class WorkspaceMapperTest {
                         .getBoundSql(parameters);
         assertThat(claim.getSql())
                 .contains(
-                        "write_lease_agent_run_id=?",
-                        "from agent_runs owner_run",
-                        "owner_run.id=write_lease_agent_run_id",
-                        "('SUCCEEDED','FAILED','CANCELLED')")
+                        "write_lease_agent_run_id = ?",
+                        "FROM agent_runs owner_run",
+                        "owner_run.id = write_lease_agent_run_id",
+                        "('SUCCEEDED', 'FAILED', 'CANCELLED')")
                 .doesNotContain("tasks", "CANCELLING");
         for (String method :
                 new String[] {"claimWriteLease", "renewWriteLease", "releaseWriteLease"}) {

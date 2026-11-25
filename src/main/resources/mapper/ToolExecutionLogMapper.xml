@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="qg.qgent.sandbox.execution.mapper.ToolExecutionLogMapper">
+
+    <insert id="insert">
+        INSERT INTO tool_execution_logs (execution_id, sequence_no, stream, content, created_at)
+        VALUES (#{entity.executionId}, #{entity.sequenceNo}, #{entity.stream}, #{entity.content}, #{entity.createdAt})
+    </insert>
+
+    <select id="selectMaxSequence" resultType="long">
+        SELECT COALESCE(MAX(sequence_no), 0) FROM tool_execution_logs WHERE execution_id = #{executionId}
+    </select>
+
+</mapper>
