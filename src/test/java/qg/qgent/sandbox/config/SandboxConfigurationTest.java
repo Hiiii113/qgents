@@ -12,7 +12,7 @@ import org.springframework.test.context.support.TestPropertySourceUtils;
 import qg.qgent.project.storage.ProjectDirectoryService;
 import qg.qgent.sandbox.execution.mapper.ToolExecutionLogMapper;
 import qg.qgent.sandbox.execution.mapper.ToolExecutionMapper;
-import qg.qgent.sandbox.execution.service.ToolExecutionService;
+import qg.qgent.sandbox.execution.service.CommandExecutionService;
 import qg.qgent.sandbox.runtime.ContainerRuntime;
 import qg.qgent.sandbox.runtime.FakeContainerRuntime;
 import qg.qgent.sandbox.service.SandboxCommands;
@@ -48,7 +48,7 @@ class SandboxConfigurationTest {
             assertThat(context.getBeansOfType(ObjectMapper.class).values()).containsExactly(mapper);
             assertThat(context.getBean(ContainerRuntime.class))
                     .isInstanceOf(FakeContainerRuntime.class);
-            assertThat(context.getBean(ToolExecutionService.class)).isNotNull();
+            assertThat(context.getBean(CommandExecutionService.class)).isNotNull();
             assertThat(context.getBean(SandboxSessionManager.class)).isNotNull();
             assertThat(context.getBean(SandboxFiles.class)).isNotNull();
             assertThat(context.getBean(SandboxCommands.class)).isNotNull();

@@ -22,7 +22,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 import qg.qgent.sandbox.config.SandboxProperties;
-import qg.qgent.sandbox.dto.CreateSandboxRequest;
 import qg.qgent.sandbox.filesystem.service.WorkspacePathResolver;
 import qg.qgent.support.TestIds;
 
@@ -108,18 +107,14 @@ class DockerContainerRuntimeTest {
                         new WorkspacePathResolver(directories),
                         new SandboxBindFactory(new WorkspacePathResolver(directories)));
 
-        CreateSandboxRequest request = new CreateSandboxRequest();
-        request.setSandboxId(java.util.UUID.randomUUID());
-        request.setAgentRunId(TestIds.next());
-        request.setAgentRunId(TestIds.next());
-        request.setWorkspaceStorageKey(storageKey);
-        request.setImageProfile("dev-tools");
+        java.util.UUID sandboxId = java.util.UUID.randomUUID();
+        Long agentRunId = TestIds.next();
         SandboxAllocation allocation =
                 new SandboxAllocation(
-                        request.getSandboxId(),
-                        request.getAgentRunId(),
-                        request.getWorkspaceStorageKey(),
-                        request.getImageProfile(),
+                        sandboxId,
+                        agentRunId,
+                        storageKey,
+                        "dev-tools",
                         "READY",
                         "DOCKER",
                         Instant.EPOCH,
@@ -129,14 +124,13 @@ class DockerContainerRuntimeTest {
                         Duration.ofMinutes(1),
                         null);
 
-        runtime.create(request, allocation);
+        runtime.create(allocation);
 
         verify(createCmd).withUser("10001:10001");
         ArgumentCaptor<Map<String, String>> labelsCaptor = ArgumentCaptor.forClass(Map.class);
         verify(createCmd).withLabels(labelsCaptor.capture());
         assertEquals(
-                request.getAgentRunId().toString(),
-                labelsCaptor.getValue().get("qgents.agent-run-id"));
+                agentRunId.toString(), labelsCaptor.getValue().get("qgents.agent-run-id"));
         ArgumentCaptor<HostConfig> hostConfigCaptor = ArgumentCaptor.forClass(HostConfig.class);
         verify(createCmd).withHostConfig(hostConfigCaptor.capture());
         HostConfig hostConfig = hostConfigCaptor.getValue();

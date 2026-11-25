@@ -7,7 +7,7 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * 用于联调的模拟执行器，不会在宿主机上启动进程。
+ * 测试用模拟执行器，不会在宿主机上启动进程。
  */
 @Component
 @ConditionalOnProperty(name = "sandbox.runtime", havingValue = "fake", matchIfMissing = true)

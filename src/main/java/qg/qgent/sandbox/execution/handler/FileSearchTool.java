@@ -5,11 +5,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
-import qg.qgent.sandbox.execution.dto.ToolArguments;
-import qg.qgent.sandbox.execution.dto.ToolContext;
-import qg.qgent.sandbox.execution.dto.ToolResult;
+import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.sandbox.runtime.CommandExecutor;
+import qg.qgent.sandbox.runtime.SandboxAllocation;
 
+import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -19,22 +20,33 @@ import java.util.Map;
  */
 @Component
 @RequiredArgsConstructor
-public class FileSearchTool implements SandboxTool {
+public class FileSearchTool {
     private final CommandExecutor executor;
     private final ObjectMapper json;
     private final RepositoryFileResolver files;
 
-    public String name() {
-        return "file.search";
-    }
-
-    public ToolResult execute(ToolContext context, Map<String, Object> arguments)
+    /**
+     * 在容器内用 ripgrep 搜索工作区；无匹配返回空结果，rg 自身失败返回稳定错误码。
+     */
+    public ToolResult search(
+        SandboxAllocation sandbox,
+        Path workspace,
+        String query,
+        String path,
+        String glob,
+        int limit,
+        Duration timeout)
         throws InterruptedException {
-        String query = ToolArguments.string(arguments, "query", 512);
-        String path = ToolArguments.optionalString(arguments, "path", ".", 1024);
-        files.resolveExisting(context.getLocalWorkspace(), path);
-        String glob = ToolArguments.optionalString(arguments, "glob", "**", 512);
-        int limit = ToolArguments.integer(arguments, "limit", 100, 1, 1000);
+        if (query == null || query.isBlank() || query.length() > 512)
+            throw new IllegalArgumentException("工具参数不合法：query");
+        String directory = path == null ? "." : path;
+        String pattern = glob == null ? "**" : glob;
+        if (directory.isBlank() || directory.length() > 1024)
+            throw new IllegalArgumentException("工具参数不合法：path");
+        if (pattern.isBlank() || pattern.length() > 512)
+            throw new IllegalArgumentException("工具参数不合法：glob");
+        if (limit < 1 || limit > 1000) throw new IllegalArgumentException("工具参数不合法：limit");
+        files.resolveExisting(workspace, directory);
         List<String> command =
             new ArrayList<>(
                 List.of(
@@ -46,22 +58,14 @@ public class FileSearchTool implements SandboxTool {
                     "--glob",
                     "!.qgents-output/**",
                     "--glob",
-                    glob,
+                    pattern,
                     "--",
                     query,
-                    path));
-        var result =
-            executor.execute(
-                context.getSandbox(),
-                context.getContainerWorkspace(),
-                command,
-                context.getTimeout());
+                    directory));
+        var result = executor.execute(sandbox, "/workspace", command, timeout);
         if (result.getExitCode() > 1)
-            return new ToolResult(
-                result.getExitCode(),
-                Map.of("error", String.join("\n", result.getStandardError())),
-                List.of(),
-                List.of());
+            return ToolResult.error(
+                "PROCESS_EXIT_NONZERO", String.join("\n", result.getStandardError()));
         List<String> lines = new ArrayList<>(result.getStandardOutput());
         boolean truncated = false;
         if (!lines.isEmpty() && lines.get(lines.size() - 1).startsWith("[输出超过限制")) {
@@ -97,6 +101,9 @@ public class FileSearchTool implements SandboxTool {
                     "truncated",
                     clipped));
         }
-        return ToolResult.value(Map.of("matches", matches, "truncated", truncated));
+        ToolResult value = ToolResult.ok();
+        value.put("matches", matches);
+        value.put("truncated", truncated);
+        return value;
     }
 }
