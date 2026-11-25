@@ -67,12 +67,12 @@ public class GlobalExceptionHandler {
             .body(error("INVALID_ARGUMENT", "请求体格式不正确", List.of(), request));
     }
 
-    // 处理异步请求（SSE 流）客户端断开：连接已失效，响应无法再写入任何错误体。
+    // 处理异步请求客户端断开：连接已失效，响应无法再写入任何错误体。
     // 浏览器刷新/切换页面/网络中断都会触发，属客户端常态，只记 info，交由容器完成派发收尾。
     @ExceptionHandler(AsyncRequestNotUsableException.class)
     void asyncRequestNotUsable(AsyncRequestNotUsableException ex, HttpServletRequest request) {
         log.info(
-            "Async request (SSE) client disconnected [{}]: {}",
+            "Async request client disconnected [{}]: {}",
             request.getRequestURI(),
             ex.getMessage());
     }
@@ -115,7 +115,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     ResponseEntity<?> unexpected(
         Exception ex, HttpServletRequest request, HttpServletResponse response) {
-        // SSE 等流式响应已提交后再抛出的异常：写 JSON 错误体只会引发二次
+        // 流式响应已提交后再抛出的异常：写 JSON 错误体只会引发二次
         // HttpMessageNotWritableException，因此只记录日志、不再写响应。
         if (response.isCommitted()) {
             log.info(

@@ -6,13 +6,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import qg.qgent.common.dto.PageSlice;
 import qg.qgent.common.storage.AvatarStorageService;
 import qg.qgent.common.web.ApiResponse;
 import qg.qgent.common.web.PagedApiResponse;
 import qg.qgent.common.web.RequestIdFilter;
-import qg.qgent.realtime.service.EventService;
 import qg.qgent.team.dto.*;
 import qg.qgent.team.service.TeamService;
 import qg.qgent.user.dto.AvatarConfirmRequest;
@@ -28,18 +26,6 @@ import qg.qgent.user.dto.AvatarCredentialResponse;
 @RequiredArgsConstructor
 public class TeamController {
     private final TeamService teams;
-    private final EventService eventService;
-
-    /**
-     * 团队级实时事件流（需团队成员）。
-     */
-    @GetMapping("/{teamId}/events")
-    public SseEmitter events(
-        @PathVariable Long teamId,
-        @AuthenticationPrincipal Long userId,
-        @RequestHeader(value = "Last-Event-ID", required = false) Long lastEventId) {
-        return eventService.teamStream(teamId, userId, lastEventId);
-    }
 
     /**
      * 创建团队，创建者成为 TEAM_OWNER。

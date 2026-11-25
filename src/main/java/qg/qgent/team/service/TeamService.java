@@ -334,7 +334,7 @@ public class TeamService {
             member.setUserId(actor);
             member.setRole("TEAM_MEMBER");
             memberMapper.insert(member);
-            // 团队级 SSE：新成员加入团队
+            // 团队级实时事件：新成员加入团队
             eventService.publishTeamEvent(
                 invitation.getTeamId(),
                 "team.member.updated",
@@ -455,7 +455,7 @@ public class TeamService {
         // 团队所有者始终是团队下项目的生效管理员，移除显式项目管理员不会让项目失去管理员。
         projectMemberMapper.deleteByTeamAndUser(teamId, userId);
         memberMapper.deleteByTeamAndUser(teamId, userId);
-        // 团队级 SSE：成员移出团队
+        // 团队级实时事件：成员移出团队
         eventService.publishTeamEvent(
             teamId,
             "team.member.updated",
