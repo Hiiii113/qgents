@@ -1,4 +1,4 @@
-package qg.qgent.auth.service;
+package qg.qgent.user.service;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -7,8 +7,6 @@ import static org.mockito.Mockito.*;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import qg.qgent.auth.mail.VerificationCodeMailer;
 import qg.qgent.attachment.storage.AvatarStorageService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.mapper.ProjectMapper;
@@ -21,7 +19,7 @@ import qg.qgent.team.mapper.view.TeamMemberCountRow;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
 
-class AuthServiceCurrentTeamTest {
+class UserServiceCurrentTeamTest {
     private final UserMapper users = mock(UserMapper.class);
     private final TeamMapper teams = mock(TeamMapper.class);
     private final TeamMemberMapper members = mock(TeamMemberMapper.class);
@@ -29,24 +27,16 @@ class AuthServiceCurrentTeamTest {
     private final Long firstId = TestIds.next();
     private final Long lastId = TestIds.next();
     private final UserEntity user = new UserEntity();
-    private AuthService service;
+    private UserService service;
 
     @BeforeEach
     void setUp() {
-        PasswordEncoder passwords = mock(PasswordEncoder.class);
         service =
-                new AuthService(
+                new UserService(
                         users,
-                        mock(RefreshTokenStore.class),
-                        mock(VerificationCodeStore.class),
                         teams,
                         members,
                         mock(ProjectMapper.class),
-                        mock(RsaPasswordDecryptor.class),
-                        passwords,
-                        mock(TokenService.class),
-                        mock(VerificationCodeMailer.class),
-                        mock(RateLimiter.class),
                         mock(AvatarStorageService.class));
         user.setId(userId);
         when(users.selectById(userId)).thenReturn(user);
