@@ -20,6 +20,7 @@ import org.apache.ibatis.transaction.jdbc.JdbcTransactionFactory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import qg.qgent.support.MapperTestSupport;
 import qg.qgent.support.TestIds;
 
 /**
@@ -41,8 +42,7 @@ class AgentMapperTest {
         when(connection.prepareStatement(anyString(), anyInt(), anyInt())).thenReturn(statement);
         when(statement.execute()).thenReturn(true);
         when(statement.getUpdateCount()).thenReturn(1);
-        configuration = new MybatisConfiguration();
-        configuration.addMapper(AgentMapper.class);
+        configuration = MapperTestSupport.configuration(AgentMapper.class);
         configuration.setEnvironment(
                 new Environment("test", new JdbcTransactionFactory(), dataSource));
         factory = new MybatisSqlSessionFactoryBuilder().build(configuration);

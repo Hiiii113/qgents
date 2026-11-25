@@ -21,7 +21,6 @@ import qg.qgent.sandbox.service.SandboxFiles;
 import qg.qgent.sandbox.service.SandboxSessionManager;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
 import qg.qgent.workspace.service.WorkspaceOperationLock;
-import qg.qgent.workspace.service.WorkspaceWriteLeaseService;
 
 class SandboxConfigurationTest {
     @TempDir Path directory;
@@ -41,8 +40,6 @@ class SandboxConfigurationTest {
             context.registerBean(
                     ToolExecutionLogMapper.class, () -> mock(ToolExecutionLogMapper.class));
             context.registerBean(WorkspaceMapper.class, () -> mock(WorkspaceMapper.class));
-            context.registerBean(
-                    WorkspaceWriteLeaseService.class, () -> mock(WorkspaceWriteLeaseService.class));
             context.register(WorkspaceOperationLock.class, ProjectDirectoryService.class);
             context.scan("qg.qgent.sandbox");
             context.refresh();

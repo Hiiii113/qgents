@@ -1,0 +1,25 @@
+id: memory-recall-recent
+suite: memory
+description: 日常沟通近期事实回忆：能记住最新变更后的发布窗口与负责人，不复述旧值。
+repeat: 1
+timeoutSeconds: 90
+initialState:
+  actorRole: PROJECT_ADMIN
+  groupHistory:
+    - sender: USER
+      text: 大家注意，之前暂定的上线窗口是周三 20:00，负责人小李。
+    - sender: USER
+      text: 刚和运维对齐了，本周上线窗口改到周四 22:00，负责人换成老王。
+    - sender: AGENT
+      text: 收到，已了解最新安排。
+    - sender: USER
+      text: 顺便说一下，测试环境晚上不用停机。
+instruction: 这周上线窗口是几点？谁负责？直接告诉我最新结论。
+checks:
+  - kind: response
+    mustContain:
+      - 周四
+      - "22:00"
+      - 老王
+    mustNotContain:
+      - 小李

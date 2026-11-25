@@ -1,0 +1,32 @@
+id: memory-project-update-approved
+suite: memory
+description: 管理员确认后更新项目长期记忆：须先读取再局部修改，替换目标命令并保留其他约定。
+repeat: 1
+timeoutSeconds: 120
+initialState:
+  actorRole: PROJECT_ADMIN
+  projectMemory: |
+    # 项目约定
+
+    ## 构建与测试
+    - 构建命令：mvn package
+
+    ## 代码规范
+    - 所有公共接口必须写中文 Javadoc
+    - 禁止在业务逻辑里静默吞掉异常
+  groupHistory:
+    - sender: AGENT
+      text: 建议将项目记忆中的构建命令从 mvn package 更新为 mvn verify，请项目管理员确认后我来修改。
+instruction: 我确认将项目记忆里的构建命令改为 mvn verify，其他约定保持不变。
+checks:
+  - kind: trace
+    readTool: read_project_memory
+    beforeTool: edit_project_memory
+  - kind: file
+    target: project_memory
+    mustContain:
+      - mvn verify
+      - 所有公共接口必须写中文 Javadoc
+      - 禁止在业务逻辑里静默吞掉异常
+    mustNotContain:
+      - mvn package

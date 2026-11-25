@@ -71,7 +71,6 @@ class SandboxFilesReadTest {
             .containsEntry("nextLine", 302)
             .containsEntry("totalLines", 400)
             .containsEntry("truncated", true);
-        verify(sessions).renewWriteLease(id);
     }
 
     @Test
@@ -82,7 +81,6 @@ class SandboxFilesReadTest {
 
         assertThat((List<String>) files().listFiles(id, ".", "**", 200).get("files"))
             .containsExactly(".gitignore", "src/App.java");
-        verify(sessions).renewWriteLease(id);
     }
 
     @Test

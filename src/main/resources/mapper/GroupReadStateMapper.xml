@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="qg.qgent.chat.mapper.GroupReadStateMapper">
+
+    <insert id="upsertSequence">
+        INSERT INTO group_read_state (user_id, group_id, last_read_sequence_no)
+        VALUES (#{userId}, #{groupId}, #{seq})
+        ON DUPLICATE KEY UPDATE last_read_sequence_no =
+            GREATEST(COALESCE(last_read_sequence_no, 0), VALUES(last_read_sequence_no))
+    </insert>
+
+</mapper>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="qg.qgent.harness.mapper.AgentRunToolMapper">
+
+    <update id="finish">
+        UPDATE agent_run_tools
+        SET state = #{state}, output = #{output}, finished_at = #{finishedAt}
+        WHERE run_id = #{runId} AND tool_call_id = #{toolCallId}
+    </update>
+
+    <select id="byRunIds" resultType="qg.qgent.harness.entity.AgentRunToolEntity">
+        SELECT * FROM agent_run_tools
+        WHERE run_id IN
+        <foreach collection="runIds" item="runId" open="(" separator="," close=")">#{runId}</foreach>
+        ORDER BY id
+    </select>
+
+</mapper>

@@ -1,0 +1,19 @@
+id: coding-csv-parser
+suite: coding
+description: 修复 TextParser.parseCsvLine 对引号逗号、转义双引号与末尾空字段的支持。
+repeat: 1
+timeoutSeconds: 180
+initialState:
+  actorRole: PROJECT_ADMIN
+  codingRepo:
+    fixtureDir: fixtures/tiny-ledger
+    targetDir: tiny-ledger
+    hiddenTestDir: hidden-tests/coding-csv-parser
+    verifyCommand: "javac -encoding UTF-8 -d . src/ledger/PriceCalculator.java src/ledger/TextParser.java test/ledger/SmokeTest.java test/ledger/HiddenCsvParserTest.java && java ledger.SmokeTest && java ledger.HiddenCsvParserTest"
+instruction: 工作区目录 tiny-ledger 下的 src/ledger/TextParser.java 中 parseCsvLine 目前只用了简单 split，无法正确处理双引号包裹的逗号、双引号内用 "" 转义的引号以及末尾空字段。请修复它并验证。
+checks:
+  - kind: coding
+    requireNonEmptyDiff: true
+    allowedPathPrefixes:
+      - src/ledger/TextParser.java
+      - test/ledger/

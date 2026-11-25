@@ -55,26 +55,28 @@ final class ToolCallExecutor {
         BooleanSupplier cancelled,
         RunStreamSink sink) {
         List<ToolResponse> results = new ArrayList<>(Collections.nCopies(calls.size(), null));
+        java.util.concurrent.atomic.AtomicInteger invoked = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger failed = new java.util.concurrent.atomic.AtomicInteger();
         Map<String, String> context = MDC.getCopyOfContextMap();
         try (ExecutorService pool =
                  Executors.newFixedThreadPool(
                      maxParallel, Thread.ofVirtual().name("agent-tool-", 0).factory())) {
             for (int next = 0; next < calls.size(); ) {
-                if (stopped(cancelled)) return new Result(results, true);
+                if (stopped(cancelled)) return new Result(results, true, invoked.get(), failed.get());
                 if (!parallel(callbacks, calls.get(next))) {
-                    results.set(next, invoke(calls.get(next), callbacks, sink));
+                    results.set(next, invoke(calls.get(next), callbacks, sink, invoked, failed));
                     next++;
                     continue;
                 }
                 int end = next;
                 while (end < calls.size() && parallel(callbacks, calls.get(end))) end++;
                 if (parallel(
-                    pool, calls, callbacks, next, end, results, cancelled, runId, context, sink))
-                    return new Result(results, true);
+                    pool, calls, callbacks, next, end, results, cancelled, runId, context, sink, invoked, failed))
+                    return new Result(results, true, invoked.get(), failed.get());
                 next = end;
             }
         }
-        return new Result(results, stopped(cancelled));
+        return new Result(results, stopped(cancelled), invoked.get(), failed.get());
     }
 
     private boolean parallel(
@@ -87,7 +89,9 @@ final class ToolCallExecutor {
         BooleanSupplier cancelled,
         Long runId,
         Map<String, String> context,
-        RunStreamSink sink) {
+        RunStreamSink sink,
+        java.util.concurrent.atomic.AtomicInteger invoked,
+        java.util.concurrent.atomic.AtomicInteger failed) {
         var completed = new ExecutorCompletionService<CompletedCall>(pool);
         int next = start, active = 0;
         boolean stopped = false;
@@ -104,7 +108,7 @@ final class ToolCallExecutor {
                             () ->
                                 new CompletedCall(
                                     index,
-                                    invoke(calls.get(index), callbacks, sink)));
+                                    invoke(calls.get(index), callbacks, sink, invoked, failed)));
                     } finally {
                         setMdc(previousContext);
                     }
@@ -131,7 +135,12 @@ final class ToolCallExecutor {
     }
 
     private ToolResponse invoke(
-        ToolCall call, Map<String, ToolCallback> callbacks, RunStreamSink sink) {
+        ToolCall call,
+        Map<String, ToolCallback> callbacks,
+        RunStreamSink sink,
+        java.util.concurrent.atomic.AtomicInteger invoked,
+        java.util.concurrent.atomic.AtomicInteger failed) {
+        invoked.incrementAndGet();
         sink.toolStarted(call.id(), call.name(), call.arguments());
         // 未知工具与异常一定是失败；正常返回时只信 ToolResult 的 ok 字段，其他结果不声称成功。
         Boolean ok = false;
@@ -159,6 +168,7 @@ final class ToolCallExecutor {
                 }
             }
         } finally {
+            if (Boolean.FALSE.equals(ok)) failed.incrementAndGet();
             sink.toolFinished(call.id(), call.name(), ok, result);
         }
         return new ToolResponse(call.id(), call.name(), result);
@@ -201,7 +211,10 @@ final class ToolCallExecutor {
         else MDC.setContextMap(context);
     }
 
-    record Result(List<ToolResponse> responses, boolean cancelled) {
+    record Result(List<ToolResponse> responses, boolean cancelled, int totalCalls, int failedCalls) {
+        Result(List<ToolResponse> responses, boolean cancelled) {
+            this(responses, cancelled, 0, 0);
+        }
     }
 
     private record CompletedCall(int index, ToolResponse response) {

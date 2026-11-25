@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import qg.qgent.support.MapperTestSupport;
 import qg.qgent.support.TestIds;
 
 /**
@@ -13,11 +14,11 @@ import qg.qgent.support.TestIds;
  */
 class DirectConversationMapperTest {
 
-    private final MybatisConfiguration configuration = new MybatisConfiguration();
+    private MybatisConfiguration configuration;
 
     @BeforeEach
     void setUp() {
-        configuration.addMapper(DirectConversationMapper.class);
+        configuration = MapperTestSupport.configuration(DirectConversationMapper.class);
     }
 
     @Test

@@ -171,8 +171,9 @@ qgents:
       max-size: ${QGENTS_AGENT_MAX_SIZE:4}
       queue-capacity: ${QGENTS_AGENT_QUEUE_CAPACITY:100}
 
-# 数据库映射：下划线列名映射到 Java 驼峰属性。
+# 数据库映射：XML 统一放在 resources/mapper，下划线列名映射到 Java 驼峰属性。
 mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
   configuration:
     map-underscore-to-camel-case: true
     # 状态枚举按名字与 VARCHAR 列互转，不依赖 @EnumValue。

@@ -138,6 +138,42 @@ class AgentChatServiceTest {
     }
 
     @Test
+    void runTaskExecutesWithoutPostingChatMessageAndReturnsMetrics() {
+        Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next();
+        ModelClient model = model();
+        when(model.stream(any(), any()))
+                .thenAnswer(
+                        invocation -> {
+                            java.util.function.Consumer<String> delta = invocation.getArgument(1);
+                            delta.accept("评测回复");
+                            return Mono.just(
+                                    new ModelClient.Reply(
+                                            new ModelMessage.AssistantMessage("评测回复", List.of(), null),
+                                            "stop",
+                                            new ModelClient.Usage(80, 15, 40, 0)));
+                        });
+        var fixture = fixture(model, actor, project, group, null, childExecutor);
+
+        AgentChatService.Outcome outcome =
+                fixture.service()
+                        .runTask(
+                                new AgentChatService.TaskRun(
+                                        fixture.agentId(), project, group, actor, null, false),
+                                "检查状态");
+
+        assertThat(outcome.status()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(outcome.text()).isEqualTo("评测回复");
+        assertThat(outcome.rounds()).isEqualTo(1);
+        assertThat(outcome.metrics().promptTokens()).isEqualTo(80);
+        assertThat(outcome.metrics().completionTokens()).isEqualTo(15);
+        assertThat(outcome.metrics().cachedTokens()).isEqualTo(40);
+        verify(fixture.runs())
+                .startRoot(fixture.agentId(), project, group, null, actor, "检查状态");
+        verify(fixture.messages(), never()).sendAsAgent(anyLong(), anyLong(), any());
+        verify(fixture.messages(), never()).replyInConversation(anyLong(), anyLong(), any());
+    }
+
+    @Test
     void directMessageRunRepliesIntoTheConversationWithoutGroupMemoryOrSharedMemoryWrites() {
         Long actor = TestIds.next(),
                 project = TestIds.next(),
@@ -1502,7 +1538,6 @@ class AgentChatServiceTest {
         workspace.setId(TestIds.next());
         workspace.setProjectId(projectId);
         workspace.setIsDefault(true);
-        workspace.setStatus("PROVISIONING");
         return workspace;
     }
 

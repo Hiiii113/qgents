@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="qg.qgent.team.mapper.TeamMapper">
+
+    <select id="selectByIdForUpdate" resultType="qg.qgent.team.entity.TeamEntity">
+        SELECT id, owner_user_id, name, description, avatar_url, status, created_at
+        FROM teams WHERE id = #{teamId} FOR UPDATE
+    </select>
+
+    <select id="selectMembershipPage" resultType="qg.qgent.team.mapper.view.TeamMembershipView">
+        SELECT t.id, t.owner_user_id, t.name, t.description, t.avatar_url, t.created_at, tm.role,
+               (SELECT COUNT(*) FROM team_members tc WHERE tc.team_id = t.id) AS member_count
+        FROM team_members tm
+        INNER JOIN teams t ON t.id = tm.team_id
+        WHERE tm.user_id = #{userId}
+        <if test="anchor != null">AND t.id &gt; #{anchor}</if>
+        ORDER BY t.id LIMIT #{limit}
+    </select>
+
+</mapper>

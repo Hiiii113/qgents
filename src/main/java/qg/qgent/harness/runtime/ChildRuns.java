@@ -246,6 +246,29 @@ final class ChildRuns {
         }
     }
 
+    /**
+     * 汇总所有子运行的用量和耗时，供根运行结算时一并记账。
+     */
+    AgentLoop.Metrics totalMetrics() {
+        AgentLoop.Metrics sum = AgentLoop.Metrics.ZERO;
+        for (Execution child : children.values()) {
+            AgentRunEntity run = child.run;
+            sum =
+                sum.plus(
+                    new AgentLoop.Metrics(
+                        run.getPromptTokens() == null ? 0L : run.getPromptTokens(),
+                        run.getCompletionTokens() == null ? 0L : run.getCompletionTokens(),
+                        run.getCachedTokens() == null ? 0L : run.getCachedTokens(),
+                        run.getReasoningTokens() == null ? 0L : run.getReasoningTokens(),
+                        null,
+                        run.getModelTimeMs() == null ? 0L : run.getModelTimeMs(),
+                        run.getToolTimeMs() == null ? 0L : run.getToolTimeMs(),
+                        run.getToolCalls() == null ? 0 : run.getToolCalls(),
+                        run.getFailedToolCalls() == null ? 0 : run.getFailedToolCalls()));
+        }
+        return sum;
+    }
+
     boolean reserve(Execution child) {
         synchronized (child) {
             synchronized (lock) {
@@ -319,6 +342,7 @@ final class ChildRuns {
                             updates(child),
                             sink);
                     totalRounds += result.rounds();
+                    child.run.addMetrics(result.metrics(), loop.modelName());
                 } catch (RuntimeException exception) {
                     failure = exception;
                 }

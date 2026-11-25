@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="qg.qgent.team.mapper.TeamInvitationMapper">
+
+    <select id="selectInvitationPage" resultType="qg.qgent.team.entity.TeamInvitationEntity">
+        SELECT id, team_id, invited_by, email_normalized, token_hash, status, expires_at, accepted_at, created_at
+        FROM team_invitations
+        WHERE team_id = #{teamId}
+        <if test="anchor != null">AND id &gt; #{anchor}</if>
+        ORDER BY id LIMIT #{limit}
+    </select>
+
+    <select id="selectPendingByEmail" resultType="qg.qgent.team.entity.TeamInvitationEntity">
+        SELECT id, team_id, invited_by, email_normalized, token_hash, status, expires_at, accepted_at, created_at
+        FROM team_invitations
+        WHERE email_normalized = #{emailNormalized} AND status = 'PENDING'
+        <if test="anchor != null">AND id &gt; #{anchor}</if>
+        ORDER BY id LIMIT #{limit}
+    </select>
+
+</mapper>

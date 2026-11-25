@@ -151,6 +151,47 @@ class OpenAiModelClientTest {
                 new ModelMessage.ToolCall("call_1", "read_file", "{\"path\":\"a.txt\"}"));
         assertThat(reply.message().reasoningContent()).isEqualTo("先想一下");
         assertThat(reply.message().text()).isEmpty();
+        assertThat(reply.usage()).isEqualTo(new ModelClient.Usage(9, 4, 0, 0));
+    }
+
+    @Test
+    void streamRequestsIncludeUsageAndCapturesTrailingUsageWithCacheAndReasoning() {
+        responder =
+            (exchange, body) ->
+                sse(
+                    exchange,
+                    chunk(Map.of("role", "assistant", "content", "完成")),
+                    finish("stop"),
+                    """
+                    {"id":"chatcmpl-1","created":1700000000,"model":"test-model","choices":[],
+                     "usage":{"prompt_tokens":120,"completion_tokens":35,"total_tokens":155,
+                              "prompt_tokens_details":{"cached_tokens":80},
+                              "completion_tokens_details":{"reasoning_tokens":10}}}
+                    """.replace("\n", ""));
+
+        ModelClient.Reply reply = client.stream(request("统计"), delta -> {}).block(WAIT);
+
+        assertThat(bodies.get(0).path("stream_options").path("include_usage").asBoolean()).isTrue();
+        assertThat(reply.usage()).isEqualTo(new ModelClient.Usage(120, 35, 80, 10));
+    }
+
+    @Test
+    void streamCapturesDeepSeekPromptCacheHitTokensFromAdditionalProperties() {
+        responder =
+            (exchange, body) ->
+                sse(
+                    exchange,
+                    chunk(Map.of("role", "assistant", "content", "好")),
+                    """
+                    {"id":"chatcmpl-1","created":1700000000,"model":"test-model",
+                     "choices":[{"index":0,"delta":{},"finish_reason":"stop"}],
+                     "usage":{"prompt_tokens":200,"completion_tokens":20,"total_tokens":220,
+                              "prompt_cache_hit_tokens":150}}
+                    """.replace("\n", ""));
+
+        ModelClient.Reply reply = client.stream(request("缓存"), delta -> {}).block(WAIT);
+
+        assertThat(reply.usage()).isEqualTo(new ModelClient.Usage(200, 20, 150, 0));
     }
 
     @Test

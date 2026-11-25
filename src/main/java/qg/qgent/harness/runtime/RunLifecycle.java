@@ -51,7 +51,10 @@ final class RunLifecycle {
      * 根运行进入 CANCELLING 时取消优先；子运行写状态期间被取消则改写为 CANCELLED 重写。
      */
     RunStatus finish(AgentRunEntity run, RunStatus status, String result, int rounds) {
-        if (isRoot(run)) awaitChildren(status);
+        if (isRoot(run)) {
+            awaitChildren(status);
+            run.addMetrics(work.children.totalMetrics(), null);
+        }
         boolean commandsStopped = false;
         while (true) {
             if (isCancelled(run)) {

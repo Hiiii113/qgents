@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="qg.qgent.mcp.mapper.McpMapper">
+
+    <resultMap id="mcpServer" type="qg.qgent.mcp.entity.McpServer">
+        <constructor>
+            <idArg column="id" javaType="long"/>
+            <arg column="project_id" javaType="long"/>
+            <arg column="name" javaType="java.lang.String"/>
+            <arg column="endpoint" javaType="java.lang.String"/>
+            <arg column="scope" javaType="qg.qgent.mcp.entity.McpServer$Scope"/>
+            <arg column="auth_mode" javaType="qg.qgent.mcp.entity.McpServer$AuthMode"/>
+            <arg column="enabled" javaType="_boolean"/>
+            <arg column="oauth_client" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="mcpCredential" type="qg.qgent.mcp.entity.McpCredential">
+        <constructor>
+            <idArg column="id" javaType="long"/>
+            <arg column="owner_user_id" javaType="java.lang.Long"/>
+            <arg column="access_token" javaType="java.lang.String"/>
+            <arg column="refresh_token" javaType="java.lang.String"/>
+            <arg column="expires_at" javaType="java.time.Instant"
+                 typeHandler="qg.qgent.common.mybatis.UtcInstantTypeHandler"/>
+            <arg column="reauth_required" javaType="_boolean"/>
+            <arg column="revision" javaType="_long"/>
+        </constructor>
+    </resultMap>
+
+    <select id="list" resultMap="mcpServer">
+        SELECT * FROM mcp_servers WHERE project_id = #{projectId} ORDER BY id
+    </select>
+
+    <select id="server" resultMap="mcpServer">
+        SELECT * FROM mcp_servers WHERE project_id = #{projectId} AND id = #{id}
+        <if test="lock">FOR UPDATE</if>
+    </select>
+
+    <insert id="insertServer" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO mcp_servers (project_id, name, endpoint, scope, auth_mode)
+        VALUES (#{projectId}, #{name}, #{endpoint}, #{scope}, #{authMode})
+    </insert>
+
+    <update id="update">
+        UPDATE mcp_servers SET name = #{name}, enabled = #{enabled} WHERE id = #{id}
+    </update>
+
+    <delete id="delete">
+        DELETE FROM mcp_servers WHERE id = #{id}
+    </delete>
+
+    <update id="saveOAuthClient">
+        UPDATE mcp_servers SET oauth_client = #{client} WHERE id = #{id}
+    </update>
+
+    <select id="credential" resultMap="mcpCredential">
+        SELECT * FROM mcp_credentials
+        WHERE server_id = #{serverId} AND owner_slot = COALESCE(#{owner,jdbcType=BIGINT}, 0)
+        <if test="lock">FOR UPDATE</if>
+    </select>
+
+    <select id="lockCredential" resultMap="mcpCredential">
+        SELECT * FROM mcp_credentials WHERE id = #{id} FOR UPDATE
+    </select>
+
+    <insert id="insertCredential">
+        INSERT INTO mcp_credentials (server_id, owner_user_id)
+        VALUES (#{serverId}, #{owner,jdbcType=BIGINT})
+        ON DUPLICATE KEY UPDATE server_id = mcp_credentials.server_id
+    </insert>
+
+    <update id="saveCredential">
+        UPDATE mcp_credentials
+        SET access_token = #{access,jdbcType=LONGVARCHAR}, refresh_token = #{refresh,jdbcType=LONGVARCHAR},
+            expires_at = #{expiry,jdbcType=TIMESTAMP,typeHandler=qg.qgent.common.mybatis.UtcInstantTypeHandler},
+            reauth_required = FALSE, revision = revision + CASE WHEN #{replace} THEN 1 ELSE 0 END
+        WHERE id = #{id}
+    </update>
+
+    <update id="requireReauthorization">
+        UPDATE mcp_credentials
+        SET access_token = NULL, refresh_token = NULL, expires_at = NULL,
+            reauth_required = TRUE, revision = revision + 1
+        WHERE id = #{id}
+    </update>
+
+    <select id="agentIds" resultType="long">
+        SELECT agent_id FROM mcp_agent_assignments
+        WHERE credential_id = #{credentialId} ORDER BY agent_id
+    </select>
+
+    <delete id="deleteAgentAssignments">
+        DELETE FROM mcp_agent_assignments WHERE credential_id = #{credentialId}
+    </delete>
+
+    <insert id="insertAgentAssignments">
+        INSERT INTO mcp_agent_assignments (credential_id, agent_id) VALUES
+        <foreach collection="agentIds" item="agentId" separator=",">(#{credentialId}, #{agentId})</foreach>
+    </insert>
+
+    <select id="assignedServers" resultMap="mcpServer">
+        SELECT s.* FROM mcp_servers s
+        JOIN mcp_credentials c ON c.server_id = s.id
+          AND c.owner_slot = CASE WHEN s.scope = 'PERSONAL' THEN #{actor} ELSE 0 END
+        JOIN mcp_agent_assignments a ON a.credential_id = c.id AND a.agent_id = #{agentId}
+        WHERE s.project_id = #{projectId} AND s.enabled
+        ORDER BY s.id
+    </select>
+
+    <select id="assignedCredential" resultMap="mcpCredential">
+        SELECT c.* FROM mcp_credentials c
+        JOIN mcp_agent_assignments a ON a.credential_id = c.id AND a.agent_id = #{agentId}
+        WHERE c.server_id = #{serverId} AND c.owner_slot = COALESCE(#{owner,jdbcType=BIGINT}, 0)
+    </select>
+
+</mapper>

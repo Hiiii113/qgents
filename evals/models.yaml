@@ -1,0 +1,36 @@
+# 评测模型与计价档案：
+# 1. 可直接通过 `./eval.ps1 --profile deepseek-chat` 使用预设；
+# 2. 也可随时通过命令行 `--base-url <url> --model <id> --api-key <key>` 临时覆盖任意 OpenAI 兼容模型。
+profiles:
+  deepseek-chat:
+    baseUrl: https://api.deepseek.com
+    model: deepseek-chat
+    apiKeyEnv: DEEPSEEK_API_KEY
+    temperature: 0.2
+    maxTokens: 4096
+    inputPricePerMillion: 0.27
+    cachedInputPricePerMillion: 0.07
+    outputPricePerMillion: 1.10
+    currency: USD
+
+  deepseek-reasoner:
+    baseUrl: https://api.deepseek.com
+    model: deepseek-reasoner
+    apiKeyEnv: DEEPSEEK_API_KEY
+    temperature: 0.2
+    maxTokens: 8192
+    inputPricePerMillion: 0.55
+    cachedInputPricePerMillion: 0.14
+    outputPricePerMillion: 2.19
+    currency: USD
+
+  openai-gpt-4o-mini:
+    baseUrl: https://api.openai.com/v1
+    model: gpt-4o-mini
+    apiKeyEnv: OPENAI_API_KEY
+    temperature: 0.2
+    maxTokens: 4096
+    inputPricePerMillion: 0.15
+    cachedInputPricePerMillion: 0.075
+    outputPricePerMillion: 0.60
+    currency: USD

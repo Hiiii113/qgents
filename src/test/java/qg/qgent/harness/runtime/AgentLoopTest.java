@@ -713,6 +713,56 @@ class AgentLoopTest {
         verify(model).stream(any(), any());
     }
 
+    @Test
+    void accumulatesUsageTtftAndToolMetricsAcrossRounds() {
+        AgentLoop loop = loop(4);
+        when(model.stream(any(), any()))
+                .thenAnswer(
+                        invocation ->
+                                Mono.just(
+                                        new ModelClient.Reply(
+                                                new ModelMessage.AssistantMessage(
+                                                        "",
+                                                        List.of(
+                                                                new ModelMessage.ToolCall(
+                                                                        "call-1", "count", "{}"),
+                                                                new ModelMessage.ToolCall(
+                                                                        "call-2", "missing_tool", "{}")),
+                                                        null),
+                                                "tool_calls",
+                                                new ModelClient.Usage(100, 20, 60, 5))))
+                .thenAnswer(
+                        invocation -> {
+                            Consumer<String> delta = invocation.getArgument(1);
+                            delta.accept("完成");
+                            return Mono.just(
+                                    new ModelClient.Reply(
+                                            new ModelMessage.AssistantMessage("完成", List.of(), null),
+                                            "stop",
+                                            new ModelClient.Usage(140, 30, 100, 0)));
+                        });
+        Counter tools = new Counter();
+
+        AgentLoop.Result result =
+                loop.run(
+                        TestIds.next(),
+                        "通用 Agent",
+                        List.of(new ModelMessage.UserMessage("统计")),
+                        () -> callbacks(tools),
+                        () -> false);
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.metrics().promptTokens()).isEqualTo(240);
+        assertThat(result.metrics().completionTokens()).isEqualTo(50);
+        assertThat(result.metrics().cachedTokens()).isEqualTo(160);
+        assertThat(result.metrics().reasoningTokens()).isEqualTo(5);
+        assertThat(result.metrics().ttftMs()).isNotNull().isGreaterThanOrEqualTo(0L);
+        assertThat(result.metrics().modelTimeMs()).isGreaterThanOrEqualTo(0L);
+        assertThat(result.metrics().toolTimeMs()).isGreaterThanOrEqualTo(0L);
+        assertThat(result.metrics().toolCalls()).isEqualTo(2);
+        assertThat(result.metrics().failedToolCalls()).isEqualTo(1);
+    }
+
     private Mono<ModelClient.Reply> toolCall(String name) {
         return toolCall(name, "{}");
     }

@@ -104,9 +104,7 @@ public class SandboxCommands {
     }
 
     private SandboxSession session(Long workspaceId) {
-        SandboxSession session = sessions.require(workspaceId);
-        sessions.renewWriteLease(workspaceId);
-        return session;
+        return sessions.require(workspaceId);
     }
 
     /**
