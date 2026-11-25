@@ -49,7 +49,7 @@ class MemoryBudgetTest {
                         mock(GroupService.class),
                         directories,
                         document);
-        agentMemories = new AgentMemoryService(directories, document);
+        agentMemories = new AgentMemoryService(mock(ProjectMapper.class), directories, document);
     }
 
     @Test

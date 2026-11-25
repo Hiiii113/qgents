@@ -21,6 +21,10 @@ import java.util.function.Function;
  * 根运行只提供取消信号、子 Agent 的工具集和对话工厂。
  */
 final class ChildRuns {
+    // 注入父 Agent 历史的结果上限（含截断标记）；完整结果仍保存在子运行记录里。
+    private static final int NOTIFIED_RESULT_LIMIT = 4000;
+    private static final String NOTIFIED_RESULT_TRUNCATED = "\n…（已截断，完整结果见子运行记录）";
+
     private final Long rootRunId;
     private final int limit;
     private final Executor executor;
@@ -385,15 +389,28 @@ final class ChildRuns {
                             + " 已结束，状态："
                             + child.run.getStatus()
                             + "。执行结果：\n"
-                            + (child.run.getResult() == null
-                            ? ""
-                            : child.run.getResult())));
+                            + notifiedResult(child.run.getResult())));
                 if (child.releaseReservation()) active--;
                 child.finishTurn(child.run);
                 lock.notifyAll();
                 return true;
             }
         }
+    }
+
+    /**
+     * 只截断注入父 Agent 历史的那份结果；子运行记录保留完整正文。
+     */
+    private static String notifiedResult(String result) {
+        if (result == null) return "";
+        if (result.length() <= NOTIFIED_RESULT_LIMIT) return result;
+        int cut = NOTIFIED_RESULT_LIMIT - NOTIFIED_RESULT_TRUNCATED.length();
+        // 不劈开 UTF-16 代理对（emoji 等），否则父历史里会留下半个字符。
+        if (Character.isHighSurrogate(result.charAt(cut - 1))
+            && Character.isLowSurrogate(result.charAt(cut))) {
+            cut--;
+        }
+        return result.substring(0, cut) + NOTIFIED_RESULT_TRUNCATED;
     }
 
     private List<ModelMessage> drainNotifications() {

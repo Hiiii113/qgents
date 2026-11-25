@@ -9,13 +9,12 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import qg.qgent.sandbox.config.SandboxProperties;
-import qg.qgent.sandbox.dto.CreateSandboxRequest;
-import qg.qgent.sandbox.dto.ResourceLimitsRequest;
-import qg.qgent.sandbox.dto.SandboxResponse;
 import qg.qgent.sandbox.runtime.FakeContainerRuntime;
+import qg.qgent.sandbox.runtime.SandboxAllocation;
 import qg.qgent.support.TestIds;
 import qg.qgent.workspace.service.WorkspaceOperationLock;
 
@@ -26,81 +25,83 @@ class SandboxServiceTest {
     private final FakeContainerRuntime runtime = new FakeContainerRuntime();
 
     @Test
-    void createClampsRequestedTtlToSandboxLimits() {
-        CreateSandboxRequest request = request();
-        ResourceLimitsRequest limits = new ResourceLimitsRequest();
-        limits.setIdleTtlSeconds(9999L);
-        limits.setMaxLifetimeSeconds(9999L);
-        request.setLimits(limits);
+    void createUsesConfiguredLimitsInsteadOfCallerValues() {
+        SandboxAllocation allocation = service().create(sandboxId(), TestIds.next(), storageKey(), "dev-tools");
 
-        SandboxResponse response = service().create(request);
-
-        assertEquals(now.plus(Duration.ofMinutes(10)), response.getExpiresAt());
-        assertEquals(now.plus(Duration.ofHours(1)), response.getMaxExpiresAt());
+        assertEquals(now.plus(Duration.ofMinutes(10)), allocation.getExpiresAt());
+        assertEquals(now.plus(Duration.ofHours(1)), allocation.getMaxExpiresAt());
+        assertEquals(Duration.ofMinutes(15), allocation.getExecutionTimeout());
     }
 
     @Test
     void expiredSandboxIsSelectedForCleanup() {
-        CreateSandboxRequest request = request();
-        ResourceLimitsRequest limits = new ResourceLimitsRequest();
-        limits.setIdleTtlSeconds(1L);
-        request.setLimits(limits);
+        UUID sandboxId = sandboxId();
         SandboxService service = service();
-        service.create(request);
-        runtime.find(request.getSandboxId()).orElseThrow().setExpiresAt(now.minusSeconds(1));
+        service.create(sandboxId, TestIds.next(), storageKey(), "dev-tools");
+        runtime.find(sandboxId).orElseThrow().setExpiresAt(now.minusSeconds(1));
 
-        assertTrue(service.expiredSandboxIds().contains(request.getSandboxId()));
+        assertTrue(service.expiredSandboxIds().contains(sandboxId));
     }
 
     @Test
     void sameSandboxIdSameSpecIsIdempotent() {
+        UUID sandboxId = sandboxId();
+        Long agentRunId = TestIds.next();
+        String storageKey = storageKey();
         SandboxService service = service();
-        CreateSandboxRequest request = request();
 
-        SandboxResponse first = service.create(request);
-        SandboxResponse second = service.create(request);
+        SandboxAllocation first = service.create(sandboxId, agentRunId, storageKey, "dev-tools");
+        SandboxAllocation second = service.create(sandboxId, agentRunId, storageKey, "dev-tools");
 
         assertEquals(first.getId(), second.getId());
         assertEquals(1, runtime.findAll().size());
     }
 
     @Test
-    void responseContainsSandboxSpecNeededForIdempotentRecovery() {
-        CreateSandboxRequest request = request();
+    void allocationContainsSandboxSpecNeededForIdempotentRecovery() {
+        UUID sandboxId = sandboxId();
+        Long agentRunId = TestIds.next();
+        String storageKey = storageKey();
 
-        SandboxResponse response = service().create(request);
+        SandboxAllocation allocation =
+            service().create(sandboxId, agentRunId, storageKey, "dev-tools");
 
-        assertEquals(request.getWorkspaceStorageKey(), response.getWorkspaceStorageKey());
-        assertEquals(request.getAgentRunId(), response.getAgentRunId());
-        assertEquals(request.getImageProfile(), response.getImageProfile());
+        assertEquals(storageKey, allocation.getWorkspaceStorageKey());
+        assertEquals(agentRunId, allocation.getAgentRunId());
+        assertEquals("dev-tools", allocation.getImageProfile());
     }
 
     @Test
     void sameSandboxIdDifferentSpecConflicts() {
+        UUID sandboxId = sandboxId();
+        String storageKey = storageKey();
         SandboxService service = service();
-        CreateSandboxRequest request = request();
-        service.create(request);
-
-        CreateSandboxRequest conflict = request();
-        conflict.setSandboxId(request.getSandboxId());
-        conflict.setAgentRunId(TestIds.next());
+        service.create(sandboxId, TestIds.next(), storageKey, "dev-tools");
 
         var exception =
-                assertThrows(
-                        qg.qgent.sandbox.exception.SandboxException.class,
-                        () -> service.create(conflict));
+            assertThrows(
+                qg.qgent.sandbox.exception.SandboxException.class,
+                () -> service.create(sandboxId, TestIds.next(), storageKey, "dev-tools"));
 
         assertEquals("SANDBOX_ID_CONFLICT", exception.getCode());
     }
 
-    private CreateSandboxRequest request() {
-        CreateSandboxRequest request = new CreateSandboxRequest();
-        request.setSandboxId(java.util.UUID.randomUUID());
-        request.setAgentRunId(TestIds.next());
-        request.setAgentRunId(TestIds.next());
-        request.setWorkspaceStorageKey("workspaces/" + java.util.UUID.randomUUID());
-        request.setImageProfile("dev-tools");
-        return request;
+    @Test
+    void imageProfileMustBeConfigured() {
+        var exception =
+            assertThrows(
+                qg.qgent.sandbox.exception.SandboxException.class,
+                () -> service().create(sandboxId(), TestIds.next(), storageKey(), "unknown"));
+
+        assertEquals("IMAGE_PROFILE_NOT_ALLOWED", exception.getCode());
+    }
+
+    private UUID sandboxId() {
+        return UUID.randomUUID();
+    }
+
+    private String storageKey() {
+        return TestIds.next() + "/workspaces/default";
     }
 
     private SandboxProperties properties() {
@@ -114,9 +115,9 @@ class SandboxServiceTest {
     private SandboxService service() {
         SandboxProperties properties = properties();
         return new SandboxService(
-                runtime,
-                properties,
-                Clock.fixed(now, ZoneOffset.UTC),
-                new WorkspaceOperationLock(properties));
+            runtime,
+            properties,
+            Clock.fixed(now, ZoneOffset.UTC),
+            new WorkspaceOperationLock(properties));
     }
 }

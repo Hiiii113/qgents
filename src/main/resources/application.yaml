@@ -57,6 +57,9 @@ app:
     model: ${AI_MODEL:deepseek-flash}
     temperature: 0.2
     max-tokens: ${AI_MAX_TOKENS:4096}
+  mcp:
+    encryption-key: ${MCP_TOKEN_ENCRYPTION_KEY:}
+    public-base-url: ${MCP_PUBLIC_BASE_URL:}
   # 所有 Agent 共用工具循环；普通文本回复结束，不强制工具调用。
   agent:
     # 每次 Agent loop 的最大轮次，防止工具调用无限继续。
@@ -158,21 +161,12 @@ management:
 
 qgents:
   # 后端 Agent 执行线程池：线程数和排队容量，与模型单步工具并行数分别配置。
+  # core 与 max 相等：core 小于 max 时任务先进队列，队列没满就不会扩到 max，实际并发只有 core。
   executor:
     agent:
-      core-size: ${QGENTS_AGENT_CORE_SIZE:2}
+      core-size: ${QGENTS_AGENT_CORE_SIZE:4}
       max-size: ${QGENTS_AGENT_MAX_SIZE:4}
       queue-capacity: ${QGENTS_AGENT_QUEUE_CAPACITY:100}
-  push:
-    # 移动端 FCM HTTP v1 离线推送默认关闭；服务账号密钥只允许由受控环境变量注入。
-    enabled: ${QGENTS_PUSH_ENABLED:false}
-    fcm-endpoint: ${QGENTS_PUSH_FCM_ENDPOINT:https://fcm.googleapis.com/v1/projects}
-    fcm-project-id: ${QGENTS_PUSH_FCM_PROJECT_ID:}
-    fcm-service-account-json-base64: ${QGENTS_PUSH_FCM_SERVICE_ACCOUNT_JSON_BASE64:}
-    token-encryption-key: ${QGENTS_PUSH_TOKEN_ENCRYPTION_KEY:}
-    # 推送最多尝试次数；待发送记录扫描间隔单位为毫秒。
-    max-attempts: ${QGENTS_PUSH_MAX_ATTEMPTS:5}
-    poll-interval-ms: ${QGENTS_PUSH_POLL_INTERVAL_MS:5000}
 
 # 数据库映射：下划线列名映射到 Java 驼峰属性。
 mybatis-plus:

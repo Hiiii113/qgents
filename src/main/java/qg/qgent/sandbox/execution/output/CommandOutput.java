@@ -9,7 +9,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -42,20 +41,18 @@ public final class CommandOutput {
                         "stdout".equals(stream)
                             ? result.getStandardOutput()
                             : result.getStandardError());
-                Files.writeString(
-                    directory.resolve(stream),
-                    (String) redact(Map.of("text", text), environment).get("text"));
+                Files.writeString(directory.resolve(stream), redact(text, environment));
             }
         } catch (IOException exception) {
             throw new IllegalStateException("保存命令输出失败", exception);
         }
     }
 
-    public static Map<String, Object> read(
+    public static CommandStreamWindow read(
         Path directory, String stream, long offset, int maxBytes) {
         Path file = directory.resolve(stream);
         if (!Files.exists(file))
-            return Map.of("text", "", "nextOffset", offset, "truncated", false);
+            return new CommandStreamWindow("", offset, false);
         try (var input = java.nio.channels.FileChannel.open(file)) {
             long size = input.size();
             input.position(Math.min(offset, size));
@@ -73,15 +70,15 @@ public final class CommandOutput {
             decoder.decode(buffer, text, false);
             long next = offset + buffer.position();
             text.flip();
-            return Map.of("text", text.toString(), "nextOffset", next, "truncated", next < size);
+            return new CommandStreamWindow(text.toString(), next, next < size);
         } catch (java.io.IOException exception) {
             throw new IllegalStateException("读取命令输出失败", exception);
         }
     }
 
-    public static Map<String, Object> tail(Path directory, String stream) {
+    public static CommandTail tail(Path directory, String stream) {
         Path file = directory.resolve(stream);
-        if (!Files.exists(file)) return Map.of("text", "", "truncated", false);
+        if (!Files.exists(file)) return new CommandTail("", false);
         try (var input = java.nio.channels.FileChannel.open(file)) {
             long size = input.size();
             long offset = Math.max(0, size - 16000);
@@ -93,24 +90,18 @@ public final class CommandOutput {
             if (offset > 0)
                 while (buffer.hasRemaining() && (buffer.get(buffer.position()) & 0xc0) == 0x80)
                     buffer.get();
-            return Map.of(
-                "text",
-                StandardCharsets.UTF_8.decode(buffer).toString(),
-                "truncated",
-                offset > 0);
+            return new CommandTail(
+                StandardCharsets.UTF_8.decode(buffer).toString(), offset > 0);
         } catch (java.io.IOException exception) {
             throw new IllegalStateException("读取命令输出失败", exception);
         }
     }
 
-    public static Map<String, Object> redact(
-        Map<String, Object> value, Map<String, String> environment) {
-        Map<String, Object> result = new LinkedHashMap<>(value);
-        String text = (String) result.getOrDefault("text", "");
+    public static String redact(String value, Map<String, String> environment) {
+        String text = value == null ? "" : value;
         for (String secret : environment.values())
             if (secret != null && secret.length() >= 8) text = text.replace(secret, "[redacted]");
-        result.put("text", text);
-        return result;
+        return text;
     }
 
     /**

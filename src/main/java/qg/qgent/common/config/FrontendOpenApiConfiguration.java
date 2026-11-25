@@ -38,8 +38,7 @@ public class FrontendOpenApiConfiguration {
                     "群组与消息",
                     "通知中心",
                     "共享 Skill",
-                    "共享 Memory",
-                    "实时事件流")
+                    "共享 Memory")
                 .stream()
                 .map(name -> new Tag().name(name))
                 .toList());
@@ -48,7 +47,6 @@ public class FrontendOpenApiConfiguration {
     private String group(String path) {
         if (path.contains("/integrations/github") || path.contains("/repositories"))
             return "GitHub App 与仓库导入";
-        if (path.contains("/events")) return "实时事件流";
         if (path.startsWith("/api/v1/notifications")) return "通知中心";
         if (path.contains("/groups") || path.contains("/messages") || path.contains("/attachments"))
             return "群组与消息";

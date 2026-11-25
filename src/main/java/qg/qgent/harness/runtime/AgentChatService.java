@@ -31,6 +31,7 @@ import qg.qgent.harness.tool.ToolCallback;
 import qg.qgent.harness.tool.ToolParam;
 import qg.qgent.harness.tool.ToolRegistry;
 import qg.qgent.harness.tool.ToolResult;
+import qg.qgent.mcp.tool.McpToolCallbacks;
 import qg.qgent.memory.service.AgentMemoryService;
 import qg.qgent.memory.service.GroupMemoryExtractionService;
 import qg.qgent.memory.service.GroupMemoryService;
@@ -90,6 +91,7 @@ public class AgentChatService {
     private final CrossGroupAccessService crossGroup;
     private final AgentService agents;
     private final AgentApplicationService agentApplications;
+    private final McpToolCallbacks mcp;
     private final Executor childExecutor;
     private final int maxSubagents;
 
@@ -116,6 +118,7 @@ public class AgentChatService {
         CrossGroupAccessService crossGroup,
         AgentService agents,
         AgentApplicationService agentApplications,
+        McpToolCallbacks mcp,
         @Qualifier("agentSubagentExecutor") Executor childExecutor,
         @Value("${app.agent.max-subagents:8}") int maxSubagents) {
         if (maxSubagents < 1) throw new IllegalArgumentException("max-subagents 必须大于 0");
@@ -141,6 +144,7 @@ public class AgentChatService {
         this.crossGroup = crossGroup;
         this.agents = agents;
         this.agentApplications = agentApplications;
+        this.mcp = mcp;
         this.childExecutor = childExecutor;
         this.maxSubagents = maxSubagents;
     }
@@ -405,6 +409,7 @@ public class AgentChatService {
             List<ToolCallback> available = new ArrayList<>(registry.callbacks());
             if (!canDelegate)
                 available.removeIf(callback -> CHILD_CONTROL_TOOLS.contains(callback.name()));
+            available.addAll(mcp.forRun(work.event.projectId(), work.agentId, work.event.actor()));
             this.availableTools = List.copyOf(available);
         }
 

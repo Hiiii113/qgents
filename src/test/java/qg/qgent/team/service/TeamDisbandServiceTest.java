@@ -35,8 +35,6 @@ import qg.qgent.notification.mapper.NotificationMapper;
 import qg.qgent.project.entity.ProjectEntity;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.storage.ProjectDirectoryService;
-import qg.qgent.realtime.entity.EventEntity;
-import qg.qgent.realtime.mapper.EventMapper;
 import qg.qgent.sandbox.service.SandboxService;
 import qg.qgent.skill.entity.SkillEntity;
 import qg.qgent.skill.mapper.SkillMapper;
@@ -60,7 +58,6 @@ class TeamDisbandServiceTest {
                 List.of(
                         ProjectEntity.class,
                         NotificationEntity.class,
-                        EventEntity.class,
                         ChatGroupEntity.class,
                         MessageEntity.class,
                         AgentRunEntity.class,
@@ -75,7 +72,6 @@ class TeamDisbandServiceTest {
 
     private final ProjectMapper projectMapper = mock(ProjectMapper.class);
     private final NotificationMapper notificationMapper = mock(NotificationMapper.class);
-    private final EventMapper eventMapper = mock(EventMapper.class);
     private final ChatGroupMapper chatGroupMapper = mock(ChatGroupMapper.class);
     private final MessageMapper messageMapper = mock(MessageMapper.class);
     private final AgentRunMapper agentRuns = mock(AgentRunMapper.class);
@@ -97,7 +93,6 @@ class TeamDisbandServiceTest {
                 new TeamDisbandService(
                         projectMapper,
                         notificationMapper,
-                        eventMapper,
                         chatGroupMapper,
                         messageMapper,
                         agentRuns,
@@ -109,7 +104,7 @@ class TeamDisbandServiceTest {
                         new ProjectDirectoryService(
                                 projectDataRoot.toString(), projectDataRoot.toString()),
                         sandboxes,
-                        mock(qg.qgent.common.storage.AvatarStorageService.class));
+                        mock(qg.qgent.attachment.storage.AvatarStorageService.class));
     }
 
     @Test
@@ -169,7 +164,6 @@ class TeamDisbandServiceTest {
         var order =
                 inOrder(
                         notificationMapper,
-                        eventMapper,
                         messageMapper,
                         agentRuns,
                         agentMapper,
@@ -181,7 +175,6 @@ class TeamDisbandServiceTest {
                         projectMapper,
                         teamMapper);
         order.verify(notificationMapper).delete(any());
-        order.verify(eventMapper).delete(any());
         order.verify(agentRuns).delete(any());
         order.verify(messageMapper).deleteUnreferencedMessages(any());
         order.verify(workspaceMapper).delete(any());

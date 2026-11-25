@@ -23,6 +23,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -274,6 +275,23 @@ public class GroupService {
      */
     public List<Long> groupAgentIds(Long groupId) {
         return groupAgentMapper.selectAgentIds(groupId);
+    }
+
+    /**
+     * 会话的实时推送目标：默认群是全部项目成员，群聊与私聊是 group_users 成员。
+     * 只做推送寻址，不校验调用者权限。
+     */
+    public Set<Long> memberUserIds(Long groupId) {
+        ChatGroupEntity group = groupMapper.selectById(groupId);
+        if (group == null) {
+            return Set.of();
+        }
+        if (isDefault(group)) {
+            return projectMemberMapper.selectMembers(group.getProjectId()).stream()
+                .map(member -> member.getUserId())
+                .collect(Collectors.toSet());
+        }
+        return Set.copyOf(groupUserMapper.selectUserIds(groupId));
     }
 
     private String id(Long value) {

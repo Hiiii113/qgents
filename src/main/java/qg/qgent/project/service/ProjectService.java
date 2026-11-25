@@ -8,7 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 import qg.qgent.agent.service.AgentService;
 import qg.qgent.common.dto.KeysetPagination;
 import qg.qgent.common.dto.PageSlice;
-import qg.qgent.common.storage.AvatarStorageService;
+import qg.qgent.attachment.storage.AvatarStorageService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.project.dto.*;

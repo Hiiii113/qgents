@@ -10,7 +10,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 import qg.qgent.sandbox.config.SandboxProperties;
-import qg.qgent.sandbox.dto.CreateSandboxRequest;
 import qg.qgent.sandbox.exception.SandboxException;
 import qg.qgent.sandbox.filesystem.service.WorkspacePathResolver;
 
@@ -64,19 +63,18 @@ public class DockerContainerRuntime implements ContainerRuntime {
      * 相同 Sandbox 编号的重复请求会返回冲突。
      */
     @Override
-    public synchronized SandboxAllocation create(
-        CreateSandboxRequest request, SandboxAllocation allocation) {
-        SandboxAllocation existing = allocations.get(request.getSandboxId());
+    public synchronized SandboxAllocation create(SandboxAllocation allocation) {
+        SandboxAllocation existing = allocations.get(allocation.getId());
         if (existing != null) {
             throw new SandboxException(CONFLICT, "SANDBOX_ID_CONFLICT", "沙箱编号已经存在");
         }
 
         grantSandboxOwnership(
-            allocation.getId(), paths.resolveLocal(request.getWorkspaceStorageKey()));
+            allocation.getId(), paths.resolveLocal(allocation.getWorkspaceStorageKey()));
         grantSandboxOwnership(
-            allocation.getId(), paths.resolveLocalGit(request.getWorkspaceStorageKey()));
+            allocation.getId(), paths.resolveLocalGit(allocation.getWorkspaceStorageKey()));
         String image =
-            Optional.ofNullable(properties.getImages().get(request.getImageProfile()))
+            Optional.ofNullable(properties.getImages().get(allocation.getImageProfile()))
                 .orElseThrow(() ->
                     new SandboxException(
                         CONFLICT, "IMAGE_PROFILE_NOT_CONFIGURED", "镜像配置尚未映射到镜像"));
@@ -96,7 +94,7 @@ public class DockerContainerRuntime implements ContainerRuntime {
         try {
             containerId =
                 docker.createContainerCmd(image)
-                    .withName("qgents-sandbox-" + request.getSandboxId())
+                    .withName("qgents-sandbox-" + allocation.getId())
                     .withUser("10001:10001")
                     .withWorkingDir("/workspace")
                     .withLabels(labels(allocation))

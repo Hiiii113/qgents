@@ -2,10 +2,8 @@ package qg.qgent.sandbox.execution.handler;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.sandbox.exception.SandboxException;
-import qg.qgent.sandbox.execution.dto.ToolArguments;
-import qg.qgent.sandbox.execution.dto.ToolContext;
-import qg.qgent.sandbox.execution.dto.ToolResult;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -19,17 +17,18 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFileAttributeView;
 import java.nio.file.attribute.PosixFilePermission;
-import java.util.Map;
+import java.util.Arrays;
 import java.util.Set;
 
 import static org.springframework.http.HttpStatus.CONFLICT;
+import static org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY;
 
 /**
  * 使用旧内容哈希校验和原子替换写入 UTF-8 文本文件。
  */
 @Component
 @RequiredArgsConstructor
-public class FileWriteTool implements SandboxTool {
+public class FileWriteTool {
     private static final int SANDBOX_UID = 10001;
     private static final int SANDBOX_GID = 10001;
     private static final Set<PosixFilePermission> DEFAULT_FILE_PERMISSIONS =
@@ -41,20 +40,21 @@ public class FileWriteTool implements SandboxTool {
 
     private final RepositoryFileResolver files;
 
-    @Override
-    public String name() {
-        return "file.write";
-    }
-
-    @Override
-    public ToolResult execute(ToolContext context, Map<String, Object> arguments) {
-        String relativePath = ToolArguments.string(arguments, "path", 1024);
-        String expectedHash = ToolArguments.string(arguments, "expectedHash", 64);
-        String mode = ToolArguments.string(arguments, "mode", 16);
-        if (!java.util.Set.of("create", "replace").contains(mode))
+    /**
+     * 写入完整文件内容。mode 为 create 时目标必须不存在，replace 时目标必须已存在。
+     */
+    public ToolResult write(
+        Path workspace, String path, String expectedHash, String content, String mode) {
+        if (path == null || path.isBlank() || path.length() > 1024)
+            throw new IllegalArgumentException("工具参数不合法：path");
+        if (expectedHash == null || expectedHash.length() != 64)
+            throw new IllegalArgumentException("工具参数不合法：expectedHash");
+        if (!Set.of("create", "replace").contains(mode))
             throw new IllegalArgumentException("mode 必须为 create 或 replace");
-        String content = ToolArguments.optionalString(arguments, "content", "", 2 * 1024 * 1024);
-        Path target = files.resolveForWrite(context.getLocalWorkspace(), relativePath);
+        String text = content == null ? "" : content;
+        if (text.length() > 2 * 1024 * 1024)
+            throw new IllegalArgumentException("工具参数不合法：content");
+        Path target = files.resolveForWrite(workspace, path);
         try {
             boolean existed = Files.exists(target);
             if ("create".equals(mode) && existed)
@@ -65,9 +65,7 @@ public class FileWriteTool implements SandboxTool {
                 && (Files.isSymbolicLink(target)
                 || !Files.isRegularFile(target, LinkOption.NOFOLLOW_LINKS))) {
                 throw new SandboxException(
-                    org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY,
-                    "TOOL_PATH_INVALID",
-                    "目标必须是已有的普通文本文件");
+                    UNPROCESSABLE_ENTITY, "TOOL_PATH_INVALID", "目标必须是已有的普通文本文件");
             }
             byte[] previous = existed ? Files.readAllBytes(target) : new byte[0];
             if (existed) {
@@ -77,20 +75,16 @@ public class FileWriteTool implements SandboxTool {
             if (!actualHash.equalsIgnoreCase(expectedHash)) {
                 throw new SandboxException(CONFLICT, "FILE_HASH_MISMATCH", "文件已经发生变化，请重新读取后再写入");
             }
-            byte[] next = content.getBytes(StandardCharsets.UTF_8);
+            byte[] next = text.getBytes(StandardCharsets.UTF_8);
             // 新建空文件时 previous 与 next 都为空字节数组，内容相等但存在性已变化，必须记为变更
-            boolean changed = !existed || !java.util.Arrays.equals(previous, next);
+            boolean changed = !existed || !Arrays.equals(previous, next);
             atomicReplace(target, next);
-            return ToolResult.value(
-                Map.of(
-                    "path",
-                    relativePath,
-                    "sha256",
-                    FileReadTool.sha256(next),
-                    "bytes",
-                    next.length,
-                    "changed",
-                    changed));
+            ToolResult result = ToolResult.ok();
+            result.put("path", path);
+            result.put("sha256", FileReadTool.sha256(next));
+            result.put("bytes", next.length);
+            result.put("changed", changed);
+            return result;
         } catch (SandboxException exception) {
             throw exception;
         } catch (Exception exception) {

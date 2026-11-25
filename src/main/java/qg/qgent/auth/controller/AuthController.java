@@ -3,20 +3,18 @@ package qg.qgent.auth.controller;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import qg.qgent.auth.dto.*;
 import qg.qgent.auth.service.AuthService;
 import qg.qgent.common.web.ApiResponse;
 import qg.qgent.common.web.RequestIdFilter;
-import qg.qgent.user.dto.CurrentTeamRequest;
-import qg.qgent.user.dto.UserUpdateRequest;
 
 import java.util.Map;
 
 /**
- * 认证与账户接口
+ * 认证接口
  * 注册/登录/刷新/重置密码无需已认证 Token；password 字段为平台 RSA 公钥加密的 Base64 密文。
+ * 当前账户资料接口位于 {@code /api/v1/me}，由 user 包的 UserController 提供。
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -94,37 +92,6 @@ public class AuthController {
     public ApiResponse<?> reset(
         @Valid @RequestBody ResetPasswordRequest body, HttpServletRequest request) {
         authService.reset(body, fingerprint(request));
-        return ok(Map.of(), request);
-    }
-
-    /**
-     * 获取当前账户、团队与项目角色摘要。
-     */
-    @GetMapping("/me")
-    public ApiResponse<?> me(@AuthenticationPrincipal Long userId, HttpServletRequest request) {
-        return ok(authService.me(userId), request);
-    }
-
-    /**
-     * 修改昵称或头像。
-     */
-    @PatchMapping("/me")
-    public ApiResponse<?> updateMe(
-        @AuthenticationPrincipal Long userId,
-        @Valid @RequestBody UserUpdateRequest body,
-        HttpServletRequest request) {
-        return ok(authService.updateMe(userId, body), request);
-    }
-
-    /**
-     * 保存当前团队，供后续登录和其他设备恢复。
-     */
-    @PutMapping("/me/current-team")
-    public ApiResponse<?> selectTeam(
-        @AuthenticationPrincipal Long userId,
-        @Valid @RequestBody CurrentTeamRequest body,
-        HttpServletRequest request) {
-        authService.selectTeam(userId, body.teamId());
         return ok(Map.of(), request);
     }
 

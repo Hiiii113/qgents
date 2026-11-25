@@ -21,7 +21,7 @@ import java.nio.ByteBuffer;
 public class WebSocketRealtimeHandler extends TextWebSocketHandler {
     private static final Logger log = LoggerFactory.getLogger(WebSocketRealtimeHandler.class);
 
-    // 心跳间隔（毫秒），对齐 SSE 每 15 秒心跳。
+    // 心跳间隔（毫秒）。
     private static final long HEARTBEAT_MS = 15_000L;
 
     private final RealtimeHub hub;

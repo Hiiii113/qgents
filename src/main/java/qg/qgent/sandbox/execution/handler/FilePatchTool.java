@@ -2,10 +2,8 @@ package qg.qgent.sandbox.execution.handler;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.sandbox.exception.SandboxException;
-import qg.qgent.sandbox.execution.dto.ToolArguments;
-import qg.qgent.sandbox.execution.dto.ToolContext;
-import qg.qgent.sandbox.execution.dto.ToolResult;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
@@ -32,7 +30,7 @@ import static org.springframework.http.HttpStatus.UNPROCESSABLE_ENTITY;
  */
 @Component
 @RequiredArgsConstructor
-public class FilePatchTool implements SandboxTool {
+public class FilePatchTool {
     private static final int MAX_PATCH_LENGTH = 1024 * 1024;
     // 目标文件大小上限，与其他文件修改工具一致。
     // 超过该上限时拒绝打补丁并提示改用整文件写入，避免对超大文件整读整写拖过执行
@@ -41,17 +39,18 @@ public class FilePatchTool implements SandboxTool {
 
     private final RepositoryFileResolver files;
 
-    @Override
-    public String name() {
-        return "file.patch";
-    }
-
-    @Override
-    public ToolResult execute(ToolContext context, Map<String, Object> arguments) {
-        String relativePath = ToolArguments.string(arguments, "path", 1024);
-        String expectedHash = ToolArguments.string(arguments, "expectedHash", 64);
-        String patch = ToolArguments.string(arguments, "patch", MAX_PATCH_LENGTH);
-        Path target = files.resolveForWrite(context.getLocalWorkspace(), relativePath);
+    /**
+     * 对已存在的 UTF-8 文本文件应用 unified diff；expectedHash 不匹配时不写入。
+     */
+    public ToolResult patch(
+        Path workspace, String path, String expectedHash, String patch) {
+        if (path == null || path.isBlank() || path.length() > 1024)
+            throw new IllegalArgumentException("工具参数不合法：path");
+        if (expectedHash == null || expectedHash.length() != 64)
+            throw new IllegalArgumentException("工具参数不合法：expectedHash");
+        if (patch == null || patch.isBlank() || patch.length() > MAX_PATCH_LENGTH)
+            throw new IllegalArgumentException("工具参数不合法：patch");
+        Path target = files.resolveForWrite(workspace, path);
         try {
             requireExistingTextFile(target);
             if (Files.size(target) > MAX_PATCH_TARGET_BYTES) {
@@ -75,16 +74,12 @@ public class FilePatchTool implements SandboxTool {
             byte[] nextBytes = next.getBytes(StandardCharsets.UTF_8);
             boolean changed = !Arrays.equals(previous, nextBytes);
             FileWriteTool.atomicReplace(target, nextBytes);
-            return ToolResult.value(
-                Map.of(
-                    "path",
-                    relativePath,
-                    "sha256",
-                    FileReadTool.sha256(nextBytes),
-                    "bytes",
-                    nextBytes.length,
-                    "changed",
-                    changed));
+            ToolResult result = ToolResult.ok();
+            result.put("path", path);
+            result.put("sha256", FileReadTool.sha256(nextBytes));
+            result.put("bytes", nextBytes.length);
+            result.put("changed", changed);
+            return result;
         } catch (SandboxException exception) {
             throw exception;
         } catch (Exception exception) {

@@ -36,7 +36,7 @@ public class RequestIdFilter extends OncePerRequestFilter {
         try {
             chain.doFilter(request, response);
         } finally {
-            // 访问日志：方法、URI、状态码、耗时；SSE 等长连接在连接结束时才输出，耗时即连接时长。
+            // 访问日志：方法、URI、状态码、耗时；长连接在连接结束时才输出，耗时即连接时长。
             log.info(
                 "{} {} -> {} ({}ms)",
                 request.getMethod(),

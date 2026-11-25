@@ -347,7 +347,7 @@ public class MessageService {
             Wrappers.<ChatGroupEntity>lambdaUpdate()
                 .set(ChatGroupEntity::getLastMessageAt, LocalDateTime.now(ZoneOffset.UTC))
                 .eq(ChatGroupEntity::getId, groupId));
-        // 项目级 SSE：新消息信号（REST 存真相，前端收到后刷新消息列表）
+        // 项目级实时事件：新消息信号（REST 存真相，前端收到后刷新消息列表）
         eventService.publish(
             projectId,
             groupId,

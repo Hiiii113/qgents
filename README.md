@@ -68,15 +68,15 @@ Docker 连不上时后端照样能启动，只有需要沙箱的工具会失败�
 - 三层记忆：项目共享的 `memory.md`、群记忆 `groups/<groupId>/memory.md`、Agent 私有记忆 `agent-memory/<agentId>/<groupId>.md`，都存在项目数据目录里，不是数据库表单。
 - 项目知识：项目 Skill、跨群历史检索、图片与文本附件（单个上限 50 MB，存本地磁盘或阿里云 OSS）。
 - GitHub App（可选）：团队安装，项目管理员导入仓库；Agent 能读 PR 和 Issue、拉代码、推分支，不会自动创建或合并 PR。配置步骤见[配置 GitHub App](#配置-github-app)。
-- 实时与通知：项目事件走 SSE（可用 `Last-Event-ID` 续传）与 WebSocket；站内通知可选接 FCM 推到手机。
+- 实时与通知：项目、团队、通知与 Agent 增量统一走 WebSocket（`/api/v1/ws/realtime`），断线后重新拉取快照；站内通知可选接 FCM 推到手机。
 
 ## 架构
 
 ```text
 浏览器（React 19 前端）
-   │  HTTP · SSE · WebSocket   /api/v1
+   │  HTTP · WebSocket   /api/v1
    ▼
-Spring Boot 应用 ── MySQL 8.4   业务数据、实时事件
+Spring Boot 应用 ── MySQL 8.4   业务数据
    │              └ Redis 7     刷新令牌、验证码、限流
    ├── DeepSeek（OpenAI 兼容协议，OpenAI Java SDK）
    └── Docker Engine
@@ -118,7 +118,7 @@ docker-compose.yml          本地依赖、生产部署与可选 profile
 | `workspace` / `sandbox` | Workspace 与仓库 worktree、容器命令执行、编码工具 |
 | `skill` / `memory` | 项目 Skill；项目、群、Agent 三层记忆 |
 | `attachment` / `github` | 附件上传预览、GitHub App 与仓库工具 |
-| `notification` / `realtime` | 站内通知与推送设备、SSE / WebSocket 事件流 |
+| `notification` / `realtime` | 站内通知与推送设备、WebSocket 事件流 |
 | `common` | 统一响应与异常、存储等基础设施 |
 
 ## 配置

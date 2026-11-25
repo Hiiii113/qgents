@@ -24,7 +24,6 @@ public class NotificationService {
 
     private final NotificationMapper notificationMapper;
     private final EventService eventService;
-    private final PushNotificationService pushNotificationService;
 
     /**
      * 查询当前用户的通知列表，按产生时间倒序，不分页。
@@ -54,7 +53,7 @@ public class NotificationService {
     }
 
     /**
-     * 为指定用户保存通知、发布实时事件，并加入手机推送队列。
+     * 为指定用户保存通知并发布实时事件。
      */
     @Transactional
     public void notify(
@@ -76,13 +75,12 @@ public class NotificationService {
         entity.setIsRead(false);
         entity.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
         notificationMapper.insert(entity);
-        // 保存实时事件，在线客户端通过 SSE 或 WebSocket 接收。
+        // 实时通知只推送给在线客户端，历史记录以 notifications 表为准。
         eventService.publishNotification(
             recipientUserId,
             entity.getId(),
             "notification.created",
             Map.of("notificationId", entity.getId().toString(), "kind", kind));
-        pushNotificationService.enqueue(entity);
     }
 
     private NotificationResponse toResponse(NotificationEntity n) {
