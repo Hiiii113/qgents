@@ -344,16 +344,11 @@ CREATE TABLE IF NOT EXISTS agent_run_tools (
 CREATE TABLE IF NOT EXISTS workspaces (
     id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY, project_id BIGINT NOT NULL,
     is_default TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否项目默认 Workspace；每个项目唯一',
-    status VARCHAR(32) NOT NULL DEFAULT 'PROVISIONING',
-    write_lease_agent_run_id BIGINT NULL COMMENT '当前工作区写入租约所属根 AgentRun',
-    write_lease_token VARCHAR(64) NULL COMMENT 'Opaque write lease fencing token',
-    write_lease_expires_at DATETIME(6) NULL COMMENT 'UTC write lease expiry',
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6), updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
     -- 生成列只对默认记录取 project_id，其余为 NULL；MySQL 唯一索引允许多个 NULL，从而保证每项目唯一 default。
     default_slot BIGINT GENERATED ALWAYS AS (CASE WHEN is_default = 1 THEN project_id ELSE NULL END) STORED,
     UNIQUE KEY uk_workspace_default (default_slot),
     KEY idx_workspace_project_id (project_id, id),
-    KEY idx_workspace_write_lease (write_lease_expires_at),
     CONSTRAINT fk_workspace_project FOREIGN KEY(project_id) REFERENCES projects(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Persistent project development workspace';
 

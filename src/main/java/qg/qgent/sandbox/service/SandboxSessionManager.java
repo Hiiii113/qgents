@@ -1,6 +1,7 @@
 package qg.qgent.sandbox.service;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import qg.qgent.common.web.ApiException;
@@ -11,8 +12,6 @@ import qg.qgent.sandbox.runtime.SandboxAllocation;
 import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
 import qg.qgent.workspace.service.WorkspaceService;
-import qg.qgent.workspace.service.WorkspaceWriteLease;
-import qg.qgent.workspace.service.WorkspaceWriteLeaseService;
 
 import java.util.Map;
 import java.util.UUID;
@@ -21,6 +20,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * 首次代码工具调用时准备 Workspace 和沙箱；会话按工作区复用，由根 AgentRun 持有。
+ * 同一 Workspace 的写入互斥只在本进程内通过会话缓存与初始化锁保证。
  */
 @Slf4j
 @Service
@@ -31,28 +31,25 @@ public class SandboxSessionManager {
     private final CommandExecutionService executions;
     private final SandboxProperties properties;
     private final WorkspaceMapper workspaceMapper;
-    private final WorkspaceWriteLeaseService writeLeases;
     private final Map<Long, SandboxSession> sessions = new ConcurrentHashMap<>();
     private final Map<Long, ReentrantLock> acquireLocks = new ConcurrentHashMap<>();
-    private final Map<Long, WorkspaceWriteLease> workspaceLeases = new ConcurrentHashMap<>();
 
     public SandboxSessionManager(
         SandboxService sandboxes,
         ProjectDirectoryService projectDirectories,
         CommandExecutionService executions,
         SandboxProperties properties,
-        WorkspaceMapper workspaceMapper,
-        WorkspaceWriteLeaseService writeLeases) {
+        WorkspaceMapper workspaceMapper) {
         this.sandboxes = sandboxes;
         this.projectDirectories = projectDirectories;
         this.executions = executions;
         this.properties = properties;
         this.workspaceMapper = workspaceMapper;
-        this.writeLeases = writeLeases;
     }
 
     /**
-     * 为根 AgentRun 准备指定工作区的沙箱会话；同一持有者复用已有会话。
+     * 为根 AgentRun 准备指定工作区的沙箱会话；同一持有者复用已有会话，
+     * 其他 AgentRun 已占用时立即返回冲突，避免两个运行并发写同一工作区。
      */
     public SandboxSession acquire(Long agentRunId, Long projectId, Long workspaceId) {
         ReentrantLock acquireLock =
@@ -60,32 +57,24 @@ public class SandboxSessionManager {
         // 初始化或释放已由其他线程处理时返回冲突，避免等待 沙箱初始化。
         if (!acquireLock.tryLock()) {
             throw new ApiException(
-                org.springframework.http.HttpStatus.CONFLICT,
+                HttpStatus.CONFLICT,
                 "WORKSPACE_WRITE_LEASE_HELD",
                 "Workspace is currently being initialized by another AgentRun");
         }
         try {
             SandboxSession existing = sessions.get(workspaceId);
             if (existing != null) {
-
                 if (!existing.agentRunId().equals(agentRunId)) {
-                    throw new qg.qgent.common.web.ApiException(
-                        org.springframework.http.HttpStatus.CONFLICT,
+                    throw new ApiException(
+                        HttpStatus.CONFLICT,
                         "WORKSPACE_WRITE_LEASE_HELD",
                         "Workspace is currently being modified by another AgentRun");
                 }
                 return existing;
             }
-            WorkspaceWriteLease lease = writeLeases.acquire(projectId, workspaceId, agentRunId);
-            try {
-                SandboxSession created = doAcquire(agentRunId, projectId, workspaceId);
-                sessions.put(workspaceId, created);
-                workspaceLeases.put(workspaceId, lease);
-                return created;
-            } catch (RuntimeException failure) {
-                writeLeases.release(lease);
-                throw failure;
-            }
+            SandboxSession created = doAcquire(agentRunId, projectId, workspaceId);
+            sessions.put(workspaceId, created);
+            return created;
         } finally {
             acquireLock.unlock();
         }
@@ -126,34 +115,24 @@ public class SandboxSessionManager {
         ReentrantLock acquireLock =
             acquireLocks.computeIfAbsent(workspaceId, ignored -> new ReentrantLock());
         // acquire() 失败后编排器仍会进入 finally；释放路径不能再次阻塞在同一把卡死的锁上。
-        // 持锁者完成后会负责自己的会话/租约清理，当前 AgentRun 没有可安全移除的会话时直接返回。
+        // 持锁者完成后会负责自己的会话清理，当前 AgentRun 没有可安全移除的会话时直接返回。
         if (!acquireLock.tryLock()) {
             return;
         }
         try {
             SandboxSession session = sessions.get(workspaceId);
+            // acquire 可能因其他 AgentRun 已持有会话而失败；只能清理自己的会话。
             if (session == null || !agentRunId.equals(session.agentRunId())) {
-                // acquire 可能因其他 AgentRun 已持有会话而失败；只能清理自己的会话。
-                return;
-            }
-            WorkspaceWriteLease lease = workspaceLeases.get(workspaceId);
-            if (lease != null && !agentRunId.equals(lease.getAgentRunId())) {
-                // 缓存不一致时宁可保留可能有效的租约，也不能释放其他 AgentRun 的租约。
                 return;
             }
             if (!sessions.remove(workspaceId, session)) {
                 return;
-            }
-            if (lease != null) {
-                workspaceLeases.remove(workspaceId, lease);
             }
             try {
                 executions.stopAndAwaitBySandbox(session.sandboxId());
                 sandboxes.destroy(session.sandboxId());
             } catch (RuntimeException ignored) {
                 // 销毁失败由 Sandbox 的清理任务兜底，不阻断执行结果返回。
-            } finally {
-                writeLeases.release(lease);
             }
         } finally {
             acquireLock.unlock();
@@ -161,22 +140,20 @@ public class SandboxSessionManager {
     }
 
     /**
-     * 每次 Sandbox 工具提交前验证并续租持久化写入权。租约已丢失时不能再向同一 Workspace
-     * 发起命令、文件写入或测试，避免过期 AgentRun 与后来者并发修改文件。
+     * 清理任务销毁过期 Sandbox 后同步移除对应会话缓存，避免残留会话继续占用 Workspace。
      */
-    void renewWriteLease(Long workspaceId) {
-        WorkspaceWriteLease lease = workspaceLeases.get(workspaceId);
-        SandboxSession session = sessions.get(workspaceId);
-        if (lease == null
-            || session == null
-            || !session.agentRunId().equals(lease.getAgentRunId())) {
-            throw new qg.qgent.common.web.ApiException(
-                org.springframework.http.HttpStatus.CONFLICT,
-                "WORKSPACE_WRITE_LEASE_LOST",
-                "Workspace write lease is no longer active");
+    public void forgetSandbox(UUID sandboxId) {
+        if (sandboxId == null) {
+            return;
         }
-
-        writeLeases.renew(lease);
+        sessions.forEach((workspaceId, session) -> {
+            if (sandboxId.equals(session.sandboxId()) && sessions.remove(workspaceId, session)) {
+                log.info(
+                    "sandbox session forgotten workspaceId={} sandboxId={}",
+                    workspaceId,
+                    sandboxId);
+            }
+        });
     }
 
     /**
@@ -190,7 +167,6 @@ public class SandboxSessionManager {
                 return;
             }
             try {
-                renewWriteLease(workspaceId);
                 sandboxes.renew(session.sandboxId(), null);
             } catch (RuntimeException exception) {
                 // 当前工具调用会传播 Sandbox 错误；心跳不应阻塞其他活跃 Sandbox 的续租。
@@ -212,8 +188,6 @@ public class SandboxSessionManager {
         SandboxAllocation sandbox =
             sandboxes.create(
                 UUID.randomUUID(), agentRunId, storageKey, properties.getImageProfile());
-        workspace.setStatus("READY");
-        workspaceMapper.updateById(workspace);
         return new SandboxSession(agentRunId, workspaceId, sandbox.getId(), storageKey);
     }
 }

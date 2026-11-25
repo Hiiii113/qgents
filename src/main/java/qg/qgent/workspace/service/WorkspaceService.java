@@ -60,10 +60,8 @@ public class WorkspaceService {
 
     public WorkspaceEntity require(Long projectId, Long workspaceId) {
         WorkspaceEntity workspace = workspaceMapper.selectById(workspaceId);
-        if (workspace == null
-            || !projectId.equals(workspace.getProjectId())
-            || "ARCHIVED".equals(workspace.getStatus()))
-            throw new IllegalArgumentException("工作区不存在或不可用");
+        if (workspace == null || !projectId.equals(workspace.getProjectId()))
+            throw new IllegalArgumentException("工作区不存在");
         return workspace;
     }
 
@@ -87,7 +85,6 @@ public class WorkspaceService {
         WorkspaceEntity workspace = new WorkspaceEntity();
         workspace.setProjectId(projectId);
         workspace.setIsDefault(isDefault);
-        workspace.setStatus("PROVISIONING");
         LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
         workspace.setCreatedAt(now);
         workspace.setUpdatedAt(now);

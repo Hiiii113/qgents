@@ -20,7 +20,6 @@ class WorkspaceServiceTest {
         Long projectId = TestIds.next();
         WorkspaceEntity created = service.create(projectId);
         assertThat(created.getProjectId()).isEqualTo(projectId);
-        assertThat(created.getStatus()).isEqualTo("PROVISIONING");
         assertThat(created.getIsDefault()).isFalse();
         org.mockito.Mockito.verify(mapper).insert(created);
     }
@@ -51,18 +50,14 @@ class WorkspaceServiceTest {
     }
 
     @Test
-    void selectingWorkspaceChecksProjectAndAvailability() {
+    void selectingWorkspaceChecksProjectOwnership() {
         WorkspaceEntity existing = workspace();
         Long projectId = TestIds.next();
         existing.setProjectId(projectId);
-        existing.setStatus("READY");
         when(mapper.selectById(existing.getId())).thenReturn(existing);
         WorkspaceService service = new WorkspaceService(mapper);
         assertThat(service.require(projectId, existing.getId())).isSameAs(existing);
         assertThatThrownBy(() -> service.require(TestIds.next(), existing.getId()))
-                .isInstanceOf(IllegalArgumentException.class);
-        existing.setStatus("ARCHIVED");
-        assertThatThrownBy(() -> service.require(projectId, existing.getId()))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
