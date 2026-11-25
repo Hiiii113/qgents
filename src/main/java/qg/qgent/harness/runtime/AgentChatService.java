@@ -30,6 +30,7 @@ import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.service.AgentRunService;
 import qg.qgent.harness.tool.ParallelToolCallback;
 import qg.qgent.harness.tool.ToolResult;
+import qg.qgent.mcp.tool.McpToolCallbacks;
 import qg.qgent.memory.service.AgentMemoryService;
 import qg.qgent.memory.service.GroupMemoryExtractionService;
 import qg.qgent.memory.service.GroupMemoryService;
@@ -88,6 +89,7 @@ public class AgentChatService {
     private final CrossGroupAccessService crossGroup;
     private final AgentService agents;
     private final AgentApplicationService agentApplications;
+    private final McpToolCallbacks mcp;
     private final Executor childExecutor;
     private final int maxSubagents;
 
@@ -113,6 +115,7 @@ public class AgentChatService {
         CrossGroupAccessService crossGroup,
         AgentService agents,
         AgentApplicationService agentApplications,
+        McpToolCallbacks mcp,
         @Qualifier("agentSubagentExecutor") Executor childExecutor,
         @Value("${app.agent.max-subagents:8}") int maxSubagents) {
         if (maxSubagents < 1) throw new IllegalArgumentException("max-subagents 必须大于 0");
@@ -137,6 +140,7 @@ public class AgentChatService {
         this.crossGroup = crossGroup;
         this.agents = agents;
         this.agentApplications = agentApplications;
+        this.mcp = mcp;
         this.childExecutor = childExecutor;
         this.maxSubagents = maxSubagents;
     }
@@ -314,6 +318,7 @@ public class AgentChatService {
         private final GitHubTools githubTools;
         private final CodingTools codingTools;
         private final WorkspaceTools workspaceTools;
+        private final List<ToolCallback> mcpTools;
 
         private ConversationTools(
             WorkContext work, ChildRuns.Execution execution, boolean canDelegate) {
@@ -382,6 +387,7 @@ public class AgentChatService {
                     workspaceCommands,
                     session);
             this.codingTools = new CodingTools(session, files);
+            this.mcpTools = mcp.forRun(work.event.projectId(), work.agentId, work.event.actor());
         }
 
         private ToolCallback[] callbacks() {
@@ -406,6 +412,7 @@ public class AgentChatService {
             if (!canDelegate)
                 result.removeIf(callback ->
                     CHILD_CONTROL_TOOLS.contains(callback.getToolDefinition().name()));
+            result.addAll(mcpTools);
             return result.toArray(ToolCallback[]::new);
         }
 
