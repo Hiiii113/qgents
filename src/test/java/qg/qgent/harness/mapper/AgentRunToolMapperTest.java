@@ -2,18 +2,17 @@ package qg.qgent.harness.mapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import qg.qgent.support.MapperTestSupport;
 import qg.qgent.support.TestIds;
 
 class AgentRunToolMapperTest {
     @Test
     void settlesAToolByRunAndCallId() {
-        var configuration = new MybatisConfiguration();
-        configuration.addMapper(AgentRunToolMapper.class);
+        var configuration = MapperTestSupport.configuration(AgentRunToolMapper.class);
         var sql =
                 configuration
                         .getMappedStatement(AgentRunToolMapper.class.getName() + ".finish")
@@ -37,13 +36,15 @@ class AgentRunToolMapperTest {
 
     @Test
     void loadsAllToolsOfSeveralRunsInOneQuery() {
-        var configuration = new MybatisConfiguration();
-        configuration.addMapper(AgentRunToolMapper.class);
+        var configuration = MapperTestSupport.configuration(AgentRunToolMapper.class);
         var sql =
                 configuration
                         .getMappedStatement(AgentRunToolMapper.class.getName() + ".byRunIds")
                         .getBoundSql(Map.of("runIds", List.of(TestIds.next(), TestIds.next())))
                         .getSql();
-        assertThat(sql).contains("FROM agent_run_tools WHERE run_id IN", "? , ?", "ORDER BY id");
+        assertThat(sql)
+                .contains("FROM agent_run_tools")
+                .contains("WHERE run_id IN")
+                .contains("ORDER BY id");
     }
 }

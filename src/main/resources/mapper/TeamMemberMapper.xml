@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="qg.qgent.team.mapper.TeamMemberMapper">
+
+    <select id="selectMemberPage" resultType="qg.qgent.team.mapper.view.TeamMemberView">
+        SELECT tm.team_id, tm.user_id, tm.role, u.display_name, u.email, u.avatar_url
+        FROM team_members tm
+        INNER JOIN users u ON u.id = tm.user_id
+        WHERE tm.team_id = #{teamId}
+        <if test="anchor != null">AND tm.user_id &gt; #{anchor}</if>
+        ORDER BY tm.user_id LIMIT #{limit}
+    </select>
+
+    <select id="countByTeamIds" resultType="qg.qgent.team.mapper.view.TeamMemberCountRow">
+        SELECT team_id, COUNT(*) AS member_count
+        FROM team_members
+        WHERE team_id IN
+        <foreach collection="teamIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        GROUP BY team_id
+    </select>
+
+</mapper>

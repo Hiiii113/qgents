@@ -7,16 +7,14 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import qg.qgent.support.MapperTestSupport;
 import qg.qgent.support.TestIds;
 
 /** 群记忆提炼状态的 SQL 约束：失败不改水位、完成需持有领取、纠错累积。 */
 class GroupMemoryStateMapperTest {
 
-    private final MybatisConfiguration configuration = new MybatisConfiguration();
-
-    GroupMemoryStateMapperTest() {
-        configuration.addMapper(GroupMemoryStateMapper.class);
-    }
+    private final MybatisConfiguration configuration =
+            MapperTestSupport.configuration(GroupMemoryStateMapper.class);
 
     @Test
     void failureKeepsProcessedSequenceAndCorrection() {

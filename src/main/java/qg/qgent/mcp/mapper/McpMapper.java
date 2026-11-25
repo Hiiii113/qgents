@@ -1,137 +1,147 @@
 package qg.qgent.mcp.mapper;
 
-import org.springframework.jdbc.core.RowMapper;
-import org.springframework.jdbc.core.simple.JdbcClient;
-import org.springframework.jdbc.support.GeneratedKeyHolder;
-import org.springframework.stereotype.Repository;
+import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 import qg.qgent.mcp.entity.McpCredential;
 import qg.qgent.mcp.entity.McpServer;
 import qg.qgent.mcp.entity.McpServer.AuthMode;
 import qg.qgent.mcp.entity.McpServer.Scope;
 
-import javax.sql.DataSource;
-import java.sql.Types;
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 
-@Repository
-public class McpMapper {
-    private static final RowMapper<McpCredential> CREDENTIAL_ROW = (rs, row) -> {
-        LocalDateTime expires = rs.getObject("expires_at", LocalDateTime.class);
-        return new McpCredential(rs.getLong("id"), rs.getObject("owner_user_id", Long.class),
-            rs.getString("access_token"), rs.getString("refresh_token"),
-            expires == null ? null : expires.toInstant(ZoneOffset.UTC),
-            rs.getBoolean("reauth_required"), rs.getLong("revision"));
-    };
-    private final JdbcClient db;
+/**
+ * MCP 连接、凭证与 Agent 分配的数据访问。
+ * <p>
+ * {@link McpServer} / {@link McpCredential} 是不可变的 record，列映射在 XML 的
+ * {@code resultMap} 构造函数中显式声明；其余 SQL 需要 {@code FOR UPDATE}、
+ * {@code ON DUPLICATE KEY} 或原子条件更新，统一放在 {@code mapper/McpMapper.xml}。
+ */
+@Mapper
+public interface McpMapper {
 
-    public McpMapper(DataSource dataSource) {
-        this.db = JdbcClient.create(dataSource);
+    List<McpServer> list(@Param("projectId") long projectId);
+
+    Optional<McpServer> server(
+        @Param("projectId") long projectId,
+        @Param("id") long id,
+        @Param("lock") boolean lock);
+
+    /**
+     * 新建连接并返回数据库生成的自增 ID。MyBatis 的生成键需要可写的参数对象，
+     * 因此用内部草稿对象承接 {@code useGeneratedKeys} 的结果。
+     */
+    default long create(long projectId, String name, String endpoint, Scope scope, AuthMode authMode) {
+        var draft = new McpServerDraft(projectId, name, endpoint, scope.name(), authMode.name());
+        insertServer(draft);
+        return draft.getId();
     }
 
-    public List<McpServer> list(long projectId) {
-        return db.sql("SELECT * FROM mcp_servers WHERE project_id = :project ORDER BY id")
-            .param("project", projectId).query(McpServer.class).list();
-    }
+    int insertServer(McpServerDraft draft);
 
-    public Optional<McpServer> server(long projectId, long id, boolean lock) {
-        return db.sql("SELECT * FROM mcp_servers WHERE project_id = :project AND id = :id" + (lock ? " FOR UPDATE" : ""))
-            .param("project", projectId).param("id", id).query(McpServer.class).optional();
-    }
+    int update(@Param("id") long id, @Param("name") String name, @Param("enabled") boolean enabled);
 
-    public long create(long projectId, String name, String endpoint, Scope scope, AuthMode authMode) {
-        var key = new GeneratedKeyHolder();
-        db.sql("""
-            INSERT INTO mcp_servers (project_id, name, endpoint, scope, auth_mode)
-            VALUES (:project, :name, :endpoint, :scope, :auth)
-            """).param("project", projectId).param("name", name).param("endpoint", endpoint)
-            .param("scope", scope.name()).param("auth", authMode.name()).update(key, "id");
-        return key.getKey().longValue();
-    }
+    int delete(@Param("id") long id);
 
-    public void update(long id, String name, boolean enabled) {
-        db.sql("UPDATE mcp_servers SET name = :name, enabled = :enabled WHERE id = :id")
-            .param("name", name).param("enabled", enabled).param("id", id).update();
-    }
+    int saveOAuthClient(@Param("id") long id, @Param("client") String client);
 
-    public void delete(long id) {
-        db.sql("DELETE FROM mcp_servers WHERE id = :id").param("id", id).update();
-    }
+    Optional<McpCredential> credential(
+        @Param("serverId") long serverId,
+        @Param("owner") Long owner,
+        @Param("lock") boolean lock);
 
-    public void saveOAuthClient(long id, String client) {
-        db.sql("UPDATE mcp_servers SET oauth_client = :client WHERE id = :id")
-            .param("client", client).param("id", id).update();
-    }
+    Optional<McpCredential> lockCredential(@Param("id") long id);
 
-    public Optional<McpCredential> credential(long serverId, Long owner, boolean lock) {
-        return db.sql("SELECT * FROM mcp_credentials WHERE server_id = :server AND owner_slot = :owner" + (lock ? " FOR UPDATE" : ""))
-            .param("server", serverId).param("owner", owner == null ? 0L : owner)
-            .query(CREDENTIAL_ROW).optional();
-    }
-
-    public Optional<McpCredential> lockCredential(long id) {
-        return db.sql("SELECT * FROM mcp_credentials WHERE id = :id FOR UPDATE")
-            .param("id", id).query(CREDENTIAL_ROW).optional();
-    }
-
-    public McpCredential ensureCredential(long serverId, Long owner) {
-        db.sql("""
-            INSERT INTO mcp_credentials (server_id, owner_user_id) VALUES (:server, :owner)
-            ON DUPLICATE KEY UPDATE server_id = mcp_credentials.server_id
-            """).param("server", serverId).param("owner", owner, Types.BIGINT).update();
+    /**
+     * 确保凭证行存在（共享连接占 0 槽位，个人连接占用户槽位），再在事务内加锁读取。
+     */
+    default McpCredential ensureCredential(long serverId, Long owner) {
+        insertCredential(serverId, owner);
         return credential(serverId, owner, true).orElseThrow();
     }
 
-    public void saveCredential(long id, String access, String refresh, Instant expiry, boolean replace) {
-        db.sql("""
-            UPDATE mcp_credentials SET access_token = :access, refresh_token = :refresh,
-              expires_at = :expiry, reauth_required = FALSE, revision = revision + :increment WHERE id = :id
-            """).param("access", access, Types.LONGVARCHAR).param("refresh", refresh, Types.LONGVARCHAR)
-            .param("expiry", expiry == null ? null : LocalDateTime.ofInstant(expiry, ZoneOffset.UTC), Types.TIMESTAMP)
-            .param("increment", replace ? 1 : 0).param("id", id).update();
+    int insertCredential(@Param("serverId") long serverId, @Param("owner") Long owner);
+
+    int saveCredential(
+        @Param("id") long id,
+        @Param("access") String access,
+        @Param("refresh") String refresh,
+        @Param("expiry") Instant expiry,
+        @Param("replace") boolean replace);
+
+    int requireReauthorization(@Param("id") long id);
+
+    List<Long> agentIds(@Param("credentialId") long credentialId);
+
+    /**
+     * 替换凭证的 Agent 分配：先清空再批量写入，调用方已在事务内。
+     */
+    default void replaceAgents(long credentialId, List<Long> agentIds) {
+        deleteAgentAssignments(credentialId);
+        if (!agentIds.isEmpty()) insertAgentAssignments(credentialId, agentIds);
     }
 
-    public void requireReauthorization(long id) {
-        db.sql("""
-            UPDATE mcp_credentials SET access_token = NULL, refresh_token = NULL,
-              expires_at = NULL, reauth_required = TRUE, revision = revision + 1 WHERE id = :id
-            """).param("id", id).update();
-    }
+    int deleteAgentAssignments(@Param("credentialId") long credentialId);
 
-    public List<Long> agentIds(long credentialId) {
-        return db.sql("SELECT agent_id FROM mcp_agent_assignments WHERE credential_id = :id ORDER BY agent_id")
-            .param("id", credentialId).query(Long.class).list();
-    }
+    int insertAgentAssignments(
+        @Param("credentialId") long credentialId, @Param("agentIds") List<Long> agentIds);
 
-    public void replaceAgents(long credentialId, List<Long> agentIds) {
-        db.sql("DELETE FROM mcp_agent_assignments WHERE credential_id = :id")
-            .param("id", credentialId).update();
-        for (Long agentId : agentIds) {
-            db.sql("INSERT INTO mcp_agent_assignments (credential_id, agent_id) VALUES (:id, :agent)")
-                .param("id", credentialId).param("agent", agentId).update();
+    List<McpServer> assignedServers(
+        @Param("projectId") long projectId,
+        @Param("agentId") long agentId,
+        @Param("actor") long actor);
+
+    Optional<McpCredential> assignedCredential(
+        @Param("serverId") long serverId,
+        @Param("owner") Long owner,
+        @Param("agentId") long agentId);
+
+    /**
+     * 新建连接时由 XML 的 {@code useGeneratedKeys} 回填 ID。
+     */
+    class McpServerDraft {
+        private Long id;
+        private final long projectId;
+        private final String name;
+        private final String endpoint;
+        private final String scope;
+        private final String authMode;
+
+        McpServerDraft(long projectId, String name, String endpoint, String scope, String authMode) {
+            this.projectId = projectId;
+            this.name = name;
+            this.endpoint = endpoint;
+            this.scope = scope;
+            this.authMode = authMode;
         }
-    }
 
-    public List<McpServer> assignedServers(long projectId, long agentId, long actor) {
-        return db.sql("""
-            SELECT s.* FROM mcp_servers s
-            JOIN mcp_credentials c ON c.server_id = s.id
-              AND c.owner_slot = CASE WHEN s.scope = 'PERSONAL' THEN :actor ELSE 0 END
-            JOIN mcp_agent_assignments a ON a.credential_id = c.id AND a.agent_id = :agent
-            WHERE s.project_id = :project AND s.enabled ORDER BY s.id
-            """).param("project", projectId).param("agent", agentId).param("actor", actor)
-            .query(McpServer.class).list();
-    }
+        public Long getId() {
+            return id;
+        }
 
-    public Optional<McpCredential> assignedCredential(long serverId, Long owner, long agentId) {
-        return db.sql("""
-            SELECT c.* FROM mcp_credentials c
-            JOIN mcp_agent_assignments a ON a.credential_id = c.id AND a.agent_id = :agent
-            WHERE c.server_id = :server AND c.owner_slot = :owner
-            """).param("server", serverId).param("owner", owner == null ? 0L : owner).param("agent", agentId)
-            .query(CREDENTIAL_ROW).optional();
+        public void setId(Long id) {
+            this.id = id;
+        }
+
+        public long getProjectId() {
+            return projectId;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public String getEndpoint() {
+            return endpoint;
+        }
+
+        public String getScope() {
+            return scope;
+        }
+
+        public String getAuthMode() {
+            return authMode;
+        }
     }
 }

@@ -2,16 +2,16 @@ package qg.qgent.user.mapper;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.baomidou.mybatisplus.core.MybatisConfiguration;
 import java.util.HashMap;
 import org.junit.jupiter.api.Test;
+import qg.qgent.support.MapperTestSupport;
 import qg.qgent.support.TestIds;
+import qg.qgent.user.entity.UserEntity;
 
 class UserMapperTest {
     @Test
     void lastTeamUsesBinaryUuidAndCanBeCleared() {
-        var configuration = new MybatisConfiguration();
-        configuration.addMapper(UserMapper.class);
+        var configuration = MapperTestSupport.configuration(UserMapper.class);
         var parameters = new HashMap<String, Object>();
         parameters.put("userId", TestIds.next());
         parameters.put("teamId", null);
@@ -20,12 +20,11 @@ class UserMapperTest {
                         .getMappedStatement(UserMapper.class.getName() + ".updateLastTeam")
                         .getBoundSql(parameters);
         assertThat(sql.getSql()).contains("SET last_team_id = ? WHERE id = ?");
-        var mappings =
-                configuration
-                        .getMappedStatement(UserMapper.class.getName() + ".selectByIdForUpdate")
-                        .getResultMaps()
-                        .getFirst()
-                        .getResultMappings();
-        assertThat(mappings).anyMatch(field -> "lastTeamId".equals(field.getProperty()));
+        var locking =
+                configuration.getMappedStatement(UserMapper.class.getName() + ".selectByIdForUpdate");
+        assertThat(locking.getBoundSql(java.util.Map.of("userId", TestIds.next())).getSql())
+                .contains("last_team_id", "FOR UPDATE");
+        assertThat(locking.getResultMaps().getFirst().getType()).isEqualTo(UserEntity.class);
+        assertThat(configuration.isMapUnderscoreToCamelCase()).isTrue();
     }
 }

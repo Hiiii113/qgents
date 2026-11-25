@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="qg.qgent.skill.mapper.SkillMapper">
+
+    <resultMap id="skill" type="qg.qgent.skill.entity.SkillEntity">
+        <id column="id" property="id"/>
+        <result column="tags" property="tags"
+                typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler"/>
+    </resultMap>
+
+    <select id="listSkills" resultMap="skill">
+        SELECT * FROM skills WHERE project_id = #{projectId}
+          AND (created_by = #{actor} OR (visibility = 'PROJECT_SHARED' AND (status = 'PUBLISHED' OR #{admin})))
+        <if test="status != null">AND status = #{status}</if>
+        <if test="tag != null">AND JSON_CONTAINS(tags, JSON_QUOTE(#{tag}))</if>
+        ORDER BY updated_at DESC
+    </select>
+
+    <select id="listPublishedCatalog" resultType="qg.qgent.skill.dto.ContextSkill">
+        SELECT id, name, description FROM skills
+        WHERE project_id = #{projectId}
+          AND (visibility = 'PROJECT_SHARED' OR created_by = #{actor})
+          AND status = 'PUBLISHED'
+        ORDER BY updated_at DESC
+    </select>
+
+    <select id="findVisiblePublishedById" resultMap="skill">
+        SELECT * FROM skills
+        WHERE id = #{skillId} AND project_id = #{projectId}
+          AND (visibility = 'PROJECT_SHARED' OR created_by = #{actor})
+          AND status = 'PUBLISHED'
+    </select>
+
+</mapper>

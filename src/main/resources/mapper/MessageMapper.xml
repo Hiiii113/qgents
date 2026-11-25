@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="qg.qgent.chat.mapper.MessageMapper">
+
+    <select id="nextSequence" resultType="java.lang.Long">
+        SELECT COALESCE(MAX(sequence_no), 0) + 1 FROM messages WHERE group_id = #{groupId}
+    </select>
+
+    <select id="selectAfterSequence" resultType="qg.qgent.chat.entity.MessageEntity">
+        SELECT id, group_id, sequence_no, author_user_id, sender_type, sender_agent_id,
+               client_message_id, message_type, content, mentions, reply_to_message_id, created_at
+        FROM messages
+        WHERE group_id = #{groupId} AND sequence_no &gt; #{afterSequence}
+        ORDER BY sequence_no ASC LIMIT #{limit}
+    </select>
+
+    <select id="selectLatestByGroupIds" resultType="qg.qgent.chat.mapper.view.GroupLatestMessageRow">
+        SELECT m.group_id,
+               CASE WHEN m.sender_type = 'AGENT' THEN a.name ELSE u.display_name END AS sender_name,
+               JSON_UNQUOTE(JSON_EXTRACT(m.content, '$.text')) AS text,
+               m.message_type, m.created_at
+        FROM messages m
+        LEFT JOIN users u ON u.id = m.author_user_id
+        LEFT JOIN agents a ON a.id = m.sender_agent_id
+        INNER JOIN (
+            SELECT group_id, MAX(sequence_no) AS max_seq
+            FROM messages
+            WHERE group_id IN
+            <foreach collection="groupIds" item="groupId" open="(" separator="," close=")">#{groupId}</foreach>
+            GROUP BY group_id
+        ) t ON t.group_id = m.group_id AND t.max_seq = m.sequence_no
+        WHERE m.group_id IN
+        <foreach collection="groupIds" item="groupId" open="(" separator="," close=")">#{groupId}</foreach>
+    </select>
+
+    <select id="searchByQuery" resultType="qg.qgent.chat.entity.MessageEntity">
+        SELECT m.id, m.group_id, m.sequence_no, m.author_user_id, m.sender_type, m.sender_agent_id,
+               m.client_message_id, m.message_type, m.content, m.mentions, m.reply_to_message_id, m.created_at
+        FROM messages m
+        INNER JOIN chat_groups rg ON rg.id = m.group_id
+        WHERE rg.project_id = #{projectId}
+          AND m.group_id IN
+          <foreach collection="groupIds" item="groupId" open="(" separator="," close=")">#{groupId}</foreach>
+          AND JSON_UNQUOTE(JSON_EXTRACT(m.content, '$.text')) LIKE CONCAT('%', #{q}, '%')
+        ORDER BY m.sequence_no DESC LIMIT #{limit}
+    </select>
+
+    <select id="countUnreadByGroupIds" resultType="qg.qgent.chat.mapper.view.GroupUnreadRow">
+        SELECT m.group_id, COUNT(*) AS unread
+        FROM messages m
+        LEFT JOIN group_read_state r ON r.user_id = #{userId} AND r.group_id = m.group_id
+        WHERE m.group_id IN
+        <foreach collection="groupIds" item="groupId" open="(" separator="," close=")">#{groupId}</foreach>
+          AND m.sequence_no &gt; COALESCE(r.last_read_sequence_no, 0)
+          AND (m.author_user_id IS NULL OR m.author_user_id &lt;&gt; #{userId})
+        GROUP BY m.group_id
+    </select>
+
+    <select id="countMentionUnreadByGroupIds" resultType="qg.qgent.chat.mapper.view.GroupUnreadRow">
+        SELECT m.group_id, COUNT(*) AS unread
+        FROM messages m
+        LEFT JOIN group_read_state r ON r.user_id = #{userId} AND r.group_id = m.group_id
+        WHERE m.group_id IN
+        <foreach collection="groupIds" item="groupId" open="(" separator="," close=")">#{groupId}</foreach>
+          AND m.sequence_no &gt; COALESCE(r.last_read_sequence_no, 0)
+          AND (m.author_user_id IS NULL OR m.author_user_id &lt;&gt; #{userId})
+          AND JSON_CONTAINS(m.mentions, JSON_OBJECT('type', 'USER', 'id', #{userIdText}))
+        GROUP BY m.group_id
+    </select>
+
+    <delete id="deleteUnreferencedMessages">
+        DELETE FROM messages
+        WHERE group_id IN
+        <foreach collection="groupIds" item="gid" open="(" separator="," close=")">#{gid}</foreach>
+          AND id NOT IN (
+            SELECT rid FROM (
+                SELECT reply_to_message_id AS rid
+                FROM messages
+                WHERE group_id IN
+                <foreach collection="groupIds" item="rid" open="(" separator="," close=")">#{rid}</foreach>
+                  AND reply_to_message_id IS NOT NULL
+            ) AS tmp
+          )
+    </delete>
+
+</mapper>
