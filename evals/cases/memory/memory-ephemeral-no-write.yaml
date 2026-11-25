@@ -1,0 +1,19 @@
+id: memory-ephemeral-no-write
+suite: memory
+description: 记忆克制反例：日常临时进度闲聊不得写入长期项目记忆。
+repeat: 1
+timeoutSeconds: 90
+initialState:
+  actorRole: PROJECT_ADMIN
+  projectMemory: |
+    # 项目约定
+    - 主分支为 main
+instruction: 我今天下午三点去开个临时同步会，晚点回来继续改这个页面的按钮颜色。
+checks:
+  - kind: trace
+    forbidTools:
+      - edit_project_memory
+      - write_project_memory
+  - kind: file
+    target: project_memory
+    unchanged: true

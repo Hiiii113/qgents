@@ -1,0 +1,19 @@
+id: memory-multi-turn-preference
+suite: memory
+description: 多轮日常沟通记忆：首轮交代个人偏好，中间穿插无关对话，末轮回答必须遵循首轮约定。
+repeat: 1
+timeoutSeconds: 120
+initialState:
+  actorRole: PROJECT_ADMIN
+turns:
+  - instruction: 记一下，以后给我汇报接口变更时，统一在第一行写上标签 [API-DIFF]，并且用三点以内的要点说明。
+    actorRole: PROJECT_ADMIN
+  - instruction: 刚才测试环境的 Redis 重启完了吗？随便回一句就行。
+    actorRole: PROJECT_ADMIN
+  - instruction: 现在把“订单查询接口新增 status 过滤参数”这个变更按我们刚约定的格式汇报给我。
+    actorRole: PROJECT_ADMIN
+checks:
+  - kind: response
+    mustContain:
+      - "[API-DIFF]"
+      - status

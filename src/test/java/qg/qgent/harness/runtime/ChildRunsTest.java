@@ -96,7 +96,7 @@ class ChildRunsTest {
                 new RunLifecycle(
                         mock(AgentRunService.class),
                         mock(SandboxSessionManager.class),
-                        new WorkContext(null, null, null, runId, false)),
+                        new WorkContext(null, null, null, null, null, runId, false)),
                 () -> false,
                 mock(AgentLoop.class),
                 child -> List.of(),

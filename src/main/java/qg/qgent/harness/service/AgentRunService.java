@@ -72,6 +72,7 @@ public class AgentRunService {
         run.setInstruction(instruction);
         run.setStatus(RunStatus.RUNNING);
         run.setRounds(0);
+        initMetrics(run);
         run.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
         runs.insert(run);
         return run;
@@ -89,9 +90,21 @@ public class AgentRunService {
         run.setInstruction(instruction);
         run.setStatus(RunStatus.RUNNING);
         run.setRounds(0);
+        initMetrics(run);
         run.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
         runs.insert(run);
         return run;
+    }
+
+    private static void initMetrics(AgentRunEntity run) {
+        run.setPromptTokens(0L);
+        run.setCompletionTokens(0L);
+        run.setCachedTokens(0L);
+        run.setReasoningTokens(0L);
+        run.setModelTimeMs(0L);
+        run.setToolTimeMs(0L);
+        run.setToolCalls(0);
+        run.setFailedToolCalls(0);
     }
 
     public void save(AgentRunEntity run) {
@@ -119,6 +132,16 @@ public class AgentRunService {
                     .set(AgentRunEntity::getStatus, status)
                     .set(AgentRunEntity::getResult, result)
                     .set(AgentRunEntity::getRounds, totalRounds)
+                    .set(AgentRunEntity::getPromptTokens, orZero(run.getPromptTokens()))
+                    .set(AgentRunEntity::getCompletionTokens, orZero(run.getCompletionTokens()))
+                    .set(AgentRunEntity::getCachedTokens, orZero(run.getCachedTokens()))
+                    .set(AgentRunEntity::getReasoningTokens, orZero(run.getReasoningTokens()))
+                    .set(AgentRunEntity::getTtftMs, run.getTtftMs())
+                    .set(AgentRunEntity::getModelTimeMs, orZero(run.getModelTimeMs()))
+                    .set(AgentRunEntity::getToolTimeMs, orZero(run.getToolTimeMs()))
+                    .set(AgentRunEntity::getToolCalls, orZero(run.getToolCalls()))
+                    .set(AgentRunEntity::getFailedToolCalls, orZero(run.getFailedToolCalls()))
+                    .set(AgentRunEntity::getModelName, run.getModelName())
                     .set(AgentRunEntity::getFinishedAt, finishedAt)
                     .eq(AgentRunEntity::getId, run.getId())
                     .eq(AgentRunEntity::getStatus, RunStatus.RUNNING));
@@ -138,6 +161,16 @@ public class AgentRunService {
                     .set(AgentRunEntity::getStatus, RunStatus.CANCELLED)
                     .set(AgentRunEntity::getResult, cancellationResult)
                     .set(AgentRunEntity::getRounds, totalRounds)
+                    .set(AgentRunEntity::getPromptTokens, orZero(run.getPromptTokens()))
+                    .set(AgentRunEntity::getCompletionTokens, orZero(run.getCompletionTokens()))
+                    .set(AgentRunEntity::getCachedTokens, orZero(run.getCachedTokens()))
+                    .set(AgentRunEntity::getReasoningTokens, orZero(run.getReasoningTokens()))
+                    .set(AgentRunEntity::getTtftMs, run.getTtftMs())
+                    .set(AgentRunEntity::getModelTimeMs, orZero(run.getModelTimeMs()))
+                    .set(AgentRunEntity::getToolTimeMs, orZero(run.getToolTimeMs()))
+                    .set(AgentRunEntity::getToolCalls, orZero(run.getToolCalls()))
+                    .set(AgentRunEntity::getFailedToolCalls, orZero(run.getFailedToolCalls()))
+                    .set(AgentRunEntity::getModelName, run.getModelName())
                     .set(AgentRunEntity::getFinishedAt, finishedAt)
                     .eq(AgentRunEntity::getId, run.getId())
                     .eq(AgentRunEntity::getStatus, RunStatus.CANCELLING));
@@ -222,5 +255,36 @@ public class AgentRunService {
                 .forEach(Runnable::run);
         }
         return cancelled;
+    }
+
+    /**
+     * 按根运行 ID 发起取消：供评测超时或内部调度使用，不依赖聊天触发消息。
+     */
+    public int cancelRoot(Long rootRunId) {
+        int cancelled =
+            runs.update(
+                null,
+                Wrappers.<AgentRunEntity>lambdaUpdate()
+                    .set(AgentRunEntity::getStatus, RunStatus.CANCELLING)
+                    .eq(AgentRunEntity::getId, rootRunId)
+                    .isNull(AgentRunEntity::getParentRunId)
+                    .eq(AgentRunEntity::getStatus, RunStatus.RUNNING));
+        if (cancelled > 0) {
+            Runnable signal = cancellationSignals.get(rootRunId);
+            if (signal != null) signal.run();
+        }
+        return cancelled;
+    }
+
+    public AgentRunEntity findById(Long runId) {
+        return runs.selectById(runId);
+    }
+
+    private static long orZero(Long value) {
+        return value == null ? 0L : value;
+    }
+
+    private static int orZero(Integer value) {
+        return value == null ? 0 : value;
     }
 }
