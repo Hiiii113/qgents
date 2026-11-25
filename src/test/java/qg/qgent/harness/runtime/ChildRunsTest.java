@@ -5,9 +5,9 @@ import static org.mockito.Mockito.mock;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.chat.messages.UserMessage;
 import qg.qgent.harness.entity.AgentRunEntity;
 import qg.qgent.harness.entity.RunStatus;
+import qg.qgent.harness.model.ModelMessage.UserMessage;
 import qg.qgent.harness.service.AgentRunService;
 import qg.qgent.sandbox.service.SandboxSessionManager;
 import qg.qgent.support.TestIds;
@@ -80,10 +80,10 @@ class ChildRunsTest {
         assertThat(children.publishFinish(child)).isTrue();
 
         UserMessage notification = (UserMessage) children.updates().drain().getFirst();
-        assertThat(notification.getText())
+        assertThat(notification.text())
                 .contains("子 Agent " + runId + " 已结束，状态：SUCCEEDED")
                 .endsWith("执行结果：\n" + "a".repeat(cut - 1) + TRUNCATED_MARKER);
-        assertThat(notification.getText()).doesNotContain("尾部内容");
+        assertThat(notification.text()).doesNotContain("尾部内容");
         assertThat(run.getResult()).isEqualTo(result);
     }
 

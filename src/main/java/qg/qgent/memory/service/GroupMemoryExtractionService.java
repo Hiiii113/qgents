@@ -2,12 +2,6 @@ package qg.qgent.memory.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.SystemMessage;
-import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -15,6 +9,7 @@ import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.service.GroupService;
 import qg.qgent.chat.service.MessageService;
+import qg.qgent.harness.model.ModelClient;
 import qg.qgent.memory.config.GroupMemoryProperties;
 import qg.qgent.memory.entity.GroupMemoryStateEntity;
 import qg.qgent.memory.mapper.GroupMemoryStateMapper;
@@ -36,7 +31,7 @@ public class GroupMemoryExtractionService {
     private final MessageService chat;
     private final GroupService groups;
     private final GroupMemoryService memories;
-    private final ChatModel model;
+    private final ModelClient model;
     private final Executor executor;
     private final GroupMemoryProperties properties;
     private final MemoryDocument document;
@@ -47,7 +42,7 @@ public class GroupMemoryExtractionService {
         MessageService chat,
         GroupService groups,
         GroupMemoryService memories,
-        ChatModel model,
+        ModelClient model,
         @Qualifier("groupMemoryExecutor") Executor executor,
         GroupMemoryProperties properties,
         MemoryDocument document) {
@@ -217,16 +212,7 @@ public class GroupMemoryExtractionService {
                 + (correction == null || correction.isBlank() ? "（无）" : correction)
                 + "\n\n新增群消息（从早到晚）：\n"
                 + conversation(batch);
-        ChatResponse response =
-            model.call(
-                new Prompt(
-                    List.of(
-                        new SystemMessage(systemPrompt()),
-                        new UserMessage(input))));
-        String text =
-            response == null || response.getResult() == null
-                ? null
-                : response.getResult().getOutput().getText();
+        String text = model.complete(systemPrompt(), input);
         if (text == null || text.isBlank()) {
             throw new IllegalStateException("模型没有返回群记忆正文");
         }

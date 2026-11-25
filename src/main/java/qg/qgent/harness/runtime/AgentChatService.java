@@ -1,9 +1,6 @@
 package qg.qgent.harness.runtime;
 
-import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.tool.ToolCallback;
-import org.springframework.ai.tool.annotation.Tool;
-import org.springframework.ai.tool.annotation.ToolParam;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -27,8 +24,12 @@ import qg.qgent.harness.briefing.BriefingService;
 import qg.qgent.harness.briefing.BriefingService.Scope;
 import qg.qgent.harness.entity.AgentRunEntity;
 import qg.qgent.harness.entity.RunStatus;
+import qg.qgent.harness.model.ModelMessage;
 import qg.qgent.harness.service.AgentRunService;
-import qg.qgent.harness.tool.ParallelToolCallback;
+import qg.qgent.harness.tool.Tool;
+import qg.qgent.harness.tool.ToolCallback;
+import qg.qgent.harness.tool.ToolParam;
+import qg.qgent.harness.tool.ToolRegistry;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.mcp.tool.McpToolCallbacks;
 import qg.qgent.memory.service.AgentMemoryService;
@@ -73,6 +74,7 @@ public class AgentChatService {
     private final WorkspaceService workspaces;
     private final WorkspaceRepositoryService repositories;
     private final AgentLoop loop;
+    private final ObjectMapper json;
     private final BriefingService briefing;
     private final SkillService skills;
     private final ChatHistoryService history;
@@ -99,6 +101,7 @@ public class AgentChatService {
         WorkspaceService workspaces,
         WorkspaceRepositoryService repositories,
         AgentLoop loop,
+        ObjectMapper json,
         BriefingService briefing,
         SkillService skills,
         ChatHistoryService history,
@@ -124,6 +127,7 @@ public class AgentChatService {
         this.workspaces = workspaces;
         this.repositories = repositories;
         this.loop = loop;
+        this.json = json;
         this.briefing = briefing;
         this.skills = skills;
         this.history = history;
@@ -205,7 +209,7 @@ public class AgentChatService {
                     Scope.ROOT,
                     instruction,
                     direct);
-            UserMessage user = new UserMessage(input);
+            ModelMessage.UserMessage user = new ModelMessage.UserMessage(input);
             AgentLoop.Conversation conversation =
                 loop.conversation(briefing.systemPrompt(agent, Scope.ROOT, direct), List.of(user));
             ChildRuns.Execution execution = new ChildRuns.Execution(root, conversation, null, ".");
@@ -248,7 +252,7 @@ public class AgentChatService {
         WorkContext work, ChildRuns.Execution execution, ConversationTools tools) {
         if (work.isCancelled() || execution.isStopRequested())
             throw new IllegalStateException("Agent 运行已取消");
-        return List.of(tools.callbacks());
+        return tools.callbacks();
     }
 
     private ConversationTools conversationTools(
@@ -318,7 +322,7 @@ public class AgentChatService {
         private final GitHubTools githubTools;
         private final CodingTools codingTools;
         private final WorkspaceTools workspaceTools;
-        private final List<ToolCallback> mcpTools;
+        private final List<ToolCallback> availableTools;
 
         private ConversationTools(
             WorkContext work, ChildRuns.Execution execution, boolean canDelegate) {
@@ -387,33 +391,30 @@ public class AgentChatService {
                     workspaceCommands,
                     session);
             this.codingTools = new CodingTools(session, files);
-            this.mcpTools = mcp.forRun(work.event.projectId(), work.agentId, work.event.actor());
+            ToolRegistry registry = new ToolRegistry(json);
+            registry.register(
+                this,
+                skills,
+                history,
+                crossGroupTools,
+                attachmentTools,
+                memory,
+                agentMemory,
+                workspaceTools,
+                githubTools,
+                codingTools);
+            if (groupMemoryTools != null) registry.register(groupMemoryTools);
+            if (memoryWrite != null) registry.register(memoryWrite);
+            if (applicationTools != null) registry.register(applicationTools);
+            List<ToolCallback> available = new ArrayList<>(registry.callbacks());
+            if (!canDelegate)
+                available.removeIf(callback -> CHILD_CONTROL_TOOLS.contains(callback.name()));
+            available.addAll(mcp.forRun(work.event.projectId(), work.agentId, work.event.actor()));
+            this.availableTools = List.copyOf(available);
         }
 
-        private ToolCallback[] callbacks() {
-            List<Object> tools =
-                new ArrayList<>(
-                    List.of(
-                        this,
-                        skills,
-                        history,
-                        crossGroupTools,
-                        attachmentTools,
-                        memory,
-                        agentMemory,
-                        workspaceTools,
-                        githubTools,
-                        codingTools));
-            if (groupMemoryTools != null) tools.add(groupMemoryTools);
-            if (memoryWrite != null) tools.add(memoryWrite);
-            if (applicationTools != null) tools.add(applicationTools);
-            List<ToolCallback> result =
-                new ArrayList<>(Arrays.asList(ParallelToolCallback.from(tools.toArray())));
-            if (!canDelegate)
-                result.removeIf(callback ->
-                    CHILD_CONTROL_TOOLS.contains(callback.getToolDefinition().name()));
-            result.addAll(mcpTools);
-            return result.toArray(ToolCallback[]::new);
+        private List<ToolCallback> callbacks() {
+            return availableTools;
         }
 
         @Tool(
@@ -447,7 +448,7 @@ public class AgentChatService {
                     loop.conversation(
                         briefing.systemPrompt(work.agent, Scope.CHILD, work.direct),
                         List.of(
-                            new UserMessage(
+                            new ModelMessage.UserMessage(
                                 userInput(
                                     work.event.actor(),
                                     work.event.projectId(),

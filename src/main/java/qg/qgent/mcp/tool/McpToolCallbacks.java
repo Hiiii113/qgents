@@ -5,10 +5,9 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.spec.McpSchema;
 import lombok.RequiredArgsConstructor;
-import org.springframework.ai.tool.ToolCallback;
-import org.springframework.ai.tool.definition.ToolDefinition;
 import org.springframework.stereotype.Component;
 import qg.qgent.common.web.ApiException;
+import qg.qgent.harness.tool.ToolCallback;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.mcp.entity.McpServer;
 import qg.qgent.mcp.entity.McpServer.Scope;
@@ -46,11 +45,11 @@ public class McpToolCallbacks {
     }
 
     private ToolCallback tool(RunActor run, McpServer server, CredentialVersion version, McpSchema.Tool tool) {
-        ToolDefinition definition = ToolDefinition.builder().name(toolName(server, tool.name()))
-            .description(label(server) + "。" + (tool.description() == null ? tool.name() : tool.description())
-                + "。同一服务有项目共享和个人连接时，按用户指定的连接使用，意图不清时先询问用户。")
-            .inputSchema(encode(tool.inputSchema())).build();
-        return callback(definition, arguments -> {
+        String name = toolName(server, tool.name());
+        String description = label(server) + "。" + (tool.description() == null ? tool.name() : tool.description())
+            + "。同一服务有项目共享和个人连接时，按用户指定的连接使用，意图不清时先询问用户。";
+        String inputSchema = encode(tool.inputSchema());
+        return callback(name, description, inputSchema, arguments -> {
             try {
                 var result = operations.call(run, server.id(), version, tool.name(), arguments);
                 ToolResult response = Boolean.TRUE.equals(result.isError())
@@ -65,31 +64,27 @@ public class McpToolCallbacks {
     }
 
     private ToolCallback status(McpServer server, ApiException error) {
-        ToolDefinition definition = ToolDefinition.builder().name(toolName(server, "") + "_status")
-            .description("检查" + label(server) + "当前无法加载工具的原因。")
-            .inputSchema(encode(Map.of("type", "object", "properties", Map.of()))).build();
-        return callback(definition, ignored -> ToolResult.error(error.code(), error.getMessage()));
+        String name = toolName(server, "") + "_status";
+        String description = "检查" + label(server) + "当前无法加载工具的原因。";
+        String inputSchema = encode(Map.of("type", "object", "properties", Map.of()));
+        return callback(name, description, inputSchema, ignored -> ToolResult.error(error.code(), error.getMessage()));
     }
 
-    private ToolCallback callback(ToolDefinition definition, Function<Map<String, Object>, ToolResult> call) {
-        return new ToolCallback() {
-            @Override
-            public ToolDefinition getToolDefinition() {
-                return definition;
+    private ToolCallback callback(
+        String name,
+        String description,
+        String inputSchema,
+        Function<Map<String, Object>, ToolResult> call) {
+        return new ToolCallback(name, description, inputSchema, false, input -> {
+            Map<String, Object> arguments;
+            try {
+                arguments = json.readValue(input, new TypeReference<>() {});
+            } catch (JsonProcessingException e) {
+                return encode(ToolResult.error("INVALID_ARGUMENT", "MCP 工具参数必须是 JSON 对象"));
             }
-
-            @Override
-            public String call(String input) {
-                Map<String, Object> arguments;
-                try {
-                    arguments = json.readValue(input, new TypeReference<>() {});
-                } catch (JsonProcessingException e) {
-                    return encode(ToolResult.error("INVALID_ARGUMENT", "MCP 工具参数必须是 JSON 对象"));
-                }
-                if (arguments == null) return encode(ToolResult.error("INVALID_ARGUMENT", "MCP 工具参数必须是 JSON 对象"));
-                return encode(call.apply(arguments));
-            }
-        };
+            if (arguments == null) return encode(ToolResult.error("INVALID_ARGUMENT", "MCP 工具参数必须是 JSON 对象"));
+            return encode(call.apply(arguments));
+        });
     }
 
     private String toolName(McpServer server, String name) {

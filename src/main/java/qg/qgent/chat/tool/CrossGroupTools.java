@@ -1,8 +1,6 @@
 package qg.qgent.chat.tool;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.tool.annotation.Tool;
-import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.http.HttpStatus;
 import qg.qgent.chat.dto.ContextMessage;
 import qg.qgent.chat.service.ChatHistoryService;
@@ -11,6 +9,8 @@ import qg.qgent.chat.service.CrossGroupAccessService.CheckedGroup;
 import qg.qgent.chat.service.CrossGroupAccessService.Denial;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.harness.tool.ParallelTool;
+import qg.qgent.harness.tool.Tool;
+import qg.qgent.harness.tool.ToolParam;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.memory.service.GroupMemoryService;
 

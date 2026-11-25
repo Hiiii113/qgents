@@ -1,8 +1,8 @@
 package qg.qgent.sandbox.tool;
 
-import org.springframework.ai.tool.annotation.Tool;
-import org.springframework.ai.tool.annotation.ToolParam;
 import qg.qgent.harness.tool.ParallelTool;
+import qg.qgent.harness.tool.Tool;
+import qg.qgent.harness.tool.ToolParam;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.sandbox.service.SandboxFiles;
 import qg.qgent.workspace.service.WorkSession;

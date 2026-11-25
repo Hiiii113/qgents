@@ -1,8 +1,8 @@
 package qg.qgent.skill.tool;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.tool.annotation.Tool;
-import org.springframework.ai.tool.annotation.ToolParam;
+import qg.qgent.harness.tool.Tool;
+import qg.qgent.harness.tool.ToolParam;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.skill.entity.SkillEntity;
 import qg.qgent.skill.service.SkillService;

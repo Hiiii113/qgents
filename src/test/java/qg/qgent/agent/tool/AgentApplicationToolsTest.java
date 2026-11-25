@@ -9,15 +9,16 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.http.HttpStatus;
 import qg.qgent.agent.dto.AgentApplicationRequest;
 import qg.qgent.agent.entity.AgentEntity;
 import qg.qgent.agent.service.AgentApplicationService;
 import qg.qgent.common.web.ApiException;
+import qg.qgent.harness.tool.ToolRegistry;
 import qg.qgent.support.TestIds;
 
 /** Agent 申请与审批工具：申请帮成员起草，待审批列表只读，审批按申请 ID 交给服务端核验。 */
@@ -31,8 +32,10 @@ class AgentApplicationToolsTest {
 
     @Test
     void exposesApplicationAndApprovalTools() {
-        assertThat(ToolCallbacks.from(tools))
-                .extracting(callback -> callback.getToolDefinition().name())
+        ToolRegistry registry = new ToolRegistry(new ObjectMapper());
+        registry.register(tools);
+        assertThat(registry.callbacks())
+                .extracting(callback -> callback.name())
                 .containsExactlyInAnyOrder(
                         "submit_agent_application",
                         "list_pending_agent_applications",

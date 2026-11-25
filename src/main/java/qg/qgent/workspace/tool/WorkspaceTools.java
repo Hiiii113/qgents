@@ -1,9 +1,9 @@
 package qg.qgent.workspace.tool;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.tool.annotation.Tool;
-import org.springframework.ai.tool.annotation.ToolParam;
 import qg.qgent.harness.tool.ParallelTool;
+import qg.qgent.harness.tool.Tool;
+import qg.qgent.harness.tool.ToolParam;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.sandbox.service.SandboxCommands;
 import qg.qgent.workspace.entity.WorkspaceEntity;

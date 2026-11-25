@@ -26,17 +26,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.model.Generation;
-import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.http.HttpStatus;
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.service.GroupService;
 import qg.qgent.chat.service.MessageService;
 import qg.qgent.common.web.ApiException;
+import qg.qgent.harness.model.ModelClient;
 import qg.qgent.memory.config.GroupMemoryProperties;
 import qg.qgent.memory.entity.GroupMemoryStateEntity;
 import qg.qgent.memory.mapper.GroupMemoryStateMapper;
@@ -61,7 +57,7 @@ class GroupMemoryExtractionServiceTest {
     private final MessageMapper chatMessages = mock(MessageMapper.class);
     private final MessageService chat = mock(MessageService.class);
     private final GroupService groups = mock(GroupService.class);
-    private final ChatModel model = mock(ChatModel.class);
+    private final ModelClient model = mock(ModelClient.class);
     private final Executor executor = Runnable::run;
     private final MemoryDocument document = new MemoryDocument(12000);
     private GroupMemoryService memories;
@@ -110,20 +106,18 @@ class GroupMemoryExtractionServiceTest {
                 .thenReturn(messages);
         when(chatMessages.selectAfterSequence(eq(groupId), eq(0L), eq(MAX_MESSAGES_PER_RUN)))
                 .thenReturn(messages);
-        when(model.call(any(Prompt.class))).thenReturn(reply("# 群记忆\n- 结论：邮箱登录"));
+        when(model.complete(any(), any())).thenReturn("# 群记忆\n- 结论：邮箱登录");
 
         service.scan();
 
         assertThat(memories.read(projectId, groupId).getContent()).isEqualTo("# 群记忆\n- 结论：邮箱登录");
         verify(states).finishSuccess(eq(groupId), any(), any(), eq(3L), any());
-        ArgumentCaptor<Prompt> prompt = ArgumentCaptor.forClass(Prompt.class);
-        verify(model).call(prompt.capture());
-        assertThat(prompt.getValue().getInstructions())
-                .anySatisfy(instruction ->
-                        // 群里有多个 Agent：发言按发送者 ID 标注，不能一律当成默认 Agent。
-                        assertThat(instruction.getText())
-                                .contains("先做邮箱登录", "用户 7：同意", "Agent " + AGENT_ID + "：结论：邮箱登录")
-                                .doesNotContain("Qgent"));
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(model).complete(any(), prompt.capture());
+        // 群里有多个 Agent：发言按发送者 ID 标注，不能一律当成默认 Agent。
+        assertThat(prompt.getValue())
+                .contains("先做邮箱登录", "用户 7：同意", "Agent " + AGENT_ID + "：结论：邮箱登录")
+                .doesNotContain("Qgent");
     }
 
     @Test
@@ -197,7 +191,7 @@ class GroupMemoryExtractionServiceTest {
                 .thenReturn(messages);
         when(chatMessages.selectAfterSequence(eq(groupId), eq(4L), eq(MAX_MESSAGES_PER_RUN)))
                 .thenReturn(messages);
-        when(model.call(any(Prompt.class))).thenReturn(reply("# 新群记忆"));
+        when(model.complete(any(), any())).thenReturn("# 新群记忆");
 
         service.scan();
 
@@ -225,7 +219,7 @@ class GroupMemoryExtractionServiceTest {
                 .thenReturn(messages);
         when(chatMessages.selectAfterSequence(eq(groupId), eq(0L), eq(MAX_MESSAGES_PER_RUN)))
                 .thenReturn(messages);
-        when(model.call(any(Prompt.class))).thenReturn(reply("# 群记忆"));
+        when(model.complete(any(), any())).thenReturn("# 群记忆");
 
         service.scan();
 
@@ -253,7 +247,7 @@ class GroupMemoryExtractionServiceTest {
                 .thenReturn(messages);
         when(chatMessages.selectAfterSequence(eq(groupId), eq(4L), eq(MAX_MESSAGES_PER_RUN)))
                 .thenReturn(messages);
-        when(model.call(any(Prompt.class))).thenThrow(new IllegalStateException("模型调用超时"));
+        when(model.complete(any(), any())).thenThrow(new IllegalStateException("模型调用超时"));
 
         service.scan();
 
@@ -311,15 +305,13 @@ class GroupMemoryExtractionServiceTest {
                 .thenReturn(List.of());
         when(chatMessages.selectAfterSequence(eq(groupId), eq(9L), eq(MAX_MESSAGES_PER_RUN)))
                 .thenReturn(List.of());
-        when(model.call(any(Prompt.class))).thenReturn(reply("# 群记忆\n- 结论：做手机号登录"));
+        when(model.complete(any(), any())).thenReturn("# 群记忆\n- 结论：做手机号登录");
 
         service.scan();
 
-        ArgumentCaptor<Prompt> prompt = ArgumentCaptor.forClass(Prompt.class);
-        verify(model).call(prompt.capture());
-        assertThat(prompt.getValue().getInstructions())
-                .anySatisfy(instruction ->
-                        assertThat(instruction.getText()).contains("结论应为做手机号登录", "结论：做邮箱登录"));
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(model).complete(any(), prompt.capture());
+        assertThat(prompt.getValue()).contains("结论应为做手机号登录", "结论：做邮箱登录");
         assertThat(memories.read(projectId, groupId).getContent()).isEqualTo("# 群记忆\n- 结论：做手机号登录");
         verify(states).finishSuccess(eq(groupId), any(), eq("结论应为做手机号登录"), eq(9L), any());
     }
@@ -339,7 +331,7 @@ class GroupMemoryExtractionServiceTest {
                 .thenReturn(List.of());
         when(chatMessages.selectAfterSequence(eq(groupId), eq(9L), eq(MAX_MESSAGES_PER_RUN)))
                 .thenReturn(List.of());
-        when(model.call(any(Prompt.class))).thenReturn(reply("# 群记忆\n- 结论：做邮箱登录"));
+        when(model.complete(any(), any())).thenReturn("# 群记忆\n- 结论：做邮箱登录");
 
         service.scan();
 
@@ -370,17 +362,14 @@ class GroupMemoryExtractionServiceTest {
                 .thenReturn(newMessages);
         when(chatMessages.selectAfterSequence(eq(groupId), eq(3L), eq(MAX_MESSAGES_PER_RUN)))
                 .thenReturn(newMessages);
-        when(model.call(any(Prompt.class))).thenReturn(reply("# 已提炼到第 6 条"));
+        when(model.complete(any(), any())).thenReturn("# 已提炼到第 6 条");
 
         service.scan();
 
         // 只从已保存的水位之后读取，不重复处理也不跳过中间消息
-        ArgumentCaptor<Prompt> prompt = ArgumentCaptor.forClass(Prompt.class);
-        verify(model).call(prompt.capture());
-        assertThat(prompt.getValue().getInstructions())
-                .anySatisfy(instruction ->
-                        assertThat(instruction.getText())
-                                .contains("已提炼到第 3 条", "用户 7：a", "用户 7：c"));
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(model).complete(any(), prompt.capture());
+        assertThat(prompt.getValue()).contains("已提炼到第 3 条", "用户 7：a", "用户 7：c");
         verify(states).finishSuccess(eq(groupId), any(), any(), eq(6L), any());
     }
 
@@ -403,17 +392,13 @@ class GroupMemoryExtractionServiceTest {
                 .thenReturn(messages);
         when(chatMessages.selectAfterSequence(eq(groupId), eq(0L), eq(MAX_MESSAGES_PER_RUN)))
                 .thenReturn(messages);
-        when(model.call(any(Prompt.class))).thenReturn(reply("# 群记忆"));
+        when(model.complete(any(), any())).thenReturn("# 群记忆");
 
         service.scan();
 
-        ArgumentCaptor<Prompt> prompt = ArgumentCaptor.forClass(Prompt.class);
-        verify(model).call(prompt.capture());
-        assertThat(prompt.getValue().getInstructions())
-                .anySatisfy(instruction ->
-                        assertThat(instruction.getText())
-                                .contains("系统：群已创建")
-                                .doesNotContain("用户 null"));
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(model).complete(any(), prompt.capture());
+        assertThat(prompt.getValue()).contains("系统：群已创建").doesNotContain("用户 null");
     }
 
     @Test
@@ -452,7 +437,7 @@ class GroupMemoryExtractionServiceTest {
         when(chatMessages.selectAfterSequence(
                         eq(active.getGroupId()), eq(0L), eq(MAX_MESSAGES_PER_RUN)))
                 .thenReturn(messages);
-        when(model.call(any(Prompt.class))).thenReturn(reply("# 群记忆"));
+        when(model.complete(any(), any())).thenReturn("# 群记忆");
 
         service.scan();
 
@@ -475,7 +460,7 @@ class GroupMemoryExtractionServiceTest {
         when(states.claim(eq(groupId), any(), any())).thenReturn(1);
         when(states.renewClaim(eq(groupId), any(), any())).thenReturn(1);
         when(states.finishSuccess(eq(groupId), any(), any(), any(), any())).thenReturn(1);
-        when(model.call(any(Prompt.class))).thenReturn(reply("# 群记忆\n- 结论：A"));
+        when(model.complete(any(), any())).thenReturn("# 群记忆\n- 结论：A");
 
         service.scan();
 
@@ -541,7 +526,7 @@ class GroupMemoryExtractionServiceTest {
                 .thenReturn(messages);
         when(chatMessages.selectAfterSequence(eq(groupId), eq(0L), eq(MAX_MESSAGES_PER_RUN)))
                 .thenReturn(messages);
-        when(model.call(any(Prompt.class))).thenReturn(reply("```markdown\n# 群记忆\n```"));
+        when(model.complete(any(), any())).thenReturn("```markdown\n# 群记忆\n```");
 
         service.scan();
 
@@ -566,7 +551,7 @@ class GroupMemoryExtractionServiceTest {
                 .thenReturn(messages);
         when(chatMessages.selectAfterSequence(eq(groupId), eq(0L), eq(MAX_MESSAGES_PER_RUN)))
                 .thenReturn(messages);
-        when(model.call(any(Prompt.class))).thenReturn(reply("   "));
+        when(model.complete(any(), any())).thenReturn("   ");
 
         service.scan();
 
@@ -632,9 +617,5 @@ class GroupMemoryExtractionServiceTest {
         message.setMessageType("TEXT");
         message.setContent(text);
         return message;
-    }
-
-    private ChatResponse reply(String content) {
-        return new ChatResponse(List.of(new Generation(new AssistantMessage(content))));
     }
 }

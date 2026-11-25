@@ -8,9 +8,10 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.support.ToolCallbacks;
+import qg.qgent.harness.tool.ToolRegistry;
 import qg.qgent.skill.entity.SkillEntity;
 import qg.qgent.skill.service.SkillService;
 import qg.qgent.support.TestIds;
@@ -32,8 +33,11 @@ class ActivateSkillToolTest {
         ActivateSkillTool tool = new ActivateSkillTool(contextService, actor, projectId);
         Map<String, Object> result = tool.activateSkill(skillId.toString());
 
-        assertThat(ToolCallbacks.from(tool)[0].getToolDefinition().name())
-                .isEqualTo("activate_skill");
+        ToolRegistry registry = new ToolRegistry(new ObjectMapper());
+        registry.register(tool);
+        assertThat(registry.callbacks())
+                .extracting(callback -> callback.name())
+                .contains("activate_skill");
         assertThat(result)
                 .containsEntry("ok", true)
                 .containsEntry("name", "database-migration")

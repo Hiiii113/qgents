@@ -13,10 +13,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.slf4j.MDC;
-import org.springframework.ai.chat.messages.AssistantMessage.ToolCall;
-import org.springframework.ai.tool.ToolCallback;
-import org.springframework.ai.tool.definition.ToolDefinition;
-import qg.qgent.harness.tool.ParallelToolCallback;
+import qg.qgent.harness.model.ModelMessage.ToolCall;
+import qg.qgent.harness.tool.ToolCallback;
 import qg.qgent.sandbox.dto.SandboxExecutionContext;
 import qg.qgent.support.TestIds;
 
@@ -272,10 +270,10 @@ class ToolCallExecutorTest {
                 executor.execute(
                         TestIds.next(),
                         List.of(
-                                new ToolCall("call-x", "function", "boom", "{}"),
-                                new ToolCall("call-y", "function", "missing", "{}"),
-                                new ToolCall("call-z", "function", "soft", "{}"),
-                                new ToolCall("call-w", "function", "good", "{}")),
+                                new ToolCall("call-x", "boom", "{}"),
+                                new ToolCall("call-y", "missing", "{}"),
+                                new ToolCall("call-z", "soft", "{}"),
+                                new ToolCall("call-w", "good", "{}")),
                         Map.of("boom", failing, "soft", softFailure, "good", success),
                         () -> false,
                         sink);
@@ -331,7 +329,7 @@ class ToolCallExecutorTest {
     }
 
     private static ToolCall call(String id, String name) {
-        return new ToolCall(id, "function", name, id);
+        return new ToolCall(id, name, id);
     }
 
     private static void await(CountDownLatch latch) throws InterruptedException {
@@ -339,27 +337,20 @@ class ToolCallExecutorTest {
     }
 
     private static ToolCallback callback(String name, boolean parallel, Body body) {
-        ToolCallback callback =
-                new ToolCallback() {
-                    public ToolDefinition getToolDefinition() {
-                        return ToolDefinition.builder()
-                                .name(name)
-                                .description(name)
-                                .inputSchema("{}")
-                                .build();
+        return new ToolCallback(
+                name,
+                name,
+                "{}",
+                parallel,
+                input -> {
+                    try {
+                        return body.call(input);
+                    } catch (RuntimeException exception) {
+                        throw exception;
+                    } catch (Exception exception) {
+                        throw new IllegalStateException(exception);
                     }
-
-                    public String call(String input) {
-                        try {
-                            return body.call(input);
-                        } catch (RuntimeException exception) {
-                            throw exception;
-                        } catch (Exception exception) {
-                            throw new IllegalStateException(exception);
-                        }
-                    }
-                };
-        return parallel ? new ParallelToolCallback(callback) : callback;
+                });
     }
 
     @FunctionalInterface

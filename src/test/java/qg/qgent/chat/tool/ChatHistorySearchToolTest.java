@@ -5,13 +5,14 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.support.ToolCallbacks;
 import qg.qgent.chat.dto.ContextMessage;
 import qg.qgent.chat.service.ChatHistoryService;
+import qg.qgent.harness.tool.ToolRegistry;
 import qg.qgent.support.TestIds;
 
 class ChatHistorySearchToolTest {
@@ -34,8 +35,10 @@ class ChatHistorySearchToolTest {
 
         Map<String, Object> result = tool.searchChatHistory("登录", 50);
 
-        assertThat(ToolCallbacks.from(tool))
-                .extracting(callback -> callback.getToolDefinition().name())
+        ToolRegistry registry = new ToolRegistry(new ObjectMapper());
+        registry.register(tool);
+        assertThat(registry.callbacks())
+                .extracting(callback -> callback.name())
                 .contains("search_chat_history", "read_chat_message");
         assertThat(result).containsEntry("ok", true).containsEntry("budget", "used 1/10");
         assertThat((List<?>) result.get("messages")).hasSize(10);

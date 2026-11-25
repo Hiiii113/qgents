@@ -1,12 +1,11 @@
 package qg.qgent.attachment.tool;
 
-import org.springframework.ai.content.Media;
-import org.springframework.ai.tool.annotation.Tool;
-import org.springframework.ai.tool.annotation.ToolParam;
 import org.springframework.http.HttpStatus;
 import org.springframework.util.MimeTypeUtils;
 import qg.qgent.attachment.service.AttachmentService;
 import qg.qgent.common.web.ApiException;
+import qg.qgent.harness.tool.Tool;
+import qg.qgent.harness.tool.ToolParam;
 import qg.qgent.harness.tool.ToolResult;
 
 import java.net.URI;
@@ -70,7 +69,7 @@ public class ReadAttachmentTool {
         var mime = MimeTypeUtils.parseMimeType(image.mediaType());
         String dataUri =
             "data:" + mime + ";base64," + Base64.getEncoder().encodeToString(image.bytes());
-        images.stage(id.toString(), image.fileName(), new Media(mime, URI.create(dataUri)));
+        images.stage(id.toString(), image.fileName(), URI.create(dataUri));
         ToolResult result = ToolResult.ok();
         result.put("attachmentId", id.toString());
         result.put("fileName", image.fileName());
@@ -90,6 +89,6 @@ public class ReadAttachmentTool {
 
     @FunctionalInterface
     public interface ImageSink {
-        void stage(String attachmentId, String fileName, Media media);
+        void stage(String attachmentId, String fileName, URI imageUri);
     }
 }

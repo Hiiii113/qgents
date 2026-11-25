@@ -23,11 +23,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
-import org.springframework.ai.chat.messages.AssistantMessage;
-import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.chat.model.Generation;
-import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.context.ApplicationEventPublisher;
 import qg.qgent.agent.entity.AgentEntity;
 import qg.qgent.agent.mapper.AgentMapper;
@@ -44,6 +39,7 @@ import qg.qgent.chat.mapper.MessageMapper;
 import qg.qgent.chat.service.GroupService;
 import qg.qgent.chat.service.MessageService;
 import qg.qgent.chat.service.MessageViews;
+import qg.qgent.harness.model.ModelClient;
 import qg.qgent.memory.config.ProjectMemoryDiscoveryProperties;
 import qg.qgent.memory.entity.GroupMemoryStateEntity;
 import qg.qgent.memory.mapper.GroupMemoryStateMapper;
@@ -76,7 +72,7 @@ class ProjectMemoryDiscoveryServiceTest {
     private final ProjectMapper projects = mock(ProjectMapper.class);
     private final ProjectAccessService access = mock(ProjectAccessService.class);
     private final ApplicationEventPublisher eventPublisher = mock(ApplicationEventPublisher.class);
-    private final ChatModel model = mock(ChatModel.class);
+    private final ModelClient model = mock(ModelClient.class);
     private final MemoryDocument document = new MemoryDocument(MAX_CHARS);
 
     private GroupMemoryService groupMemories;
@@ -159,16 +155,15 @@ class ProjectMemoryDiscoveryServiceTest {
         Long project = TestIds.next(), group = TestIds.next(), agent = TestIds.next();
         groupMemories.write(project, group, "- 议题：登录方式\n- 结论：先做邮箱登录");
         defaultGroupWithAgent(project, group, agent);
-        when(model.call(any(Prompt.class))).thenReturn(reply("- 新增：登录方式先用邮箱登录"));
+        when(model.complete(any(), any())).thenReturn("- 新增：登录方式先用邮箱登录");
         claims(group);
 
         service.discover(project, group);
 
         // 群记忆是唯一的提炼来源：模型拿到的是群记忆正文和当前项目记忆，而不是原始聊天
-        ArgumentCaptor<Prompt> prompt = ArgumentCaptor.forClass(Prompt.class);
-        verify(model).call(prompt.capture());
-        assertThat(prompt.getValue().getInstructions())
-                .anySatisfy(instruction -> assertThat(instruction.getText()).contains("先做邮箱登录"));
+        ArgumentCaptor<String> prompt = ArgumentCaptor.forClass(String.class);
+        verify(model).complete(any(), prompt.capture());
+        assertThat(prompt.getValue()).contains("先做邮箱登录");
         // 建议由默认 Agent 在默认群以普通文本发出：走真实发送路径，发送者是 Agent 而非用户
         MessageEntity sent = insertedMessage();
         assertThat(sent.getSenderType()).isEqualTo("AGENT");
@@ -208,7 +203,7 @@ class ProjectMemoryDiscoveryServiceTest {
         when(groupAgents.selectAgentIds(group)).thenReturn(List.of());
         when(states.selectById(group)).thenReturn(state(project, group));
         claims(group);
-        when(model.call(any(Prompt.class))).thenReturn(reply("- 新增：登录方式先用邮箱登录"));
+        when(model.complete(any(), any())).thenReturn("- 新增：登录方式先用邮箱登录");
 
         service.discover(project, group);
 
@@ -241,7 +236,7 @@ class ProjectMemoryDiscoveryServiceTest {
         when(chatGroups.selectById(group)).thenReturn(group(group, project, true));
         when(states.selectById(group)).thenReturn(state(project, group));
         claims(group);
-        when(model.call(any(Prompt.class))).thenReturn(reply("NONE."));
+        when(model.complete(any(), any())).thenReturn("NONE.");
 
         service.discover(project, group);
 
@@ -256,9 +251,9 @@ class ProjectMemoryDiscoveryServiceTest {
         defaultGroupWithAgent(project, group, agent);
         when(states.selectById(group)).thenReturn(state(project, group));
         claims(group);
-        when(model.call(any(Prompt.class)))
+        when(model.complete(any(), any()))
                 .thenThrow(new IllegalStateException("模型调用超时"))
-                .thenReturn(reply("- 新增：登录方式先用邮箱登录"));
+                .thenReturn("- 新增：登录方式先用邮箱登录");
 
         service.discover(project, group);
 
@@ -294,7 +289,7 @@ class ProjectMemoryDiscoveryServiceTest {
         defaultGroupWithAgent(project, group, agent);
         when(states.selectById(group)).thenReturn(state(project, group));
         claims(group);
-        when(model.call(any(Prompt.class))).thenReturn(reply("- 新增：登录方式先用邮箱登录"));
+        when(model.complete(any(), any())).thenReturn("- 新增：登录方式先用邮箱登录");
         when(states.selectDiscoveryCandidates(any(), eq(MAX_ATTEMPTS), eq(BATCH_SIZE)))
                 .thenReturn(List.of(state(project, group)));
         List<Runnable> queued = new ArrayList<>();
@@ -316,7 +311,7 @@ class ProjectMemoryDiscoveryServiceTest {
         verifyNoInteractions(model);
         assertThat(queued).hasSize(1);
         queued.getFirst().run();
-        verify(model).call(any(Prompt.class));
+        verify(model).complete(any(), any());
         assertThat(insertedMessage().getSenderAgentId()).isEqualTo(agent);
     }
 
@@ -397,9 +392,5 @@ class ProjectMemoryDiscoveryServiceTest {
         agent.setName("Qgent");
         agent.setDefaultAgent(true);
         return agent;
-    }
-
-    private ChatResponse reply(String content) {
-        return new ChatResponse(List.of(new Generation(new AssistantMessage(content))));
     }
 }

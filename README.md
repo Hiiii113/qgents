@@ -78,7 +78,7 @@ Docker 连不上时后端照样能启动，只有需要沙箱的工具会失败�
    ▼
 Spring Boot 应用 ── MySQL 8.4   业务数据
    │              └ Redis 7     刷新令牌、验证码、限流
-   ├── DeepSeek（OpenAI 兼容协议，Spring AI）
+   ├── DeepSeek（OpenAI 兼容协议，OpenAI Java SDK）
    └── Docker Engine
          └── 沙箱容器 ── 项目数据目录：memory.md、groups/、agent-memory/、.git、workspaces/
 ```
@@ -91,7 +91,7 @@ Spring Boot 应用 ── MySQL 8.4   业务数据
 | --- | --- |
 | 运行时 | Java 21、Spring Boot 4.1 |
 | 数据 | MyBatis-Plus 3.5、MySQL 8.4、Redis 7 |
-| 模型 | Spring AI 2.0、DeepSeek（OpenAI 兼容接口） |
+| 模型 | OpenAI Java SDK、DeepSeek（OpenAI 兼容接口） |
 | 沙箱 | docker-java 3.7，用户命令在独立容器中执行 |
 | 集成 | 阿里云 OSS、GitHub App（BouncyCastle 解析私钥）、SMTP、FCM |
 | 前端 | React 19、TypeScript、Vite、Ant Design 6（独立仓库） |
