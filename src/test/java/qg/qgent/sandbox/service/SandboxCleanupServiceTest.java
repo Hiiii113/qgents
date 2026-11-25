@@ -39,7 +39,8 @@ class SandboxCleanupServiceTest {
         SandboxService sandboxes =
             new SandboxService(runtime, properties, clock, new WorkspaceOperationLock(properties));
         CommandExecutionService executions = mock(CommandExecutionService.class);
-        SandboxCleanupService cleanup = new SandboxCleanupService(sandboxes, executions);
+        SandboxSessionManager sessions = mock(SandboxSessionManager.class);
+        SandboxCleanupService cleanup = new SandboxCleanupService(sandboxes, executions, sessions);
         UUID sandboxId = UUID.randomUUID();
         sandboxes.create(sandboxId, TestIds.next(), storageKey(), "dev-tools");
         runtime.find(sandboxId).orElseThrow().setExpiresAt(clock.instant().minusSeconds(1));
@@ -47,6 +48,7 @@ class SandboxCleanupServiceTest {
         cleanup.cleanupExpiredSandboxes();
 
         verify(executions).stopAndAwaitBySandbox(sandboxId);
+        verify(sessions).forgetSandbox(sandboxId);
         assertTrue(sandboxes.find(sandboxId).isEmpty());
     }
 
@@ -54,6 +56,7 @@ class SandboxCleanupServiceTest {
     void cleanupWaitsForExecutionWorkersBeforeDestroyingContainer() throws Exception {
         SandboxService sandboxes = mock(SandboxService.class);
         CommandExecutionService executions = mock(CommandExecutionService.class);
+        SandboxSessionManager sessions = mock(SandboxSessionManager.class);
         java.util.UUID sandboxId = UUID.randomUUID();
         when(sandboxes.expiredSandboxIds()).thenReturn(List.of(sandboxId));
         CountDownLatch stopping = new CountDownLatch(1), exited = new CountDownLatch(1);
@@ -65,7 +68,7 @@ class SandboxCleanupServiceTest {
                 })
             .when(executions)
             .stopAndAwaitBySandbox(sandboxId);
-        SandboxCleanupService cleanup = new SandboxCleanupService(sandboxes, executions);
+        SandboxCleanupService cleanup = new SandboxCleanupService(sandboxes, executions, sessions);
 
         try (var pool = Executors.newSingleThreadExecutor()) {
             var future = pool.submit(cleanup::cleanupExpiredSandboxes);
@@ -77,9 +80,10 @@ class SandboxCleanupServiceTest {
                 exited.countDown();
             }
             future.get(5, TimeUnit.SECONDS);
-            var order = inOrder(executions, sandboxes);
+            var order = inOrder(executions, sandboxes, sessions);
             order.verify(executions).stopAndAwaitBySandbox(sandboxId);
             order.verify(sandboxes).destroy(sandboxId);
+            order.verify(sessions).forgetSandbox(sandboxId);
         }
     }
 

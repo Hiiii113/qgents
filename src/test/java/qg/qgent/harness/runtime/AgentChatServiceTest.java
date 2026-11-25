@@ -1500,7 +1500,6 @@ class AgentChatServiceTest {
         workspace.setId(TestIds.next());
         workspace.setProjectId(projectId);
         workspace.setIsDefault(true);
-        workspace.setStatus("PROVISIONING");
         return workspace;
     }
 

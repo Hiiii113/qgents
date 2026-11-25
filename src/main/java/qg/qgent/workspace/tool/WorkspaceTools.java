@@ -45,7 +45,7 @@ public final class WorkspaceTools {
     }
 
     @ParallelTool
-    @Tool(name = "list_workspaces", description = "列出当前项目的 Workspace 及是否默认、状态和当前选中项；不启动沙箱。")
+    @Tool(name = "list_workspaces", description = "列出当前项目的 Workspace 及是否默认和当前选中项；不启动沙箱。")
     public ToolResult listWorkspaces() {
         Long current = session.workspaceId();
         ToolResult result = ToolResult.ok();
@@ -60,8 +60,6 @@ public final class WorkspaceTools {
                         workspace.getId().toString(),
                         "isDefault",
                         Boolean.TRUE.equals(workspace.getIsDefault()),
-                        "status",
-                        workspace.getStatus(),
                         "selected",
                         workspace.getId().equals(current)))
                 .toList());

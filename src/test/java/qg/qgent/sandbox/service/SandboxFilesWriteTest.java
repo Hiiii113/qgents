@@ -2,7 +2,6 @@ package qg.qgent.sandbox.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -61,7 +60,6 @@ class SandboxFilesWriteTest {
             .containsEntry("ok", true)
             .containsEntry("changed", true);
         assertThat(Files.readString(root.resolve(".gitignore"))).isEqualTo("build");
-        verify(sessions).renewWriteLease(id);
     }
 
     @Test
@@ -116,16 +114,11 @@ class SandboxFilesWriteTest {
     }
 
     @Test
-    void lostWriteLeaseIsReportedWithoutWriting() throws Exception {
+    void missingSessionBlocksEditBeforeTouchingTheWorkspace() throws Exception {
         Files.writeString(root.resolve("x.txt"), "old");
         SandboxFiles files = files();
-        org.mockito.Mockito.doThrow(
-                new qg.qgent.common.web.ApiException(
-                    org.springframework.http.HttpStatus.CONFLICT,
-                    "WORKSPACE_WRITE_LEASE_LOST",
-                    "Workspace write lease is no longer active"))
-            .when(sessions)
-            .renewWriteLease(id);
+        when(sessions.require(id))
+            .thenThrow(new IllegalStateException("no sandbox session for workspace " + id));
 
         assertThat(files.editFile(id, "x.txt", "a".repeat(64), "old", "new", false))
             .containsEntry("ok", false)

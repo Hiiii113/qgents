@@ -400,7 +400,6 @@ class WorkspaceRepositoryServiceTest {
         workspace.setId(id);
         workspace.setProjectId(projectId);
         workspace.setIsDefault(isDefault);
-        workspace.setStatus("READY");
         return workspace;
     }
 
