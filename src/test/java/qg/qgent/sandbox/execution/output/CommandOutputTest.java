@@ -1,6 +1,6 @@
 package qg.qgent.sandbox.execution.output;
 
-import static org.assertj.core.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -17,8 +17,8 @@ class CommandOutputTest {
         long offset = 0;
         for (int i = 0; i < 5; i++) {
             var result = CommandOutput.read(root, "stdout", offset, 16000);
-            combined.append(result.get("text"));
-            offset = ((Number) result.get("nextOffset")).longValue();
+            combined.append(result.text());
+            offset = result.nextOffset();
         }
         assertThat(combined).hasToString("x".repeat(80000));
         assertThat(offset).isEqualTo(80000);
@@ -28,20 +28,29 @@ class CommandOutputTest {
     void utf8PageBoundariesAndAppendedPartialLineRemainReadable() throws Exception {
         Files.writeString(root.resolve("stdout"), "汉汉");
         var first = CommandOutput.read(root, "stdout", 0, 4);
-        assertThat(first).containsEntry("text", "汉").containsEntry("nextOffset", 3L);
+        assertThat(first.text()).isEqualTo("汉");
+        assertThat(first.nextOffset()).isEqualTo(3L);
         var second = CommandOutput.read(root, "stdout", 3, 4);
-        assertThat(second).containsEntry("text", "汉").containsEntry("nextOffset", 6L);
+        assertThat(second.text()).isEqualTo("汉");
+        assertThat(second.nextOffset()).isEqualTo(6L);
         Files.writeString(root.resolve("stdout"), "字", java.nio.file.StandardOpenOption.APPEND);
-        assertThat(CommandOutput.read(root, "stdout", 6, 4))
-                .containsEntry("text", "字")
-                .containsEntry("nextOffset", 9L);
+        var third = CommandOutput.read(root, "stdout", 6, 4);
+        assertThat(third.text()).isEqualTo("字");
+        assertThat(third.nextOffset()).isEqualTo(9L);
     }
 
     @Test
     void diagnosticTailRetainsFinalErrorAndReportsTruncation() throws Exception {
         Files.writeString(root.resolve("stderr"), "x".repeat(30000) + "\nfinal error");
         var result = CommandOutput.tail(root, "stderr");
-        assertThat(result).containsEntry("truncated", true);
-        assertThat(result.get("text").toString()).endsWith("final error");
+        assertThat(result.truncated()).isTrue();
+        assertThat(result.text()).endsWith("final error");
+    }
+
+    @Test
+    void missingStreamUsesEmptyWindow() {
+        assertThat(CommandOutput.read(root, "stdout", 7, 16))
+            .isEqualTo(new CommandStreamWindow("", 7, false));
+        assertThat(CommandOutput.tail(root, "stderr")).isEqualTo(new CommandTail("", false));
     }
 }

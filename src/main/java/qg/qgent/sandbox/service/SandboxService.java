@@ -5,9 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import qg.qgent.sandbox.config.SandboxProperties;
-import qg.qgent.sandbox.dto.CreateSandboxRequest;
-import qg.qgent.sandbox.dto.ResourceLimitsRequest;
-import qg.qgent.sandbox.dto.SandboxResponse;
 import qg.qgent.sandbox.exception.SandboxException;
 import qg.qgent.sandbox.runtime.ContainerRuntime;
 import qg.qgent.sandbox.runtime.SandboxAllocation;
@@ -17,12 +14,13 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
 
 /**
  * 管理沙箱状态、租约和底层容器生命周期。
- * 资源请求始终受到 Sandbox 本地配置约束，控制层不能通过请求放宽上限。
+ * 资源上限只来自 Sandbox 本地配置，调用方不能放宽。
  */
 @Slf4j
 @Service
@@ -38,9 +36,10 @@ public class SandboxService {
      * 相同 Sandbox 编号的重复创建请求：若所属根运行与 Workspace 规格一致则幂等返回已有沙箱，
      * 规格不同返回冲突，避免初始化重试因请求超时造成重复创建。
      */
-    public SandboxResponse create(CreateSandboxRequest request) {
+    public SandboxAllocation create(
+        UUID sandboxId, Long agentRunId, String workspaceStorageKey, String imageProfile) {
         // 仅允许使用 Sandbox 配置中的镜像。
-        if (!properties.getImages().containsKey(request.getImageProfile())) {
+        if (!properties.getImages().containsKey(imageProfile)) {
             throw new SandboxException(
                 HttpStatus.UNPROCESSABLE_ENTITY,
                 "IMAGE_PROFILE_NOT_ALLOWED",
@@ -48,24 +47,26 @@ public class SandboxService {
         }
 
         return workspaceLock.execute(
-            request.getWorkspaceStorageKey(),
+            workspaceStorageKey,
             () -> {
-                SandboxAllocation existing = runtime.find(request.getSandboxId()).orElse(null);
+                SandboxAllocation existing = runtime.find(sandboxId).orElse(null);
                 if (existing != null) {
-                    SandboxAllocation requested = allocation(request);
+                    SandboxAllocation requested =
+                        allocation(sandboxId, agentRunId, workspaceStorageKey, imageProfile);
                     if (sameSandboxSpec(existing, requested)) {
                         log.info(
                             "sandbox idempotent return sandboxId={} agentRunId={} workspace={}",
                             existing.getId(),
                             existing.getAgentRunId(),
                             existing.getWorkspaceStorageKey());
-                        return response(existing);
+                        return existing;
                     }
                     throw new SandboxException(
                         HttpStatus.CONFLICT, "SANDBOX_ID_CONFLICT", "同名沙箱规格不一致");
                 }
-                SandboxAllocation allocation = allocation(request);
-                SandboxAllocation created = runtime.create(request, allocation);
+                SandboxAllocation allocation =
+                    allocation(sandboxId, agentRunId, workspaceStorageKey, imageProfile);
+                SandboxAllocation created = runtime.create(allocation);
                 log.info(
                     "sandbox created sandboxId={} agentRunId={} workspace={} image={} container={}",
                     created.getId(),
@@ -73,20 +74,22 @@ public class SandboxService {
                     created.getWorkspaceStorageKey(),
                     created.getImageProfile(),
                     created.getRuntimeHandle());
-                return response(created);
+                return created;
             });
     }
 
-    private SandboxAllocation allocation(CreateSandboxRequest request) {
+    private SandboxAllocation allocation(
+        UUID sandboxId, Long agentRunId, String workspaceStorageKey, String imageProfile) {
         Instant now = clock.instant();
-        Duration idleTtl = requestedIdleTtl(request.getLimits());
-        Duration maxLifetime = requestedMaxLifetime(request.getLimits());
-        Duration executionTimeout = requestedExecutionTimeout(request.getLimits());
+        Duration idleTtl = min(properties.getDefaultIdleTtl(), properties.getMaxIdleTtl());
+        Duration maxLifetime = min(properties.getDefaultMaxLifetime(), properties.getMaxLifetime());
+        Duration executionTimeout =
+            min(properties.getDefaultExecutionTimeout(), properties.getMaxExecutionTimeout());
         return new SandboxAllocation(
-            request.getSandboxId(),
-            request.getAgentRunId(),
-            request.getWorkspaceStorageKey(),
-            request.getImageProfile(),
+            sandboxId,
+            agentRunId,
+            workspaceStorageKey,
+            imageProfile,
             "READY",
             properties.getRuntime().toUpperCase(),
             now,
@@ -101,23 +104,21 @@ public class SandboxService {
      * 判断两个沙箱规格是否一致：所属根运行、Workspace 存储键和镜像配置全部相等才算一致。
      */
     private boolean sameSandboxSpec(SandboxAllocation existing, SandboxAllocation requested) {
-        return java.util.Objects.equals(existing.getAgentRunId(), requested.getAgentRunId())
-            && java.util.Objects.equals(
-            existing.getWorkspaceStorageKey(), requested.getWorkspaceStorageKey())
-            && java.util.Objects.equals(
-            existing.getImageProfile(), requested.getImageProfile());
+        return Objects.equals(existing.getAgentRunId(), requested.getAgentRunId())
+            && Objects.equals(existing.getWorkspaceStorageKey(), requested.getWorkspaceStorageKey())
+            && Objects.equals(existing.getImageProfile(), requested.getImageProfile());
     }
 
     /**
      * 查询沙箱；不存在时返回空结果。
      */
-    public Optional<SandboxResponse> find(UUID sandboxId) {
-        return runtime.find(sandboxId).map(this::response);
+    public Optional<SandboxAllocation> find(UUID sandboxId) {
+        return runtime.find(sandboxId);
     }
 
     /**
      * 返回仍由 Sandbox 管理的沙箱。
-     * 结构化工具当前允许并发执行，因此这里只校验资源存在，不检查 READY 状态。
+     * 命令当前允许并发执行，因此这里只校验资源存在，不检查 READY 状态。
      */
     public SandboxAllocation findAllocation(UUID sandboxId) {
         return require(sandboxId);
@@ -126,7 +127,7 @@ public class SandboxService {
     /**
      * 延长空闲租约，但绝不突破最大生命周期。
      */
-    public SandboxResponse renew(UUID sandboxId, Long requestedSeconds) {
+    public SandboxAllocation renew(UUID sandboxId, Long requestedSeconds) {
         SandboxAllocation allocation = require(sandboxId);
         Duration requested =
             requestedSeconds == null
@@ -142,7 +143,7 @@ public class SandboxService {
             sandboxId,
             allocation.getExpiresAt(),
             requestedSeconds);
-        return response(allocation);
+        return allocation;
     }
 
     /**
@@ -178,48 +179,11 @@ public class SandboxService {
                 new SandboxException(HttpStatus.NOT_FOUND, "SANDBOX_NOT_FOUND", "沙箱不存在"));
     }
 
-    private Duration requestedIdleTtl(ResourceLimitsRequest limits) {
-        Long seconds = limits == null ? null : limits.getIdleTtlSeconds();
-        Duration requested =
-            seconds == null ? properties.getDefaultIdleTtl() : Duration.ofSeconds(seconds);
-        return min(requested, properties.getMaxIdleTtl());
-    }
-
-    private Duration requestedMaxLifetime(ResourceLimitsRequest limits) {
-        Long seconds = limits == null ? null : limits.getMaxLifetimeSeconds();
-        Duration requested =
-            seconds == null ? properties.getDefaultMaxLifetime() : Duration.ofSeconds(seconds);
-        return min(requested, properties.getMaxLifetime());
-    }
-
-    private Duration requestedExecutionTimeout(ResourceLimitsRequest limits) {
-        Long seconds = limits == null ? null : limits.getExecutionTimeoutSeconds();
-        Duration requested =
-            seconds == null
-                ? properties.getDefaultExecutionTimeout()
-                : Duration.ofSeconds(seconds);
-        return min(requested, properties.getMaxExecutionTimeout());
-    }
-
     private Duration min(Duration first, Duration second) {
         return first.compareTo(second) <= 0 ? first : second;
     }
 
     private Instant min(Instant first, Instant second) {
         return first.isBefore(second) ? first : second;
-    }
-
-    private SandboxResponse response(SandboxAllocation allocation) {
-        return new SandboxResponse(
-            allocation.getId(),
-            allocation.getAgentRunId(),
-            allocation.getWorkspaceStorageKey(),
-            allocation.getImageProfile(),
-            allocation.getStatus(),
-            allocation.getRuntimeKind(),
-            allocation.getCreatedAt(),
-            allocation.getLastActiveAt(),
-            allocation.getExpiresAt(),
-            allocation.getMaxExpiresAt());
     }
 }

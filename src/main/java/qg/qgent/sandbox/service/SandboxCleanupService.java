@@ -4,7 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import qg.qgent.sandbox.execution.service.ToolExecutionService;
+import qg.qgent.sandbox.execution.service.CommandExecutionService;
 
 /**
  * 定期取消过期执行并回收沙箱，作为控制层主动销毁之外的安全兜底。
@@ -14,7 +14,7 @@ import qg.qgent.sandbox.execution.service.ToolExecutionService;
 @RequiredArgsConstructor
 public class SandboxCleanupService {
     private final SandboxService sandboxes;
-    private final ToolExecutionService executions;
+    private final CommandExecutionService executions;
 
     /**
      * 回收达到空闲期限或最大寿命的沙箱

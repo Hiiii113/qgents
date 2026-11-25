@@ -3,13 +3,16 @@ package qg.qgent.sandbox.execution.service;
 import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import qg.qgent.sandbox.dto.SandboxExecutionContext;
-import qg.qgent.sandbox.execution.dto.ToolExecutionResponse;
 
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.*;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -20,24 +23,12 @@ import java.util.stream.Collectors;
 final class ActiveToolExecutions {
     private final Map<Long, Execution> executions = new ConcurrentHashMap<>();
 
-    ToolExecutionResponse execute(
-        Long id, UUID sandboxId, Long agentRunId, Supplier<ToolExecutionResponse> body) {
-        Execution execution = new Execution(sandboxId, agentRunId);
-        execution.worker = Thread.currentThread();
-        executions.put(id, execution);
-        try {
-            return body.get();
-        } finally {
-            executions.remove(id, execution);
-        }
-    }
-
     void submit(
         Long id,
         UUID sandboxId,
         Long agentRunId,
         ExecutorService pool,
-        Supplier<ToolExecutionResponse> body) {
+        Supplier<CommandExecution> body) {
         Execution execution = new Execution(sandboxId, agentRunId);
         Map<String, String> logContext = MDC.getCopyOfContextMap();
         execution.task =
@@ -73,12 +64,12 @@ final class ActiveToolExecutions {
         }
     }
 
-    CompletableFuture<ToolExecutionResponse> completion(Long id) {
+    CompletableFuture<CommandExecution> completion(Long id) {
         Execution execution = executions.get(id);
         return execution == null || execution.task == null ? null : execution.completion;
     }
 
-    void cancel(Long id, ToolExecutionResponse result) {
+    void cancel(Long id, CommandExecution result) {
         Execution execution = executions.get(id);
         if (execution == null) return;
         Thread worker = execution.worker;
@@ -129,8 +120,7 @@ final class ActiveToolExecutions {
     private static final class Execution {
         private final UUID sandboxId;
         private final Long agentRunId;
-        private final CompletableFuture<ToolExecutionResponse> completion =
-            new CompletableFuture<>();
+        private final CompletableFuture<CommandExecution> completion = new CompletableFuture<>();
         private volatile Thread worker;
         private FutureTask<Void> task;
 

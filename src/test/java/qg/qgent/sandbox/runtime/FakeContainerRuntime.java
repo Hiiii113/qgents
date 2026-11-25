@@ -2,7 +2,6 @@ package qg.qgent.sandbox.runtime;
 
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
-import qg.qgent.sandbox.dto.CreateSandboxRequest;
 
 import java.util.List;
 import java.util.Optional;
@@ -11,7 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * 模拟沙箱生命周期，供不使用 Docker 的本地联调和测试使用。
+ * 模拟沙箱生命周期，供不使用 Docker 的测试使用。
  */
 @Component
 @ConditionalOnProperty(name = "sandbox.runtime", havingValue = "fake", matchIfMissing = true)
@@ -19,8 +18,8 @@ public class FakeContainerRuntime implements ContainerRuntime {
     private final ConcurrentMap<UUID, SandboxAllocation> allocations = new ConcurrentHashMap<>();
 
     @Override
-    public SandboxAllocation create(CreateSandboxRequest request, SandboxAllocation allocation) {
-        SandboxAllocation existing = allocations.putIfAbsent(request.getSandboxId(), allocation);
+    public SandboxAllocation create(SandboxAllocation allocation) {
+        SandboxAllocation existing = allocations.putIfAbsent(allocation.getId(), allocation);
         if (existing != null) {
             throw new IllegalStateException("沙箱编号已经存在");
         }
