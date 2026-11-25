@@ -2,6 +2,7 @@ package qg.qgent.harness.runtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,8 @@ import qg.qgent.harness.model.ModelMessage.UserMessage;
 import qg.qgent.harness.service.AgentRunService;
 import qg.qgent.sandbox.service.SandboxSessionManager;
 import qg.qgent.support.TestIds;
+import qg.qgent.workspace.entity.WorkspaceEntity;
+import qg.qgent.workspace.service.WorkspaceService;
 
 class ChildRunsTest {
 
@@ -19,25 +22,49 @@ class ChildRunsTest {
 
     @Test
     void bindingTheLazyDefaultWorkspacePreservesTheAgentDirectory() {
+        Long projectId = TestIds.next();
+        Long workspaceId = TestIds.next();
+        WorkContext work = new WorkContext(TestIds.next(), projectId, TestIds.next(), TestIds.next(), null, TestIds.next(), false);
         ChildRuns.Execution execution =
                 new ChildRuns.Execution(new AgentRunEntity(), null, null, ".");
-        Long workspace = TestIds.next();
-        execution.workspace.setDirectory("src/runtime");
+        WorkspaceService workspaces = mock(WorkspaceService.class);
+        WorkspaceEntity defaultWs = new WorkspaceEntity();
+        defaultWs.setId(workspaceId);
+        defaultWs.setProjectId(projectId);
+        defaultWs.setIsDefault(true);
+        when(workspaces.defaultWorkspace(projectId)).thenReturn(defaultWs);
+        when(workspaces.require(projectId, workspaceId)).thenReturn(defaultWs);
+        WorkspaceSession session =
+                new WorkspaceSession(
+                        work,
+                        execution,
+                        workspaces,
+                        mock(SandboxSessionManager.class),
+                        mock(AgentRunService.class));
+        session.setDirectory("src/runtime");
 
-        execution.workspace.bindDefault(workspace);
+        session.ensure();
 
-        assertThat(execution.workspace.workspaceId()).isEqualTo(workspace);
-        assertThat(execution.workspace.directory()).isEqualTo("src/runtime");
+        assertThat(session.workspaceId()).isEqualTo(workspaceId);
+        assertThat(session.directory()).isEqualTo("src/runtime");
     }
 
     @Test
     void explicitlySelectingAnotherWorkspaceResetsTheAgentDirectory() {
+        WorkContext work = new WorkContext(TestIds.next(), TestIds.next(), TestIds.next(), TestIds.next(), null, TestIds.next(), false);
         ChildRuns.Execution execution =
                 new ChildRuns.Execution(new AgentRunEntity(), null, TestIds.next(), "src/runtime");
+        WorkspaceSession session =
+                new WorkspaceSession(
+                        work,
+                        execution,
+                        mock(WorkspaceService.class),
+                        mock(SandboxSessionManager.class),
+                        mock(AgentRunService.class));
 
-        execution.workspace.select(TestIds.next());
+        session.select(TestIds.next());
 
-        assertThat(execution.workspace.directory()).isEqualTo(".");
+        assertThat(session.directory()).isEqualTo(".");
     }
 
     @Test

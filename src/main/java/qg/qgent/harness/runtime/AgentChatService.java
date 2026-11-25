@@ -47,7 +47,6 @@ import qg.qgent.skill.service.SkillService;
 import qg.qgent.skill.tool.ActivateSkillTool;
 import qg.qgent.workspace.service.WorkSession;
 import qg.qgent.workspace.service.WorkspaceRepositoryService;
-import qg.qgent.workspace.service.WorkspaceSelection;
 import qg.qgent.workspace.service.WorkspaceService;
 import qg.qgent.workspace.tool.WorkspaceTools;
 
@@ -368,6 +367,7 @@ public class AgentChatService {
         private final GitHubTools githubTools;
         private final CodingTools codingTools;
         private final WorkspaceTools workspaceTools;
+        private final WorkSession session;
         private final List<ToolCallback> availableTools;
 
         private ConversationTools(
@@ -425,7 +425,7 @@ public class AgentChatService {
                     ? new AgentApplicationTools(
                     agentApplications, work.actorId, work.projectId)
                     : null;
-            WorkSession session =
+            this.session =
                 new WorkspaceSession(work, execution, workspaces, sessions, runService);
             this.githubTools = github.tools(work.actorId, work.projectId, session);
             this.workspaceTools =
@@ -477,14 +477,14 @@ public class AgentChatService {
                 return ToolResult.error("INVALID_ARGUMENT", "子任务内容不能为空");
             Long selected =
                 workspaceId == null || workspaceId.isBlank()
-                    ? execution.workspace.workspaceId()
+                    ? session.workspaceId()
                     : workspaces
                     .require(work.projectId, requiredId(workspaceId))
                     .getId();
             String childDirectory =
                 directory == null || directory.isBlank()
-                    ? execution.workspace.directory()
-                    : WorkspaceSelection.resolveDirectory(".", directory);
+                    ? session.directory()
+                    : WorkSession.resolveDirectory(".", directory);
             return work.children.start(
                 execution.run,
                 instruction,

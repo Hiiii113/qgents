@@ -5,8 +5,10 @@ import qg.qgent.sandbox.service.SandboxSessionManager;
 import qg.qgent.workspace.service.WorkSession;
 import qg.qgent.workspace.service.WorkspaceService;
 
+import java.util.Objects;
+
 /**
- * 一次 Agent 对话的工作区会话：选择保存在对话上，沙箱会话由根运行持有、跨子 Agent 复用。
+ * 一次 Agent 对话的工作区会话：当前选择与目录由单个对话独占，沙箱会话由根运行持有、跨子 Agent 复用。
  * <p>
  * 首次调用代码工具时才建立目录与沙箱；运行取消时不再新建环境。
  */
@@ -16,6 +18,8 @@ final class WorkspaceSession implements WorkSession {
     private final WorkspaceService workspaces;
     private final SandboxSessionManager sessions;
     private final AgentRunService runs;
+    private Long workspaceId;
+    private String directory;
 
     WorkspaceSession(
         WorkContext work,
@@ -28,16 +32,18 @@ final class WorkspaceSession implements WorkSession {
         this.workspaces = workspaces;
         this.sessions = sessions;
         this.runs = runs;
+        this.workspaceId = execution.initialWorkspaceId;
+        this.directory = WorkSession.resolveDirectory(".", execution.initialDirectory);
     }
 
     @Override
-    public Long workspaceId() {
-        return execution.workspace.workspaceId();
+    public synchronized Long workspaceId() {
+        return workspaceId;
     }
 
     @Override
-    public String directory() {
-        return execution.workspace.directory();
+    public synchronized String directory() {
+        return directory;
     }
 
     @Override
@@ -48,10 +54,11 @@ final class WorkspaceSession implements WorkSession {
     @Override
     public Long ensure(Long workspaceId) {
         synchronized (work.environmentLock) {
-            if (work.isCancelled() || execution.isStopRequested())
+            if (work.isCancelled() || execution.isStopRequested()) {
                 throw new IllegalStateException("Agent 运行已取消");
+            }
             if (workspaceId == null) {
-                workspaceId = execution.workspace.workspaceId();
+                workspaceId = workspaceId();
             }
             if (workspaceId == null) {
                 if (work.defaultWorkspaceId == null) {
@@ -59,7 +66,7 @@ final class WorkspaceSession implements WorkSession {
                         workspaces.defaultWorkspace(work.projectId).getId();
                 }
                 workspaceId = work.defaultWorkspaceId;
-                execution.workspace.bindDefault(workspaceId);
+                bindDefault(workspaceId);
             }
             workspaces.require(work.projectId, workspaceId);
             if (!workspaceId.equals(execution.run.getWorkspaceId())) {
@@ -80,22 +87,38 @@ final class WorkspaceSession implements WorkSession {
 
     @Override
     public Long requireInitialized() {
-        Long workspace = execution.workspace.workspaceId();
-        if (workspace == null || !work.openedWorkspaces.contains(workspace)) {
-            throw new IllegalArgumentException("请先通过代码工具或 run_command 初始化当前 Workspace");
+        synchronized (work.environmentLock) {
+            if (work.isCancelled() || execution.isStopRequested()) {
+                throw new IllegalStateException("Agent 运行已取消");
+            }
+            Long id = workspaceId();
+            if (id == null || !work.openedWorkspaces.contains(id)) {
+                throw new IllegalArgumentException("请先通过代码工具或 run_command 初始化当前 Workspace");
+            }
+            return id;
         }
-        return ensure();
     }
 
     @Override
     public void select(Long workspaceId) {
-        execution.workspace.select(workspaceId);
+        synchronized (this) {
+            if (!Objects.equals(this.workspaceId, workspaceId)) {
+                this.directory = ".";
+            }
+            this.workspaceId = workspaceId;
+        }
         execution.run.setWorkspaceId(workspaceId);
         runs.save(execution.run);
     }
 
     @Override
-    public void setDirectory(String directory) {
-        execution.workspace.setDirectory(directory);
+    public synchronized void setDirectory(String directory) {
+        this.directory = WorkSession.resolveDirectory(".", directory);
+    }
+
+    private synchronized void bindDefault(Long workspaceId) {
+        if (this.workspaceId == null) {
+            this.workspaceId = workspaceId;
+        }
     }
 }

@@ -18,6 +18,7 @@ import qg.qgent.skill.mapper.SkillMapper;
 import qg.qgent.support.TestIds;
 import qg.qgent.user.mapper.UserMapper;
 
+/** 项目 Skill 的创建上架、编辑、审核与可见性。 */
 class SkillServiceTest {
     private final SkillMapper mapper = mock(SkillMapper.class);
     private final ProjectAccessService access = mock(ProjectAccessService.class);
@@ -166,6 +167,66 @@ class SkillServiceTest {
         verify(mapper).listSkills(projectId, other, "DRAFT", "tag", true);
         service.list(owner, projectId, null, null);
         verify(mapper).listSkills(projectId, owner, null, null, false);
+    }
+
+    @Test
+    void skillCreatedByAdminIsPublishedImmediately() throws Exception {
+        when(access.isProjectAdmin(projectId, owner)).thenReturn(true);
+        givenCreatedSkillIsReadBack();
+
+        var result =
+                service.create(
+                        owner, projectId, skillFile("规范"), "PROJECT_SHARED", java.util.List.of());
+
+        assertThat(result.getStatus()).isEqualTo("PUBLISHED");
+        assertThat(result.getVisibility()).isEqualTo("PROJECT_SHARED");
+        verify(events).publish(eq(projectId), isNull(), eq("skill.published"), any(), any());
+    }
+
+    @Test
+    void skillCreatedByMemberStaysDraftWhenProjectShared() throws Exception {
+        when(access.isProjectAdmin(projectId, other)).thenReturn(false);
+        SkillEntity draft = skill("DRAFT", "PROJECT_SHARED");
+        when(mapper.selectById(any())).thenReturn(draft);
+
+        var result =
+                service.create(
+                        other, projectId, skillFile("规范"), "PROJECT_SHARED", java.util.List.of());
+
+        assertThat(result.getStatus()).isEqualTo("DRAFT");
+        verify(events, never()).publish(any(), any(), eq("skill.published"), any(), any());
+    }
+
+    @Test
+    void privateSkillCreatedByMemberIsPublishedImmediately() throws Exception {
+        when(access.isProjectAdmin(projectId, other)).thenReturn(false);
+        givenCreatedSkillIsReadBack();
+
+        var result =
+                service.create(
+                        other, projectId, skillFile("个人工具"), "PRIVATE", java.util.List.of());
+
+        assertThat(result.getStatus()).isEqualTo("PUBLISHED");
+        assertThat(result.getVisibility()).isEqualTo("PRIVATE");
+        verify(events).publish(eq(projectId), isNull(), eq("skill.published"), any(), any());
+    }
+
+    private void givenCreatedSkillIsReadBack() {
+        final SkillEntity[] created = new SkillEntity[1];
+        when(mapper.insert(any(SkillEntity.class)))
+                .thenAnswer(
+                        invocation -> {
+                            created[0] = invocation.getArgument(0);
+                            created[0].setId(TestIds.next());
+                            return 1;
+                        });
+        when(mapper.selectById(any())).thenAnswer(invocation -> created[0]);
+    }
+
+    private MockMultipartFile skillFile(String name) {
+        String content = "---\nname: " + name + "\ndescription: 测试用途\n---\n内容";
+        return new MockMultipartFile(
+                "file", "SKILL.md", "text/markdown", content.getBytes(StandardCharsets.UTF_8));
     }
 
     private SkillEntity skill(String status, String visibility) {

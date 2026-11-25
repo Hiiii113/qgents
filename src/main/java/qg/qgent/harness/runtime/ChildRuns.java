@@ -7,7 +7,6 @@ import qg.qgent.harness.model.ModelMessage.UserMessage;
 import qg.qgent.harness.service.AgentRunService;
 import qg.qgent.harness.tool.ToolCallback;
 import qg.qgent.harness.tool.ToolResult;
-import qg.qgent.workspace.service.WorkspaceSelection;
 
 import java.util.*;
 import java.util.concurrent.*;
@@ -472,7 +471,8 @@ final class ChildRuns {
     static final class Execution {
         final AgentRunEntity run;
         final AgentLoop.Conversation conversation;
-        final WorkspaceSelection workspace;
+        final Long initialWorkspaceId;
+        final String initialDirectory;
         private final java.util.ArrayDeque<String> messages = new java.util.ArrayDeque<>();
         private CompletableFuture<AgentRunEntity> completion = new CompletableFuture<>();
         private volatile Thread worker;
@@ -489,7 +489,8 @@ final class ChildRuns {
             String currentDirectory) {
             this.run = run;
             this.conversation = conversation;
-            this.workspace = new WorkspaceSelection(selectedWorkspace, currentDirectory);
+            this.initialWorkspaceId = selectedWorkspace;
+            this.initialDirectory = currentDirectory;
         }
 
         boolean isBusy() {

@@ -12,11 +12,14 @@ import com.github.dockerjava.api.DockerClient;
 import com.github.dockerjava.api.command.CreateContainerCmd;
 import com.github.dockerjava.api.command.CreateContainerResponse;
 import com.github.dockerjava.api.command.StartContainerCmd;
+import com.github.dockerjava.api.model.AccessMode;
 import com.github.dockerjava.api.model.HostConfig;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -157,6 +160,23 @@ class DockerContainerRuntimeTest {
         assertEquals(
                 "rw,exec,nosuid,nodev,uid=10001,gid=10001,mode=700,size=1g",
                 hostConfig.getTmpFs().get("/opt/pnpm"));
+        assertEquals(
+                List.of(
+                        "/qgents/project/.git",
+                        "/qgents/project/workspaces/default",
+                        "/workspace"),
+                Arrays.stream(hostConfig.getBinds())
+                        .map(bind -> bind.getVolume().getPath())
+                        .toList());
+        Path hostProject = root.resolve("host").resolve(projectId.toString());
+        assertEquals(
+                List.of(
+                        hostProject.resolve(".git").toString(),
+                        hostProject.resolve("workspaces/default").toString(),
+                        hostProject.resolve("workspaces/default").toString()),
+                Arrays.stream(hostConfig.getBinds()).map(bind -> bind.getPath()).toList());
+        Arrays.stream(hostConfig.getBinds())
+                .forEach(bind -> assertEquals(AccessMode.rw, bind.getAccessMode()));
     }
 
     private DockerContainerRuntime runtime(SandboxProperties properties) {
