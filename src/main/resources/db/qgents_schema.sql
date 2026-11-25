@@ -384,32 +384,9 @@ CREATE TABLE IF NOT EXISTS
         CONSTRAINT fk_grs_group FOREIGN KEY (group_id) REFERENCES chat_groups (id)
     ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '群成员已读游标（未读数=最新sequence-游标，排除本人）';
 
--- 群聊记忆后台提炼的进度与调度状态：一个群一行，消息事件更新活跃状态，定时任务扫描并异步提炼。
-CREATE TABLE IF NOT EXISTS
-    group_memory_state (
-        group_id BIGINT NOT NULL PRIMARY KEY COMMENT '项目群聊ID',
-        project_id BIGINT NOT NULL COMMENT '所属项目ID',
-        last_processed_sequence BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '已提炼到的群内消息序号（水位，成功后推进）',
-        last_message_at DATETIME(6) NULL COMMENT '最近消息时间（UTC），用于闲置时长判定',
-        status VARCHAR(16) NOT NULL DEFAULT 'IDLE' COMMENT 'IDLE/RUNNING，用于互斥并发提炼',
-        claim_token DATETIME(6) NULL COMMENT '当前领取标识；只有持有它的任务能推进进度或写入结果',
-        attempt_count INT NOT NULL DEFAULT 0 COMMENT '连续失败次数；新消息清零',
-        next_attempt_at DATETIME(6) NULL COMMENT '下次允许重试时间（UTC）',
-        correction TEXT NULL COMMENT '用户通过对话提出的待应用纠错内容',
-        last_error VARCHAR(500) NULL COMMENT '最近一次失败摘要',
-        discovered_version VARCHAR(64) NULL COMMENT '最近一次项目记忆发现所依据的群记忆内容版本',
-        discovery_attempt_count INT NOT NULL DEFAULT 0 COMMENT '项目记忆发现连续失败次数；成功后清零',
-        discovery_next_attempt_at DATETIME(6) NULL COMMENT '下次允许发现项目记忆更新的时间（UTC）',
-        discovery_error VARCHAR(500) NULL COMMENT '最近一次项目记忆发现失败摘要',
-        updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6) COMMENT '更新时间（UTC）',
-        CONSTRAINT fk_gms_group FOREIGN KEY (group_id) REFERENCES chat_groups (id) ON DELETE CASCADE,
-        CONSTRAINT fk_gms_project FOREIGN KEY (project_id) REFERENCES projects (id),
-        CONSTRAINT chk_gms_status CHECK (status IN ('IDLE', 'RUNNING'))
-    ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '群聊记忆提炼进度与调度状态';
-
 -- 已存在的库不会重建表（README 第 2 步：数据卷初始化过的库不会重跑本脚本）；从上一个版本升级时手工执行：
 -- 1. 先执行本文件中新增的建表语句（CREATE TABLE IF NOT EXISTS，已存在则跳过）：
---    agents、group_agents、group_memory_state、agent_run_tools。
+--    agents、group_agents、agent_run_tools。
 -- 2. 再补已有表上新增的列、索引与约束；重复执行会报 Duplicate column/key，跳过即可：
 -- ALTER TABLE messages
 --     ADD COLUMN sender_agent_id BIGINT NULL COMMENT '发送 Agent ID；AGENT 消息必填，其余为空' AFTER author_user_id,
@@ -436,8 +413,6 @@ CREATE TABLE IF NOT EXISTS
 -- ALTER TABLE chat_groups
 --     ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'GROUP' COMMENT '会话类型枚举：GROUP 群聊 / DIRECT 私聊' AFTER default_group,
 --     ADD CONSTRAINT chk_chat_kind CHECK (kind IN ('GROUP', 'DIRECT'));
--- 已经在这个分支的早期构建上跑过的库（group_memory_state 缺列）不单独补：
--- README 第 2 步的 docker compose down -v 重建就是支持路径。
 
 -- 全新整库初始化时上方 users 建表已含该列，此处仅服务已存在的库；已存在该列的库自动跳过。
 CREATE TABLE IF NOT EXISTS

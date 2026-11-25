@@ -75,23 +75,26 @@ app:
     context:
       # 三种记忆（项目 / 群 / Agent 私有）注入 Agent 上下文的字符上限；超过时拒绝写入。
       max-memory-chars: ${APP_AGENT_CONTEXT_MAX_MEMORY_CHARS:12000}
-  # 群记忆后台提炼：新消息数与闲置时长同时达到才触发，失败有限重试；阈值均可在环境覆盖。
+  # 群记忆后台提炼：定时自检，三档触发规则满足任一即提炼（常规 / 长闲置下限 / 活跃上限）；阈值均可在环境覆盖。
   memory:
     group:
-      # 自上次提炼以来至少新增的消息条数（含 Agent 回复）。
+      # 常规触发：自上次提炼以来至少新增的消息条数（含 Agent 回复）。
       min-messages: ${APP_MEMORY_GROUP_MIN_MESSAGES:20}
-      # 群内最后一次消息后需要静默的分钟数。
+      # 常规触发：群内最后一次消息后需要静默的分钟数。
       idle-minutes: ${APP_MEMORY_GROUP_IDLE_MINUTES:15}
+      # 长闲置下限：只剩少量新消息时，静默超过 stale-idle-minutes 也要提炼，避免长期不更新。
+      stale-min-messages: ${APP_MEMORY_GROUP_STALE_MIN_MESSAGES:3}
+      stale-idle-minutes: ${APP_MEMORY_GROUP_STALE_IDLE_MINUTES:240}
+      # 活跃上限：新消息达到该条数时不再等静默，直接提炼，避免长对话一直不整理。
+      force-messages: ${APP_MEMORY_GROUP_FORCE_MESSAGES:80}
       # 扫描周期，支持 s/m/h 时长写法。
       scan-interval: ${APP_MEMORY_GROUP_SCAN_INTERVAL:1m}
       # 失败后再次尝试的最短间隔（分钟），与最大重试次数一起限制重复失败。
       retry-delay-minutes: ${APP_MEMORY_GROUP_RETRY_DELAY_MINUTES:5}
       max-attempts: ${APP_MEMORY_GROUP_MAX_ATTEMPTS:3}
-      # RUNNING 超过该分钟数视为上次进程中断，允许重新领取。
-      stale-claim-minutes: ${APP_MEMORY_GROUP_STALE_CLAIM_MINUTES:30}
       # 单次提炼最多送入的消息条数，剩余消息留到下一次。
       max-messages-per-run: ${APP_MEMORY_GROUP_MAX_MESSAGES_PER_RUN:200}
-      # 扫描按键游标翻页读取，每页群数；每轮覆盖全部群，不会漏掉新活动的群。
+      # 扫描按群 ID 游标翻页读取，每页群数；每轮覆盖全部群，不会漏掉新活动的群。
       scan-page-size: ${APP_MEMORY_GROUP_SCAN_PAGE_SIZE:20}
     # 项目记忆发现：后台按周期从项目默认群的群记忆里找项目背景和决策，再以默认 Agent 的普通消息提出更新建议。
     discovery:

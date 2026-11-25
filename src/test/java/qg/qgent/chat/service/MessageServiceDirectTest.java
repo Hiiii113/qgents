@@ -29,7 +29,6 @@ import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.entity.DirectConversationEntity;
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.event.DirectMessageSentEvent;
-import qg.qgent.chat.event.GroupMessageCreatedEvent;
 import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.chat.mapper.DirectConversationMapper;
@@ -112,7 +111,6 @@ class MessageServiceDirectTest {
                             assertThat(event.conversationId()).isEqualTo(conversationId);
                             assertThat(event.agentId()).isEqualTo(agentId);
                         });
-        verify(eventPublisher, never()).publishEvent(any(GroupMessageCreatedEvent.class));
         verify(eventPublisher, never()).publishEvent(any(MessageSentEvent.class));
         verify(eventService)
                 .publish(
@@ -202,9 +200,8 @@ class MessageServiceDirectTest {
         assertThat(inserted.get().getSenderType()).isEqualTo("AGENT");
         assertThat(inserted.get().getSenderAgentId()).isEqualTo(agentId);
         assertThat(inserted.get().getAuthorUserId()).isNull();
-        // Agent 回复不触发新的运行，也不产生群记忆活跃状态。
+        // Agent 回复不触发新的运行，也不产生提及事件。
         verify(eventPublisher, never()).publishEvent(any(DirectMessageSentEvent.class));
-        verify(eventPublisher, never()).publishEvent(any(GroupMessageCreatedEvent.class));
     }
 
     private void givenConversation(ChatGroupEntity conversation) {

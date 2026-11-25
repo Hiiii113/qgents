@@ -17,7 +17,6 @@ import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.entity.DirectConversationEntity;
 import qg.qgent.chat.entity.MessageEntity;
 import qg.qgent.chat.event.DirectMessageSentEvent;
-import qg.qgent.chat.event.GroupMessageCreatedEvent;
 import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.chat.mapper.DirectConversationMapper;
@@ -362,8 +361,8 @@ public class MessageService {
                 id(message.getId()),
                 "sequence",
                 message.getSequenceNo()));
-        // 群消息在这里维护群记忆的活跃状态并处理提及，与消息同事务，回滚时一起回滚；
-        // 私聊不产生群记忆、站内通知或提及，只按对端 Agent 触发一次回复。
+        // 私聊不产生站内通知或提及，只按对端 Agent 触发一次回复；
+        // 群消息只处理提及，与消息同事务，回滚时一起回滚。
         if (group.isDirect()) {
             Long agentId = authorUserId == null ? null : directAgentPeer(groupId);
             if (agentId != null) {
@@ -371,14 +370,11 @@ public class MessageService {
                     new DirectMessageSentEvent(
                         authorUserId, projectId, groupId, message.getId(), agentId));
             }
-        } else {
-            eventPublisher.publishEvent(new GroupMessageCreatedEvent(projectId, groupId));
+        } else if (authorUserId != null && !mentions.isEmpty()) {
             // 仅新建用户消息触发提及处理；幂等返回不重复通知或启动 Agent。
-            if (authorUserId != null && !mentions.isEmpty()) {
-                eventPublisher.publishEvent(
-                    new MessageSentEvent(
-                        authorUserId, projectId, groupId, message.getId(), mentions));
-            }
+            eventPublisher.publishEvent(
+                new MessageSentEvent(
+                    authorUserId, projectId, groupId, message.getId(), mentions));
         }
         return views.assemble(List.of(message), projectId).getFirst();
     }

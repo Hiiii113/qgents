@@ -24,7 +24,6 @@ import qg.qgent.github.mapper.ProjectRepositoryMapper;
 import qg.qgent.harness.mapper.AgentRunMapper;
 import qg.qgent.harness.mapper.AgentRunToolMapper;
 import qg.qgent.mcp.mapper.McpMapper;
-import qg.qgent.memory.mapper.GroupMemoryStateMapper;
 import qg.qgent.notification.mapper.NotificationMapper;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.mapper.ProjectMemberMapper;
@@ -58,7 +57,6 @@ class MapperXmlConventionTest {
         AgentRunMapper.class,
         AgentRunToolMapper.class,
         McpMapper.class,
-        GroupMemoryStateMapper.class,
         NotificationMapper.class,
         ProjectMapper.class,
         ProjectMemberMapper.class,

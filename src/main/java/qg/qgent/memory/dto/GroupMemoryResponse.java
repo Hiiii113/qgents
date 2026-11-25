@@ -8,7 +8,7 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 /**
- * 群聊记忆正文、归属和最后修改时间；只读，由后台提炼任务维护。
+ * 群聊记忆正文、归属和最后修改时间；只读接口，正文由后台提炼和群内 Agent 共同维护。
  */
 @Data
 @NoArgsConstructor

@@ -6,6 +6,10 @@
         SELECT COALESCE(MAX(sequence_no), 0) + 1 FROM messages WHERE group_id = #{groupId}
     </select>
 
+    <select id="selectLatestSequence" resultType="long">
+        SELECT COALESCE(MAX(sequence_no), 0) FROM messages WHERE group_id = #{groupId}
+    </select>
+
     <select id="selectAfterSequence" resultType="qg.qgent.chat.entity.MessageEntity">
         SELECT id, group_id, sequence_no, author_user_id, sender_type, sender_agent_id,
                client_message_id, message_type, content, mentions, reply_to_message_id, created_at

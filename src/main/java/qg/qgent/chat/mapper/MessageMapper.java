@@ -26,6 +26,14 @@ public interface MessageMapper extends BaseMapper<MessageEntity> {
     Long nextSequence(@Param("groupId") Long groupId);
 
     /**
+     * 群内最新消息序号；空群为 0。后台提炼用它计算自上次提炼以来的新消息数。
+     *
+     * @param groupId 项目群聊 ID
+     * @return 最新序号（没有任何消息时为 0）
+     */
+    long selectLatestSequence(@Param("groupId") Long groupId);
+
+    /**
      * 按群内消息序号拉取增量消息，返回严格升序结果。
      * 调用方必须先完成项目群聊成员权限校验；sequence_no 是服务端分配的可靠游标。
      */

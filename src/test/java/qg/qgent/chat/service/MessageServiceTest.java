@@ -29,7 +29,6 @@ import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.dto.MessageSendRequest;
 import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.entity.MessageEntity;
-import qg.qgent.chat.event.GroupMessageCreatedEvent;
 import qg.qgent.chat.event.MessageSentEvent;
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.chat.mapper.DirectConversationMapper;
@@ -298,8 +297,7 @@ class MessageServiceTest {
         assertThat(second.getId()).isEqualTo(first.getId());
         assertThat(changedRetry.getId()).isEqualTo(first.getId());
         verify(messages, times(1)).insert(any(MessageEntity.class));
-        // 每条新消息都维护群记忆的活跃状态；幂等重试不再重复发布。
-        verify(publisher).publishEvent(new GroupMessageCreatedEvent(projectId, groupId));
+        // 幂等重试不再重复发布提及事件。
         if (!originallyMentioned) {
             verify(publisher, never()).publishEvent(any(MessageSentEvent.class));
             verifyNoMoreInteractions(publisher);

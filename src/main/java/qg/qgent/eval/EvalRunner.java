@@ -330,7 +330,7 @@ public class EvalRunner {
                 projectMemoryService.update(adminId, projectId, resolveText(evalsDir, state.getProjectMemory()));
             }
             if (state.getGroupMemory() != null && !state.getGroupMemory().isBlank()) {
-                groupMemoryService.write(
+                groupMemoryService.writeByAgent(
                     projectId, defaultGroupId, resolveText(evalsDir, state.getGroupMemory()));
             }
             if (state.getAgentMemory() != null && !state.getAgentMemory().isBlank()) {
@@ -367,7 +367,7 @@ public class EvalRunner {
                 GroupResponse created = groupService.create(creator, projectId, req);
                 Long otherGroupId = Long.parseLong(created.getId());
                 if (other.getGroupMemory() != null && !other.getGroupMemory().isBlank()) {
-                    groupMemoryService.write(
+                    groupMemoryService.writeByAgent(
                         projectId, otherGroupId, resolveText(evalsDir, other.getGroupMemory()));
                 }
                 long otherSeq = 0;
