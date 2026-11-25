@@ -5,7 +5,6 @@ import jakarta.servlet.DispatcherType;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -31,12 +30,6 @@ import java.util.Map;
 @Slf4j
 @Configuration
 public class SecurityConfiguration {
-
-    @Bean
-    @ConditionalOnMissingBean(ObjectMapper.class)
-    ObjectMapper objectMapper(com.fasterxml.jackson.databind.Module utcLocalDateTimeModule) {
-        return new ObjectMapper().findAndRegisterModules().registerModule(utcLocalDateTimeModule);
-    }
 
     /**
      * 使用 BCrypt 保存密码哈希。

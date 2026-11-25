@@ -5,7 +5,6 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-import com.fasterxml.jackson.databind.module.SimpleModule;
 import jakarta.servlet.Filter;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -39,6 +38,7 @@ import qg.qgent.attachment.web.AttachmentResponseFactory;
 import qg.qgent.auth.config.SecurityConfiguration;
 import qg.qgent.auth.security.JwtAuthenticationFilter;
 import qg.qgent.auth.service.TokenService;
+import qg.qgent.common.config.JacksonTimeConfiguration;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.common.web.GlobalExceptionHandler;
 import qg.qgent.common.web.RequestIdFilter;
@@ -312,6 +312,7 @@ class AttachmentControllerTest {
     @EnableWebMvc
     @EnableWebSecurity
     @Import({
+        JacksonTimeConfiguration.class,
         SecurityConfiguration.class,
         JwtAuthenticationFilter.class,
         AttachmentController.class,
@@ -337,11 +338,6 @@ class AttachmentControllerTest {
         @Bean
         ProjectAccessService access() {
             return mock(ProjectAccessService.class);
-        }
-
-        @Bean
-        com.fasterxml.jackson.databind.Module utcLocalDateTimeModule() {
-            return new SimpleModule();
         }
 
         @Bean

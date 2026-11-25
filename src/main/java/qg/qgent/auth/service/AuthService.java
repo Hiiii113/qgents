@@ -11,7 +11,7 @@ import qg.qgent.auth.dto.LoginRequest;
 import qg.qgent.auth.dto.RegisterRequest;
 import qg.qgent.auth.dto.ResetPasswordRequest;
 import qg.qgent.auth.mail.VerificationCodeMailer;
-import qg.qgent.common.storage.AvatarStorageService;
+import qg.qgent.attachment.storage.AvatarStorageService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.project.dto.ProjectResponse;
 import qg.qgent.project.mapper.ProjectMapper;

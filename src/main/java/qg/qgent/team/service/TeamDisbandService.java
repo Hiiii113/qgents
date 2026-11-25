@@ -13,7 +13,7 @@ import qg.qgent.attachment.mapper.AttachmentMapper;
 import qg.qgent.chat.entity.ChatGroupEntity;
 import qg.qgent.chat.mapper.ChatGroupMapper;
 import qg.qgent.chat.mapper.MessageMapper;
-import qg.qgent.common.storage.AvatarStorageService;
+import qg.qgent.attachment.storage.AvatarStorageService;
 import qg.qgent.harness.entity.AgentRunEntity;
 import qg.qgent.harness.mapper.AgentRunMapper;
 import qg.qgent.notification.entity.NotificationEntity;

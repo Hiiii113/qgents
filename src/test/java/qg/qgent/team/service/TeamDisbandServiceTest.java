@@ -109,7 +109,7 @@ class TeamDisbandServiceTest {
                         new ProjectDirectoryService(
                                 projectDataRoot.toString(), projectDataRoot.toString()),
                         sandboxes,
-                        mock(qg.qgent.common.storage.AvatarStorageService.class));
+                        mock(qg.qgent.attachment.storage.AvatarStorageService.class));
     }
 
     @Test

@@ -1,4 +1,4 @@
-package qg.qgent.common.storage;
+package qg.qgent.attachment.storage;
 
 import com.aliyun.oss.HttpMethod;
 import com.aliyun.oss.OSS;
