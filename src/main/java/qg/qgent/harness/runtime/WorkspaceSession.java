@@ -56,19 +56,19 @@ final class WorkspaceSession implements WorkSession {
             if (workspaceId == null) {
                 if (work.defaultWorkspaceId == null) {
                     work.defaultWorkspaceId =
-                        workspaces.defaultWorkspace(work.event.projectId()).getId();
+                        workspaces.defaultWorkspace(work.projectId).getId();
                 }
                 workspaceId = work.defaultWorkspaceId;
                 execution.workspace.bindDefault(workspaceId);
             }
-            workspaces.require(work.event.projectId(), workspaceId);
+            workspaces.require(work.projectId, workspaceId);
             if (!workspaceId.equals(execution.run.getWorkspaceId())) {
                 execution.run.setWorkspaceId(workspaceId);
                 runs.save(execution.run);
             }
             if (work.openedWorkspaces.add(workspaceId)) {
                 try {
-                    sessions.acquire(work.rootRunId, work.event.projectId(), workspaceId);
+                    sessions.acquire(work.rootRunId, work.projectId, workspaceId);
                 } catch (RuntimeException exception) {
                     work.openedWorkspaces.remove(workspaceId);
                     throw exception;

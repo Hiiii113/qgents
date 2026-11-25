@@ -153,33 +153,64 @@ public class AgentChatService {
      * Runs one conversation for a committed @Agent message and replies as that same Agent.
      */
     public void replyToMention(MessageSentEvent event, Long agentId, String instruction) {
-        reply(event, agentId, instruction, false);
+        reply(
+            new TaskRun(agentId, event.projectId(), event.groupId(), event.actor(), event.messageId(), false),
+            instruction);
     }
 
     /**
      * 私聊里用户直接发来的消息：不需要提及，也只会回给这条会话的双方。
      */
     public void replyToDirectMessage(DirectMessageSentEvent event, String instruction) {
-        MessageSentEvent trigger =
-            new MessageSentEvent(
-                event.actor(), event.projectId(), event.conversationId(), event.messageId(), List.of());
-        reply(trigger, event.agentId(), instruction, true);
+        reply(
+            new TaskRun(
+                event.agentId(),
+                event.projectId(),
+                event.conversationId(),
+                event.actor(),
+                event.messageId(),
+                true),
+            instruction);
     }
 
-    private void reply(
-        MessageSentEvent event, Long agentId, String instruction, boolean direct) {
+    private void reply(TaskRun task, String instruction) {
+        Outcome outcome = runTask(task, instruction);
+        MessageSendRequest reply = new MessageSendRequest();
+        reply.setType("TEXT");
+        reply.setContent(Map.of("text", outcome.text()));
+        reply.setReplyToId(task.triggerMessageId());
+        reply.setClientMessageId("qgent-reply:" + outcome.runId());
+        if (task.direct()) {
+            messages.replyInConversation(task.agentId(), task.groupId(), reply);
+        } else {
+            messages.sendAsAgent(task.agentId(), task.groupId(), reply);
+        }
+    }
+
+    /**
+     * 共享运行入口：供聊天适配层与离线评测共用，只负责执行并收尾根运行，不向聊天投递回复消息。
+     */
+    public Outcome runTask(TaskRun task, String instruction) {
         // 未启用或不属于本项目的 Agent 不产生运行，也不产生回复。
-        AgentEntity agent = agents.requireActiveProjectAgent(event.projectId(), agentId);
+        AgentEntity agent = agents.requireActiveProjectAgent(task.projectId(), task.agentId());
         AgentRunEntity root =
             runService.startRoot(
-                agentId,
-                event.projectId(),
-                event.groupId(),
-                event.messageId(),
-                event.actor(),
+                task.agentId(),
+                task.projectId(),
+                task.groupId(),
+                task.triggerMessageId(),
+                task.actorId(),
                 instruction);
         RunStreamSink sink = streams.sink(root);
-        WorkContext work = new WorkContext(event, agentId, agent, root.getId(), direct);
+        WorkContext work =
+            new WorkContext(
+                task.actorId(),
+                task.projectId(),
+                task.groupId(),
+                task.agentId(),
+                agent,
+                root.getId(),
+                task.direct());
         RunLifecycle lifecycle = new RunLifecycle(runService, sessions, work);
         work.children =
             new ChildRuns(
@@ -202,16 +233,16 @@ public class AgentChatService {
         try {
             String input =
                 userInput(
-                    event.actor(),
-                    event.projectId(),
-                    event.groupId(),
-                    agentId,
+                    task.actorId(),
+                    task.projectId(),
+                    task.groupId(),
+                    task.agentId(),
                     Scope.ROOT,
                     instruction,
-                    direct);
+                    task.direct());
             ModelMessage.UserMessage user = new ModelMessage.UserMessage(input);
             AgentLoop.Conversation conversation =
-                loop.conversation(briefing.systemPrompt(agent, Scope.ROOT, direct), List.of(user));
+                loop.conversation(briefing.systemPrompt(agent, Scope.ROOT, task.direct()), List.of(user));
             ChildRuns.Execution execution = new ChildRuns.Execution(root, conversation, null, ".");
             ConversationTools tools = conversationTools(work, execution, true);
             AgentLoop.Result result =
@@ -225,6 +256,7 @@ public class AgentChatService {
             status = result.success() ? RunStatus.SUCCEEDED : RunStatus.FAILED;
             resultText = result.text();
             rounds = result.rounds();
+            root.addMetrics(result.metrics(), loop.modelName());
         } catch (RuntimeException exception) {
             status = work.isCancelled() ? RunStatus.CANCELLED : RunStatus.FAILED;
             resultText = failure(exception);
@@ -236,17 +268,35 @@ public class AgentChatService {
             Thread.interrupted();
             if (wasInterrupted) rootWorker.interrupt();
         }
-        MessageSendRequest reply = new MessageSendRequest();
-        reply.setType("TEXT");
-        reply.setContent(Map.of("text", answer(root)));
-        reply.setReplyToId(event.messageId());
-        reply.setClientMessageId("qgent-reply:" + root.getId());
-        if (direct) {
-            messages.replyInConversation(agentId, event.groupId(), reply);
-        } else {
-            messages.sendAsAgent(agentId, event.groupId(), reply);
-        }
+        AgentLoop.Metrics totalMetrics =
+            new AgentLoop.Metrics(
+                root.getPromptTokens() == null ? 0L : root.getPromptTokens(),
+                root.getCompletionTokens() == null ? 0L : root.getCompletionTokens(),
+                root.getCachedTokens() == null ? 0L : root.getCachedTokens(),
+                root.getReasoningTokens() == null ? 0L : root.getReasoningTokens(),
+                root.getTtftMs(),
+                root.getModelTimeMs() == null ? 0L : root.getModelTimeMs(),
+                root.getToolTimeMs() == null ? 0L : root.getToolTimeMs(),
+                root.getToolCalls() == null ? 0 : root.getToolCalls(),
+                root.getFailedToolCalls() == null ? 0 : root.getFailedToolCalls());
+        return new Outcome(
+            root.getId(),
+            root.getStatus(),
+            answer(root),
+            root.getRounds() == null ? rounds : root.getRounds(),
+            totalMetrics);
     }
+
+    public record TaskRun(
+        Long agentId,
+        Long projectId,
+        Long groupId,
+        Long actorId,
+        Long triggerMessageId,
+        boolean direct) {}
+
+    public record Outcome(
+        Long runId, RunStatus status, String text, int rounds, AgentLoop.Metrics metrics) {}
 
     private List<ToolCallback> callbacks(
         WorkContext work, ChildRuns.Execution execution, ConversationTools tools) {
@@ -332,60 +382,60 @@ public class AgentChatService {
             this.skills =
                 new ActivateSkillTool(
                     AgentChatService.this.skills,
-                    work.event.actor(),
-                    work.event.projectId());
+                    work.actorId,
+                    work.projectId);
             this.history =
                 new ChatHistorySearchTool(
                     AgentChatService.this.history,
-                    work.event.actor(),
-                    work.event.projectId(),
-                    work.event.groupId(),
+                    work.actorId,
+                    work.projectId,
+                    work.groupId,
                     5);
             this.crossGroupTools =
                 new CrossGroupTools(
                     AgentChatService.this.crossGroup,
                     AgentChatService.this.groupMemory,
                     AgentChatService.this.history,
-                    work.event.actor(),
-                    work.event.projectId(),
-                    work.event.groupId(),
+                    work.actorId,
+                    work.projectId,
+                    work.groupId,
                     work.agentId);
             this.attachmentTools =
                 new ReadAttachmentTool(
                     AgentChatService.this.attachments,
-                    work.event.actor(),
-                    work.event.projectId(),
+                    work.actorId,
+                    work.projectId,
                     execution.conversation::stageImage);
-            this.memory = new MemoryTools(memories, work.event.actor(), work.event.projectId());
+            this.memory = new MemoryTools(memories, work.actorId, work.projectId);
             // 私聊没有群记忆：不装配群记忆工具，避免把私聊内容当群结论或提交到不存在的群。
             this.groupMemoryTools =
                 work.direct
                     ? null
                     : new GroupMemoryTools(
                         groupMemoryMaintenance,
-                        work.event.actor(),
-                        work.event.projectId(),
-                        work.event.groupId());
+                        work.actorId,
+                        work.projectId,
+                        work.groupId);
             // 子 Agent 只读项目记忆；私聊不写共享的项目记忆。
             this.memoryWrite =
                 canDelegate && !work.direct
-                    ? new MemoryWriteTools(memories, work.event.actor(), work.event.projectId())
+                    ? new MemoryWriteTools(memories, work.actorId, work.projectId)
                     : null;
             this.agentMemory =
-                new AgentMemoryTools(agentMemories, work.event.projectId(), work.agentId);
+                new AgentMemoryTools(agentMemories, work.projectId, work.agentId);
             // 申请与审批只装配给主 Agent：子 Agent 不能替用户提交申请，也不能代替管理员审批。
             this.applicationTools =
                 canDelegate
                     ? new AgentApplicationTools(
-                    agentApplications, work.event.actor(), work.event.projectId())
+                    agentApplications, work.actorId, work.projectId)
                     : null;
             WorkSession session =
                 new WorkspaceSession(work, execution, workspaces, sessions, runService);
-            this.githubTools = github.tools(work.event.actor(), work.event.projectId(), session);
+            this.githubTools = github.tools(work.actorId, work.projectId, session);
             this.workspaceTools =
                 new WorkspaceTools(
-                    work.event.actor(),
-                    work.event.projectId(),
+                    work.actorId,
+                    work.projectId,
                     workspaces,
                     repositories,
                     workspaceCommands,
@@ -409,7 +459,7 @@ public class AgentChatService {
             List<ToolCallback> available = new ArrayList<>(registry.callbacks());
             if (!canDelegate)
                 available.removeIf(callback -> CHILD_CONTROL_TOOLS.contains(callback.name()));
-            available.addAll(mcp.forRun(work.event.projectId(), work.agentId, work.event.actor()));
+            available.addAll(mcp.forRun(work.projectId, work.agentId, work.actorId));
             this.availableTools = List.copyOf(available);
         }
 
@@ -433,7 +483,7 @@ public class AgentChatService {
                 workspaceId == null || workspaceId.isBlank()
                     ? execution.workspace.workspaceId()
                     : workspaces
-                    .require(work.event.projectId(), requiredId(workspaceId))
+                    .require(work.projectId, requiredId(workspaceId))
                     .getId();
             String childDirectory =
                 directory == null || directory.isBlank()
@@ -450,9 +500,9 @@ public class AgentChatService {
                         List.of(
                             new ModelMessage.UserMessage(
                                 userInput(
-                                    work.event.actor(),
-                                    work.event.projectId(),
-                                    work.event.groupId(),
+                                    work.actorId,
+                                    work.projectId,
+                                    work.groupId,
                                     work.agentId,
                                     Scope.CHILD,
                                     text,
@@ -495,9 +545,9 @@ public class AgentChatService {
         public ToolResult cancelAgent(@ToolParam(description = "触发执行的用户消息 ID") String messageId) {
             int cancelled =
                 runService.cancel(
-                    work.event.actor(),
-                    work.event.projectId(),
-                    work.event.groupId(),
+                    work.actorId,
+                    work.projectId,
+                    work.groupId,
                     requiredId(messageId));
             ToolResult result = ToolResult.ok();
             result.put("cancelledRuns", cancelled);

@@ -1,0 +1,19 @@
+id: coding-discount-rounding
+suite: coding
+description: 修复 PriceCalculator.applyDiscount 的四舍五入缺陷，不得改动无关文件。
+repeat: 1
+timeoutSeconds: 180
+initialState:
+  actorRole: PROJECT_ADMIN
+  codingRepo:
+    fixtureDir: fixtures/tiny-ledger
+    targetDir: tiny-ledger
+    hiddenTestDir: hidden-tests/coding-discount-rounding
+    verifyCommand: "javac -encoding UTF-8 -d . src/ledger/PriceCalculator.java src/ledger/TextParser.java test/ledger/SmokeTest.java test/ledger/HiddenDiscountTest.java && java ledger.SmokeTest && java ledger.HiddenDiscountTest"
+instruction: 工作区目录 tiny-ledger 下有一个小型 Java 项目。请检查 src/ledger/PriceCalculator.java 中的 applyDiscount 方法，按其注释要求修复 HALF_UP 四舍五入缺陷，并运行测试确认通过。只修改必要文件。
+checks:
+  - kind: coding
+    requireNonEmptyDiff: true
+    allowedPathPrefixes:
+      - src/ledger/PriceCalculator.java
+      - test/ledger/
