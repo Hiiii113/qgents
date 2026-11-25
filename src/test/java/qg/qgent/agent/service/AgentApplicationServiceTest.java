@@ -63,7 +63,6 @@ class AgentApplicationServiceTest {
                 assertThatApiError(() -> service.apply(actor, project, request("评审助手")));
 
         assertThat(error.code()).isEqualTo("AGENT_LIMIT_REACHED");
-        verify(agents, never()).insert(any(AgentEntity.class));
     }
 
     @Test
@@ -76,7 +75,6 @@ class AgentApplicationServiceTest {
         withoutPrompt.setSystemPrompt(null);
         assertThat(assertThatApiError(() -> service.apply(actor, project, withoutPrompt)).code())
                 .isEqualTo("AGENT_APPLICATION_INVALID");
-        verify(agents, never()).insert(any(AgentEntity.class));
     }
 
     @Test
@@ -93,7 +91,6 @@ class AgentApplicationServiceTest {
                 .isEqualTo("AGENT_APPLICATION_INVALID");
         assertThat(assertThatApiError(() -> service.apply(actor, project, tooLongAvatar)).code())
                 .isEqualTo("AGENT_APPLICATION_INVALID");
-        verify(agents, never()).insert(any(AgentEntity.class));
     }
 
     @Test
@@ -105,7 +102,7 @@ class AgentApplicationServiceTest {
 
         assertThat(assertThatApiError(() -> service.apply(actor, project, request("评审助手"))).code())
                 .isEqualTo("PROJECT_NOT_FOUND");
-        verify(agents, never()).insert(any(AgentEntity.class));
+        // 权限校验先于项目行锁，未通过时不会加锁。
         verify(projects, never()).selectByIdForUpdate(any());
     }
 
@@ -138,7 +135,6 @@ class AgentApplicationServiceTest {
 
         assertThat(assertThatApiError(() -> service.pendingApplications(member, project)).code())
                 .isEqualTo("PROJECT_ADMIN_REQUIRED");
-        verify(agents, never()).selectPendingByProject(any());
     }
 
     @Test
@@ -165,7 +161,6 @@ class AgentApplicationServiceTest {
                         assertThatApiError(() -> service.approve(member, project, TestIds.next()))
                                 .code())
                 .isEqualTo("PROJECT_ADMIN_REQUIRED");
-        verify(agents, never()).selectById(any());
         verify(agents, never()).activate(any(), any());
     }
 

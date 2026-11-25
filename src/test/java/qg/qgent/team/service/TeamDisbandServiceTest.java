@@ -64,8 +64,7 @@ class TeamDisbandServiceTest {
                         qg.qgent.agent.entity.AgentEntity.class,
                         WorkspaceEntity.class,
                         SkillEntity.class,
-                        AttachmentEntity.class,
-                        ChatGroupEntity.class)) {
+                        AttachmentEntity.class)) {
             TableInfoHelper.initTableInfo(assistant, entity);
         }
     }
