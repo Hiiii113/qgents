@@ -15,7 +15,8 @@ import qg.qgent.memory.service.GroupMemoryService;
 import qg.qgent.memory.service.ProjectMemoryService;
 
 /**
- * 记忆接口：项目 memory.md 与每个群的群记忆都存放在项目目录；项目记忆只在管理员确认后由 Agent 写入。
+ * 记忆接口：项目 memory.md 与每个群的群记忆都存放在项目目录；项目记忆只在管理员确认后由 Agent 写入，
+ * 群记忆由后台提炼维护，群内 Agent 可直接读取和修正。
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -38,7 +39,7 @@ public class MemoryController {
         return ok(memories.get(userId, projectId), request);
     }
 
-    @Operation(summary = "读取群聊记忆", description = "仅项目管理员且属于来源群时可读；群记忆只由后台提炼更新，成员通过对话纠错。")
+    @Operation(summary = "读取群聊记忆", description = "仅项目管理员且属于来源群时可读；群记忆由后台提炼维护，群内 Agent 可直接读取和修正。")
     @GetMapping("/projects/{projectId}/groups/{groupId}/memory")
     public ApiResponse<GroupMemoryResponse> getGroup(
         @AuthenticationPrincipal Long userId,

@@ -33,7 +33,6 @@ import qg.qgent.harness.tool.ToolRegistry;
 import qg.qgent.harness.tool.ToolResult;
 import qg.qgent.mcp.tool.McpToolCallbacks;
 import qg.qgent.memory.service.AgentMemoryService;
-import qg.qgent.memory.service.GroupMemoryExtractionService;
 import qg.qgent.memory.service.GroupMemoryService;
 import qg.qgent.memory.service.ProjectMemoryService;
 import qg.qgent.memory.tool.AgentMemoryTools;
@@ -86,7 +85,6 @@ public class AgentChatService {
     private final AttachmentService attachments;
     private final ProjectMemoryService memories;
     private final GroupMemoryService groupMemory;
-    private final GroupMemoryExtractionService groupMemoryMaintenance;
     private final AgentMemoryService agentMemories;
     private final CrossGroupAccessService crossGroup;
     private final AgentService agents;
@@ -113,7 +111,6 @@ public class AgentChatService {
         AttachmentService attachments,
         ProjectMemoryService memories,
         GroupMemoryService groupMemory,
-        GroupMemoryExtractionService groupMemoryMaintenance,
         AgentMemoryService agentMemories,
         CrossGroupAccessService crossGroup,
         AgentService agents,
@@ -139,7 +136,6 @@ public class AgentChatService {
         this.attachments = attachments;
         this.memories = memories;
         this.groupMemory = groupMemory;
-        this.groupMemoryMaintenance = groupMemoryMaintenance;
         this.agentMemories = agentMemories;
         this.crossGroup = crossGroup;
         this.agents = agents;
@@ -362,7 +358,7 @@ public class AgentChatService {
                 work.direct
                     ? null
                     : new GroupMemoryTools(
-                        groupMemoryMaintenance,
+                        groupMemory,
                         work.event.actor(),
                         work.event.projectId(),
                         work.event.groupId());

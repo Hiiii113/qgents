@@ -2,9 +2,6 @@ package qg.qgent.memory.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.contains;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -12,9 +9,12 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.RejectedExecutionException;
@@ -41,8 +41,6 @@ import qg.qgent.chat.service.MessageService;
 import qg.qgent.chat.service.MessageViews;
 import qg.qgent.harness.model.ModelClient;
 import qg.qgent.memory.config.ProjectMemoryDiscoveryProperties;
-import qg.qgent.memory.entity.GroupMemoryStateEntity;
-import qg.qgent.memory.mapper.GroupMemoryStateMapper;
 import qg.qgent.notification.service.NotificationService;
 import qg.qgent.project.mapper.ProjectMapper;
 import qg.qgent.project.mapper.ProjectMemberMapper;
@@ -53,7 +51,7 @@ import qg.qgent.support.TestIds;
 import qg.qgent.user.mapper.UserGroupPreferenceMapper;
 import qg.qgent.user.mapper.UserMapper;
 
-/** 项目记忆发现：只从默认群记忆提炼、以普通消息发出建议、重复扫描、失败重试与权限检查。 */
+/** 项目记忆发现：只看默认群、按 memory-meta.json 跳过未变更版本、以普通消息发出建议。 */
 class ProjectMemoryDiscoveryServiceTest {
 
     private static final int MAX_CHARS = 2000;
@@ -64,7 +62,6 @@ class ProjectMemoryDiscoveryServiceTest {
 
     @TempDir Path root;
 
-    private final GroupMemoryStateMapper states = mock(GroupMemoryStateMapper.class);
     private final ChatGroupMapper chatGroups = mock(ChatGroupMapper.class);
     private final MessageMapper messageMapper = mock(MessageMapper.class);
     private final AgentMapper agentMapper = mock(AgentMapper.class);
@@ -116,11 +113,16 @@ class ProjectMemoryDiscoveryServiceTest {
                                 mock(AttachmentService.class),
                                 new ObjectMapper()),
                         eventPublisher);
-        groupMemories = new GroupMemoryService(access, chatGroupsService, directories, document);
+        groupMemories =
+                new GroupMemoryService(
+                        access,
+                        chatGroupsService,
+                        directories,
+                        document,
+                        new GroupMemoryMetaStore());
         projectMemories = new ProjectMemoryService(access, projects, directories, events, document);
         service =
                 new ProjectMemoryDiscoveryService(
-                        states,
                         chatGroups,
                         groupMemories,
                         projectMemories,
@@ -138,7 +140,7 @@ class ProjectMemoryDiscoveryServiceTest {
                 });
     }
 
-    /** MessageService 的 doSend 用 MyBatis-Plus 构造更新语句，需要先注册实体元数据。 */
+    /** 服务用 MyBatis-Plus 构造 chat_groups 查询，需要先注册实体元数据。 */
     private static void initializeMybatisMetadata() {
         for (Class<?> entity : List.of(ChatGroupEntity.class, MessageEntity.class)) {
             if (TableInfoHelper.getTableInfo(entity) == null) {
@@ -153,10 +155,9 @@ class ProjectMemoryDiscoveryServiceTest {
     @Test
     void discoveredSuggestionIsPostedByTheDefaultAgentWithoutWritingProjectMemory() {
         Long project = TestIds.next(), group = TestIds.next(), agent = TestIds.next();
-        groupMemories.write(project, group, "- 议题：登录方式\n- 结论：先做邮箱登录");
+        groupMemories.writeByAgent(project, group, "- 议题：登录方式\n- 结论：先做邮箱登录");
         defaultGroupWithAgent(project, group, agent);
         when(model.complete(any(), any())).thenReturn("- 新增：登录方式先用邮箱登录");
-        claims(group);
 
         service.discover(project, group);
 
@@ -173,16 +174,18 @@ class ProjectMemoryDiscoveryServiceTest {
         assertThat(sent.getContent()).contains("项目管理员", "- 新增：登录方式先用邮箱登录");
         // 建议本身不生效：写入要等管理员在对话里确认
         assertThat(projectMemories.read(project).getContent()).isEmpty();
-        verify(states).finishDiscovery(eq(group), any(), any(), any());
+        // 读过的版本记在 memory-meta.json，同一版本不再重复发现
+        GroupMemoryMeta meta = groupMemories.meta(project, group);
+        assertThat(meta.discoveredVersion())
+                .isEqualTo(document.version("- 议题：登录方式\n- 结论：先做邮箱登录"));
+        assertThat(meta.lastDiscoveredAt()).isNotNull();
     }
 
     @Test
     void restrictedGroupContentNeverReachesTheModelOrDefaultGroup() {
         Long project = TestIds.next(), group = TestIds.next();
-        groupMemories.write(project, group, "- 受限结论：调整了报价");
+        groupMemories.writeByAgent(project, group, "- 受限结论：调整了报价");
         when(chatGroups.selectById(group)).thenReturn(group(group, project, false));
-        when(states.selectById(group)).thenReturn(state(project, group));
-        claims(group);
 
         service.discover(project, group);
 
@@ -194,63 +197,56 @@ class ProjectMemoryDiscoveryServiceTest {
     @Test
     void suggestionIsNotSentWhenTheDefaultAgentIsNotInTheGroup() {
         Long project = TestIds.next(), group = TestIds.next(), agent = TestIds.next();
-        groupMemories.write(project, group, "- 结论：先做邮箱登录");
+        groupMemories.writeByAgent(project, group, "- 结论：先做邮箱登录");
         when(chatGroups.selectById(group)).thenReturn(group(group, project, true));
         when(agentMapper.selectDefaultAgent(project)).thenReturn(agent(agent));
         when(agentMapper.selectBatchIds(any())).thenReturn(List.of(agent(agent)));
         when(agentMapper.selectById(agent)).thenReturn(agent(agent));
         when(chatGroups.selectOne(any())).thenReturn(group(group, project, true));
         when(groupAgents.selectAgentIds(group)).thenReturn(List.of());
-        when(states.selectById(group)).thenReturn(state(project, group));
-        claims(group);
         when(model.complete(any(), any())).thenReturn("- 新增：登录方式先用邮箱登录");
 
         service.discover(project, group);
 
         verify(messageMapper, never()).insert(any(MessageEntity.class));
-        verify(states).recordDiscoveryFailure(eq(group), contains("Agent 未加入当前群聊"), any(), any());
-        verify(states, never()).finishDiscovery(any(), any(), any(), any());
+        // 失败不推进版本，下一轮仍会重试
+        assertThat(groupMemories.meta(project, group).discoveredVersion()).isNull();
     }
 
     @Test
     void sameGroupMemoryVersionIsNotDiscoveredTwice() {
         Long project = TestIds.next(), group = TestIds.next();
-        groupMemories.write(project, group, "- 结论：先做邮箱登录");
-        GroupMemoryStateEntity state = state(project, group);
-        state.setDiscoveredVersion(document.version("- 结论：先做邮箱登录"));
+        groupMemories.writeByAgent(project, group, "- 结论：先做邮箱登录");
+        String version = document.version("- 结论：先做邮箱登录");
+        groupMemories.markDiscovered(project, group, version, Instant.now());
         when(chatGroups.selectById(group)).thenReturn(group(group, project, true));
-        when(states.selectById(group)).thenReturn(state);
-        claims(group);
 
         service.discover(project, group);
 
         verifyNoInteractions(model);
         verify(messageMapper, never()).insert(any(MessageEntity.class));
-        verify(states).finishDiscovery(eq(group), any(), any(), any());
+        assertThat(groupMemories.meta(project, group).discoveredVersion()).isEqualTo(version);
     }
 
     @Test
     void nothingToDiscoverRecordsTheVersionWithoutPosting() {
         Long project = TestIds.next(), group = TestIds.next();
-        groupMemories.write(project, group, "- 闲聊：明天吃火锅");
+        groupMemories.writeByAgent(project, group, "- 闲聊：明天吃火锅");
         when(chatGroups.selectById(group)).thenReturn(group(group, project, true));
-        when(states.selectById(group)).thenReturn(state(project, group));
-        claims(group);
         when(model.complete(any(), any())).thenReturn("NONE.");
 
         service.discover(project, group);
 
         verify(messageMapper, never()).insert(any(MessageEntity.class));
-        verify(states).finishDiscovery(eq(group), eq(document.version("- 闲聊：明天吃火锅")), any(), any());
+        assertThat(groupMemories.meta(project, group).discoveredVersion())
+                .isEqualTo(document.version("- 闲聊：明天吃火锅"));
     }
 
     @Test
     void failureIsRecordedForRetryAndTheNextAttemptRecovers() {
         Long project = TestIds.next(), group = TestIds.next(), agent = TestIds.next();
-        groupMemories.write(project, group, "- 结论：先做邮箱登录");
+        groupMemories.writeByAgent(project, group, "- 结论：先做邮箱登录");
         defaultGroupWithAgent(project, group, agent);
-        when(states.selectById(group)).thenReturn(state(project, group));
-        claims(group);
         when(model.complete(any(), any()))
                 .thenThrow(new IllegalStateException("模型调用超时"))
                 .thenReturn("- 新增：登录方式先用邮箱登录");
@@ -258,44 +254,27 @@ class ProjectMemoryDiscoveryServiceTest {
         service.discover(project, group);
 
         verify(messageMapper, never()).insert(any(MessageEntity.class));
-        verify(states).recordDiscoveryFailure(eq(group), contains("模型调用超时"), any(), any());
-        verify(states, never()).finishDiscovery(any(), any(), any(), any());
         assertThat(projectMemories.read(project).getContent()).isEmpty();
+        assertThat(groupMemories.meta(project, group).discoveredVersion()).isNull();
 
-        // 重试成功：发出建议并推进已发现的群记忆版本
+        // 重试成功：发出建议并记录已发现的群记忆版本
         service.discover(project, group);
 
         assertThat(insertedMessage().getSenderAgentId()).isEqualTo(agent);
-        verify(states)
-                .finishDiscovery(eq(group), eq(document.version("- 结论：先做邮箱登录")), any(), any());
-    }
-
-    @Test
-    void skipsWhenTheSlotIsNotClaimable() {
-        Long project = TestIds.next(), group = TestIds.next();
-        when(states.claimDiscovery(eq(group), any(), any())).thenReturn(0);
-
-        service.discover(project, group);
-
-        verify(states, never()).selectById(any());
-        verifyNoInteractions(model);
-        verify(messageMapper, never()).insert(any(MessageEntity.class));
+        assertThat(groupMemories.meta(project, group).discoveredVersion())
+                .isEqualTo(document.version("- 结论：先做邮箱登录"));
     }
 
     @Test
     void scanSubmitsDueGroupsToTheBackgroundExecutorInsteadOfCallingTheModelInline() {
         Long project = TestIds.next(), group = TestIds.next(), agent = TestIds.next();
-        groupMemories.write(project, group, "- 结论：先做邮箱登录");
+        groupMemories.writeByAgent(project, group, "- 结论：先做邮箱登录");
         defaultGroupWithAgent(project, group, agent);
-        when(states.selectById(group)).thenReturn(state(project, group));
-        claims(group);
         when(model.complete(any(), any())).thenReturn("- 新增：登录方式先用邮箱登录");
-        when(states.selectDiscoveryCandidates(any(), eq(MAX_ATTEMPTS), eq(BATCH_SIZE)))
-                .thenReturn(List.of(state(project, group)));
+        when(chatGroups.selectList(any())).thenReturn(List.of(group(group, project, true)));
         List<Runnable> queued = new ArrayList<>();
         ProjectMemoryDiscoveryService scheduled =
                 new ProjectMemoryDiscoveryService(
-                        states,
                         chatGroups,
                         groupMemories,
                         projectMemories,
@@ -316,13 +295,103 @@ class ProjectMemoryDiscoveryServiceTest {
     }
 
     @Test
+    void scanSkipsGroupsWhoseMemoryVersionHasNotChanged() {
+        Long project = TestIds.next(), group = TestIds.next();
+        groupMemories.writeByAgent(project, group, "- 结论：先做邮箱登录");
+        // 已到期，但群记忆内容版本与上次发现时一致：不必再读模型。
+        groupMemories.markDiscovered(
+                project,
+                group,
+                document.version("- 结论：先做邮箱登录"),
+                Instant.now().minus(Duration.ofMinutes(INTERVAL_MINUTES + 1)));
+        when(chatGroups.selectList(any())).thenReturn(List.of(group(group, project, true)));
+        List<Runnable> queued = new ArrayList<>();
+
+        new ProjectMemoryDiscoveryService(
+                        chatGroups,
+                        groupMemories,
+                        projectMemories,
+                        chat,
+                        agents,
+                        model,
+                        queued::add,
+                        properties(),
+                        document)
+                .scan();
+
+        assertThat(queued).isEmpty();
+        verifyNoInteractions(model);
+    }
+
+    @Test
+    void scanSkipsGroupsWhoseDiscoveryIntervalHasNotElapsed() {
+        Long project = TestIds.next(), group = TestIds.next();
+        groupMemories.writeByAgent(project, group, "- 结论：先做邮箱登录");
+        // 群记忆版本变过，但距离上次发现还不到一个周期：等下一轮再说。
+        groupMemories.markDiscovered(project, group, "older-version", Instant.now());
+        when(chatGroups.selectList(any())).thenReturn(List.of(group(group, project, true)));
+        List<Runnable> queued = new ArrayList<>();
+
+        new ProjectMemoryDiscoveryService(
+                        chatGroups,
+                        groupMemories,
+                        projectMemories,
+                        chat,
+                        agents,
+                        model,
+                        queued::add,
+                        properties(),
+                        document)
+                .scan();
+
+        assertThat(queued).isEmpty();
+    }
+
+    @Test
+    void scanResubmitsGroupsWhoseMemoryChangedAfterTheInterval() {
+        Long project = TestIds.next(), group = TestIds.next();
+        groupMemories.writeByAgent(project, group, "- 结论：先做邮箱登录");
+        groupMemories.markDiscovered(
+                project,
+                group,
+                "older-version",
+                Instant.now().minus(Duration.ofMinutes(INTERVAL_MINUTES + 1)));
+        when(chatGroups.selectList(any())).thenReturn(List.of(group(group, project, true)));
+        List<Runnable> queued = new ArrayList<>();
+
+        new ProjectMemoryDiscoveryService(
+                        chatGroups,
+                        groupMemories,
+                        projectMemories,
+                        chat,
+                        agents,
+                        model,
+                        queued::add,
+                        properties(),
+                        document)
+                .scan();
+
+        assertThat(queued).hasSize(1);
+    }
+
+    @Test
+    void scanQueriesOnlyProjectGroupsThatAreDefaultGroups() {
+        when(chatGroups.selectList(any())).thenReturn(List.of());
+
+        service.scan();
+
+        ArgumentCaptor<Wrapper<ChatGroupEntity>> query = ArgumentCaptor.captor();
+        verify(chatGroups).selectList(query.capture());
+        assertThat(query.getValue().getSqlSegment()).contains("kind", "default_group");
+    }
+
+    @Test
     void fullQueueSkipsThisRoundWithoutFailingTheScan() {
         Long project = TestIds.next(), group = TestIds.next();
-        when(states.selectDiscoveryCandidates(any(), anyInt(), anyInt()))
-                .thenReturn(List.of(state(project, group)));
+        groupMemories.writeByAgent(project, group, "- 结论：先做邮箱登录");
+        when(chatGroups.selectList(any())).thenReturn(List.of(group(group, project, true)));
         ProjectMemoryDiscoveryService saturated =
                 new ProjectMemoryDiscoveryService(
-                        states,
                         chatGroups,
                         groupMemories,
                         projectMemories,
@@ -337,7 +406,6 @@ class ProjectMemoryDiscoveryServiceTest {
 
         saturated.scan();
 
-        verify(states, never()).claimDiscovery(any(), any(), any());
         verifyNoInteractions(model);
     }
 
@@ -347,16 +415,10 @@ class ProjectMemoryDiscoveryServiceTest {
         when(agentMapper.selectDefaultAgent(project)).thenReturn(agent(agent));
         when(agentMapper.selectBatchIds(any())).thenReturn(List.of(agent(agent)));
         when(groupAgents.selectAgentIds(group)).thenReturn(List.of(agent));
-        when(states.selectById(group)).thenReturn(state(project, group));
-    }
-
-    private void claims(Long group) {
-        when(states.claimDiscovery(eq(group), any(), any())).thenReturn(1);
-        when(states.finishDiscovery(eq(group), any(), any(), any())).thenReturn(1);
     }
 
     private MessageEntity insertedMessage() {
-        ArgumentCaptor<MessageEntity> captor = ArgumentCaptor.forClass(MessageEntity.class);
+        ArgumentCaptor<MessageEntity> captor = ArgumentCaptor.captor();
         verify(messageMapper).insert(captor.capture());
         return captor.getValue();
     }
@@ -370,18 +432,11 @@ class ProjectMemoryDiscoveryServiceTest {
         return properties;
     }
 
-    private GroupMemoryStateEntity state(Long projectId, Long groupId) {
-        GroupMemoryStateEntity state = new GroupMemoryStateEntity();
-        state.setProjectId(projectId);
-        state.setGroupId(groupId);
-        state.setDiscoveryAttemptCount(0);
-        return state;
-    }
-
     private ChatGroupEntity group(Long groupId, Long projectId, boolean defaultGroup) {
         ChatGroupEntity group = new ChatGroupEntity();
         group.setId(groupId);
         group.setProjectId(projectId);
+        group.setKind(ChatGroupEntity.KIND_GROUP);
         group.setDefaultGroup(defaultGroup);
         return group;
     }

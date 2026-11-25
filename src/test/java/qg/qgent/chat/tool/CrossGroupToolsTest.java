@@ -27,6 +27,7 @@ import qg.qgent.chat.service.ChatHistoryService;
 import qg.qgent.chat.service.CrossGroupAccessService;
 import qg.qgent.chat.service.GroupService;
 import qg.qgent.common.web.ApiException;
+import qg.qgent.memory.service.GroupMemoryMetaStore;
 import qg.qgent.memory.service.GroupMemoryService;
 import qg.qgent.memory.service.MemoryDocument;
 import qg.qgent.project.mapper.ProjectMemberMapper;
@@ -85,7 +86,8 @@ class CrossGroupToolsTest {
                         access,
                         groups,
                         new ProjectDirectoryService(root.toString(), root.toString()),
-                        new MemoryDocument(12000));
+                        new MemoryDocument(12000),
+                        new GroupMemoryMetaStore());
         crossGroup = new CrossGroupAccessService(groups);
         defaultGroup = group(defaultGroupId, projectId, true, "项目群聊");
         restrictedGroup = group(restrictedGroupId, projectId, false, "后端改造");
@@ -98,7 +100,7 @@ class CrossGroupToolsTest {
 
     @Test
     void readsAnotherGroupsMemoryAndHistoryWhenTheAskingUserAndAgentAreBothMembers() {
-        groupMemories.write(projectId, defaultGroupId, "# 后端群结论：先做邮箱登录");
+        groupMemories.writeByAgent(projectId, defaultGroupId, "# 后端群结论：先做邮箱登录");
         when(messages.searchByQuery(projectId, List.of(defaultGroupId), "登录", 10))
                 .thenReturn(List.of(message(defaultGroupId, "昨天完成登录联调")));
 
@@ -143,7 +145,7 @@ class CrossGroupToolsTest {
     /** 提问者与 Agent 都在受限群时，把它问到成员更多的目的群里也允许；泄露风险由提问者自己负责。 */
     @Test
     void defaultGroupCanReadARestrictedGroupWhenTheAskingUserAndAgentAreBothMembers() {
-        groupMemories.write(projectId, restrictedGroupId, "# 受限群内部计划");
+        groupMemories.writeByAgent(projectId, restrictedGroupId, "# 受限群内部计划");
 
         Map<String, Object> result =
                 tools(actor, defaultGroupId, agentId)
@@ -154,7 +156,7 @@ class CrossGroupToolsTest {
 
     @Test
     void userOutsideTheSourceGroupIsToldTheyAreNotInThatGroup() {
-        groupMemories.write(projectId, restrictedGroupId, "# 受限群内部计划");
+        groupMemories.writeByAgent(projectId, restrictedGroupId, "# 受限群内部计划");
 
         Map<String, Object> result =
                 tools(outsider, restrictedGroupId, agentId)
@@ -196,7 +198,7 @@ class CrossGroupToolsTest {
 
     @Test
     void sourceGroupMembershipChangeTakesEffectOnTheNextRead() {
-        groupMemories.write(projectId, restrictedGroupId, "# 受限群内部计划");
+        groupMemories.writeByAgent(projectId, restrictedGroupId, "# 受限群内部计划");
         CrossGroupTools tools = tools(actor, restrictedGroupId, agentId);
         assertThat(tools.readOtherGroupMemory(restrictedGroupId.toString()))
                 .containsEntry("ok", true);

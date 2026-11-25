@@ -1,5 +1,6 @@
 package qg.qgent.memory.service;
 
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -14,12 +15,13 @@ import qg.qgent.harness.model.ModelClient;
 import qg.qgent.memory.config.ProjectMemoryDiscoveryProperties;
 import qg.qgent.memory.dto.GroupMemoryResponse;
 import qg.qgent.memory.dto.ProjectMemoryResponse;
-import qg.qgent.memory.entity.GroupMemoryStateEntity;
-import qg.qgent.memory.mapper.GroupMemoryStateMapper;
 
-import java.time.LocalDateTime;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.regex.Pattern;
@@ -28,7 +30,8 @@ import java.util.regex.Pattern;
  * 项目记忆发现：按周期用当前运行模型阅读项目默认群的群记忆，发现项目级背景和决策的更新建议。
  * <p>
  * 建议只是默认 Agent 在默认群发出的普通文本消息，管理员确认后由主 Agent 写入项目记忆。
- * 扫描只提交任务，模型调用在记忆后台线程池中执行；受限群的群记忆不在扫描范围内。
+ * 是否到期和群记忆内容是否有变化都记录在 groups/&lt;groupId&gt;/memory-meta.json；扫描只提交任务，
+ * 模型调用在记忆后台线程池中执行。受限群和私聊不在扫描范围内。
  */
 @Service
 public class ProjectMemoryDiscoveryService {
@@ -37,7 +40,6 @@ public class ProjectMemoryDiscoveryService {
     private static final Pattern NOTHING =
         Pattern.compile("^(NONE|无|没有)[.。!！]?$", Pattern.CASE_INSENSITIVE);
 
-    private final GroupMemoryStateMapper states;
     private final ChatGroupMapper groups;
     private final GroupMemoryService groupMemories;
     private final ProjectMemoryService projectMemories;
@@ -47,9 +49,11 @@ public class ProjectMemoryDiscoveryService {
     private final Executor executor;
     private final ProjectMemoryDiscoveryProperties properties;
     private final MemoryDocument document;
+    // 进程内防重入与失败退避：不依赖数据库状态列。
+    private final Set<Long> inProgress = ConcurrentHashMap.newKeySet();
+    private final ConcurrentHashMap<Long, Retry> failures = new ConcurrentHashMap<>();
 
     public ProjectMemoryDiscoveryService(
-        GroupMemoryStateMapper states,
         ChatGroupMapper groups,
         GroupMemoryService groupMemories,
         ProjectMemoryService projectMemories,
@@ -60,7 +64,6 @@ public class ProjectMemoryDiscoveryService {
         ProjectMemoryDiscoveryProperties properties,
         MemoryDocument document) {
         properties.validate();
-        this.states = states;
         this.groups = groups;
         this.groupMemories = groupMemories;
         this.projectMemories = projectMemories;
@@ -72,18 +75,27 @@ public class ProjectMemoryDiscoveryService {
         this.document = document;
     }
 
+    private record Retry(int attempts, Instant retryAt) {
+    }
+
     /**
-     * 定时把到期的来源群提交给记忆后台线程池；扫描本身不调用模型，不占用共享调度线程。
-     * 每个群发现完成后至少间隔一个发现周期才会再次到期，失败按重试间隔提前。
+     * 定时把到期且群记忆内容有变化的默认群提交给记忆后台线程池；扫描本身不调用模型。
+     * <p>
+     * 发现成功后至少间隔一个发现周期才会再次到期，失败按重试间隔提前重试。
      */
     @Scheduled(fixedDelayString = "${app.memory.discovery.scan-interval:1h}")
     public void scan() {
-        for (GroupMemoryStateEntity state :
-            states.selectDiscoveryCandidates(
-                MemorySupport.now(),
-                properties.getMaxAttempts(),
-                properties.getBatchSize())) {
-            submit(state.getProjectId(), state.getGroupId());
+        List<ChatGroupEntity> defaults =
+            groups.selectList(
+                Wrappers.<ChatGroupEntity>lambdaQuery()
+                    .eq(ChatGroupEntity::getKind, ChatGroupEntity.KIND_GROUP)
+                    .eq(ChatGroupEntity::getDefaultGroup, true)
+                    .orderByAsc(ChatGroupEntity::getId)
+                    .last("LIMIT " + properties.getBatchSize()));
+        for (ChatGroupEntity group : defaults) {
+            if (due(group, Instant.now())) {
+                submit(group.getProjectId(), group.getId());
+            }
         }
     }
 
@@ -99,53 +111,82 @@ public class ProjectMemoryDiscoveryService {
     }
 
     /**
-     * 后台发现一次：领取不到说明未到周期或其他任务在处理；成功后只推进已发现的群记忆版本。
+     * 后台发现一次：只有未到周期、群记忆为空或内容版本没变时才跳过；结果只记录版本和发现时间。
      */
     public void discover(Long projectId, Long groupId) {
-        LocalDateTime now = MemorySupport.now();
-        LocalDateTime nextSlot = now.plusMinutes(properties.getIntervalMinutes());
-        if (states.claimDiscovery(groupId, nextSlot, now) != 1) {
-            return;
-        }
-        GroupMemoryStateEntity state = states.selectById(groupId);
-        if (state == null) {
+        if (!inProgress.add(groupId)) {
             return;
         }
         try {
             // 受限群的内容不进入默认群建议消息和共享项目记忆：连模型都不调用。
             ChatGroupEntity group = groups.selectById(groupId);
-            if (group == null || !Boolean.TRUE.equals(group.getDefaultGroup())) {
+            if (group == null || group.isDirect() || !Boolean.TRUE.equals(group.getDefaultGroup())) {
                 return;
             }
             GroupMemoryResponse source = groupMemories.read(projectId, groupId);
             String version = document.version(source.getContent());
-            if (source.getContent().isBlank() || version.equals(state.getDiscoveredVersion())) {
-                states.finishDiscovery(groupId, version, nextSlot, now);
+            if (source.getContent().isBlank()
+                || version.equals(groupMemories.meta(projectId, groupId).discoveredVersion())) {
+                groupMemories.markDiscovered(projectId, groupId, version, Instant.now());
+                failures.remove(groupId);
                 return;
             }
             String suggestion = askModel(projectMemories.read(projectId), source.getContent());
-            if (suggestion == null) {
-                states.finishDiscovery(groupId, version, nextSlot, now);
-                return;
+            if (suggestion != null) {
+                publish(projectId, groupId, suggestion);
             }
-            publish(projectId, groupId, suggestion);
-            states.finishDiscovery(groupId, version, nextSlot, now);
+            groupMemories.markDiscovered(projectId, groupId, version, Instant.now());
+            failures.remove(groupId);
             log.info(
-                "项目记忆更新建议已发布, projectId={}, groupId={}, sourceVersion={}",
+                "项目记忆更新建议已处理, projectId={}, groupId={}, sourceVersion={}",
                 projectId,
                 groupId,
                 version);
         } catch (RuntimeException exception) {
-            LocalDateTime retryAt = now.plusMinutes(properties.getRetryDelayMinutes());
-            states.recordDiscoveryFailure(groupId, MemorySupport.failure(exception), retryAt, now);
-            log.warn(
-                "项目记忆发现失败, projectId={}, groupId={}, attempt={}, retryAt={}: {}",
-                projectId,
-                groupId,
-                state.getDiscoveryAttemptCount() + 1,
-                retryAt,
-                exception.toString());
+            recordFailure(projectId, groupId, exception);
+        } finally {
+            inProgress.remove(groupId);
         }
+    }
+
+    /**
+     * 到期未发现过、群记忆内容版本与上次不同，且不在失败退避窗口内。
+     */
+    private boolean due(ChatGroupEntity group, Instant now) {
+        Long groupId = group.getId();
+        if (inProgress.contains(groupId)) {
+            return false;
+        }
+        Retry retry = failures.get(groupId);
+        if (retry != null
+            && (retry.attempts() >= properties.getMaxAttempts() || retry.retryAt().isAfter(now))) {
+            return false;
+        }
+        GroupMemoryMeta meta = groupMemories.meta(group.getProjectId(), groupId);
+        if (meta.lastDiscoveredAt() != null
+            && meta.lastDiscoveredAt()
+            .plus(Duration.ofMinutes(properties.getIntervalMinutes()))
+            .isAfter(now)) {
+            return false;
+        }
+        String content = groupMemories.read(group.getProjectId(), groupId).getContent();
+        return !content.isBlank() && !document.version(content).equals(meta.discoveredVersion());
+    }
+
+    private void recordFailure(Long projectId, Long groupId, RuntimeException exception) {
+        Instant retryAt = Instant.now().plus(Duration.ofMinutes(properties.getRetryDelayMinutes()));
+        Retry updated =
+            failures.merge(
+                groupId,
+                new Retry(1, retryAt),
+                (old, added) -> new Retry(old.attempts() + 1, added.retryAt()));
+        log.warn(
+            "项目记忆发现失败, projectId={}, groupId={}, attempt={}, retryAt={}: {}",
+            projectId,
+            groupId,
+            updated.attempts(),
+            retryAt,
+            exception.toString());
     }
 
     /**

@@ -55,7 +55,6 @@ import qg.qgent.mcp.tool.McpToolCallbacks;
 import qg.qgent.memory.dto.GroupMemoryResponse;
 import qg.qgent.memory.dto.ProjectMemoryResponse;
 import qg.qgent.memory.service.AgentMemoryService;
-import qg.qgent.memory.service.GroupMemoryExtractionService;
 import qg.qgent.memory.service.GroupMemoryService;
 import qg.qgent.memory.service.ProjectMemoryService;
 import qg.qgent.project.mapper.ProjectMapper;
@@ -172,7 +171,11 @@ class AgentChatServiceTest {
         assertThat(request.tools())
                 .extracting(ModelClient.ToolDefinition::name)
                 .contains("read_agent_memory", "read_project_memory")
-                .doesNotContain("write_project_memory", "request_group_memory_correction");
+                .doesNotContain(
+                        "write_project_memory",
+                        "edit_group_memory",
+                        "write_group_memory",
+                        "read_group_memory");
     }
 
     @Test
@@ -1419,7 +1422,6 @@ class AgentChatServiceTest {
                         attachments,
                         memories,
                         groupMemory,
-                        mock(GroupMemoryExtractionService.class),
                         agentMemories,
                         new CrossGroupAccessService(groups),
                         agents,

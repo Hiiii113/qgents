@@ -48,18 +48,19 @@ class MemoryBudgetTest {
                         mock(ProjectAccessService.class),
                         mock(GroupService.class),
                         directories,
-                        document);
+                        document,
+                        new GroupMemoryMetaStore());
         agentMemories = new AgentMemoryService(mock(ProjectMapper.class), directories, document);
     }
 
     @Test
     void overBudgetWriteIsRejectedForAllThreeMemoryKindsWithoutChangingStoredContent() {
         projectMemories.update(TestIds.next(), projectId, "项目原有约定");
-        groupMemories.write(projectId, groupId, "群原有约定");
+        groupMemories.writeByAgent(projectId, groupId, "群原有约定");
         agentMemories.save(projectId, agentId, "Agent 原有约定");
 
         assertRejected(() -> projectMemories.update(TestIds.next(), projectId, tooLong));
-        assertRejected(() -> groupMemories.write(projectId, groupId, tooLong));
+        assertRejected(() -> groupMemories.writeByAgent(projectId, groupId, tooLong));
         assertRejected(() -> agentMemories.save(projectId, agentId, tooLong));
 
         assertThat(projectMemories.read(projectId).getContent()).isEqualTo("项目原有约定");

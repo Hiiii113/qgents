@@ -140,8 +140,7 @@ public class TeamDisbandService {
             Wrappers.<AttachmentEntity>lambdaQuery()
                 .eq(AttachmentEntity::getProjectId, projectId));
 
-        // chat_groups 引用 project，
-        // 须在 messages/notifications 之后删除；group_memory_state 由外键级联删除
+        // chat_groups 引用 project，须在 messages/notifications 之后删除
         chatGroupMapper.delete(
             Wrappers.<ChatGroupEntity>lambdaQuery()
                 .eq(ChatGroupEntity::getProjectId, projectId));

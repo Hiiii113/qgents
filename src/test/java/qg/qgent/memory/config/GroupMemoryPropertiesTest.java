@@ -17,4 +17,25 @@ class GroupMemoryPropertiesTest {
         properties.setMaxAttempts(0);
         assertThrows(IllegalArgumentException.class, properties::validate);
     }
+
+    @Test
+    void longIdleFallbackMayNotExceedTheRegularThreshold() {
+        GroupMemoryProperties properties = new GroupMemoryProperties();
+        properties.setStaleMinMessages(properties.getMinMessages() + 1);
+        assertThrows(IllegalArgumentException.class, properties::validate);
+    }
+
+    @Test
+    void longIdleFallbackMustWaitAtLeastTheRegularIdleTime() {
+        GroupMemoryProperties properties = new GroupMemoryProperties();
+        properties.setStaleIdleMinutes(properties.getIdleMinutes() - 1);
+        assertThrows(IllegalArgumentException.class, properties::validate);
+    }
+
+    @Test
+    void forceThresholdMayNotBeLowerThanTheRegularThreshold() {
+        GroupMemoryProperties properties = new GroupMemoryProperties();
+        properties.setForceMessages(properties.getMinMessages() - 1);
+        assertThrows(IllegalArgumentException.class, properties::validate);
+    }
 }

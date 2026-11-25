@@ -4,7 +4,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
 /**
- * 记忆模块公共小工具：模型输出整理，以及后台任务共用的 UTC 时间与失败摘要。
+ * 记忆模块公共小工具：模型输出整理和后台任务共用的 UTC 时间。
  */
 final class MemorySupport {
 
@@ -28,16 +28,5 @@ final class MemorySupport {
 
     static LocalDateTime now() {
         return LocalDateTime.now(ZoneOffset.UTC);
-    }
-
-    /**
-     * 失败摘要，截断到状态表列宽。
-     */
-    static String failure(RuntimeException exception) {
-        String message = exception.getMessage();
-        String text =
-            exception.getClass().getSimpleName()
-                + (message == null || message.isBlank() ? "" : ": " + message);
-        return text.length() <= 500 ? text : text.substring(0, 500);
     }
 }
