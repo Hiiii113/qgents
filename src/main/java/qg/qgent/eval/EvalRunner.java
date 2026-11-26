@@ -3,6 +3,7 @@ package qg.qgent.eval;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -41,10 +42,14 @@ import qg.qgent.memory.service.GroupMemoryService;
 import qg.qgent.memory.service.ProjectMemoryService;
 import qg.qgent.project.dto.ProjectCreateRequest;
 import qg.qgent.project.dto.ProjectResponse;
+import qg.qgent.project.entity.ProjectMemberEntity;
+import qg.qgent.project.mapper.ProjectMemberMapper;
 import qg.qgent.project.service.ProjectService;
 import qg.qgent.project.storage.ProjectDirectoryService;
 import qg.qgent.team.dto.TeamCreateRequest;
 import qg.qgent.team.dto.TeamResponse;
+import qg.qgent.team.entity.TeamMemberEntity;
+import qg.qgent.team.mapper.TeamMemberMapper;
 import qg.qgent.team.service.TeamService;
 import qg.qgent.user.entity.UserEntity;
 import qg.qgent.user.mapper.UserMapper;
@@ -63,7 +68,9 @@ public class EvalRunner {
 
     private final UserMapper userMapper;
     private final TeamService teamService;
+    private final TeamMemberMapper teamMemberMapper;
     private final ProjectService projectService;
+    private final ProjectMemberMapper projectMemberMapper;
     private final GroupService groupService;
     private final AgentService agentService;
     private final MessageMapper messageMapper;
@@ -320,6 +327,7 @@ public class EvalRunner {
         projectReq.setDescription("Automated eval run");
         ProjectResponse project = projectService.create(adminId, teamId, projectReq);
         Long projectId = Long.parseLong(project.getId());
+        addTeamAndProjectMember(teamId, projectId, memberId);
 
         GroupResponse defaultGroup = groupService.ensureProjectGroup(projectId, adminId, project.getName());
         Long defaultGroupId = Long.parseLong(defaultGroup.getId());
@@ -440,10 +448,31 @@ public class EvalRunner {
         messageMapper.insert(msg);
     }
 
+    private void addTeamAndProjectMember(Long teamId, Long projectId, Long userId) {
+        TeamMemberEntity teamMember = new TeamMemberEntity();
+        teamMember.setTeamId(teamId);
+        teamMember.setUserId(userId);
+        teamMember.setRole("TEAM_MEMBER");
+        teamMemberMapper.insert(teamMember);
+
+        ProjectMemberEntity projectMember = new ProjectMemberEntity();
+        projectMember.setProjectId(projectId);
+        projectMember.setUserId(userId);
+        projectMember.setRole("PROJECT_MEMBER");
+        projectMemberMapper.insert(projectMember);
+    }
+
     private static String resolveText(Path evalsDir, String value) throws IOException {
-        Path candidate = evalsDir.resolve(value);
-        if (Files.isRegularFile(candidate)) {
-            return Files.readString(candidate);
+        if (value.contains("\n") || value.contains("\r")) {
+            return value;
+        }
+        try {
+            Path candidate = evalsDir.resolve(value);
+            if (Files.isRegularFile(candidate)) {
+                return Files.readString(candidate);
+            }
+        } catch (InvalidPathException ignored) {
+            // 传入的是内联文本而不是文件路径。
         }
         return value;
     }
