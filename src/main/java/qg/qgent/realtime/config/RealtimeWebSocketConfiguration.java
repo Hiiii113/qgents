@@ -1,5 +1,6 @@
 package qg.qgent.realtime.config;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
@@ -12,6 +13,7 @@ import qg.qgent.realtime.websocket.WebSocketRealtimeHandler;
  */
 @Configuration
 @EnableWebSocket
+@ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
 public class RealtimeWebSocketConfiguration implements WebSocketConfigurer {
 
     private final WebSocketRealtimeHandler realtimeHandler;
