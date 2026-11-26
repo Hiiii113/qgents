@@ -99,8 +99,8 @@ class AgentStreamServiceTest {
                 .containsExactly(
                         "agent-run.updated",
                         "agent-run.delta",
-                        "agent-run.tool",
-                        "agent-run.tool",
+                        "agent-run.tool-started",
+                        "agent-run.tool-finished",
                         "agent-run.delta",
                         "agent-run.updated",
                         "agent-run.delta",
@@ -114,11 +114,11 @@ class AgentStreamServiceTest {
         assertThat(frames.stream().filter(frame -> "agent-run.delta".equals(frame.type())))
                 .extracting(frame -> frame.payload().get("text"))
                 .containsExactly("正在检查仓库结构。", "工具返回后继续输出。", "最终答复。");
-        assertThat(toolFrame(frames, "started").payload())
+        assertThat(toolFrame(frames, "agent-run.tool-started").payload())
                 .containsEntry("toolCallId", "call-a")
                 .containsEntry("tool", "run_command")
                 .containsEntry("input", "{\"cmd\":\"ls\"}");
-        assertThat(toolFrame(frames, "finished").payload())
+        assertThat(toolFrame(frames, "agent-run.tool-finished").payload())
                 .containsEntry("toolCallId", "call-a")
                 .containsEntry("output", "{\"ok\":true}");
         assertThat(frames.getLast().payload())
@@ -126,6 +126,30 @@ class AgentStreamServiceTest {
                 .containsEntry("rounds", 2);
         assertThat(frames.getLast().payload().toString())
                 .doesNotContain("reasoning", "arguments");
+    }
+
+    @Test
+    void deltaPushesTheFrameAsSoonAsTheFlushThresholdIsReached() {
+        when(groups.requireGroupMember(any(), any(), any())).thenReturn(new ChatGroupEntity());
+        AgentRunEntity run = run();
+        Long member = TestIds.next();
+        when(groups.memberUserIds(run.getGroupId())).thenReturn(Set.of(member));
+        RunStreamSink sink = service.sink(run);
+        sink.roundStarted();
+
+        // 达到 200 字阈值立即广播，不需要等到 finished() 或其他回合/工具事件。
+        sink.delta("a".repeat(200));
+
+        List<RealtimeFrame> deltas =
+                frames().stream()
+                        .filter(frame -> "agent-run.delta".equals(frame.type()))
+                        .toList();
+        assertThat(deltas).hasSize(1);
+        assertThat(deltas.getFirst().payload())
+                .containsEntry("runId", run.getId().toString())
+                .containsEntry("round", 1)
+                .containsEntry("seq", 1L)
+                .containsEntry("text", "a".repeat(200));
     }
 
     @Test
@@ -303,10 +327,10 @@ class AgentStreamServiceTest {
                                 "call-2", "read_file", 1, "done", "{\"path\":\"a.txt\"}", null));
 
         List<RealtimeFrame> frames = frames();
-        assertThat(toolFrame(frames, "started").payload())
+        assertThat(toolFrame(frames, "agent-run.tool-started").payload())
                 .containsEntry("tool", "run_command")
                 .containsEntry("input", "{\"cmd\":\"ls\"}");
-        assertThat(toolFrame(frames, "finished").payload())
+        assertThat(toolFrame(frames, "agent-run.tool-finished").payload())
                 .containsEntry("output", "{\"ok\":true,\"stdout\":\"a\"}");
     }
 
@@ -358,10 +382,9 @@ class AgentStreamServiceTest {
         return sent.getAllValues();
     }
 
-    private static RealtimeFrame toolFrame(List<RealtimeFrame> frames, String phase) {
+    private static RealtimeFrame toolFrame(List<RealtimeFrame> frames, String type) {
         return frames.stream()
-                .filter(frame -> "agent-run.tool".equals(frame.type()))
-                .filter(frame -> phase.equals(frame.payload().get("phase")))
+                .filter(frame -> type.equals(frame.type()))
                 .findFirst()
                 .orElseThrow();
     }
