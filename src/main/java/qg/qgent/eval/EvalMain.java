@@ -7,6 +7,7 @@ import java.util.Map;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.core.env.MapPropertySource;
 import qg.qgent.QgentsApplication;
 import qg.qgent.harness.model.OpenAiModelClient;
 
@@ -44,7 +45,12 @@ public final class EvalMain {
         try (ConfigurableApplicationContext ctx =
                 new SpringApplicationBuilder(QgentsApplication.class)
                     .web(WebApplicationType.NONE)
-                    .properties(overrides)
+                    .initializers(
+                        applicationContext ->
+                            applicationContext
+                                .getEnvironment()
+                                .getPropertySources()
+                                .addFirst(new MapPropertySource("evalCliOverrides", overrides)))
                     .run()) {
             EvalRunner runner = ctx.getBean(EvalRunner.class);
             EvalReport.SuiteReport report =
