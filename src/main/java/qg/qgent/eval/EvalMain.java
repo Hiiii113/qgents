@@ -9,6 +9,7 @@ import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.env.MapPropertySource;
 import qg.qgent.QgentsApplication;
+import qg.qgent.harness.model.ModelClient;
 import qg.qgent.harness.model.OpenAiModelClient;
 
 /**
@@ -53,6 +54,8 @@ public final class EvalMain {
                                 .addFirst(new MapPropertySource("evalCliOverrides", overrides)))
                     .run()) {
             EvalRunner runner = ctx.getBean(EvalRunner.class);
+            // 未显式指定 Judge 参数时，默认复用本次评测所用的同一个模型。
+            ModelClient effectiveJudge = judge != null ? judge : ctx.getBean(ModelClient.class);
             EvalReport.SuiteReport report =
                 runner.run(
                     new EvalRunner.Options(
@@ -64,7 +67,7 @@ public final class EvalMain {
                         parseInt(flags.get("timeout")),
                         profileName,
                         flags.containsKey("compare") ? Path.of(flags.get("compare")) : null,
-                        judge));
+                        effectiveJudge));
             if (report.errored() > 0) {
                 exitCode = 1;
             }
