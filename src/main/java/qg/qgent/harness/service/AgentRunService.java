@@ -113,6 +113,7 @@ public class AgentRunService {
 
     public void finish(AgentRunEntity run, RunStatus status, String result, int rounds) {
         run.setStatus(status);
+        run.setFailureCode(status == RunStatus.FAILED ? run.getFailureCode() : null);
         run.setResult(result);
         run.setRounds((run.getRounds() == null ? 0 : run.getRounds()) + rounds);
         run.setFinishedAt(LocalDateTime.now(ZoneOffset.UTC));
@@ -130,6 +131,9 @@ public class AgentRunService {
                 null,
                 Wrappers.<AgentRunEntity>lambdaUpdate()
                     .set(AgentRunEntity::getStatus, status)
+                    .set(
+                        AgentRunEntity::getFailureCode,
+                        status == RunStatus.FAILED ? run.getFailureCode() : null)
                     .set(AgentRunEntity::getResult, result)
                     .set(AgentRunEntity::getRounds, totalRounds)
                     .set(AgentRunEntity::getPromptTokens, orZero(run.getPromptTokens()))
@@ -147,6 +151,7 @@ public class AgentRunService {
                     .eq(AgentRunEntity::getStatus, RunStatus.RUNNING));
         if (updated > 0) {
             run.setStatus(status);
+            run.setFailureCode(status == RunStatus.FAILED ? run.getFailureCode() : null);
             run.setResult(result);
             run.setRounds(totalRounds);
             run.setFinishedAt(finishedAt);
@@ -159,6 +164,7 @@ public class AgentRunService {
                 null,
                 Wrappers.<AgentRunEntity>lambdaUpdate()
                     .set(AgentRunEntity::getStatus, RunStatus.CANCELLED)
+                    .set(AgentRunEntity::getFailureCode, null)
                     .set(AgentRunEntity::getResult, cancellationResult)
                     .set(AgentRunEntity::getRounds, totalRounds)
                     .set(AgentRunEntity::getPromptTokens, orZero(run.getPromptTokens()))
@@ -176,6 +182,7 @@ public class AgentRunService {
                     .eq(AgentRunEntity::getStatus, RunStatus.CANCELLING));
         if (cancelled > 0) {
             run.setStatus(RunStatus.CANCELLED);
+            run.setFailureCode(null);
             run.setResult(cancellationResult);
             run.setRounds(totalRounds);
             run.setFinishedAt(finishedAt);
@@ -185,6 +192,7 @@ public class AgentRunService {
         AgentRunEntity current = runs.selectById(run.getId());
         if (current != null) {
             run.setStatus(current.getStatus());
+            run.setFailureCode(current.getFailureCode());
             run.setResult(current.getResult());
             run.setRounds(current.getRounds());
             run.setFinishedAt(current.getFinishedAt());
@@ -193,6 +201,7 @@ public class AgentRunService {
 
     public void resume(AgentRunEntity run, String instruction) {
         run.setStatus(RunStatus.RUNNING);
+        run.setFailureCode(null);
         run.setFinishedAt(null);
         if (instruction != null && !instruction.isBlank()) {
             run.setInstruction(run.getInstruction() + "\n\n继续要求：" + instruction);

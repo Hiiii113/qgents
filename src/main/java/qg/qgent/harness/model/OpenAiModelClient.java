@@ -186,7 +186,8 @@ public class OpenAiModelClient implements ModelClient, DisposableBean {
                         @Override
                         public void onComplete(Optional<Throwable> error) {
                             if (error.isPresent()) {
-                                sink.error(error.get());
+                                // 429/5xx 带上分类交给运行层决定是否重试，其他错误保持原样。
+                                sink.error(ModelFailureException.translate(error.get()));
                                 return;
                             }
                             try {

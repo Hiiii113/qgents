@@ -269,6 +269,7 @@ public class AgentStreamService {
             id(run.getAgentId()),
             id(run.getTriggerMessageId()),
             run.getStatus().name(),
+            run.getFailureCode() == null ? null : run.getFailureCode().name(),
             round,
             rounds(run),
             run.getPromptTokens(),

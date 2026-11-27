@@ -60,6 +60,7 @@ final class RunLifecycle {
             if (isCancelled(run)) {
                 status = RunStatus.CANCELLED;
                 result = cancelledResult(run);
+                run.setFailureCode(null);
             }
             if (status != RunStatus.SUCCEEDED && !commandsStopped) {
                 sessions.stopExecutionsByAgentRun(run.getId());

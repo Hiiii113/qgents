@@ -305,6 +305,7 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     workspace_id BIGINT NULL COMMENT '本轮最近使用的工作区',
     created_by BIGINT NOT NULL,
     status VARCHAR(16) NOT NULL,
+    failure_code VARCHAR(32) NULL COMMENT '失败分类：UPSTREAM_RATE_LIMITED/UPSTREAM_SERVER_ERROR/UPSTREAM_TIMEOUT/AGENT_FAILURE；成功与取消为空',
     instruction TEXT NOT NULL,
     result MEDIUMTEXT NULL,
     rounds INT NOT NULL DEFAULT 0,
@@ -403,6 +404,9 @@ CREATE TABLE IF NOT EXISTS
 -- DELETE FROM agent_runs;
 -- ALTER TABLE agent_runs
 --     ADD COLUMN agent_id BIGINT NOT NULL COMMENT '执行该轮运行的项目内 Agent' AFTER group_id;
+-- -- 运行失败分类：不改 status，仅补充失败来源（成功与取消为空）：
+-- ALTER TABLE agent_runs
+--     ADD COLUMN failure_code VARCHAR(32) NULL COMMENT '失败分类：UPSTREAM_RATE_LIMITED/UPSTREAM_SERVER_ERROR/UPSTREAM_TIMEOUT/AGENT_FAILURE；成功与取消为空' AFTER status;
 -- -- 群不再有单独的启用开关，Agent 以群成员的身份存在：
 -- ALTER TABLE chat_groups DROP COLUMN qgent_enabled;
 -- -- 项目记忆改成管理员在默认群确认后由 Agent 直接写入，旧候选表不再使用：

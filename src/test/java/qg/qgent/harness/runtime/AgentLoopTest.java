@@ -22,7 +22,9 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
+import qg.qgent.harness.entity.FailureCode;
 import qg.qgent.harness.model.ModelClient;
+import qg.qgent.harness.model.ModelFailureException;
 import qg.qgent.harness.model.ModelMessage;
 import qg.qgent.harness.tool.ParallelTool;
 import qg.qgent.harness.tool.Tool;
@@ -549,6 +551,7 @@ class AgentLoopTest {
 
         assertThat(result.success()).isFalse();
         assertThat(result.text()).contains("连续被截断");
+        assertThat(result.failureCode()).isEqualTo(FailureCode.AGENT_FAILURE);
         assertThat(tools.calls).isZero();
         ArgumentCaptor<ModelClient.Request> requests =
                 ArgumentCaptor.forClass(ModelClient.Request.class);
@@ -560,6 +563,87 @@ class AgentLoopTest {
                                 message instanceof ModelMessage.UserMessage user
                                         && user.text().contains("max_tokens"))
                 .hasSize(2);
+    }
+
+    @Test
+    void retriesRateLimitedModelCallOnceWhenNoTextWasEmitted() {
+        AgentLoop loop = loop(3);
+        when(model.stream(any(), any()))
+                .thenReturn(upstreamFailure(FailureCode.UPSTREAM_RATE_LIMITED))
+                .thenReturn(reply("重试成功"));
+        RecordingSink sink = new RecordingSink();
+
+        AgentLoop.Result result =
+                loop.run(
+                        TestIds.next(),
+                        loop.conversation("Agent", List.of(new ModelMessage.UserMessage("你好"))),
+                        List::of,
+                        () -> false,
+                        AgentLoop.UpdateSource.NONE,
+                        sink);
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.text()).isEqualTo("重试成功");
+        assertThat(result.failureCode()).isNull();
+        assertThat(result.rounds()).isEqualTo(1);
+        assertThat(sink.rounds).isEqualTo(1);
+        verify(model, times(2)).stream(any(), any());
+    }
+
+    @Test
+    void retriesOnlyOnceAndKeepsTheSecondFailureCode() {
+        AgentLoop loop = loop(3);
+        when(model.stream(any(), any()))
+                .thenReturn(upstreamFailure(FailureCode.UPSTREAM_RATE_LIMITED))
+                .thenReturn(upstreamFailure(FailureCode.UPSTREAM_SERVER_ERROR));
+
+        AgentLoop.Result result =
+                loop.run(
+                        TestIds.next(),
+                        loop.conversation("Agent", List.of(new ModelMessage.UserMessage("你好"))),
+                        List::of,
+                        () -> false);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.text()).isEqualTo("模型服务暂时不可用，请稍后重试");
+        assertThat(result.failureCode()).isEqualTo(FailureCode.UPSTREAM_SERVER_ERROR);
+        verify(model, times(2)).stream(any(), any());
+    }
+
+    @Test
+    void doesNotRetryUpstreamFailureAfterTextWasEmitted() {
+        AgentLoop loop = loop(3);
+        when(model.stream(any(), any()))
+                .thenAnswer(invocation -> {
+                    Consumer<String> delta = invocation.getArgument(1);
+                    return Mono.<ModelClient.Reply>create(sink -> {
+                        delta.accept("部分正文");
+                        sink.error(
+                                new ModelFailureException(
+                                        FailureCode.UPSTREAM_SERVER_ERROR,
+                                        new IllegalStateException("503")));
+                    });
+                })
+                .thenReturn(reply("不应重试"));
+        RecordingSink sink = new RecordingSink();
+
+        AgentLoop.Result result =
+                loop.run(
+                        TestIds.next(),
+                        loop.conversation("Agent", List.of(new ModelMessage.UserMessage("你好"))),
+                        List::of,
+                        () -> false,
+                        AgentLoop.UpdateSource.NONE,
+                        sink);
+
+        assertThat(result.success()).isFalse();
+        assertThat(result.failureCode()).isEqualTo(FailureCode.UPSTREAM_SERVER_ERROR);
+        assertThat(sink.deltas).containsExactly("部分正文");
+        verify(model, times(1)).stream(any(), any());
+    }
+
+    private static Mono<ModelClient.Reply> upstreamFailure(FailureCode code) {
+        return Mono.error(new ModelFailureException(code, new IllegalStateException(code.name())));
     }
 
     @Test
@@ -639,9 +723,14 @@ class AgentLoopTest {
                 TestIds.next(), "Agent", List.of(),
                 () -> callbacks(tools), () -> false);
 
-        assertThat(result).isEqualTo(new AgentLoop.Result(false, "模型调用超时，请稍后重试", 1));
+        assertThat(result.success()).isFalse();
+        assertThat(result.text()).isEqualTo("模型调用超时，请稍后重试");
+        assertThat(result.failureCode()).isEqualTo(FailureCode.UPSTREAM_TIMEOUT);
+        assertThat(result.rounds()).isEqualTo(1);
         assertThat(upstreamCancelled).isTrue();
         assertThat(tools.calls).isZero();
+        // 有正文时不再重试；无正文时整轮只重试一次。
+        verify(model, times(receivedText ? 1 : 2)).stream(any(), any());
     }
 
     @Test

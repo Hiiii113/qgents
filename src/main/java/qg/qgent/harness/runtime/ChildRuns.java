@@ -1,6 +1,7 @@
 package qg.qgent.harness.runtime;
 
 import qg.qgent.harness.entity.AgentRunEntity;
+import qg.qgent.harness.entity.FailureCode;
 import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.model.ModelMessage;
 import qg.qgent.harness.model.ModelMessage.UserMessage;
@@ -342,6 +343,7 @@ final class ChildRuns {
                             sink);
                     totalRounds += result.rounds();
                     child.run.addMetrics(result.metrics(), loop.modelName());
+                    child.run.setFailureCode(result.success() ? null : result.failureCode());
                 } catch (RuntimeException exception) {
                     failure = exception;
                 }
@@ -366,6 +368,7 @@ final class ChildRuns {
                               ? RunStatus.SUCCEEDED
                               : RunStatus.FAILED;
                     finishResult = failure == null ? result.text() : failure(failure);
+                    if (failure != null) child.run.setFailureCode(FailureCode.AGENT_FAILURE);
                     if (!child.beginFinishing()) break;
                 }
                 lifecycle.finish(child.run, finishStatus, finishResult, totalRounds);
@@ -373,6 +376,7 @@ final class ChildRuns {
                 return;
             }
         } catch (RuntimeException exception) {
+            child.run.setFailureCode(FailureCode.AGENT_FAILURE);
             finish(
                 child,
                 rootCancelled.getAsBoolean() || child.isStopRequested()
