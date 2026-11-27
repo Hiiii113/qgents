@@ -3,8 +3,8 @@ package qg.qgent.sandbox.execution.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import qg.qgent.sandbox.config.SandboxProperties;
@@ -18,6 +18,7 @@ import qg.qgent.sandbox.execution.mapper.ToolExecutionMapper;
 import qg.qgent.sandbox.execution.output.CommandOutput;
 import qg.qgent.sandbox.execution.output.CommandOutputWindow;
 import qg.qgent.sandbox.filesystem.service.WorkspacePathResolver;
+import qg.qgent.sandbox.metrics.SandboxMetrics;
 import qg.qgent.sandbox.runtime.SandboxAllocation;
 import qg.qgent.sandbox.service.SandboxService;
 
@@ -48,7 +49,6 @@ import java.util.regex.Pattern;
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class CommandExecutionService {
     private static final String COMMAND_TOOL = "command.run";
     private static final String TOOL_EXECUTION_TIMED_OUT = "TOOL_EXECUTION_TIMED_OUT";
@@ -75,8 +75,57 @@ public class CommandExecutionService {
     private final SandboxProperties properties;
     private final ExecutorService sandboxExecutionPool;
     private final Clock clock;
+    private final SandboxMetrics metrics;
     private final ActiveToolExecutions active = new ActiveToolExecutions();
     private final ConcurrentMap<Long, Object> logLocks = new ConcurrentHashMap<>();
+
+    public CommandExecutionService(
+        SandboxService sandboxes,
+        WorkspacePathResolver paths,
+        CommandRunTool commands,
+        ToolExecutionMapper executionMapper,
+        ToolExecutionLogMapper logMapper,
+        ObjectMapper objectMapper,
+        SandboxProperties properties,
+        ExecutorService sandboxExecutionPool,
+        Clock clock) {
+        this(
+            sandboxes,
+            paths,
+            commands,
+            executionMapper,
+            logMapper,
+            objectMapper,
+            properties,
+            sandboxExecutionPool,
+            clock,
+            SandboxMetrics.noop());
+    }
+
+    @Autowired
+    public CommandExecutionService(
+        SandboxService sandboxes,
+        WorkspacePathResolver paths,
+        CommandRunTool commands,
+        ToolExecutionMapper executionMapper,
+        ToolExecutionLogMapper logMapper,
+        ObjectMapper objectMapper,
+        SandboxProperties properties,
+        ExecutorService sandboxExecutionPool,
+        Clock clock,
+        SandboxMetrics metrics) {
+        this.sandboxes = sandboxes;
+        this.paths = paths;
+        this.commands = commands;
+        this.executionMapper = executionMapper;
+        this.logMapper = logMapper;
+        this.objectMapper = objectMapper;
+        this.properties = properties;
+        this.sandboxExecutionPool = sandboxExecutionPool;
+        this.clock = clock;
+        this.metrics = metrics;
+        this.metrics.bindActiveCommands(active::activeCount);
+    }
 
     /**
      * 命令参数；临时环境变量不写入数据库。
@@ -120,6 +169,7 @@ public class CommandExecutionService {
                     return find(entity.getId());
                 });
         } catch (RejectedExecutionException exception) {
+            metrics.recordCommand("rejected", 0L);
             executionMapper.rejectQueued(
                 entity.getId(),
                 properties.getInstanceId(),
@@ -180,6 +230,7 @@ public class CommandExecutionService {
         }
         CommandExecution cancelled = response(require(executionId));
         active.cancel(executionId, cancelled);
+        metrics.recordCommand("cancelled", 0L);
         append(executionId, "SYSTEM", "工具执行已取消");
         log.debug("command cancel executionId={}", executionId);
         logLocks.remove(executionId);
@@ -316,6 +367,7 @@ public class CommandExecutionService {
                 failureReason);
         }
 
+        Instant finished = clock.instant();
         executionMapper.finishIfRunning(
             executionId,
             properties.getInstanceId(),
@@ -324,7 +376,15 @@ public class CommandExecutionService {
             resultJson,
             failureCode,
             failureReason,
-            utc(clock.instant()));
+            utc(finished));
+        String commandOutcome =
+            switch (status) {
+                case SUCCEEDED -> "succeeded";
+                case TIMED_OUT -> "timeout";
+                case CANCELLED -> "cancelled";
+                default -> "failed";
+            };
+        metrics.recordCommand(commandOutcome, Duration.between(started, finished).toNanos());
         ToolExecutionEntity completed = executionMapper.selectById(executionId);
         if (completed != null) {
             append(executionId, "SYSTEM", "工具执行结束，状态：" + completed.getStatus());
@@ -337,7 +397,7 @@ public class CommandExecutionService {
             running.getAgentRunId(),
             status,
             exitCode,
-            Duration.between(started, clock.instant()).toMillis(),
+            Duration.between(started, finished).toMillis(),
             failureCode,
             failureReason);
     }

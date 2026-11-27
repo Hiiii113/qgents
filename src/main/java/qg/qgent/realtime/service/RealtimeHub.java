@@ -2,8 +2,13 @@ package qg.qgent.realtime.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -22,11 +27,37 @@ public class RealtimeHub {
     private static final Logger log = LoggerFactory.getLogger(RealtimeHub.class);
 
     private final ObjectMapper mapper;
+    private final Counter serializeErrors;
+    private final Counter ioErrors;
     private final ConcurrentHashMap<Long, Set<WebSocketSession>> sessionsByUser =
         new ConcurrentHashMap<>();
 
     public RealtimeHub(ObjectMapper mapper) {
+        this(mapper, new SimpleMeterRegistry());
+    }
+
+    @Autowired
+    public RealtimeHub(ObjectMapper mapper, MeterRegistry registry) {
         this.mapper = mapper;
+        this.serializeErrors =
+            Counter.builder("qgents.realtime.ws.send.errors.total")
+                .description("WebSocket realtime frame send failures")
+                .tag("reason", "serialize")
+                .register(registry);
+        this.ioErrors =
+            Counter.builder("qgents.realtime.ws.send.errors.total")
+                .description("WebSocket realtime frame send failures")
+                .tag("reason", "io")
+                .register(registry);
+        Gauge.builder("qgents.realtime.ws.users.active", sessionsByUser, ConcurrentHashMap::size)
+            .description("Active users with at least one open realtime WebSocket session")
+            .register(registry);
+        Gauge.builder(
+                "qgents.realtime.ws.sessions.active",
+                sessionsByUser,
+                map -> map.values().stream().mapToInt(Set::size).sum())
+            .description("Active realtime WebSocket sessions")
+            .register(registry);
     }
 
     /**
@@ -60,6 +91,7 @@ public class RealtimeHub {
         try {
             json = mapper.writeValueAsString(frame);
         } catch (JsonProcessingException e) {
+            serializeErrors.increment();
             log.warn(
                 "realtime frame serialization failed, type={}: {}",
                 frame.type(),
@@ -82,6 +114,7 @@ public class RealtimeHub {
                         session.sendMessage(message);
                     }
                 } catch (IOException | IllegalStateException e) {
+                    ioErrors.increment();
                     log.debug("realtime send failed, userId={}: {}", userId, e.getMessage());
                     closeQuietly(session);
                     sessions.remove(session);

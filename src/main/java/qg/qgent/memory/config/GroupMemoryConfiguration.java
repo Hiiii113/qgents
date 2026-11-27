@@ -1,5 +1,7 @@
 package qg.qgent.memory.config;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.binder.jvm.ExecutorServiceMetrics;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,7 +20,8 @@ public class GroupMemoryConfiguration {
     private static final int QUEUE_CAPACITY = 200;
 
     @Bean(name = "groupMemoryExecutor")
-    public ThreadPoolTaskExecutor groupMemoryExecutor(GroupMemoryProperties properties) {
+    public ThreadPoolTaskExecutor groupMemoryExecutor(
+        GroupMemoryProperties properties, MeterRegistry registry) {
         properties.validate();
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(1);
@@ -27,6 +30,7 @@ public class GroupMemoryConfiguration {
         executor.setThreadNamePrefix("group-memory-");
         executor.setTaskDecorator(new MdcTaskDecorator());
         executor.initialize();
+        ExecutorServiceMetrics.monitor(registry, executor.getThreadPoolExecutor(), "group-memory");
         return executor;
     }
 }

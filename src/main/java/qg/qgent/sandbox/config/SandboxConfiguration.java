@@ -1,5 +1,7 @@
 package qg.qgent.sandbox.config;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.binder.jvm.ExecutorServiceMetrics;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,10 +19,12 @@ public class SandboxConfiguration {
      * 创建异步命令执行使用的固定大小线程池。
      */
     @Bean(destroyMethod = "shutdownNow")
-    ExecutorService sandboxExecutionPool(SandboxProperties properties) {
-        return Executors.newFixedThreadPool(
-            properties.getExecutionThreads(),
-            Thread.ofPlatform().name("sandbox-execution-", 0).factory());
+    ExecutorService sandboxExecutionPool(SandboxProperties properties, MeterRegistry registry) {
+        ExecutorService pool =
+            Executors.newFixedThreadPool(
+                properties.getExecutionThreads(),
+                Thread.ofPlatform().name("sandbox-execution-", 0).factory());
+        return ExecutorServiceMetrics.monitor(registry, pool, "sandbox-exec");
     }
 
     /**
