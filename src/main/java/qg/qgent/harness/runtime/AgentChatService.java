@@ -3,9 +3,11 @@ package qg.qgent.harness.runtime;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import qg.qgent.harness.metrics.HarnessMetrics;
 import qg.qgent.agent.entity.AgentEntity;
 import qg.qgent.agent.service.AgentApplicationService;
 import qg.qgent.agent.service.AgentService;
@@ -95,6 +97,7 @@ public class AgentChatService {
     private final McpToolCallbacks mcp;
     private final Executor childExecutor;
     private final int maxSubagents;
+    private final HarnessMetrics metrics;
 
     public AgentChatService(
         GitHubCapability github,
@@ -119,8 +122,63 @@ public class AgentChatService {
         AgentService agents,
         AgentApplicationService agentApplications,
         McpToolCallbacks mcp,
+        Executor childExecutor,
+        int maxSubagents) {
+        this(
+            github,
+            workspaceCommands,
+            workspaces,
+            repositories,
+            loop,
+            json,
+            briefing,
+            skills,
+            history,
+            messages,
+            runService,
+            streams,
+            sessions,
+            files,
+            attachments,
+            memories,
+            groupMemory,
+            agentMemories,
+            crossGroup,
+            agents,
+            agentApplications,
+            mcp,
+            childExecutor,
+            maxSubagents,
+            HarnessMetrics.noop());
+    }
+
+    @Autowired
+    public AgentChatService(
+        GitHubCapability github,
+        SandboxCommands workspaceCommands,
+        WorkspaceService workspaces,
+        WorkspaceRepositoryService repositories,
+        AgentLoop loop,
+        ObjectMapper json,
+        BriefingService briefing,
+        SkillService skills,
+        ChatHistoryService history,
+        MessageService messages,
+        AgentRunService runService,
+        AgentStreamService streams,
+        SandboxSessionManager sessions,
+        SandboxFiles files,
+        AttachmentService attachments,
+        ProjectMemoryService memories,
+        GroupMemoryService groupMemory,
+        AgentMemoryService agentMemories,
+        CrossGroupAccessService crossGroup,
+        AgentService agents,
+        AgentApplicationService agentApplications,
+        McpToolCallbacks mcp,
         @Qualifier("agentSubagentExecutor") Executor childExecutor,
-        @Value("${app.agent.max-subagents:8}") int maxSubagents) {
+        @Value("${app.agent.max-subagents:8}") int maxSubagents,
+        HarnessMetrics metrics) {
         if (maxSubagents < 1) throw new IllegalArgumentException("max-subagents 必须大于 0");
         this.github = github;
         this.workspaceCommands = workspaceCommands;
@@ -146,6 +204,7 @@ public class AgentChatService {
         this.mcp = mcp;
         this.childExecutor = childExecutor;
         this.maxSubagents = maxSubagents;
+        this.metrics = metrics;
     }
 
     /**
@@ -221,11 +280,13 @@ public class AgentChatService {
                 work::isCancelled,
                 loop,
                 child -> callbacks(work, child, conversationTools(work, child, false)),
-                streams::sink);
+                streams::sink,
+                metrics);
         ChildRuns children = work.children;
         Thread rootWorker = Thread.currentThread();
         boolean wasInterrupted = rootWorker.isInterrupted();
         runService.registerCancellationSignal(root.getId(), () -> lifecycle.cancelled(root));
+        long runStartNanos = metrics.runStarted(true);
         RunStatus status = RunStatus.FAILED;
         String resultText = "Agent 执行失败，请稍后重试";
         int rounds = 0;
@@ -263,7 +324,13 @@ public class AgentChatService {
             resultText = failure(exception);
             if (!cancelled) root.setFailureCode(FailureCode.AGENT_FAILURE);
         } finally {
-            lifecycle.finish(root, status, resultText, rounds);
+            RunStatus finalStatus = lifecycle.finish(root, status, resultText, rounds);
+            metrics.runFinished(
+                true,
+                finalStatus,
+                loop.modelName(),
+                root.getRounds() == null ? rounds : root.getRounds(),
+                runStartNanos);
             // finishRoot 在并发取消时可能把运行改为 CANCELLED，终态事件以记录为准。
             sink.finished();
             runService.unregisterCancellationSignal(root.getId());

@@ -1,5 +1,7 @@
 package qg.qgent.harness.config;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.binder.jvm.ExecutorServiceMetrics;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -15,16 +17,21 @@ import java.util.concurrent.Executor;
 @EnableConfigurationProperties(AgentExecutorProperties.class)
 public class AgentExecutionConfiguration {
     @Bean(name = "agentExecutor")
-    public Executor agentExecutor(AgentExecutorProperties properties) {
-        return executor(properties, "agent-");
+    public Executor agentExecutor(AgentExecutorProperties properties, MeterRegistry registry) {
+        return executor(properties, "agent-", "agent", registry);
     }
 
     @Bean(name = "agentSubagentExecutor")
-    public ThreadPoolTaskExecutor agentSubagentExecutor(AgentExecutorProperties properties) {
-        return executor(properties, "agent-child-");
+    public ThreadPoolTaskExecutor agentSubagentExecutor(
+        AgentExecutorProperties properties, MeterRegistry registry) {
+        return executor(properties, "agent-child-", "agent-child", registry);
     }
 
-    private ThreadPoolTaskExecutor executor(AgentExecutorProperties properties, String prefix) {
+    private ThreadPoolTaskExecutor executor(
+        AgentExecutorProperties properties,
+        String prefix,
+        String metricName,
+        MeterRegistry registry) {
         properties.validate();
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(properties.getCoreSize());
@@ -33,6 +40,7 @@ public class AgentExecutionConfiguration {
         executor.setThreadNamePrefix(prefix);
         executor.setTaskDecorator(new MdcTaskDecorator());
         executor.initialize();
+        ExecutorServiceMetrics.monitor(registry, executor.getThreadPoolExecutor(), metricName);
         return executor;
     }
 }

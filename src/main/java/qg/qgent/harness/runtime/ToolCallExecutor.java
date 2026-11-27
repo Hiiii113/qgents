@@ -3,6 +3,7 @@ package qg.qgent.harness.runtime;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.MDC;
+import qg.qgent.harness.metrics.HarnessMetrics;
 import qg.qgent.harness.model.ModelMessage.ToolCall;
 import qg.qgent.harness.model.ModelMessage.ToolResponse;
 import qg.qgent.harness.tool.ToolCallback;
@@ -22,12 +23,18 @@ import java.util.function.BooleanSupplier;
 final class ToolCallExecutor {
     private final ObjectMapper json;
     private final int maxParallel;
+    private final HarnessMetrics metrics;
 
     ToolCallExecutor(ObjectMapper json, int maxParallel) {
+        this(json, maxParallel, HarnessMetrics.noop());
+    }
+
+    ToolCallExecutor(ObjectMapper json, int maxParallel, HarnessMetrics metrics) {
         if (maxParallel < 1 || maxParallel > 16)
             throw new IllegalArgumentException("max-parallel-tool-calls 必须为 1～16");
         this.json = json;
         this.maxParallel = maxParallel;
+        this.metrics = metrics;
     }
 
     Result execute(
@@ -141,19 +148,25 @@ final class ToolCallExecutor {
         java.util.concurrent.atomic.AtomicInteger invoked,
         java.util.concurrent.atomic.AtomicInteger failed) {
         invoked.incrementAndGet();
+        long startNanos = System.nanoTime();
         sink.toolStarted(call.id(), call.name(), call.arguments());
         // 未知工具与异常一定是失败；正常返回时只信 ToolResult 的 ok 字段，其他结果不声称成功。
         Boolean ok = false;
+        String outcome = "error";
         // 声明在 try 之外：finally 要用到最后的结果，未正常返回时按空结果上报。
         String result = null;
         try {
             ToolCallback callback = callbacks.get(call.name());
-            if (callback == null) result = error("TOOL_NOT_FOUND", "本轮没有工具：" + call.name());
-            else {
+            if (callback == null) {
+                outcome = "unknown";
+                result = error("TOOL_NOT_FOUND", "本轮没有工具：" + call.name());
+            } else {
                 try {
                     result = callback.call(call.arguments());
                     ok = resultOk(result);
+                    outcome = Boolean.FALSE.equals(ok) ? "error" : "ok";
                 } catch (RuntimeException exception) {
+                    outcome = "error";
                     // 已知业务错误保留稳定错误码，便于模型按代码而不是文案判断处置方式
                     String code =
                         exception instanceof qg.qgent.common.web.ApiException api
@@ -169,6 +182,7 @@ final class ToolCallExecutor {
             }
         } finally {
             if (Boolean.FALSE.equals(ok)) failed.incrementAndGet();
+            metrics.recordToolCall(call.name(), outcome, System.nanoTime() - startNanos);
             sink.toolFinished(call.id(), call.name(), ok, result);
         }
         return new ToolResponse(call.id(), call.name(), result);
