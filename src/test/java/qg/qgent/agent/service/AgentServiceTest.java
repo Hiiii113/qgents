@@ -91,6 +91,18 @@ class AgentServiceTest {
     }
 
     @Test
+    void disabledAgentCannotBeInvitedAgain() {
+        Long project = TestIds.next(), agentId = TestIds.next();
+        AgentEntity disabled = agent(agentId, project, AgentEntity.STATUS_DISABLED);
+        when(agents.selectBatchIds(List.of(agentId))).thenReturn(List.of(disabled));
+
+        assertThatThrownBy(() -> service.requireProjectAgents(project, List.of(agentId)))
+                .isInstanceOfSatisfying(
+                        ApiException.class,
+                        error -> assertThat(error.code()).isEqualTo("INVALID_GROUP_AGENT"));
+    }
+
+    @Test
     void onlyAnActiveAgentOfThisProjectCanRun() {
         Long project = TestIds.next(), agentId = TestIds.next();
         AgentEntity active = agent(agentId, project, AgentEntity.STATUS_ACTIVE);
@@ -104,6 +116,13 @@ class AgentServiceTest {
 
         AgentEntity pending = agent(agentId, project, AgentEntity.STATUS_PENDING);
         when(agents.selectById(agentId)).thenReturn(pending);
+        assertThatThrownBy(() -> service.requireActiveProjectAgent(project, agentId))
+                .isInstanceOfSatisfying(
+                        ApiException.class,
+                        error -> assertThat(error.code()).isEqualTo("AGENT_NOT_ACTIVE"));
+
+        AgentEntity disabled = agent(agentId, project, AgentEntity.STATUS_DISABLED);
+        when(agents.selectById(agentId)).thenReturn(disabled);
         assertThatThrownBy(() -> service.requireActiveProjectAgent(project, agentId))
                 .isInstanceOfSatisfying(
                         ApiException.class,

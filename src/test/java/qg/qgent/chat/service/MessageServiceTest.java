@@ -151,7 +151,7 @@ class MessageServiceTest {
                                 "AGENT_NOT_IN_GROUP",
                                 "Agent 未加入当前群聊"))
                 .when(groupService)
-                .requireGroupAgent(groupId, agentId);
+                .requireActiveGroupAgent(projectId, groupId, agentId);
         MessageService service =
                 new MessageService(
                         messages,
@@ -180,6 +180,59 @@ class MessageServiceTest {
                 .isInstanceOfSatisfying(
                         ApiException.class,
                         error -> assertThat(error.code()).isEqualTo("AGENT_NOT_IN_GROUP"));
+        verify(messages, never()).insert(any(MessageEntity.class));
+        verifyNoInteractions(publisher);
+    }
+
+    @Test
+    void mentioningDisabledAgentIsRejectedBeforeSaving() {
+        Long projectId = TestIds.next(),
+                groupId = TestIds.next(),
+                actor = TestIds.next(),
+                agentId = TestIds.next();
+        ChatGroupEntity group = new ChatGroupEntity();
+        group.setId(groupId);
+        group.setProjectId(projectId);
+        MessageMapper messages = mock(MessageMapper.class);
+        ChatGroupMapper groups = mock(ChatGroupMapper.class);
+        GroupService groupService = mock(GroupService.class);
+        ApplicationEventPublisher publisher = mock(ApplicationEventPublisher.class);
+        when(groups.selectOne(any())).thenReturn(group);
+        doThrow(
+                        new ApiException(
+                                HttpStatus.UNPROCESSABLE_ENTITY,
+                                "AGENT_NOT_ACTIVE",
+                                "Agent 未启用或不属于本项目"))
+                .when(groupService)
+                .requireActiveGroupAgent(projectId, groupId, agentId);
+        MessageService service =
+                new MessageService(
+                        messages,
+                        groups,
+                        mock(DirectConversationMapper.class),
+                        mock(UserMapper.class),
+                        groupService,
+                        new ObjectMapper(),
+                        mock(EventService.class),
+                        mock(NotificationService.class),
+                        new MessageViews(
+                                mock(UserMapper.class),
+                                mock(AgentMapper.class),
+                                mock(AttachmentService.class),
+                                new ObjectMapper()),
+                        publisher);
+        MessageSendRequest request = new MessageSendRequest();
+        request.setType("TEXT");
+        request.setContent(Map.of("text", "@助手 看下这个"));
+        Mention agent = new Mention();
+        agent.setType("AGENT");
+        agent.setId(agentId);
+        request.setMentions(List.of(agent));
+
+        assertThatThrownBy(() -> service.send(actor, projectId, groupId, request))
+                .isInstanceOfSatisfying(
+                        ApiException.class,
+                        error -> assertThat(error.code()).isEqualTo("AGENT_NOT_ACTIVE"));
         verify(messages, never()).insert(any(MessageEntity.class));
         verifyNoInteractions(publisher);
     }

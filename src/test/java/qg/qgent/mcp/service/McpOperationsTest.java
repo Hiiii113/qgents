@@ -74,6 +74,22 @@ class McpOperationsTest {
     }
 
     @Test
+    void disabledAgentCannotUseAnAssignedMcpConnection() {
+        when(agents.requireActiveProjectAgent(PROJECT, AGENT))
+                .thenThrow(
+                        new ApiException(
+                                HttpStatus.UNPROCESSABLE_ENTITY,
+                                "AGENT_NOT_ACTIVE",
+                                "Agent 未启用或不属于本项目"));
+
+        assertThatThrownBy(() -> operations.discover(new RunActor(PROJECT, AGENT, ALICE), SERVICE))
+                .isInstanceOfSatisfying(
+                        ApiException.class,
+                        e -> assertThat(e.code()).isEqualTo("AGENT_NOT_ACTIVE"));
+        verifyNoInteractions(remote);
+    }
+
+    @Test
     void sharedTokenIsUsableThroughAssignedAgentButEditableOnlyByAdmin() {
         setServer(Scope.SHARED, true);
         setCredential(null, 3L, "shared-token");

@@ -45,4 +45,14 @@ public interface AgentMapper extends BaseMapper<AgentEntity> {
      * 管理员拒绝申请；被拒绝的申请不能激活，也不再占用数量上限。
      */
     int reject(@Param("id") Long id, @Param("approvedBy") Long approvedBy);
+
+    /**
+     * 停用已启用的 Agent；只在仍为 ACTIVE 时生效，重复停用得到 0。
+     */
+    int disable(@Param("id") Long id);
+
+    /**
+     * 重新启用已停用的 Agent；只在仍为 DISABLED 时生效，重复启用得到 0。
+     */
+    int enable(@Param("id") Long id);
 }

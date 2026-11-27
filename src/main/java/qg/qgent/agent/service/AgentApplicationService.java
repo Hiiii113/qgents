@@ -107,6 +107,43 @@ public class AgentApplicationService {
     }
 
     /**
+     * 管理员停用已启用的自定义 Agent；默认 Agent 是项目群聊的保底成员，不能停用。
+     * 只改状态，群成员、MCP 绑定和历史消息都保留。
+     */
+    @Transactional
+    public AgentEntity disable(Long actor, Long projectId, Long agentId) {
+        access.requireProjectAdmin(projectId, actor);
+        AgentEntity agent = requireProjectAgent(projectId, agentId);
+        if (Boolean.TRUE.equals(agent.getDefaultAgent())) {
+            throw new ApiException(
+                HttpStatus.CONFLICT, "DEFAULT_AGENT_REQUIRED", "默认 Agent 不能停用");
+        }
+        if (!AgentEntity.STATUS_ACTIVE.equals(agent.getStatus())) {
+            throw statusConflict("只有已启用的 Agent 可以停用");
+        }
+        if (agents.disable(agentId) == 0) {
+            throw statusConflict("Agent 状态已变化，请刷新后重试");
+        }
+        return agents.selectById(agentId);
+    }
+
+    /**
+     * 管理员重新启用已停用的自定义 Agent；原有的群成员与 MCP 绑定立即恢复可用。
+     */
+    @Transactional
+    public AgentEntity enable(Long actor, Long projectId, Long agentId) {
+        access.requireProjectAdmin(projectId, actor);
+        AgentEntity agent = requireProjectAgent(projectId, agentId);
+        if (!AgentEntity.STATUS_DISABLED.equals(agent.getStatus())) {
+            throw statusConflict("只有已停用的 Agent 可以重新启用");
+        }
+        if (agents.enable(agentId) == 0) {
+            throw statusConflict("Agent 状态已变化，请刷新后重试");
+        }
+        return agents.selectById(agentId);
+    }
+
+    /**
      * 管理员拒绝申请：被拒绝的申请不能激活，也不再占用数量上限。
      */
     @Transactional
@@ -127,6 +164,15 @@ public class AgentApplicationService {
         if (!AgentEntity.STATUS_PENDING.equals(application.getStatus())) {
             throw notPending();
         }
+    }
+
+    private AgentEntity requireProjectAgent(Long projectId, Long agentId) {
+        AgentEntity agent = agents.selectById(agentId);
+        if (agent == null || !projectId.equals(agent.getProjectId())) {
+            throw new ApiException(
+                HttpStatus.NOT_FOUND, "AGENT_NOT_FOUND", "Agent 不存在或不属于当前项目");
+        }
+        return agent;
     }
 
     private String required(String value, int maxLength, String message) {
@@ -159,5 +205,9 @@ public class AgentApplicationService {
     private ApiException notPending() {
         return new ApiException(
             HttpStatus.CONFLICT, "AGENT_APPLICATION_NOT_PENDING", "该申请已处理，不能重复审批");
+    }
+
+    private ApiException statusConflict(String message) {
+        return new ApiException(HttpStatus.CONFLICT, "AGENT_STATUS_CONFLICT", message);
     }
 }

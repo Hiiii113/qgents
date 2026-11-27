@@ -7,6 +7,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -253,6 +254,102 @@ class AgentApplicationServiceTest {
                 .isEqualTo("AGENT_APPLICATION_NOT_PENDING");
         verify(agents, never()).activate(any(), any());
         verify(agents, never()).reject(any(), any());
+    }
+
+    @Test
+    void adminCanDisableAnActiveAgentAndEnableItAgain() {
+        Long admin = TestIds.next(), project = TestIds.next();
+        Long agentId = TestIds.next();
+        AgentEntity active = agent(agentId, project, AgentEntity.STATUS_ACTIVE);
+        AgentEntity disabled = agent(agentId, project, AgentEntity.STATUS_DISABLED);
+        when(agents.selectById(agentId)).thenReturn(active, disabled, disabled, active);
+        when(agents.disable(agentId)).thenReturn(1);
+        when(agents.enable(agentId)).thenReturn(1);
+
+        assertThat(service.disable(admin, project, agentId).getStatus())
+                .isEqualTo(AgentEntity.STATUS_DISABLED);
+        assertThat(service.enable(admin, project, agentId).getStatus())
+                .isEqualTo(AgentEntity.STATUS_ACTIVE);
+
+        verify(access, times(2)).requireProjectAdmin(project, admin);
+        verify(agents).disable(agentId);
+        verify(agents).enable(agentId);
+    }
+
+    @Test
+    void onlyAnActiveAgentCanBeDisabledAndOnlyADisabledOneCanBeEnabled() {
+        Long admin = TestIds.next(), project = TestIds.next();
+        Long agentId = TestIds.next();
+        when(agents.selectById(agentId))
+                .thenReturn(agent(agentId, project, AgentEntity.STATUS_DISABLED));
+        assertThat(assertThatApiError(() -> service.disable(admin, project, agentId)).code())
+                .isEqualTo("AGENT_STATUS_CONFLICT");
+
+        when(agents.selectById(agentId))
+                .thenReturn(agent(agentId, project, AgentEntity.STATUS_ACTIVE));
+        assertThat(assertThatApiError(() -> service.enable(admin, project, agentId)).code())
+                .isEqualTo("AGENT_STATUS_CONFLICT");
+
+        verify(agents, never()).disable(any());
+        verify(agents, never()).enable(any());
+    }
+
+    @Test
+    void defaultAgentCannotBeDisabled() {
+        Long admin = TestIds.next(), project = TestIds.next();
+        AgentEntity defaultAgent = agent(TestIds.next(), project, AgentEntity.STATUS_ACTIVE);
+        defaultAgent.setDefaultAgent(true);
+        when(agents.selectById(defaultAgent.getId())).thenReturn(defaultAgent);
+
+        assertThat(
+                        assertThatApiError(
+                                        () ->
+                                                service.disable(
+                                                        admin, project, defaultAgent.getId()))
+                                .code())
+                .isEqualTo("DEFAULT_AGENT_REQUIRED");
+        verify(agents, never()).disable(any());
+    }
+
+    @Test
+    void plainMemberCannotDisableOrEnableAgents() {
+        Long member = TestIds.next(), project = TestIds.next();
+        doThrow(new ApiException(HttpStatus.FORBIDDEN, "PROJECT_ADMIN_REQUIRED", "需要项目 Admin 权限"))
+                .when(access)
+                .requireProjectAdmin(project, member);
+        Long agentId = TestIds.next();
+
+        assertThat(assertThatApiError(() -> service.disable(member, project, agentId)).code())
+                .isEqualTo("PROJECT_ADMIN_REQUIRED");
+        assertThat(assertThatApiError(() -> service.enable(member, project, agentId)).code())
+                .isEqualTo("PROJECT_ADMIN_REQUIRED");
+        verify(agents, never()).disable(any());
+        verify(agents, never()).enable(any());
+    }
+
+    @Test
+    void agentOfAnotherProjectCannotBeDisabled() {
+        Long admin = TestIds.next(), project = TestIds.next();
+        AgentEntity foreign = agent(TestIds.next(), TestIds.next(), AgentEntity.STATUS_ACTIVE);
+        when(agents.selectById(foreign.getId())).thenReturn(foreign);
+
+        assertThat(
+                        assertThatApiError(
+                                        () -> service.disable(admin, project, foreign.getId()))
+                                .code())
+                .isEqualTo("AGENT_NOT_FOUND");
+        verify(agents, never()).disable(any());
+    }
+
+    @Test
+    void concurrentStatusChangeIsReportedInsteadOfOverwritingIt() {
+        Long admin = TestIds.next(), project = TestIds.next();
+        AgentEntity active = agent(TestIds.next(), project, AgentEntity.STATUS_ACTIVE);
+        when(agents.selectById(active.getId())).thenReturn(active);
+        when(agents.disable(active.getId())).thenReturn(0);
+
+        assertThat(assertThatApiError(() -> service.disable(admin, project, active.getId())).code())
+                .isEqualTo("AGENT_STATUS_CONFLICT");
     }
 
     private AgentEntity pendingApplication(Long projectId) {

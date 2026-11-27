@@ -103,7 +103,7 @@ public class MessageService {
         }
         for (Mention mention : mentions(body)) {
             if ("AGENT".equals(mention.getType())) {
-                groupService.requireGroupAgent(groupId, mention.getId());
+                groupService.requireActiveGroupAgent(projectId, groupId, mention.getId());
             }
         }
         return doSend(group, actor, null, body);

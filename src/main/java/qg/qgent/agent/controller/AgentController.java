@@ -14,8 +14,8 @@ import qg.qgent.common.web.RequestIdFilter;
 import java.util.List;
 
 /**
- * 项目内 Agent 接口：查询已启用 Agent 供群设置邀请，以及成员提交自定义 Agent 申请。
- * 申请由项目管理员在群聊里审批，本接口不提供审批入口。
+ * 项目内 Agent 接口：查询已启用 Agent 供群设置邀请、成员提交自定义 Agent 申请，
+ * 以及项目管理员停用或重新启用 Agent。申请审批在群聊里由项目管理员完成，本接口不提供审批入口。
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -52,6 +52,30 @@ public class AgentController {
         @RequestBody AgentApplicationRequest body,
         HttpServletRequest request) {
         return ok(AgentResponse.of(applications.apply(actor, projectId, body)), request);
+    }
+
+    /**
+     * 项目管理员停用已启用的 Agent；默认 Agent 不能停用。
+     */
+    @PostMapping("/projects/{projectId}/agents/{agentId}/disable")
+    public ApiResponse<AgentResponse> disable(
+        @AuthenticationPrincipal Long actor,
+        @PathVariable Long projectId,
+        @PathVariable Long agentId,
+        HttpServletRequest request) {
+        return ok(AgentResponse.of(applications.disable(actor, projectId, agentId)), request);
+    }
+
+    /**
+     * 项目管理员重新启用已停用的 Agent。
+     */
+    @PostMapping("/projects/{projectId}/agents/{agentId}/enable")
+    public ApiResponse<AgentResponse> enable(
+        @AuthenticationPrincipal Long actor,
+        @PathVariable Long projectId,
+        @PathVariable Long agentId,
+        HttpServletRequest request) {
+        return ok(AgentResponse.of(applications.enable(actor, projectId, agentId)), request);
     }
 
     private <T> ApiResponse<T> ok(T value, HttpServletRequest request) {
