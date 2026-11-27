@@ -74,10 +74,14 @@ public class ChatHistorySearchTool {
     @ParallelTool
     @Tool(
         name = "read_chat_message",
-        description = "按消息 ID 读取当前群消息全文及 replyToId；用于展开搜索命中或读取回复的原消息，不需要沙箱")
-    public ContextMessage readChatMessage(
+        description = "按消息 ID 读取当前群消息全文及 replyToId，返回在 message 字段；用于展开搜索命中或读取回复的原消息，不需要沙箱")
+    public ToolResult readChatMessage(
         @ToolParam(description = "消息 ID，来自上下文、搜索结果或 replyToId") String messageId) {
-        return history.readChatMessage(actor, projectId, groupId, Long.valueOf(messageId));
+        ContextMessage message =
+            history.readChatMessage(actor, projectId, groupId, Long.valueOf(messageId));
+        ToolResult result = ToolResult.ok();
+        result.put("message", message);
+        return result;
     }
 
     private String safeMessage(Throwable throwable) {

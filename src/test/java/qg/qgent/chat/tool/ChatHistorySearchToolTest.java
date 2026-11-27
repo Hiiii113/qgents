@@ -74,4 +74,31 @@ class ChatHistorySearchToolTest {
 
         verify(contextService, times(2)).searchChatHistory(actor, projectId, groupId, "key", 10);
     }
+
+    @Test
+    void readingMessageReturnsOkWithFullBodyAndReplyRelationship() throws Exception {
+        Long messageId = TestIds.next(), replyToId = TestIds.next();
+        ContextMessage message =
+                new ContextMessage(7L, "TEXT", "USER", actor.toString(), "需求全文");
+        message.setId(messageId.toString());
+        message.setReplyToId(replyToId.toString());
+        when(contextService.readChatMessage(actor, projectId, groupId, messageId))
+                .thenReturn(message);
+        ObjectMapper json = new ObjectMapper();
+        ToolRegistry registry = new ToolRegistry(json);
+        registry.register(new ChatHistorySearchTool(contextService, actor, projectId, groupId));
+
+        String output =
+                registry.callbacks().stream()
+                        .filter(callback -> callback.name().equals("read_chat_message"))
+                        .findFirst()
+                        .orElseThrow()
+                        .call("{\"messageId\":\"" + messageId + "\"}");
+
+        var result = json.readTree(output);
+        assertThat(result.get("ok").booleanValue()).isTrue();
+        assertThat(result.at("/message/id").asText()).isEqualTo(messageId.toString());
+        assertThat(result.at("/message/replyToId").asText()).isEqualTo(replyToId.toString());
+        assertThat(result.at("/message/text").asText()).isEqualTo("需求全文");
+    }
 }
