@@ -22,4 +22,13 @@ public class SandboxConfiguration {
             properties.getExecutionThreads(),
             Thread.ofPlatform().name("sandbox-execution-", 0).factory());
     }
+
+    /**
+     * 沙箱清理专用执行器；调度线程只负责提交，等待命令退出时不占用调度池。
+     */
+    @Bean(name = "sandboxCleanupExecutor", destroyMethod = "shutdownNow")
+    ExecutorService sandboxCleanupExecutor() {
+        return Executors.newSingleThreadExecutor(
+            Thread.ofPlatform().name("sandbox-cleanup-", 0).factory());
+    }
 }
