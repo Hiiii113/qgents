@@ -385,8 +385,7 @@ public class AgentChatService {
                     AgentChatService.this.history,
                     work.actorId,
                     work.projectId,
-                    work.groupId,
-                    5);
+                    work.groupId);
             this.crossGroupTools =
                 new CrossGroupTools(
                     AgentChatService.this.crossGroup,
