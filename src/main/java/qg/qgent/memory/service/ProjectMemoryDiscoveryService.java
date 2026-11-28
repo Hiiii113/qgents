@@ -27,11 +27,11 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.regex.Pattern;
 
 /**
- * 项目记忆发现：按周期用当前运行模型阅读项目默认群的群记忆，发现项目级背景和决策的更新建议。
+ * 项目记忆发现：按周期用当前运行模型阅读项目内每个群的群记忆，发现项目级背景和决策的更新建议。
  * <p>
- * 建议只是默认 Agent 在默认群发出的普通文本消息，管理员确认后由主 Agent 写入项目记忆。
+ * 建议只是默认 Agent 在项目默认群发出的普通文本消息，管理员确认后由主 Agent 写入项目记忆。
  * 是否到期和群记忆内容是否有变化都记录在 groups/&lt;groupId&gt;/memory-meta.json；扫描只提交任务，
- * 模型调用在记忆后台线程池中执行。受限群和私聊不在扫描范围内。
+ * 模型调用在记忆后台线程池中执行。私聊不在扫描范围内。
  */
 @Service
 public class ProjectMemoryDiscoveryService {
@@ -79,23 +79,32 @@ public class ProjectMemoryDiscoveryService {
     }
 
     /**
-     * 定时把到期且群记忆内容有变化的默认群提交给记忆后台线程池；扫描本身不调用模型。
+     * 定时把到期且群记忆内容有变化的项目群提交给记忆后台线程池；扫描本身不调用模型。
      * <p>
      * 发现成功后至少间隔一个发现周期才会再次到期，失败按重试间隔提前重试。
      */
     @Scheduled(fixedDelayString = "${app.memory.discovery.scan-interval:1h}")
     public void scan() {
-        List<ChatGroupEntity> defaults =
-            groups.selectList(
-                Wrappers.<ChatGroupEntity>lambdaQuery()
-                    .eq(ChatGroupEntity::getKind, ChatGroupEntity.KIND_GROUP)
-                    .eq(ChatGroupEntity::getDefaultGroup, true)
-                    .orderByAsc(ChatGroupEntity::getId)
-                    .last("LIMIT " + properties.getBatchSize()));
-        for (ChatGroupEntity group : defaults) {
-            if (due(group, Instant.now())) {
-                submit(group.getProjectId(), group.getId());
+        Instant now = Instant.now();
+        Long afterGroupId = null;
+        while (true) {
+            List<ChatGroupEntity> page =
+                groups.selectList(
+                    Wrappers.<ChatGroupEntity>lambdaQuery()
+                        .eq(ChatGroupEntity::getKind, ChatGroupEntity.KIND_GROUP)
+                        .gt(afterGroupId != null, ChatGroupEntity::getId, afterGroupId)
+                        .orderByAsc(ChatGroupEntity::getId)
+                        .last("LIMIT " + properties.getBatchSize()));
+            for (ChatGroupEntity group : page) {
+                if (due(group, now)) {
+                    submit(group.getProjectId(), group.getId());
+                }
             }
+            if (page.size() < properties.getBatchSize()) {
+                return;
+            }
+            // 按群 ID 游标翻页：没有变化的群不会占住窗口，后面的群每轮都能轮到。
+            afterGroupId = page.getLast().getId();
         }
     }
 
@@ -118,9 +127,9 @@ public class ProjectMemoryDiscoveryService {
             return;
         }
         try {
-            // 受限群的内容不进入默认群建议消息和共享项目记忆：连模型都不调用。
-            ChatGroupEntity group = groups.selectById(groupId);
-            if (group == null || group.isDirect() || !Boolean.TRUE.equals(group.getDefaultGroup())) {
+            // 私聊内容不进入默认群建议消息和共享项目记忆：连模型都不调用。
+            ChatGroupEntity sourceGroup = groups.selectById(groupId);
+            if (sourceGroup == null || sourceGroup.isDirect()) {
                 return;
             }
             GroupMemoryResponse source = groupMemories.read(projectId, groupId);
@@ -131,9 +140,11 @@ public class ProjectMemoryDiscoveryService {
                 failures.remove(groupId);
                 return;
             }
-            String suggestion = askModel(projectMemories.read(projectId), source.getContent());
+            String suggestion =
+                askModel(
+                    projectMemories.read(projectId), sourceGroup.getName(), source.getContent());
             if (suggestion != null) {
-                publish(projectId, groupId, suggestion);
+                publish(projectId, sourceGroup.getName(), suggestion);
             }
             groupMemories.markDiscovered(projectId, groupId, version, Instant.now());
             failures.remove(groupId);
@@ -190,32 +201,55 @@ public class ProjectMemoryDiscoveryService {
     }
 
     /**
-     * 建议由默认 Agent 在来源群发出：写入必须来自管理员后续的真实对话，而不是这条提醒。
+     * 建议由默认 Agent 在默认群发出，消息里写明来源群：写入必须来自管理员后续的真实对话，而不是这条提醒。
      */
-    private void publish(Long projectId, Long groupId, String suggestion) {
+    private void publish(Long projectId, String sourceGroupName, String suggestion) {
         MessageSendRequest message = new MessageSendRequest();
         message.setType("TEXT");
         message.setContent(
             Map.of(
                 "text",
-                "从本群记忆中发现可以写入项目记忆的内容，请项目管理员确认后 @我 更新；" + "未确认不会写入。\n\n" + suggestion));
+                "从群「"
+                    + sourceGroupName
+                    + "」的群记忆中发现可以写入项目记忆的内容，请项目管理员确认后 @我 更新；"
+                    + "未确认不会写入。\n\n"
+                    + suggestion));
         // shortcut: 建议消息本身也进入群消息，下次提炼可能把它当成讨论内容；提炼提示只保留议题与结论，
         // 若出现明显噪音再按消息来源过滤
-        chat.sendAsAgent(agents.defaultAgent(projectId).getId(), groupId, message);
+        chat.sendAsAgent(agents.defaultAgent(projectId).getId(), defaultGroup(projectId), message);
+    }
+
+    /**
+     * 项目默认群：建议统一发到这里，来源群只决定建议内容。
+     */
+    private Long defaultGroup(Long projectId) {
+        ChatGroupEntity group =
+            groups.selectOne(
+                Wrappers.<ChatGroupEntity>lambdaQuery()
+                    .eq(ChatGroupEntity::getProjectId, projectId)
+                    .eq(ChatGroupEntity::getKind, ChatGroupEntity.KIND_GROUP)
+                    .eq(ChatGroupEntity::getDefaultGroup, true));
+        if (group == null) {
+            throw new IllegalStateException("项目缺少默认群, projectId=" + projectId);
+        }
+        return group.getId();
     }
 
     /**
      * 模型没有发现值得写入的内容时返回 null。
      */
-    private String askModel(ProjectMemoryResponse projectMemory, String groupMemory) {
+    private String askModel(
+        ProjectMemoryResponse projectMemory, String sourceGroupName, String groupMemory) {
         String input =
             "当前项目记忆（memory.md 全文）：\n"
                 + (projectMemory.getContent().isBlank()
                 ? "（空）"
                 : projectMemory.getContent())
-                + "\n\n项目默认群的群记忆（由后台从群消息提炼）：\n"
+                + "\n\n来源群「"
+                + sourceGroupName
+                + "」的群记忆（由后台从该群消息提炼）：\n"
                 + groupMemory;
-        String text = model.complete(systemPrompt(), input);
+        String text = model.complete(systemPrompt(sourceGroupName), input);
         if (text == null || text.isBlank()) {
             throw new IllegalStateException("模型没有返回项目记忆更新建议");
         }
@@ -223,8 +257,10 @@ public class ProjectMemoryDiscoveryService {
         return NOTHING.matcher(suggestion).matches() ? null : suggestion;
     }
 
-    private String systemPrompt() {
-        return "你是项目记忆维护者：只依据当前项目记忆和一个项目默认群的群记忆，判断群记忆里有没有值得写进共享项目记忆的项目背景或决策。"
+    private String systemPrompt(String sourceGroupName) {
+        return "你是项目记忆维护者：只依据当前项目记忆和来源群「"
+            + sourceGroupName
+            + "」的群记忆，判断群记忆里有没有值得写进共享项目记忆的项目背景或决策。"
             + "有就用简洁的 Markdown 列表输出建议的变更条目：写明要新增、修改或删除什么，不要输出整篇项目记忆；"
             + "没有就只输出 NONE。"
             + "只保留适合全体项目成员共享的项目级背景、决定、约定和待办；"
