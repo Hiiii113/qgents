@@ -115,10 +115,31 @@ class BriefingServiceTest {
         assertThat(service.systemPrompt(agent, Scope.ROOT))
                 .startsWith("你是 评审助手，项目群聊中的助手。你的职责：负责代码评审")
                 .contains("你只评审 Pull Request")
-                .contains("有效的普通文本回复即结束本轮 loop");
+                .contains("只有不带工具调用的普通文本回复才会结束本轮 loop");
         assertThat(service.systemPrompt(agent, Scope.CHILD))
                 .startsWith("你是 评审助手 委派的一名临时子 Agent。")
                 .doesNotContain("负责代码评审", "你只评审 Pull Request");
+    }
+
+    @Test
+    void systemPromptGuidesBriefProgressReportsAlongsideToolCallsInEveryScope() {
+        AgentEntity agent = new AgentEntity();
+        agent.setName("评审助手");
+
+        for (Scope scope : Scope.values()) {
+            for (boolean direct : List.of(false, true)) {
+                assertThat(service.systemPrompt(agent, scope, direct))
+                        .as("scope=%s, direct=%s", scope, direct)
+                        .contains(
+                                "只有不带工具调用的普通文本回复才会结束本轮 loop",
+                                "同一轮回复可以同时包含明文进度汇报和工具调用，随后继续执行工具循环",
+                                "在发起关键工具调用批次、发现重要结论或切换阶段前",
+                                "可以先输出 1~2 句简短明文进度汇报",
+                                "说明刚确认了什么、接下来准备做什么",
+                                "连续零碎只读操作不必每步重复汇报",
+                                "不要输出内部思考过程");
+            }
+        }
     }
 
     @Test
