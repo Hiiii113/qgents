@@ -17,7 +17,7 @@ public class ProjectMemoryDiscoveryProperties {
     private int retryDelayMinutes = 60;
     // 连续失败次数上限；群记忆重新提炼后清零
     private int maxAttempts = 3;
-    // 单次扫描最多处理的来源群数
+    // 单次扫描每页读取的群数
     private int batchSize = 10;
 
     public void validate() {
