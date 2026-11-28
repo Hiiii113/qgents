@@ -6,6 +6,12 @@ spring:
     import: optional:file:.env[.properties]
   application:
     name: Qgents
+  # 定时任务专用调度池：与 Agent、记忆执行器分开，慢任务不会占满所有调度线程。
+  task:
+    scheduling:
+      pool:
+        size: ${QGENTS_SCHEDULING_POOL_SIZE:4}
+      thread-name-prefix: qgents-scheduling-
   # MySQL：本地使用映射端口 13306，生产 Compose 使用服务名 mysql 和容器端口 3306。
   datasource:
     url: ${DB_URL}
