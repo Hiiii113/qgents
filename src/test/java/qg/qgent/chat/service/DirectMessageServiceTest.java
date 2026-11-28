@@ -123,6 +123,41 @@ class DirectMessageServiceTest {
     }
 
     @Test
+    void disabledAgentConversationCannotReceiveNewMessagesButHistoryStaysReadable() {
+        Long agentId = TestIds.next();
+        DirectConversationEntity row =
+                conversation(
+                        conversationId,
+                        projectId,
+                        DirectConversationEntity.TYPE_USER,
+                        actor,
+                        DirectConversationEntity.TYPE_AGENT,
+                        agentId);
+        when(conversations.selectById(conversationId)).thenReturn(row);
+        when(groups.selectById(conversationId)).thenReturn(directGroup(conversationId, projectId));
+        when(agents.requireActiveProjectAgent(projectId, agentId))
+                .thenThrow(
+                        new ApiException(
+                                HttpStatus.UNPROCESSABLE_ENTITY,
+                                "AGENT_NOT_ACTIVE",
+                                "Agent 未启用或不属于本项目"));
+
+        ApiException denied =
+                catchThrowableOfType(
+                        () -> service.send(actor, projectId, conversationId, text("继续")),
+                        ApiException.class);
+
+        assertThat(denied.code()).isEqualTo("AGENT_NOT_ACTIVE");
+        verify(messageService, never()).sendInConversation(any(), any(), any());
+
+        AgentEntity disabled = activeAgent(agentId);
+        disabled.setStatus(AgentEntity.STATUS_DISABLED);
+        when(agentRows.selectBatchIds(any())).thenReturn(List.of(disabled));
+        DirectConversationResponse readable = service.get(actor, projectId, conversationId);
+        assertThat(readable.getPeer().displayName()).isEqualTo("评审助手");
+    }
+
+    @Test
     void startingTheSameConversationTwiceReturnsTheExistingOne() {
         Long peer = TestIds.next();
         DirectConversationEntity existing =

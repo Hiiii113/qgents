@@ -30,4 +30,12 @@
         WHERE id = #{id} AND status = 'PENDING'
     </update>
 
+    <update id="disable">
+        UPDATE agents SET status = 'DISABLED' WHERE id = #{id} AND status = 'ACTIVE'
+    </update>
+
+    <update id="enable">
+        UPDATE agents SET status = 'ACTIVE' WHERE id = #{id} AND status = 'DISABLED'
+    </update>
+
 </mapper>

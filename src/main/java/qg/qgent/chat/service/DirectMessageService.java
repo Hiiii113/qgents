@@ -153,11 +153,16 @@ public class DirectMessageService {
 
     /**
      * 发送私聊消息；对端是 Agent 时消息提交后自动触发它的回复，不需要提及。
+     * 已停用的 Agent 不能继续聊天，但会话与历史消息仍可读取。
      */
     @Transactional
     public MessageResponse send(
         Long actor, Long projectId, Long conversationId, MessageSendRequest body) {
         Conversation conversation = requireParticipant(actor, projectId, conversationId);
+        Long agentPeer = conversation.row().agentPeerId();
+        if (agentPeer != null) {
+            agents.requireActiveProjectAgent(projectId, agentPeer);
+        }
         return messageService.sendInConversation(actor, conversation.group(), body);
     }
 

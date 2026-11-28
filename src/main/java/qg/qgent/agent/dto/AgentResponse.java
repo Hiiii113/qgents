@@ -30,7 +30,7 @@ public class AgentResponse {
     @Schema(description = "是否项目默认 Agent")
     private boolean defaultAgent;
 
-    @Schema(description = "状态枚举：PENDING（刚提交的申请）/ACTIVE（已启用，可邀请入群）；列表接口只返回 ACTIVE")
+    @Schema(description = "状态枚举：PENDING（刚提交的申请）/ACTIVE（已启用，可邀请入群、发起私聊和运行）/DISABLED（已停用，保留历史与绑定但不能使用）；列表接口只返回 ACTIVE")
     private String status;
 
     public static AgentResponse of(AgentEntity agent) {

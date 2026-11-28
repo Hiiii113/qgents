@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS agents (
     system_prompt MEDIUMTEXT NULL COMMENT 'Agent 自有系统提示词，追加在内置提示词之后',
     avatar_url TEXT NULL COMMENT 'Agent 头像URL，可为空',
     default_agent TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否项目默认 Agent；每项目唯一',
-    status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT '状态枚举：PENDING/ACTIVE/REJECTED；只有 ACTIVE 可邀请入群和运行',
+    status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT '状态枚举：PENDING/ACTIVE/DISABLED/REJECTED；只有 ACTIVE 可邀请入群、发起私聊和运行',
     proposed_by BIGINT NULL COMMENT '提出申请的真实用户ID；默认 Agent 为空',
     approved_by BIGINT NULL COMMENT '审批的管理员用户ID',
     approved_at DATETIME(6) NULL COMMENT '审批完成时间（UTC）',
@@ -110,7 +110,7 @@ CREATE TABLE IF NOT EXISTS agents (
     CONSTRAINT fk_agent_project FOREIGN KEY (project_id) REFERENCES projects (id),
     CONSTRAINT fk_agent_proposed_by FOREIGN KEY (proposed_by) REFERENCES users (id),
     CONSTRAINT fk_agent_approved_by FOREIGN KEY (approved_by) REFERENCES users (id),
-    CONSTRAINT chk_agent_status CHECK (status IN ('PENDING', 'ACTIVE', 'REJECTED'))
+    CONSTRAINT chk_agent_status CHECK (status IN ('PENDING', 'ACTIVE', 'DISABLED', 'REJECTED'))
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT = '项目内 Agent：默认 Agent 与经管理员审批的自定义 Agent';
 
 CREATE TABLE IF NOT EXISTS mcp_servers (
@@ -409,6 +409,10 @@ CREATE TABLE IF NOT EXISTS
 -- DROP TABLE IF EXISTS project_memory_proposals;
 -- -- 项目 Agent 审批改为按申请 ID 进行，不再把申请绑定到 Agent 公布消息：
 -- ALTER TABLE agents DROP INDEX uk_agent_announced_message, DROP COLUMN announced_message_id;
+-- -- Agent 可停用后再启用；已有库需重建状态约束（已支持 DISABLED 的库重复执行会报错，跳过即可）：
+-- ALTER TABLE agents
+--     DROP CHECK chk_agent_status,
+--     ADD CONSTRAINT chk_agent_status CHECK (status IN ('PENDING', 'ACTIVE', 'DISABLED', 'REJECTED'));
 -- -- 私聊复用 chat_groups 行，新增会话类型列（direct_conversations 由上方建表语句创建）：
 -- ALTER TABLE chat_groups
 --     ADD COLUMN kind VARCHAR(16) NOT NULL DEFAULT 'GROUP' COMMENT '会话类型枚举：GROUP 群聊 / DIRECT 私聊' AFTER default_group,

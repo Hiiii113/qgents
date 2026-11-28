@@ -271,6 +271,14 @@ public class GroupService {
     }
 
     /**
+     * 用户提及 Agent 前校验：必须是本群成员，且仍处于启用状态；已停用的 Agent 不能被发起新的对话。
+     */
+    public void requireActiveGroupAgent(Long projectId, Long groupId, Long agentId) {
+        requireGroupAgent(groupId, agentId);
+        agents.requireActiveProjectAgent(projectId, agentId);
+    }
+
+    /**
      * 群内 Agent 成员 ID；只有它们在群中被 @ 时才启动运行。
      */
     public List<Long> groupAgentIds(Long groupId) {
