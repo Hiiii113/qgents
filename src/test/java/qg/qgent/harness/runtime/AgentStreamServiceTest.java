@@ -22,6 +22,7 @@ import qg.qgent.chat.service.GroupService;
 import qg.qgent.harness.dto.AgentRunSnapshot;
 import qg.qgent.harness.entity.AgentRunEntity;
 import qg.qgent.harness.entity.AgentRunToolEntity;
+import qg.qgent.harness.entity.FailureCode;
 import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.mapper.AgentRunMapper;
 import qg.qgent.harness.mapper.AgentRunToolMapper;
@@ -319,6 +320,19 @@ class AgentStreamServiceTest {
         assertThat(updatesOf(run).getLast())
                 .containsEntry("status", "CANCELLED")
                 .containsEntry("runId", run.getId().toString());
+    }
+
+    @Test
+    void snapshotExposesFailureCodeOnAFailedRun() {
+        when(groups.requireGroupMember(any(), any(), any())).thenReturn(new ChatGroupEntity());
+        AgentRunEntity run = run();
+        run.setStatus(RunStatus.FAILED);
+        run.setFailureCode(FailureCode.UPSTREAM_TIMEOUT);
+
+        AgentRunSnapshot snapshot = recent(run);
+
+        assertThat(snapshot.getStatus()).isEqualTo("FAILED");
+        assertThat(snapshot.getFailureCode()).isEqualTo("UPSTREAM_TIMEOUT");
     }
 
     @Test

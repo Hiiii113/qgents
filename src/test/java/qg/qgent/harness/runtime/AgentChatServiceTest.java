@@ -11,6 +11,7 @@ import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -51,8 +52,10 @@ import qg.qgent.github.service.GitHubRepositoryService;
 import qg.qgent.github.tool.GitHubCapability;
 import qg.qgent.harness.briefing.BriefingService;
 import qg.qgent.harness.entity.AgentRunEntity;
+import qg.qgent.harness.entity.FailureCode;
 import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.model.ModelClient;
+import qg.qgent.harness.model.ModelFailureException;
 import qg.qgent.harness.model.ModelMessage;
 import qg.qgent.harness.service.AgentRunService;
 import qg.qgent.mcp.tool.McpToolCallbacks;
@@ -387,6 +390,70 @@ class AgentChatServiceTest {
         // 失败与取消一样要等自己名下的命令停下；成功运行不停（见 successfulRunDoesNotStopItsCommands）。
         verify(fixture.sessions()).stopExecutionsByAgentRun(fixture.root().getId());
         assertThat(fixture.root().getStatus()).isEqualTo(RunStatus.FAILED);
+        assertThat(fixture.root().getFailureCode()).isEqualTo(FailureCode.AGENT_FAILURE);
+    }
+
+    @Test
+    void upstreamRateLimitIsRetriedBeforeAnyTextAndThenSucceeds() {
+        Long actor = TestIds.next(),
+                project = TestIds.next(),
+                group = TestIds.next(),
+                message = TestIds.next();
+        ModelClient model = model();
+        when(model.stream(any(), any()))
+                .thenReturn(
+                        Mono.error(
+                                new ModelFailureException(
+                                        FailureCode.UPSTREAM_RATE_LIMITED,
+                                        new IllegalStateException("429"))))
+                .thenReturn(reply("限流恢复后的答复"));
+        var fixture = fixture(model, actor, project, group, message, childExecutor);
+
+        fixture.service().replyToMention(fixture.event(), fixture.agentId(), "你好");
+
+        verify(fixture.messages())
+                .sendAsAgent(
+                        eq(fixture.agentId()),
+                        eq(group),
+                        argThat(
+                                request ->
+                                        "限流恢复后的答复"
+                                                .equals(request.getContent().get("text"))));
+        assertThat(fixture.root().getStatus()).isEqualTo(RunStatus.SUCCEEDED);
+        assertThat(fixture.root().getFailureCode()).isNull();
+        verify(model, times(2)).stream(any(), any());
+    }
+
+    @Test
+    void exhaustedUpstreamRetryPersistsFailureCodeOnTheFailedRun() {
+        Long actor = TestIds.next(),
+                project = TestIds.next(),
+                group = TestIds.next(),
+                message = TestIds.next();
+        ModelClient model = model();
+        when(model.stream(any(), any()))
+                .thenReturn(
+                        Mono.error(
+                                new ModelFailureException(
+                                        FailureCode.UPSTREAM_RATE_LIMITED,
+                                        new IllegalStateException("429"))));
+        var fixture = fixture(model, actor, project, group, message, childExecutor);
+
+        fixture.service().replyToMention(fixture.event(), fixture.agentId(), "你好");
+
+        verify(fixture.messages())
+                .sendAsAgent(
+                        eq(fixture.agentId()),
+                        eq(group),
+                        argThat(
+                                request ->
+                                        "模型服务限流，请稍后重试"
+                                                .equals(request.getContent().get("text"))));
+        assertThat(fixture.root().getStatus()).isEqualTo(RunStatus.FAILED);
+        assertThat(fixture.root().getFailureCode())
+                .isEqualTo(FailureCode.UPSTREAM_RATE_LIMITED);
+        verify(model, times(2)).stream(any(), any());
+        verify(fixture.sessions()).stopExecutionsByAgentRun(fixture.root().getId());
     }
 
     @Test

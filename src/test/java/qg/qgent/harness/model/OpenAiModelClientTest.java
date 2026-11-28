@@ -34,8 +34,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.Disposable;
+import qg.qgent.harness.entity.FailureCode;
 
 class OpenAiModelClientTest {
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -259,6 +261,29 @@ class OpenAiModelClientTest {
             .isEqualTo("https://example.com/a.png");
     }
 
+    @ParameterizedTest
+    @CsvSource({
+        "429, UPSTREAM_RATE_LIMITED",
+        "500, UPSTREAM_SERVER_ERROR",
+        "503, UPSTREAM_SERVER_ERROR"
+    })
+    void streamClassifiesRetryableUpstreamStatuses(int status, FailureCode expected) {
+        responder = (exchange, body) -> error(exchange, status, "upstream unavailable");
+
+        assertThatThrownBy(() -> client.stream(request("你好"), delta -> {}).block(WAIT))
+                .isInstanceOfSatisfying(
+                        ModelFailureException.class,
+                        failure -> assertThat(failure.code()).isEqualTo(expected));
+    }
+
+    @Test
+    void streamLeavesNonRetryableUpstreamStatusUnclassified() {
+        responder = (exchange, body) -> error(exchange, 400, "bad request");
+
+        assertThatThrownBy(() -> client.stream(request("你好"), delta -> {}).block(WAIT))
+                .isNotInstanceOf(ModelFailureException.class);
+    }
+
     @Test
     void completeUsesNonStreamingRequest() {
         responder = (exchange, body) -> json(exchange, completion("摘要"));
@@ -381,6 +406,16 @@ class OpenAiModelClientTest {
         byte[] body = JSON.writeValueAsBytes(payload);
         exchange.getResponseHeaders().add("Content-Type", "application/json");
         exchange.sendResponseHeaders(200, body.length);
+        try (OutputStream output = exchange.getResponseBody()) {
+            output.write(body);
+        }
+    }
+
+    private static void error(HttpExchange exchange, int status, String message)
+            throws IOException {
+        byte[] body = JSON.writeValueAsBytes(Map.of("error", Map.of("message", message)));
+        exchange.getResponseHeaders().add("Content-Type", "application/json");
+        exchange.sendResponseHeaders(status, body.length);
         try (OutputStream output = exchange.getResponseBody()) {
             output.write(body);
         }

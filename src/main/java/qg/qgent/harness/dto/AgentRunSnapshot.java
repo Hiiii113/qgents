@@ -30,6 +30,9 @@ public class AgentRunSnapshot {
     @Schema(description = "RUNNING/CANCELLING/CANCELLED/SUCCEEDED/FAILED")
     private String status;
 
+    @Schema(description = "失败分类；成功与取消为空")
+    private String failureCode;
+
     @Schema(description = "内存中当前模型轮次；不在本进程内存时为 0")
     private int round;
 

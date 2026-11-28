@@ -25,6 +25,7 @@ import qg.qgent.github.tool.GitHubTools;
 import qg.qgent.harness.briefing.BriefingService;
 import qg.qgent.harness.briefing.BriefingService.Scope;
 import qg.qgent.harness.entity.AgentRunEntity;
+import qg.qgent.harness.entity.FailureCode;
 import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.model.ModelMessage;
 import qg.qgent.harness.service.AgentRunService;
@@ -254,10 +255,13 @@ public class AgentChatService {
             status = result.success() ? RunStatus.SUCCEEDED : RunStatus.FAILED;
             resultText = result.text();
             rounds = result.rounds();
+            root.setFailureCode(result.failureCode());
             root.addMetrics(result.metrics(), loop.modelName());
         } catch (RuntimeException exception) {
-            status = work.isCancelled() ? RunStatus.CANCELLED : RunStatus.FAILED;
+            boolean cancelled = work.isCancelled();
+            status = cancelled ? RunStatus.CANCELLED : RunStatus.FAILED;
             resultText = failure(exception);
+            if (!cancelled) root.setFailureCode(FailureCode.AGENT_FAILURE);
         } finally {
             lifecycle.finish(root, status, resultText, rounds);
             // finishRoot 在并发取消时可能把运行改为 CANCELLED，终态事件以记录为准。

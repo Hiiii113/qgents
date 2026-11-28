@@ -22,6 +22,7 @@ public class AgentRunEntity {
     private Long workspaceId;
     private Long createdBy;
     private RunStatus status;
+    private FailureCode failureCode;
     private String instruction;
     private String result;
     private Integer rounds;

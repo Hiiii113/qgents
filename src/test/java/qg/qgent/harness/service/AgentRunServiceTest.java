@@ -20,6 +20,7 @@ import qg.qgent.chat.dto.MessageResponse;
 import qg.qgent.chat.service.MessageService;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.harness.entity.AgentRunEntity;
+import qg.qgent.harness.entity.FailureCode;
 import qg.qgent.harness.entity.RunStatus;
 import qg.qgent.harness.mapper.AgentRunMapper;
 import qg.qgent.project.service.ProjectAccessService;
@@ -111,6 +112,7 @@ class AgentRunServiceTest {
     void resumeClearsThePersistedCompletionTimestamp() throws Exception {
         AgentRunEntity run = new AgentRunEntity();
         run.setFinishedAt(java.time.LocalDateTime.now());
+        run.setFailureCode(FailureCode.UPSTREAM_TIMEOUT);
         run.setInstruction("原任务");
         when(runs.updateById(any(AgentRunEntity.class))).thenReturn(1);
 
@@ -120,6 +122,7 @@ class AgentRunServiceTest {
         verify(runs).updateById(saved.capture());
         assertThat(saved.getValue().getStatus()).isEqualTo(RunStatus.RUNNING);
         assertThat(saved.getValue().getFinishedAt()).isNull();
+        assertThat(saved.getValue().getFailureCode()).isNull();
         assertThat(saved.getValue().getInstruction()).contains("继续实现");
         TableField mapping =
                 AgentRunEntity.class.getDeclaredField("finishedAt").getAnnotation(TableField.class);
@@ -142,6 +145,26 @@ class AgentRunServiceTest {
         assertThat(update.getValue().getSqlSegment()).contains("status");
         assertThat(updateValues(update.getValue())).contains("RUNNING", "SUCCEEDED");
         verify(runs, never()).selectById(root.getId());
+    }
+
+    @Test
+    void failedRootFinishPersistsFailureCodeWithoutChangingStatusSemantics() {
+        AgentRunEntity root = runningRoot();
+        root.setFailureCode(FailureCode.UPSTREAM_RATE_LIMITED);
+        when(runs.update(isNull(), any())).thenReturn(1);
+
+        service.finishRoot(root, RunStatus.FAILED, "模型服务限流，请稍后重试", 1);
+
+        assertThat(root.getStatus()).isEqualTo(RunStatus.FAILED);
+        ArgumentCaptor<Wrapper<AgentRunEntity>> update = ArgumentCaptor.forClass(Wrapper.class);
+        verify(runs).update(isNull(), update.capture());
+        assertThat(
+                        ((com.baomidou.mybatisplus.core.conditions.AbstractWrapper<?, ?, ?>)
+                                        update.getValue())
+                                .getSqlSet())
+                .contains("failure_code");
+        assertThat(updateValues(update.getValue()))
+                .contains("FAILED", "UPSTREAM_RATE_LIMITED");
     }
 
     @Test
