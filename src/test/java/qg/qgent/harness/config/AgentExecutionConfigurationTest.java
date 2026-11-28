@@ -2,6 +2,7 @@ package qg.qgent.harness.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -23,12 +24,16 @@ class AgentExecutionConfigurationTest {
     void fourTasksStartTogetherOnBothPoolsWithConfiguredDefaults() throws Exception {
         AgentExecutorProperties properties = yamlDefaults();
         AgentExecutionConfiguration configuration = new AgentExecutionConfiguration();
+        SimpleMeterRegistry registry = new SimpleMeterRegistry();
         ThreadPoolTaskExecutor agent =
-                (ThreadPoolTaskExecutor) configuration.agentExecutor(properties);
-        ThreadPoolTaskExecutor subagent = configuration.agentSubagentExecutor(properties);
+                (ThreadPoolTaskExecutor) configuration.agentExecutor(properties, registry);
+        ThreadPoolTaskExecutor subagent = configuration.agentSubagentExecutor(properties, registry);
         try {
             assertFourTasksStartTogether(agent);
             assertFourTasksStartTogether(subagent);
+            assertThat(registry.find("executor.active").tag("name", "agent").gauge()).isNotNull();
+            assertThat(registry.find("executor.active").tag("name", "agent-child").gauge())
+                    .isNotNull();
         } finally {
             agent.shutdown();
             subagent.shutdown();

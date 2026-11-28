@@ -1,8 +1,13 @@
 package qg.qgent.memory.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -49,6 +54,7 @@ public class GroupMemoryExtractionService {
     private final Executor executor;
     private final GroupMemoryProperties properties;
     private final MemoryDocument document;
+    private final MeterRegistry registry;
     // 进程内防重入：同一群同一时刻只允许一个提炼任务。
     private final Set<Long> inProgress = ConcurrentHashMap.newKeySet();
     // 失败退避：达到上限后等新消息再试，不依赖数据库锁列。
@@ -60,9 +66,32 @@ public class GroupMemoryExtractionService {
         MessageService chat,
         GroupMemoryService memories,
         ModelClient model,
-        @Qualifier("groupMemoryExecutor") Executor executor,
+        Executor executor,
         GroupMemoryProperties properties,
         MemoryDocument document) {
+        this(
+            groups,
+            chatMessages,
+            chat,
+            memories,
+            model,
+            executor,
+            properties,
+            document,
+            new SimpleMeterRegistry());
+    }
+
+    @Autowired
+    public GroupMemoryExtractionService(
+        ChatGroupMapper groups,
+        MessageMapper chatMessages,
+        MessageService chat,
+        GroupMemoryService memories,
+        ModelClient model,
+        @Qualifier("groupMemoryExecutor") Executor executor,
+        GroupMemoryProperties properties,
+        MemoryDocument document,
+        MeterRegistry registry) {
         this.groups = groups;
         this.chatMessages = chatMessages;
         this.chat = chat;
@@ -71,6 +100,7 @@ public class GroupMemoryExtractionService {
         this.executor = executor;
         this.properties = properties;
         this.document = document;
+        this.registry = registry;
     }
 
     private record Retry(int attempts, LocalDateTime retryAt, long observedSequence) {
@@ -113,6 +143,7 @@ public class GroupMemoryExtractionService {
         try {
             executor.execute(() -> extract(projectId, groupId));
         } catch (RejectedExecutionException exception) {
+            recordExtraction("rejected", 0L);
             log.warn("群记忆提炼队列已满，跳过本轮, projectId={}, groupId={}", projectId, groupId);
         }
     }
@@ -127,6 +158,7 @@ public class GroupMemoryExtractionService {
             return;
         }
         long through = memories.meta(projectId, groupId).lastProcessedSequence();
+        long startNanos = System.nanoTime();
         try {
             List<MessageEntity> batch =
                 chatMessages.selectAfterSequence(
@@ -139,6 +171,7 @@ public class GroupMemoryExtractionService {
             String updated = askModel(current.content(), batch);
             if (!memories.writeIfRevisionMatches(
                 projectId, groupId, current.revision(), updated, through)) {
+                recordExtraction("conflict_discarded", System.nanoTime() - startNanos);
                 log.warn(
                     "群记忆提炼期间已被 Agent 修改，放弃本次结果, projectId={}, groupId={}",
                     projectId,
@@ -146,6 +179,7 @@ public class GroupMemoryExtractionService {
                 return;
             }
             failures.remove(groupId);
+            recordExtraction("succeeded", System.nanoTime() - startNanos);
             log.info(
                 "群记忆已更新, projectId={}, groupId={}, revision={}, processedThrough={}",
                 projectId,
@@ -153,9 +187,25 @@ public class GroupMemoryExtractionService {
                 current.revision() + 1,
                 through);
         } catch (RuntimeException exception) {
+            recordExtraction("failed", System.nanoTime() - startNanos);
             recordFailure(projectId, groupId, through, exception);
         } finally {
             inProgress.remove(groupId);
+        }
+    }
+
+    private void recordExtraction(String outcome, long durationNanos) {
+        Counter.builder("qgents.memory.extraction.total")
+            .description("Total background group memory extraction runs")
+            .tag("outcome", outcome)
+            .register(registry)
+            .increment();
+        if (durationNanos > 0) {
+            Timer.builder("qgents.memory.extraction.duration")
+                .description("Duration of background group memory extraction")
+                .tag("outcome", outcome)
+                .register(registry)
+                .record(durationNanos, java.util.concurrent.TimeUnit.NANOSECONDS);
         }
     }
 

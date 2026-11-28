@@ -3,6 +3,7 @@ package qg.qgent.harness.runtime;
 import qg.qgent.harness.entity.AgentRunEntity;
 import qg.qgent.harness.entity.FailureCode;
 import qg.qgent.harness.entity.RunStatus;
+import qg.qgent.harness.metrics.HarnessMetrics;
 import qg.qgent.harness.model.ModelMessage;
 import qg.qgent.harness.model.ModelMessage.UserMessage;
 import qg.qgent.harness.service.AgentRunService;
@@ -34,6 +35,7 @@ final class ChildRuns {
     private final AgentLoop loop;
     private final Function<Execution, List<ToolCallback>> tools;
     private final Function<AgentRunEntity, RunStreamSink> sinks;
+    private final HarnessMetrics metrics;
 
     private final Map<Long, Execution> children = new ConcurrentHashMap<>();
     private final Set<Long> cancelledCommands = ConcurrentHashMap.newKeySet();
@@ -54,6 +56,30 @@ final class ChildRuns {
         AgentLoop loop,
         Function<Execution, List<ToolCallback>> tools,
         Function<AgentRunEntity, RunStreamSink> sinks) {
+        this(
+            rootRunId,
+            limit,
+            executor,
+            runs,
+            lifecycle,
+            rootCancelled,
+            loop,
+            tools,
+            sinks,
+            HarnessMetrics.noop());
+    }
+
+    ChildRuns(
+        Long rootRunId,
+        int limit,
+        Executor executor,
+        AgentRunService runs,
+        RunLifecycle lifecycle,
+        BooleanSupplier rootCancelled,
+        AgentLoop loop,
+        Function<Execution, List<ToolCallback>> tools,
+        Function<AgentRunEntity, RunStreamSink> sinks,
+        HarnessMetrics metrics) {
         this.rootRunId = rootRunId;
         this.limit = limit;
         this.executor = executor;
@@ -63,6 +89,7 @@ final class ChildRuns {
         this.loop = loop;
         this.tools = tools;
         this.sinks = sinks;
+        this.metrics = metrics;
     }
 
     ToolResult start(
@@ -322,69 +349,81 @@ final class ChildRuns {
     }
 
     private void runChild(Execution child) {
-        if (!child.beginWorker()) {
-            finish(child, RunStatus.CANCELLED, "子 Agent 已停止", 0, null);
-            return;
-        }
-        RunStreamSink sink = sinks.apply(child.run);
+        long startNanos = metrics.runStarted(false);
+        RunStatus observedStatus = RunStatus.FAILED;
         int totalRounds = 0;
         try {
-            while (true) {
-                AgentLoop.Result result = null;
-                RuntimeException failure = null;
-                try {
-                    result =
-                        loop.run(
-                            child.run.getId(),
-                            child.conversation,
-                            () -> tools.apply(child),
-                            () -> rootCancelled.getAsBoolean() || child.isStopRequested(),
-                            updates(child),
-                            sink);
-                    totalRounds += result.rounds();
-                    child.run.addMetrics(result.metrics(), loop.modelName());
-                    child.run.setFailureCode(result.success() ? null : result.failureCode());
-                } catch (RuntimeException exception) {
-                    failure = exception;
-                }
-                RunStatus finishStatus;
-                String finishResult;
-                synchronized (child) {
-                    String pending =
-                        child.drainMessages().stream()
-                            .reduce((first, next) -> first + "\n\n" + next)
-                            .orElse(null);
-                    if (!rootCancelled.getAsBoolean()
-                        && !child.isStopRequested()
-                        && pending != null) {
-                        child.conversation.addUserMessage(pending);
-                        runs.resume(child.run, pending);
-                        continue;
-                    }
-                    finishStatus =
-                        rootCancelled.getAsBoolean() || child.isStopRequested()
-                            ? RunStatus.CANCELLED
-                            : failure == null && result.success()
-                              ? RunStatus.SUCCEEDED
-                              : RunStatus.FAILED;
-                    finishResult = failure == null ? result.text() : failure(failure);
-                    if (failure != null) child.run.setFailureCode(FailureCode.AGENT_FAILURE);
-                    if (!child.beginFinishing()) break;
-                }
-                lifecycle.finish(child.run, finishStatus, finishResult, totalRounds);
-                sink.finished();
+            if (!child.beginWorker()) {
+                observedStatus = RunStatus.CANCELLED;
+                finish(child, RunStatus.CANCELLED, "子 Agent 已停止", 0, null);
                 return;
             }
-        } catch (RuntimeException exception) {
-            child.run.setFailureCode(FailureCode.AGENT_FAILURE);
-            finish(
-                child,
-                rootCancelled.getAsBoolean() || child.isStopRequested()
-                    ? RunStatus.CANCELLED
-                    : RunStatus.FAILED,
-                failure(exception),
+            RunStreamSink sink = sinks.apply(child.run);
+            try {
+                while (true) {
+                    AgentLoop.Result result = null;
+                    RuntimeException failure = null;
+                    try {
+                        result =
+                            loop.run(
+                                child.run.getId(),
+                                child.conversation,
+                                () -> tools.apply(child),
+                                () -> rootCancelled.getAsBoolean() || child.isStopRequested(),
+                                updates(child),
+                                sink);
+                        totalRounds += result.rounds();
+                        child.run.addMetrics(result.metrics(), loop.modelName());
+                        child.run.setFailureCode(result.success() ? null : result.failureCode());
+                    } catch (RuntimeException exception) {
+                        failure = exception;
+                    }
+                    RunStatus finishStatus;
+                    String finishResult;
+                    synchronized (child) {
+                        String pending =
+                            child.drainMessages().stream()
+                                .reduce((first, next) -> first + "\n\n" + next)
+                                .orElse(null);
+                        if (!rootCancelled.getAsBoolean()
+                            && !child.isStopRequested()
+                            && pending != null) {
+                            child.conversation.addUserMessage(pending);
+                            runs.resume(child.run, pending);
+                            continue;
+                        }
+                        finishStatus =
+                            rootCancelled.getAsBoolean() || child.isStopRequested()
+                                ? RunStatus.CANCELLED
+                                : failure == null && result.success()
+                                  ? RunStatus.SUCCEEDED
+                                  : RunStatus.FAILED;
+                        finishResult = failure == null ? result.text() : failure(failure);
+                        if (failure != null) child.run.setFailureCode(FailureCode.AGENT_FAILURE);
+                        if (!child.beginFinishing()) {
+                            observedStatus = finishStatus;
+                            break;
+                        }
+                    }
+                    observedStatus = lifecycle.finish(child.run, finishStatus, finishResult, totalRounds);
+                    sink.finished();
+                    return;
+                }
+            } catch (RuntimeException exception) {
+                child.run.setFailureCode(FailureCode.AGENT_FAILURE);
+                observedStatus =
+                    rootCancelled.getAsBoolean() || child.isStopRequested()
+                        ? RunStatus.CANCELLED
+                        : RunStatus.FAILED;
+                finish(child, observedStatus, failure(exception), totalRounds, sink);
+            }
+        } finally {
+            metrics.runFinished(
+                false,
+                child.run.getStatus() != null ? child.run.getStatus() : observedStatus,
+                loop.modelName(),
                 totalRounds,
-                sink);
+                startNanos);
         }
     }
 

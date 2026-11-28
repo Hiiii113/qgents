@@ -1,9 +1,11 @@
 package qg.qgent.harness.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import qg.qgent.harness.entity.FailureCode;
+import qg.qgent.harness.metrics.HarnessMetrics;
 import qg.qgent.harness.model.ModelClient;
 import qg.qgent.harness.model.ModelFailureException;
 import qg.qgent.harness.model.ModelMessage;
@@ -33,17 +35,30 @@ public class AgentLoop {
             + "不要在一次工具调用里写完整个大文件。";
     private final ModelClient model;
     private final ToolCallExecutor toolCalls;
+    private final HarnessMetrics metrics;
     private final int maxRounds;
     private final Duration modelCallTimeout;
 
     public AgentLoop(
         ModelClient model,
         ObjectMapper json,
+        int maxRounds,
+        int maxParallelToolCalls,
+        Duration modelCallTimeout) {
+        this(model, json, HarnessMetrics.noop(), maxRounds, maxParallelToolCalls, modelCallTimeout);
+    }
+
+    @Autowired
+    public AgentLoop(
+        ModelClient model,
+        ObjectMapper json,
+        HarnessMetrics metrics,
         @Value("${app.agent.max-rounds:30}") int maxRounds,
         @Value("${app.agent.max-parallel-tool-calls:4}") int maxParallelToolCalls,
         @Value("${app.agent.model-call-timeout:5m}") Duration modelCallTimeout) {
         this.model = model;
-        this.toolCalls = new ToolCallExecutor(json, maxParallelToolCalls);
+        this.metrics = metrics;
+        this.toolCalls = new ToolCallExecutor(json, maxParallelToolCalls, metrics);
         if (maxRounds < 1) throw new IllegalArgumentException("max-rounds 必须大于 0");
         if (modelCallTimeout.isZero() || modelCallTimeout.isNegative())
             throw new IllegalArgumentException("model-call-timeout 必须大于 0");
@@ -143,12 +158,34 @@ public class AgentLoop {
                 messages.addAll(conversation.history());
                 sink.roundStarted();
                 ModelClient.Reply reply;
+                java.util.concurrent.atomic.AtomicReference<Long> roundFirstTokenMs =
+                    new java.util.concurrent.atomic.AtomicReference<>();
                 long modelStartNanos = System.nanoTime();
-                ModelCall call =
-                    callModel(
-                        request(tools, messages), sink, cancelled, loopStartNanos, firstTokenMs);
-                modelTimeMs += elapsedMs(modelStartNanos);
+                ModelCall call;
+                try {
+                    call =
+                        callModel(
+                            request(tools, messages),
+                            sink,
+                            cancelled,
+                            loopStartNanos,
+                            modelStartNanos,
+                            firstTokenMs,
+                            roundFirstTokenMs);
+                } catch (RuntimeException exception) {
+                    long modelElapsedNanos = System.nanoTime() - modelStartNanos;
+                    modelTimeMs += Math.max(0L, modelElapsedNanos / 1_000_000L);
+                    metrics.recordLlmCall(modelName(), "error", modelElapsedNanos, null);
+                    throw exception;
+                }
+                long modelElapsedNanos = System.nanoTime() - modelStartNanos;
+                modelTimeMs += Math.max(0L, modelElapsedNanos / 1_000_000L);
                 if (call.failureCode() != null) {
+                    metrics.recordLlmCall(
+                        modelName(),
+                        call.failureCode() == FailureCode.UPSTREAM_TIMEOUT ? "timeout" : "error",
+                        modelElapsedNanos,
+                        null);
                     return new Result(
                         false,
                         failureText(call.failureCode()),
@@ -157,10 +194,15 @@ public class AgentLoop {
                         call.failureCode());
                 }
                 reply = call.reply();
+                if (roundFirstTokenMs.get() != null) {
+                    metrics.recordLlmTtft(modelName(), roundFirstTokenMs.get());
+                }
                 if (reply != null) {
                     totalUsage = totalUsage.plus(reply.usage());
                 }
                 if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
+                    metrics.recordLlmCall(
+                        modelName(), "cancelled", modelElapsedNanos, reply == null ? null : reply.usage());
                     return new Result(
                         false,
                         "Agent 运行已取消",
@@ -168,6 +210,8 @@ public class AgentLoop {
                         snapshot(totalUsage, firstTokenMs.get(), modelTimeMs, toolTimeMs, totalToolCalls, failedToolCalls));
                 }
                 if (reply == null || reply.message() == null) {
+                    metrics.recordLlmCall(
+                        modelName(), "empty", modelElapsedNanos, reply == null ? null : reply.usage());
                     return new Result(
                         false,
                         "模型没有返回有效回复",
@@ -177,6 +221,7 @@ public class AgentLoop {
                 }
                 ModelMessage.AssistantMessage assistant = reply.message();
                 if ("length".equalsIgnoreCase(reply.finishReason())) {
+                    metrics.recordLlmCall(modelName(), "truncated", modelElapsedNanos, reply.usage());
                     String text = assistant.text();
                     if (assistant.toolCalls().isEmpty() && text != null && !text.isBlank()) {
                         conversation.append(assistant);
@@ -201,6 +246,7 @@ public class AgentLoop {
                 if (assistant.toolCalls().isEmpty()) {
                     String text = assistant.text();
                     if (text == null || text.isBlank()) {
+                        metrics.recordLlmCall(modelName(), "empty", modelElapsedNanos, reply.usage());
                         return new Result(
                             false,
                             "模型返回了空回复",
@@ -208,6 +254,7 @@ public class AgentLoop {
                             snapshot(totalUsage, firstTokenMs.get(), modelTimeMs, toolTimeMs, totalToolCalls, failedToolCalls),
                             FailureCode.AGENT_FAILURE);
                     }
+                    metrics.recordLlmCall(modelName(), "ok", modelElapsedNanos, reply.usage());
                     conversation.append(assistant);
                     List<ModelMessage> arrivedBeforeWait = updates.drain();
                     conversation.appendAll(arrivedBeforeWait);
@@ -229,6 +276,7 @@ public class AgentLoop {
                         round,
                         snapshot(totalUsage, firstTokenMs.get(), modelTimeMs, toolTimeMs, totalToolCalls, failedToolCalls));
                 }
+                metrics.recordLlmCall(modelName(), "ok", modelElapsedNanos, reply.usage());
                 conversation.append(assistant);
                 long toolStartNanos = System.nanoTime();
                 ToolCallExecutor.Result results =
@@ -299,11 +347,22 @@ public class AgentLoop {
         RunStreamSink sink,
         BooleanSupplier cancelled,
         long loopStartNanos,
-        AtomicReference<Long> firstTokenMs) {
+        long modelStartNanos,
+        AtomicReference<Long> firstTokenMs,
+        AtomicReference<Long> roundFirstTokenMs) {
         AtomicBoolean emitted = new AtomicBoolean();
         try {
             return new ModelCall(
-                chat(request, sink, cancelled, loopStartNanos, firstTokenMs, emitted), null);
+                chat(
+                    request,
+                    sink,
+                    cancelled,
+                    loopStartNanos,
+                    modelStartNanos,
+                    firstTokenMs,
+                    roundFirstTokenMs,
+                    emitted),
+                null);
         } catch (RuntimeException exception) {
             FailureCode code = failureCode(exception);
             if (code == null) throw exception;
@@ -312,7 +371,16 @@ public class AgentLoop {
             }
             try {
                 return new ModelCall(
-                    chat(request, sink, cancelled, loopStartNanos, firstTokenMs, emitted), null);
+                    chat(
+                        request,
+                        sink,
+                        cancelled,
+                        loopStartNanos,
+                        modelStartNanos,
+                        firstTokenMs,
+                        roundFirstTokenMs,
+                        emitted),
+                    null);
             } catch (RuntimeException retryException) {
                 FailureCode retryCode = failureCode(retryException);
                 if (retryCode == null) throw retryException;
@@ -348,7 +416,9 @@ public class AgentLoop {
         RunStreamSink sink,
         BooleanSupplier cancelled,
         long loopStartNanos,
+        long modelStartNanos,
         AtomicReference<Long> firstTokenMs,
+        AtomicReference<Long> roundFirstTokenMs,
         AtomicBoolean emitted) {
         Mono<Long> cancellation = Flux.interval(CANCELLATION_CHECK_INTERVAL)
             .filter(tick -> cancelled.getAsBoolean())
@@ -358,6 +428,7 @@ public class AgentLoop {
                 text -> {
                     if (text != null && !text.isEmpty()) {
                         firstTokenMs.compareAndSet(null, elapsedMs(loopStartNanos));
+                        roundFirstTokenMs.compareAndSet(null, elapsedMs(modelStartNanos));
                         emitted.set(true);
                     }
                     // 思考内容不进正文流；取消后立即停止推送。

@@ -1,10 +1,12 @@
 package qg.qgent.sandbox.service;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import qg.qgent.sandbox.execution.service.CommandExecutionService;
+import qg.qgent.sandbox.metrics.SandboxMetrics;
 
 import java.util.concurrent.Executor;
 import java.util.concurrent.RejectedExecutionException;
@@ -20,6 +22,7 @@ public class SandboxCleanupService {
     private final CommandExecutionService executions;
     private final SandboxSessionManager sessions;
     private final Executor cleanupExecutor;
+    private final SandboxMetrics metrics;
     // 清理会等待命令线程退出；上一轮未结束时只跳过本轮，不排队堆积。
     private final AtomicBoolean cleanupRunning = new AtomicBoolean();
 
@@ -27,11 +30,22 @@ public class SandboxCleanupService {
         SandboxService sandboxes,
         CommandExecutionService executions,
         SandboxSessionManager sessions,
-        @Qualifier("sandboxCleanupExecutor") Executor cleanupExecutor) {
+        Executor cleanupExecutor) {
+        this(sandboxes, executions, sessions, cleanupExecutor, SandboxMetrics.noop());
+    }
+
+    @Autowired
+    public SandboxCleanupService(
+        SandboxService sandboxes,
+        CommandExecutionService executions,
+        SandboxSessionManager sessions,
+        @Qualifier("sandboxCleanupExecutor") Executor cleanupExecutor,
+        SandboxMetrics metrics) {
         this.sandboxes = sandboxes;
         this.executions = executions;
         this.sessions = sessions;
         this.cleanupExecutor = cleanupExecutor;
+        this.metrics = metrics;
     }
 
     /**
@@ -63,8 +77,14 @@ public class SandboxCleanupService {
                 .expiredSandboxIds()
                 .forEach(sandboxId -> {
                     executions.stopAndAwaitBySandbox(sandboxId);
-                    sandboxes.destroy(sandboxId);
+                    try {
+                        sandboxes.destroy(sandboxId);
+                    } catch (RuntimeException exception) {
+                        metrics.recordReclaimed("destroy_error");
+                        throw exception;
+                    }
                     sessions.forgetSandbox(sandboxId);
+                    metrics.recordReclaimed("expired_cleanup");
                     log.info("sandbox reclaimed by scheduled cleanup sandboxId={}", sandboxId);
                 });
         } catch (RuntimeException exception) {

@@ -3,8 +3,13 @@ package qg.qgent.mcp.tool;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.modelcontextprotocol.spec.McpSchema;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import qg.qgent.common.web.ApiException;
 import qg.qgent.harness.tool.ToolCallback;
@@ -22,13 +27,25 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
 @Component
-@RequiredArgsConstructor
 public class McpToolCallbacks {
     private final McpOperations operations;
     private final ObjectMapper json;
+    private final MeterRegistry registry;
+
+    public McpToolCallbacks(McpOperations operations, ObjectMapper json) {
+        this(operations, json, new SimpleMeterRegistry());
+    }
+
+    @Autowired
+    public McpToolCallbacks(McpOperations operations, ObjectMapper json, MeterRegistry registry) {
+        this.operations = operations;
+        this.json = json;
+        this.registry = registry;
+    }
 
     public List<ToolCallback> forRun(Long projectId, Long agentId, Long actor) {
         RunActor run = new RunActor(projectId, agentId, actor);
@@ -50,15 +67,26 @@ public class McpToolCallbacks {
             + "。同一服务有项目共享和个人连接时，按用户指定的连接使用，意图不清时先询问用户。";
         String inputSchema = encode(tool.inputSchema());
         return callback(name, description, inputSchema, arguments -> {
+            long startNanos = System.nanoTime();
             try {
                 var result = operations.call(run, server.id(), version, tool.name(), arguments);
-                ToolResult response = Boolean.TRUE.equals(result.isError())
+                boolean isError = Boolean.TRUE.equals(result.isError());
+                recordMcpCall(isError ? "tool_error" : "ok", System.nanoTime() - startNanos);
+                ToolResult response = isError
                     ? ToolResult.error("MCP_TOOL_ERROR", "MCP 工具报告执行失败") : ToolResult.ok();
                 response.put("content", result.content());
                 if (result.structuredContent() != null) response.put("structuredContent", result.structuredContent());
                 return response;
             } catch (ApiException e) {
+                String outcome =
+                    e.status() == HttpStatus.UNAUTHORIZED || e.status() == HttpStatus.FORBIDDEN
+                        ? "auth_error"
+                        : "error";
+                recordMcpCall(outcome, System.nanoTime() - startNanos);
                 return ToolResult.error(e.code(), e.getMessage());
+            } catch (RuntimeException e) {
+                recordMcpCall("error", System.nanoTime() - startNanos);
+                throw e;
             }
         });
     }
@@ -100,6 +128,19 @@ public class McpToolCallbacks {
 
     private String label(McpServer server) {
         return (server.scope() == Scope.SHARED ? "项目共享连接" : "个人连接") + "「" + server.name() + "」";
+    }
+
+    private void recordMcpCall(String outcome, long durationNanos) {
+        Counter.builder("qgents.mcp.calls.total")
+            .description("Total external MCP tool calls")
+            .tag("outcome", outcome)
+            .register(registry)
+            .increment();
+        Timer.builder("qgents.mcp.call.duration")
+            .description("Duration of external MCP tool calls")
+            .tag("outcome", outcome)
+            .register(registry)
+            .record(Math.max(0L, durationNanos), TimeUnit.NANOSECONDS);
     }
 
     private String encode(Object value) {

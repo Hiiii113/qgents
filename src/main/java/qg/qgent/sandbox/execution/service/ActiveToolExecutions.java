@@ -64,6 +64,10 @@ final class ActiveToolExecutions {
         }
     }
 
+    int activeCount() {
+        return executions.size();
+    }
+
     CompletableFuture<CommandExecution> completion(Long id) {
         Execution execution = executions.get(id);
         return execution == null || execution.task == null ? null : execution.completion;

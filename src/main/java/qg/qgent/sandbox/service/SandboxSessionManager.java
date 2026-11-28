@@ -1,6 +1,7 @@
 package qg.qgent.sandbox.service;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -8,6 +9,7 @@ import qg.qgent.common.web.ApiException;
 import qg.qgent.project.storage.ProjectDirectoryService;
 import qg.qgent.sandbox.config.SandboxProperties;
 import qg.qgent.sandbox.execution.service.CommandExecutionService;
+import qg.qgent.sandbox.metrics.SandboxMetrics;
 import qg.qgent.sandbox.runtime.SandboxAllocation;
 import qg.qgent.workspace.entity.WorkspaceEntity;
 import qg.qgent.workspace.mapper.WorkspaceMapper;
@@ -31,6 +33,7 @@ public class SandboxSessionManager {
     private final CommandExecutionService executions;
     private final SandboxProperties properties;
     private final WorkspaceMapper workspaceMapper;
+    private final SandboxMetrics metrics;
     private final Map<Long, SandboxSession> sessions = new ConcurrentHashMap<>();
     private final Map<Long, ReentrantLock> acquireLocks = new ConcurrentHashMap<>();
 
@@ -40,11 +43,24 @@ public class SandboxSessionManager {
         CommandExecutionService executions,
         SandboxProperties properties,
         WorkspaceMapper workspaceMapper) {
+        this(sandboxes, projectDirectories, executions, properties, workspaceMapper, SandboxMetrics.noop());
+    }
+
+    @Autowired
+    public SandboxSessionManager(
+        SandboxService sandboxes,
+        ProjectDirectoryService projectDirectories,
+        CommandExecutionService executions,
+        SandboxProperties properties,
+        WorkspaceMapper workspaceMapper,
+        SandboxMetrics metrics) {
         this.sandboxes = sandboxes;
         this.projectDirectories = projectDirectories;
         this.executions = executions;
         this.properties = properties;
         this.workspaceMapper = workspaceMapper;
+        this.metrics = metrics;
+        this.metrics.bindActiveSessions(sessions::size);
     }
 
     /**
@@ -52,10 +68,12 @@ public class SandboxSessionManager {
      * 其他 AgentRun 已占用时立即返回冲突，避免两个运行并发写同一工作区。
      */
     public SandboxSession acquire(Long agentRunId, Long projectId, Long workspaceId) {
+        long startNanos = System.nanoTime();
         ReentrantLock acquireLock =
             acquireLocks.computeIfAbsent(workspaceId, ignored -> new ReentrantLock());
         // 初始化或释放已由其他线程处理时返回冲突，避免等待 沙箱初始化。
         if (!acquireLock.tryLock()) {
+            metrics.recordAcquire("lease_conflict", System.nanoTime() - startNanos);
             throw new ApiException(
                 HttpStatus.CONFLICT,
                 "WORKSPACE_WRITE_LEASE_HELD",
@@ -65,16 +83,25 @@ public class SandboxSessionManager {
             SandboxSession existing = sessions.get(workspaceId);
             if (existing != null) {
                 if (!existing.agentRunId().equals(agentRunId)) {
+                    metrics.recordAcquire("lease_conflict", System.nanoTime() - startNanos);
                     throw new ApiException(
                         HttpStatus.CONFLICT,
                         "WORKSPACE_WRITE_LEASE_HELD",
                         "Workspace is currently being modified by another AgentRun");
                 }
+                metrics.recordAcquire("reused", System.nanoTime() - startNanos);
                 return existing;
             }
             SandboxSession created = doAcquire(agentRunId, projectId, workspaceId);
             sessions.put(workspaceId, created);
+            metrics.recordAcquire("created", System.nanoTime() - startNanos);
             return created;
+        } catch (RuntimeException exception) {
+            if (!(exception instanceof ApiException api
+                && "WORKSPACE_WRITE_LEASE_HELD".equals(api.code()))) {
+                metrics.recordAcquire("error", System.nanoTime() - startNanos);
+            }
+            throw exception;
         } finally {
             acquireLock.unlock();
         }
@@ -131,8 +158,10 @@ public class SandboxSessionManager {
             try {
                 executions.stopAndAwaitBySandbox(session.sandboxId());
                 sandboxes.destroy(session.sandboxId());
+                metrics.recordReclaimed("release");
             } catch (RuntimeException ignored) {
                 // 销毁失败由 Sandbox 的清理任务兜底，不阻断执行结果返回。
+                metrics.recordReclaimed("destroy_error");
             }
         } finally {
             acquireLock.unlock();
