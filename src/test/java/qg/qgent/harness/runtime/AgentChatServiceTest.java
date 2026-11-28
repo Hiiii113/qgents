@@ -14,6 +14,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.util.List;
@@ -28,6 +31,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import reactor.core.publisher.Mono;
 import qg.qgent.agent.entity.AgentEntity;
@@ -171,6 +175,82 @@ class AgentChatServiceTest {
                 .startRoot(fixture.agentId(), project, group, null, actor, "检查状态");
         verify(fixture.messages(), never()).sendAsAgent(anyLong(), anyLong(), any());
         verify(fixture.messages(), never()).replyInConversation(anyLong(), anyLong(), any());
+    }
+
+    @Test
+    void finalizationLogIncludesCacheHitRateForRunsWithAndWithoutUsage() {
+        Logger logger = (Logger) LoggerFactory.getLogger(AgentChatService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            Long actor = TestIds.next(), project = TestIds.next(), group = TestIds.next();
+            ModelClient model = model();
+            when(model.stream(any(), any()))
+                    .thenAnswer(
+                            invocation -> {
+                                java.util.function.Consumer<String> delta = invocation.getArgument(1);
+                                delta.accept("有用量");
+                                return Mono.just(
+                                        new ModelClient.Reply(
+                                                new ModelMessage.AssistantMessage("有用量", List.of(), null),
+                                                "stop",
+                                                new ModelClient.Usage(80, 15, 40, 0)));
+                            });
+            var used = fixture(model, actor, project, group, null, childExecutor);
+            used.service()
+                    .runTask(
+                            new AgentChatService.TaskRun(
+                                    used.agentId(), project, group, actor, null, false),
+                            "统计缓存命中");
+
+            ModelClient failingModel = model();
+            when(failingModel.stream(any(), any()))
+                    .thenThrow(new IllegalStateException("模型不可用"));
+            Long failedActor = TestIds.next(),
+                    failedProject = TestIds.next(),
+                    failedGroup = TestIds.next();
+            var failed =
+                    fixture(
+                            failingModel,
+                            failedActor,
+                            failedProject,
+                            failedGroup,
+                            null,
+                            childExecutor);
+            failed.service()
+                    .runTask(
+                            new AgentChatService.TaskRun(
+                                    failed.agentId(), failedProject, failedGroup, failedActor, null, false),
+                            "没有用量");
+
+            List<String> finalized =
+                    appender.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
+            assertThat(finalized)
+                    .filteredOn(message -> message.contains("runId=" + used.root().getId()))
+                    .singleElement()
+                    .satisfies(
+                            message ->
+                                    assertThat(message)
+                                            .contains(
+                                                    "status=SUCCEEDED",
+                                                    "promptTokens=80",
+                                                    "cachedTokens=40",
+                                                    "cacheHitRate=0.5"));
+            assertThat(finalized)
+                    .filteredOn(message -> message.contains("runId=" + failed.root().getId()))
+                    .singleElement()
+                    .satisfies(
+                            message ->
+                                    assertThat(message)
+                                            .contains(
+                                                    "status=FAILED",
+                                                    "promptTokens=0",
+                                                    "cachedTokens=0",
+                                                    "cacheHitRate=0.0"));
+        } finally {
+            logger.detachAppender(appender);
+        }
     }
 
     @Test
@@ -1373,6 +1453,9 @@ class AgentChatServiceTest {
         root.setTriggerMessageId(message);
         root.setCreatedBy(actor);
         root.setStatus(RunStatus.RUNNING);
+        root.setRounds(0);
+        root.setPromptTokens(0L);
+        root.setCachedTokens(0L);
         when(runs.startRoot(any(), any(), any(), any(), any(), any())).thenReturn(root);
         when(runs.startChild(any(), any(), any()))
                 .thenAnswer(

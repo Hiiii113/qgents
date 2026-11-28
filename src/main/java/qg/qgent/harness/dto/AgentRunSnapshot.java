@@ -36,6 +36,15 @@ public class AgentRunSnapshot {
     @Schema(description = "数据库已完成的模型调用数，仅收尾时累加")
     private int rounds;
 
+    @Schema(description = "累计 prompt token 数")
+    private long promptTokens;
+
+    @Schema(description = "其中命中缓存的前缀 token 数")
+    private long cachedTokens;
+
+    @Schema(description = "缓存命中率 = cachedTokens / promptTokens；无 prompt 用量时为 0")
+    private double cacheHitRate;
+
     @Schema(description = "已推送的最后一个 delta 序号")
     private long seq;
 

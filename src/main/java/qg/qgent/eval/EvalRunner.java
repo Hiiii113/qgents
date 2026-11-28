@@ -225,6 +225,7 @@ public class EvalRunner {
                         totalMetrics.failedToolCalls(),
                         totalMetrics.promptTokens(),
                         totalMetrics.cachedTokens(),
+                        cacheHitRate(totalMetrics),
                         totalMetrics.completionTokens(),
                         totalMetrics.reasoningTokens(),
                         modelConfig.estimateCost(modelId, options.profileName(), totalMetrics),
@@ -272,6 +273,7 @@ public class EvalRunner {
                 totalMetrics.failedToolCalls(),
                 totalMetrics.promptTokens(),
                 totalMetrics.cachedTokens(),
+                cacheHitRate(totalMetrics),
                 totalMetrics.completionTokens(),
                 totalMetrics.reasoningTokens(),
                 modelConfig.estimateCost(modelId, options.profileName(), totalMetrics),
@@ -300,6 +302,7 @@ public class EvalRunner {
                 totalMetrics.failedToolCalls(),
                 totalMetrics.promptTokens(),
                 totalMetrics.cachedTokens(),
+                cacheHitRate(totalMetrics),
                 totalMetrics.completionTokens(),
                 totalMetrics.reasoningTokens(),
                 modelConfig.estimateCost(modelId, options.profileName(), totalMetrics),
@@ -479,6 +482,15 @@ public class EvalRunner {
 
     private static long elapsedMs(long startNanos) {
         return Math.max(0L, (System.nanoTime() - startNanos) / 1_000_000L);
+    }
+
+    /**
+     * 同一尝试内的多轮用量先汇总再算命中率，与 AttemptReport 的 prompt/cached 字段一致。
+     */
+    private static double cacheHitRate(AgentLoop.Metrics metrics) {
+        return metrics.promptTokens() > 0
+            ? (double) metrics.cachedTokens() / metrics.promptTokens()
+            : 0.0;
     }
 
     private static String sanitize(String value) {

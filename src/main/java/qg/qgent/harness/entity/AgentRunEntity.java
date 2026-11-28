@@ -40,6 +40,10 @@ public class AgentRunEntity {
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private LocalDateTime finishedAt;
 
+    public double cacheHitRate() {
+        return promptTokens > 0 ? (double) cachedTokens / promptTokens : 0.0;
+    }
+
     public void addMetrics(qg.qgent.harness.runtime.AgentLoop.Metrics metrics, String model) {
         if (model != null && !model.isBlank() && (modelName == null || modelName.isBlank())) {
             this.modelName = model;
