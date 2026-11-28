@@ -112,6 +112,7 @@ class HarnessMetricsTest {
         when(model.modelName()).thenReturn("deepseek-chat");
         when(model.stream(any(), any()))
             .thenReturn(Mono.never())
+            .thenReturn(Mono.never())
             .thenReturn(
                 Mono.just(
                     new ModelClient.Reply(
@@ -126,7 +127,7 @@ class HarnessMetricsTest {
             loop.run(TestIds.next(), "sys", List.of(new ModelMessage.UserMessage("b")), List::of, () -> false);
 
         assertThat(timedOut.success()).isFalse();
-        assertThat(truncated.success()).isFalse();
+        assertThat(truncated.success()).isTrue();
         assertThat(registry.get("qgents.llm.call.duration").tag("outcome", "timeout").timer().count())
             .isEqualTo(1);
         assertThat(registry.get("qgents.llm.call.duration").tag("outcome", "truncated").timer().count())
