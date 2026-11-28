@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   启动 Qgents Agent 独立评测（不启 Web 端口、不跑后台定时任务）。
 .EXAMPLE
@@ -16,6 +16,10 @@ $ErrorActionPreference = "Stop"
 # 使用独立的评测库与数据目录（如未在外部显式设置，则给出安全默认值提醒）
 if (-not $env:PROJECT_DATA_ROOT) {
     $env:PROJECT_DATA_ROOT = (Join-Path $PSScriptRoot "data\eval-runtime")
+}
+# Docker 沙箱绑定挂载使用 PROJECT_DATA_DOCKER_HOST_ROOT，必须与 PROJECT_DATA_ROOT 指向同一目录。
+if (-not $env:PROJECT_DATA_DOCKER_HOST_ROOT) {
+    $env:PROJECT_DATA_DOCKER_HOST_ROOT = ($env:PROJECT_DATA_ROOT -replace '\\', '/')
 }
 
 $argLine = ($EvalArgs | ForEach-Object {

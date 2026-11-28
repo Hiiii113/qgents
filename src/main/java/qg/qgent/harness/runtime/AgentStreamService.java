@@ -109,14 +109,16 @@ public class AgentStreamService {
 
     /**
      * 必须在 state 的监视器内调用；把缓冲正文追加到当前分段并按需发一帧。
+     *
+     * @return 本次是否入队了 delta 帧，调用方据此决定锁外推送
      */
-    private void flush(LiveRun state, boolean force) {
-        if (state.pending.isEmpty()) return;
+    private boolean flush(LiveRun state, boolean force) {
+        if (state.pending.isEmpty()) return false;
         long now = System.currentTimeMillis();
         if (!force
             && state.pending.length() < FLUSH_CHARS
             && now - state.lastFlushAt < FLUSH_INTERVAL_MS) {
-            return;
+            return false;
         }
         String text = state.pending.toString();
         state.pending.setLength(0);
@@ -132,6 +134,7 @@ public class AgentStreamService {
         payload.put("revision", revision);
         payload.put("text", text);
         emit(state, "agent-run.delta", payload);
+        return true;
     }
 
     private Map<String, Object> updatedPayload(
@@ -445,11 +448,13 @@ public class AgentStreamService {
 
         public void delta(String text) {
             if (text == null || text.isEmpty()) return;
+            boolean emitted;
             synchronized (state) {
                 if (state.closed) return;
                 state.pending.append(text);
-                flush(state, false);
+                emitted = flush(state, false);
             }
+            if (emitted) drainFrames(state);
         }
 
         public void toolStarted(String toolCallId, String toolName, String input) {
@@ -472,7 +477,7 @@ public class AgentStreamService {
                 long revision = state.root.revision(state.run.getId()).incrementAndGet();
                 emit(
                     state,
-                    "agent-run.tool",
+                    "agent-run.tool-started",
                     toolPayload(
                         state, "started", toolCallId, toolName, round, null, text, revision));
             }
@@ -495,7 +500,7 @@ public class AgentStreamService {
                 long revision = state.root.revision(state.run.getId()).incrementAndGet();
                 emit(
                     state,
-                    "agent-run.tool",
+                    "agent-run.tool-finished",
                     toolPayload(
                         state,
                         "finished",

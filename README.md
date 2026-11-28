@@ -4,6 +4,7 @@
 
 **在项目群聊里 @ 一个 Agent，它在 Docker 沙箱里把活干完，把分支推回 GitHub。**
 
+[![CI](https://github.com/Hiiii113/qgents/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/Hiiii113/qgents/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://openjdk.org/projects/jdk/21/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.1-6DB33F.svg)](https://spring.io/projects/spring-boot)
@@ -65,7 +66,7 @@ Docker 连不上时后端照样能启动，只有需要沙箱的工具会失败�
 - 群聊：团队 → 项目 → 多个群，消息、提及、回复、已读、置顶；只有 @ 了群内 Agent 的消息才启动运行，普通聊天不调用模型。
 - Agent 运行：自研工具循环，默认最多 30 轮，单步最多 4 个工具并行，可后台派生子 Agent（默认上限 8 个），运行中可以按消息取消。
 - 沙箱：用户命令跑在临时容器里，默认 2 核 / 4 GiB，空闲 30 分钟回收、最长闲置 2 小时，单条命令默认 15 分钟超时、上限 1 小时。
-- 三层记忆：项目共享的 `memory.md`、群记忆 `groups/<groupId>/memory.md`、Agent 私有记忆 `agent-memory/<agentId>/<groupId>.md`，都存在项目数据目录里，不是数据库表单。
+- 三层记忆：项目共享的 `memory.md`、群记忆 `groups/<groupId>/memory.md`、Agent 私有记忆 `agent-memory/<agentId>/memory.md`（同项目各群共用一篇），都存在项目数据目录里，不是数据库表单。
 - 项目知识：项目 Skill、跨群历史检索、图片与文本附件（单个上限 50 MB，存本地磁盘或阿里云 OSS）。
 - GitHub App（可选）：团队安装，项目管理员导入仓库；Agent 能读 PR 和 Issue、拉代码、推分支，不会自动创建或合并 PR。配置步骤见[配置 GitHub App](#配置-github-app)。
 - 实时与通知：项目、团队、通知与 Agent 增量统一走 WebSocket（`/api/v1/ws/realtime`），断线后重新拉取快照；站内通知可选接 FCM 推到手机。
@@ -85,6 +86,12 @@ Spring Boot 应用 ── MySQL 8.4   业务数据
 
 业务端口 `8080`，运维端口 `8081` 默认只监听回环地址，暴露 `health`、`info`、`metrics`、`prometheus`。
 
+架构决策记录在 `docs/adr/`，改到相关代码前先读：
+
+- [ADR-0001 跨群读取由提问者负责](docs/adr/0001-cross-group-reads-are-the-askers-responsibility.md)：跨群读取只校验提问用户与 Agent 的群成员身份，受众覆盖与投递复核已删。
+- [ADR-0002 个人 MCP 连接由成员管理](docs/adr/0002-personal-mcp-connections-belong-to-members.md)：项目管理员发布选项，成员自建连接并指定可用 Agent。
+- [ADR-0003 评测不经过聊天](docs/adr/0003-eval-runs-outside-chat.md)：评测用独立库、文件结果与独立判分环境。
+
 ## 技术栈
 
 | 领域 | 选型 |
@@ -102,6 +109,7 @@ Spring Boot 应用 ── MySQL 8.4   业务数据
 src/main/java/qg/qgent/     业务代码，16 个领域包
 src/main/resources/         配置、建表脚本、日志配置、登录公钥
 src/test/java/              单元测试，其中集成测试默认跳过
+docs/adr/                   架构决策记录
 sandbox-images/dev-tools/   Agent 命令沙箱镜像（JDK 21、Node 22、Maven、Gradle、Android SDK）
 Dockerfile                  后端运行镜像
 docker-compose.yml          本地依赖、生产部署与可选 profile
