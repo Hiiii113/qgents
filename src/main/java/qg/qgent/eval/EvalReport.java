@@ -45,6 +45,7 @@ public final class EvalReport {
         int failedToolCalls,
         long promptTokens,
         long cachedTokens,
+        double cacheHitRate,
         long completionTokens,
         long reasoningTokens,
         double estimatedCost,

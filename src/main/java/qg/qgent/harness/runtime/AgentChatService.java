@@ -1,6 +1,8 @@
 package qg.qgent.harness.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -58,6 +60,7 @@ import java.util.concurrent.Executor;
  */
 @Service
 public class AgentChatService {
+    private static final Logger log = LoggerFactory.getLogger(AgentChatService.class);
     private static final Set<String> CHILD_CONTROL_TOOLS =
         Set.of(
             "start_subagent",
@@ -274,6 +277,15 @@ public class AgentChatService {
                 root.getToolTimeMs() == null ? 0L : root.getToolTimeMs(),
                 root.getToolCalls() == null ? 0 : root.getToolCalls(),
                 root.getFailedToolCalls() == null ? 0 : root.getFailedToolCalls());
+        log.info(
+            "agent run finalized runId={} agentId={} status={} rounds={} promptTokens={} cachedTokens={} cacheHitRate={}",
+            root.getId(),
+            root.getAgentId(),
+            root.getStatus(),
+            root.getRounds(),
+            totalMetrics.promptTokens(),
+            totalMetrics.cachedTokens(),
+            root.cacheHitRate());
         return new Outcome(
             root.getId(),
             root.getStatus(),

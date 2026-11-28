@@ -195,6 +195,30 @@ class AgentStreamServiceTest {
     }
 
     @Test
+    void snapshotsExposeCacheHitRateForZeroAndPositiveUsage() {
+        when(groups.requireGroupMember(any(), any(), any())).thenReturn(new ChatGroupEntity());
+        AgentRunEntity cached = run();
+        cached.setStatus(RunStatus.SUCCEEDED);
+        cached.setPromptTokens(200L);
+        cached.setCachedTokens(150L);
+        AgentRunEntity uncached = run();
+        uncached.setStatus(RunStatus.SUCCEEDED);
+        when(runs.selectList(any())).thenReturn(List.of(cached, uncached));
+
+        List<AgentRunSnapshot> snapshots =
+                service.recentRuns(cached.getProjectId(), cached.getGroupId(), TestIds.next(), 20);
+
+        assertThat(snapshots)
+                .extracting(
+                        AgentRunSnapshot::getPromptTokens,
+                        AgentRunSnapshot::getCachedTokens,
+                        AgentRunSnapshot::getCacheHitRate)
+                .containsExactly(
+                        org.assertj.core.groups.Tuple.tuple(200L, 150L, 0.75),
+                        org.assertj.core.groups.Tuple.tuple(0L, 0L, 0.0));
+    }
+
+    @Test
     void firstRoundIsReservedAsOneAndLoopDoesNotDuplicateIt() {
         when(groups.requireGroupMember(any(), any(), any())).thenReturn(new ChatGroupEntity());
         AgentRunEntity root = run();
@@ -393,6 +417,8 @@ class AgentStreamServiceTest {
         run.setTriggerMessageId(TestIds.next());
         run.setStatus(RunStatus.RUNNING);
         run.setRounds(0);
+        run.setPromptTokens(0L);
+        run.setCachedTokens(0L);
         run.setCreatedAt(LocalDateTime.now(ZoneOffset.UTC));
         return run;
     }

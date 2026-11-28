@@ -210,6 +210,7 @@ class EvalFrameworkTest {
                 0,
                 1000L,
                 600L,
+                0.6,
                 200L,
                 0L,
                 0.0004,
@@ -253,6 +254,8 @@ class EvalFrameworkTest {
 
         assertThat(batchDir.resolve("suite.json")).exists();
         assertThat(batchDir.resolve("memory-recall-recent/attempt-1.json")).exists();
+        assertThat(Files.readString(batchDir.resolve("memory-recall-recent/attempt-1.json")))
+            .contains("\"cacheHitRate\" : 0.6");
         String md = Files.readString(batchDir.resolve("report.md"));
         assertThat(md)
             .contains("deepseek-chat")
