@@ -478,7 +478,7 @@ class AgentLoopTest {
     }
 
     @Test
-    void lengthFinishReasonFailsInsteadOfReturningPartialText() {
+    void lengthTruncatedTextReplySucceedsWithPartialText() {
         AgentLoop loop = loop(3);
         when(model.stream(any(), any()))
                 .thenReturn(
@@ -498,8 +498,68 @@ class AgentLoopTest {
                         AgentLoop.UpdateSource.NONE,
                         sink);
 
+        assertThat(result.success()).isTrue();
+        assertThat(result.text()).isEqualTo("写到一半被截断");
+        assertThat(sink.rounds).isEqualTo(1);
+        verify(model, times(1)).stream(any(), any());
+    }
+
+    @Test
+    void truncatedToolCallIsDiscardedAndGuidedRetrySucceeds() {
+        AgentLoop loop = loop(3);
+        when(model.stream(any(), any()))
+                .thenReturn(truncatedToolCall("count"), reply("拆小后完成"));
+        Counter tools = new Counter();
+
+        AgentLoop.Result result =
+                loop.run(
+                        TestIds.next(),
+                        "通用 Agent",
+                        List.of(new ModelMessage.UserMessage("大改动")),
+                        () -> callbacks(tools),
+                        () -> false);
+
+        assertThat(result.success()).isTrue();
+        assertThat(result.text()).isEqualTo("拆小后完成");
+        assertThat(tools.calls).isZero();
+        ArgumentCaptor<ModelClient.Request> requests =
+                ArgumentCaptor.forClass(ModelClient.Request.class);
+        verify(model, times(2)).stream(requests.capture(), any());
+        List<ModelMessage> retry = requests.getAllValues().get(1).messages();
+        assertThat(retry).noneMatch(ModelMessage.AssistantMessage.class::isInstance);
+        assertThat(retry)
+                .anySatisfy(
+                        message ->
+                                assertThat(text(message)).contains("max_tokens", "file_edit"));
+    }
+
+    @Test
+    void truncationRecoveryStopsAfterConfiguredRetries() {
+        AgentLoop loop = loop(5);
+        when(model.stream(any(), any())).thenReturn(truncatedToolCall("count"));
+        Counter tools = new Counter();
+
+        AgentLoop.Result result =
+                loop.run(
+                        TestIds.next(),
+                        "通用 Agent",
+                        List.of(new ModelMessage.UserMessage("持续截断")),
+                        () -> callbacks(tools),
+                        () -> false);
+
         assertThat(result.success()).isFalse();
-        assertThat(result.text()).contains("截断");
+        assertThat(result.text()).contains("连续被截断");
+        assertThat(tools.calls).isZero();
+        ArgumentCaptor<ModelClient.Request> requests =
+                ArgumentCaptor.forClass(ModelClient.Request.class);
+        // 第一次是原始回复，之后最多两次引导重试。
+        verify(model, times(3)).stream(requests.capture(), any());
+        assertThat(requests.getAllValues().get(2).messages())
+                .filteredOn(
+                        message ->
+                                message instanceof ModelMessage.UserMessage user
+                                        && user.text().contains("max_tokens"))
+                .hasSize(2);
     }
 
     @Test
@@ -761,6 +821,16 @@ class AgentLoopTest {
         assertThat(result.metrics().toolTimeMs()).isGreaterThanOrEqualTo(0L);
         assertThat(result.metrics().toolCalls()).isEqualTo(2);
         assertThat(result.metrics().failedToolCalls()).isEqualTo(1);
+    }
+
+    private Mono<ModelClient.Reply> truncatedToolCall(String name) {
+        return Mono.just(
+                new ModelClient.Reply(
+                        new ModelMessage.AssistantMessage(
+                                "",
+                                List.of(new ModelMessage.ToolCall("call-1", name, "{\"arg\":")),
+                                null),
+                        "length"));
     }
 
     private Mono<ModelClient.Reply> toolCall(String name) {

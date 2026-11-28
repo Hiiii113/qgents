@@ -21,6 +21,12 @@ import java.util.function.Supplier;
 @Component
 public class AgentLoop {
     private static final Duration CANCELLATION_CHECK_INTERVAL = Duration.ofMillis(100);
+    // 截断的工具调用参数不完整，执行只会得到误导性错误；先让模型自己缩小一步再重试。
+    private static final int MAX_TRUNCATION_RECOVERIES = 2;
+    private static final String TRUNCATION_RECOVERY_GUIDE =
+        "上一轮回复超过了 max_tokens 被截断，其中不完整的工具调用已丢弃且没有执行。"
+            + "请把较大的修改或输出拆成更小的步骤后重试，例如把 file_edit 拆成多次小块修改，"
+            + "不要在一次工具调用里写完整个大文件。";
     private final ModelClient model;
     private final ToolCallExecutor toolCalls;
     private final int maxRounds;
@@ -111,6 +117,7 @@ public class AgentLoop {
         long toolTimeMs = 0;
         int totalToolCalls = 0;
         int failedToolCalls = 0;
+        int truncationRecoveries = 0;
         try {
             for (int round = 1; round <= maxRounds; round++) {
                 if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
@@ -162,14 +169,28 @@ public class AgentLoop {
                         round,
                         snapshot(totalUsage, firstTokenMs.get(), modelTimeMs, toolTimeMs, totalToolCalls, failedToolCalls));
                 }
-                if ("length".equalsIgnoreCase(reply.finishReason())) {
-                    return new Result(
-                        false,
-                        "模型回复被截断，请缩小问题范围后重试",
-                        round,
-                        snapshot(totalUsage, firstTokenMs.get(), modelTimeMs, toolTimeMs, totalToolCalls, failedToolCalls));
-                }
                 ModelMessage.AssistantMessage assistant = reply.message();
+                if ("length".equalsIgnoreCase(reply.finishReason())) {
+                    String text = assistant.text();
+                    if (assistant.toolCalls().isEmpty() && text != null && !text.isBlank()) {
+                        conversation.append(assistant);
+                        return new Result(
+                            true,
+                            text,
+                            round,
+                            snapshot(totalUsage, firstTokenMs.get(), modelTimeMs, toolTimeMs, totalToolCalls, failedToolCalls));
+                    }
+                    if (truncationRecoveries >= MAX_TRUNCATION_RECOVERIES) {
+                        return new Result(
+                            false,
+                            "模型回复连续被截断（已重试 " + MAX_TRUNCATION_RECOVERIES + " 次），请缩小问题范围后重试",
+                            round,
+                            snapshot(totalUsage, firstTokenMs.get(), modelTimeMs, toolTimeMs, totalToolCalls, failedToolCalls));
+                    }
+                    truncationRecoveries++;
+                    conversation.append(new ModelMessage.UserMessage(TRUNCATION_RECOVERY_GUIDE));
+                    continue;
+                }
                 if (assistant.toolCalls().isEmpty()) {
                     String text = assistant.text();
                     if (text == null || text.isBlank()) {
